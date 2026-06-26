@@ -232,9 +232,14 @@ def main_watchlist() -> NoReturn:
 # ============================================================
 
 def _make_adapter(args: argparse.Namespace) -> object:
-    """构造 adapter，默认用缓存包装。"""
+    """构造 adapter，默认用 fallback + 缓存包装。
+
+    顺序：EfinanceAdapter (主) → TencentAdapter (fallback) → CachedMarketDataAdapter (外层)
+    东财接口挂了 → 自动降级到腾讯财经（数据稳定）
+    """
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-    base = EfinanceAdapter()
+    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(Path(args.db))
     return CachedMarketDataAdapter(base, store)
 

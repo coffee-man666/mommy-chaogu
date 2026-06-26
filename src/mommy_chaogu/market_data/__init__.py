@@ -5,6 +5,8 @@ from mommy_chaogu.market_data.adapter import (
     find_quote,
 )
 from mommy_chaogu.market_data.efinance_adapter import EfinanceAdapter
+from mommy_chaogu.market_data.fallback_adapter import FallbackAdapter
+from mommy_chaogu.market_data.tencent_adapter import TencentAdapter
 from mommy_chaogu.market_data.types import (
     AdjustmentType,
     Bar,
@@ -21,13 +23,12 @@ from mommy_chaogu.market_data.types import (
 )
 
 __all__ = [
-    # types
     "AdjustmentType",
     "Bar",
     "BarInterval",
     "Board",
     "EfinanceAdapter",
-    # adapter
+    "FallbackAdapter",
     "MarketDataAdapter",
     "MarketType",
     "Money",
@@ -36,6 +37,7 @@ __all__ = [
     "OrderBookLevel",
     "Quote",
     "QuoteType",
+    "TencentAdapter",
     "Tick",
     "filter_by_market",
     "find_quote",

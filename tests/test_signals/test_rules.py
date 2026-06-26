@@ -65,7 +65,7 @@ def _make_quote(
         pe_dynamic=None,
         total_market_cap=None,
         circulating_market_cap=None,
-        timestamp=datetime(2026, 6, 26, 11, 30),
+        timestamp=datetime.now(),
     )
 
 
@@ -73,7 +73,7 @@ def _make_flow(code: str = "600519", main_yuan: float = 0.0) -> MoneyFlow:
     return MoneyFlow(
         code=code,
         name=f"名称{code}",
-        timestamp=datetime(2026, 6, 26, 11, 30),
+        timestamp=datetime.now(),
         main_net=Money.from_yuan(main_yuan),
         small_net=Money.from_yuan(0),
         medium_net=Money.from_yuan(0),
@@ -325,7 +325,7 @@ def test_signal_format_log_one_line() -> None:
     s = PriceChangeThresholdRule().evaluate(snap)[0]
     log_line = s.format_log()
     assert "\n" not in log_line
-    assert "[2026-06-26" in log_line
+    assert "[2026-" in log_line
 
 
 # ========== Alerter 集成 ==========

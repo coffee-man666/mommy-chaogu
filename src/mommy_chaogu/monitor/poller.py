@@ -138,6 +138,19 @@ class Monitor:
             all_quotes = []
         quote_by_code = {q.code: q for q in all_quotes if q.code in by_code}
 
+        # 2b. 如果全市场拿不到（腾讯接口无全市场），逐股拉
+        #     这样 TencentAdapter fallback 能提供自选股报价
+        missing_codes = [c for c in codes if c not in quote_by_code]
+        if missing_codes:
+            _log.info("falling back to per-code quotes for %d codes", len(missing_codes))
+            for code in missing_codes:
+                try:
+                    q = self.adapter.get_quote(code)
+                    if q is not None:
+                        quote_by_code[code] = q
+                except Exception as e:
+                    _log.warning("get_quote(%s) failed: %s", code, e)
+
         # 3. 对拉到的股票，回填 name
         self._backfill_names(list(quote_by_code.values()))
 

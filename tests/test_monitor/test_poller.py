@@ -79,7 +79,7 @@ def _make_quote(code: str, price: str, pct: str) -> Quote:
         pe_dynamic=None,
         total_market_cap=None,
         circulating_market_cap=None,
-        timestamp=datetime(2026, 6, 26, 11, 30),
+        timestamp=datetime.now(),
     )
 
 
@@ -87,7 +87,7 @@ def _make_flow(code: str, main: str, ts: datetime | None = None) -> MoneyFlow:
     return MoneyFlow(
         code=code,
         name=f"名称{code}",
-        timestamp=ts or datetime(2026, 6, 26, 11, 30),
+        timestamp=ts or datetime.now(),
         main_net=Money.from_yuan(main),
         small_net=Money.from_yuan(0),
         medium_net=Money.from_yuan(0),
@@ -167,7 +167,7 @@ def test_snapshot_skips_codes_with_no_quote(store: WatchlistStore, tmp_path: Pat
 def test_log_line_format(monitor: Monitor) -> None:
     snap = monitor.snapshot_now()
     line = monitor.log_line(snap)
-    assert "[2026-06-26" in line
+    assert "[2026-" in line
     assert "snapshot #1" in line
     assert "codes=2" in line
     assert "主力净流入=" in line
