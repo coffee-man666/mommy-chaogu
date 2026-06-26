@@ -12,7 +12,13 @@ dependencies = [
     "efinance>=0.5.8",
     "pandas>=2.2",
     "requests>=2.32",
+    "sqlalchemy>=2.0",
 ]
+
+[project.scripts]
+mommy-watchlist = "mommy_chaogu.cli:main_watchlist"
+mommy-monitor = "mommy_chaogu.cli:main_monitor"
+mommy-chaogu = "mommy_chaogu.cli:main"
 
 [project.optional-dependencies]
 dev = [

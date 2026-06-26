@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import warnings
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -170,17 +171,45 @@ class EfinanceAdapter:
     # ---------- 实时报价 ----------
 
     def get_quote(self, code: str) -> Quote | None:
-        """单股实时。efinance 的 get_realtime_quotes(code) 经常坏，用 get_latest_quote 兜底。"""
+        """单股实时。efinance 的 get_realtime_quotes(code) 经常坏，用 get_latest_quote 兜底。
+
+        东财 push2.eastmoney.com 冷启动可能超时，本方法带 2 次重试。
+        """
+        import time as _time
+        df = None
+        last_err: Exception | None = None
+        for attempt in range(3):
+            try:
+                df = ef.stock.get_latest_quote(code)
+                if df is not None and not df.empty:
+                    break
+            except Exception as e:
+                last_err = e
+                _time.sleep(0.5 * (attempt + 1))
+        if df is None or df.empty:
+            if last_err is not None:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "get_quote(%s) failed after 3 retries: %s", code, last_err,
+                )
+            return None
         try:
-            df = ef.stock.get_latest_quote(code)
-            if df is None or df.empty:
-                return None
             return self._row_to_quote(df.iloc[0])
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("_row_to_quote(%s) failed: %s", code, e)
             return None
 
     def get_quotes(self, codes: list[str]) -> list[Quote]:
-        """批量：循环单股，失败的跳过。"""
+        """批量：循环单股，失败的跳过。
+
+        东财接口冷启动可能超时，本方法会先预热一次 get_realtime_quotes()
+        （全市场快照走同个东财 endpoint）能提高后续成功率。
+        """
+        # 预热：调一次全市场走东财接口（失败也没关系）
+        with contextlib.suppress(Exception):
+            ef.stock.get_realtime_quotes()
+
         out: list[Quote] = []
         seen: set[str] = set()
         for code in dict.fromkeys(codes):  # 去重保持顺序

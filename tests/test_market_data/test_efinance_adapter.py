@@ -18,7 +18,6 @@ from mommy_chaogu.market_data import (
     QuoteType,
 )
 
-
 # ---------- 真实接口（标记为网络依赖） ----------
 
 @pytest.fixture(scope="module")
@@ -82,7 +81,8 @@ def test_get_bars_d1_limit(adp: EfinanceAdapter) -> None:
     bars = adp.get_bars("600519", interval=BarInterval.D1, limit=10)
     assert len(bars) == 10
     # 时间递增
-    for a, b in zip(bars, bars[1:], strict=False):
+    from itertools import pairwise
+    for a, b in pairwise(bars):
         assert a.timestamp <= b.timestamp
     # 字段合理性
     last = bars[-1]
@@ -117,8 +117,8 @@ def test_get_bars_adjustment_types_distinct(adp: EfinanceAdapter) -> None:
                         adjustment=AdjustmentType.BACKWARD)
     assert len(fwd) == len(bwd) == 20
     # 价格应该大致接近但通常有差异（茅台可能除权过）
-    prices = [(f.close, b.close) for f, b in zip(fwd, bwd, strict=False)]
-    diffs = [abs(a - b) for a, b in prices]
+    # (removed)
+    # (removed)
     # 不强求有差异（不除权的股票就没差），只验证两种复权都返回了
     assert all(f.close > 0 for f in fwd)
     assert all(b.close > 0 for b in bwd)
