@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# uv / virtualenvs
+.venv/
+venv/
+env/
+.python-version
+
+# 测试 / 覆盖率
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 日志 / 临时
+*.log
+*.tmp
+.env
+.env.local
+
+# 行情数据缓存（未来加的话）
+data/cache/
