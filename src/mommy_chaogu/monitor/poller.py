@@ -23,6 +23,7 @@ from typing import TextIO
 from mommy_chaogu.market_data import MarketDataAdapter, Quote
 from mommy_chaogu.market_data.types import MoneyFlow
 from mommy_chaogu.monitor.output import format_log_line, format_table
+from mommy_chaogu.signals import Alerter
 from mommy_chaogu.watchlist import StockEntry, WatchlistStore
 
 _log = logging.getLogger(__name__)
@@ -94,11 +95,13 @@ class Monitor:
         adapter: MarketDataAdapter,
         log_path: Path | None = None,
         stream: TextIO | None = None,
+        alerter: Alerter | None = None,
     ) -> None:
         self.store = store
         self.adapter = adapter
         self.log_path = log_path
         self.stream = stream or sys.stdout
+        self.alerter = alerter
         self._snapshot_id = 0
 
         # 准备日志
@@ -233,6 +236,16 @@ class Monitor:
                     snap = self.snapshot_now()
                     self.print_snapshot(snap, clear_screen=clear_screen)
                     self.write_log(snap)
+
+                    # 信号评估
+                    if self.alerter is not None:
+                        signals = self.alerter.evaluate(snap)
+                        if signals:
+                            self.stream.write("\n")
+                            self.stream.write(self.alerter.format_signals(signals))
+                            self.stream.write("\n")
+                            self.stream.flush()
+                            self.alerter.write_signals_log(signals)
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:

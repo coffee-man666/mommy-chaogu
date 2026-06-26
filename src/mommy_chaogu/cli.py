@@ -27,6 +27,7 @@ from typing import NoReturn
 
 from mommy_chaogu.market_data import EfinanceAdapter
 from mommy_chaogu.monitor import Monitor
+from mommy_chaogu.signals import Alerter
 from mommy_chaogu.watchlist import WatchlistStore
 from mommy_chaogu.watchlist.store import (
     GroupAlreadyExistsError,
@@ -38,6 +39,7 @@ from mommy_chaogu.watchlist.store import (
 
 DEFAULT_DB_PATH = Path("data/watchlist.db")
 DEFAULT_LOG_PATH = Path("data/monitor.log")
+DEFAULT_SIGNALS_LOG_PATH = Path("data/signals.log")
 
 
 # ---------- 共用 ----------
@@ -232,10 +234,19 @@ def cmd_monitor_snapshot(args: argparse.Namespace) -> int:
     s = _store(args)
     adp = EfinanceAdapter()
     log_path = Path(args.log) if args.log else None
+    signals_log_path = Path(args.signals_log) if args.signals_log else None
     m = Monitor(s, adp, log_path=log_path)
     snap = m.snapshot_now()
     m.print_snapshot(snap, clear_screen=False)
     m.write_log(snap)
+
+    # 信号评估
+    if args.with_signals:
+        alerter = Alerter.default(log_path=signals_log_path)
+        signals = alerter.evaluate(snap)
+        print()
+        print(alerter.format_signals(signals))
+        alerter.write_signals_log(signals)
     return 0
 
 
@@ -243,7 +254,8 @@ def cmd_monitor_run(args: argparse.Namespace) -> int:
     s = _store(args)
     adp = EfinanceAdapter()
     log_path = Path(args.log) if args.log else None
-    m = Monitor(s, adp, log_path=log_path)
+    signals_log_path = Path(args.signals_log) if args.signals_log else None
+    m = Monitor(s, adp, log_path=log_path, alerter=Alerter.default(log_path=signals_log_path) if args.with_signals else None)
     m.run(
         interval_seconds=args.interval,
         max_iterations=args.max_iterations,
@@ -264,6 +276,43 @@ def cmd_monitor_log(args: argparse.Namespace) -> int:
     print("".join(tail), end="")
     if not tail or not tail[-1].endswith("\n"):
         print()
+    return 0
+
+
+def cmd_monitor_signals(args: argparse.Namespace) -> int:
+    """查看 signals.log 历史信号。"""
+    log_path = Path(args.signals_log)
+    if not log_path.exists():
+        print(f"信号日志文件不存在: {log_path}")
+        return 1
+    with log_path.open("r", encoding="utf-8") as f:
+        lines = f.readlines()
+    tail = lines[-args.tail:] if args.tail > 0 else lines
+    print(f"📡 信号日志 (最后 {len(tail)} 条):")
+    print("─" * 60)
+    print("".join(tail), end="")
+    if not tail or not tail[-1].endswith("\n"):
+        print()
+    return 0
+
+
+def cmd_monitor_rules(_args: argparse.Namespace) -> int:
+    """列出所有内置规则 + 默认配置。"""
+    from mommy_chaogu.signals.rules import RULES_REGISTRY  # noqa: F401
+    print("📐 内置告警规则")
+    print("=" * 70)
+    print(f"{'rule_id':<28} {'enabled':<8} {'severity':<10} {'params'}")
+    print("─" * 70)
+    from mommy_chaogu.signals.rules import default_rules
+    for rule in default_rules():
+        cfg = rule.config
+        params_str = ", ".join(f"{k}={v}" for k, v in cfg.params.items())
+        if len(params_str) > 40:
+            params_str = params_str[:37] + "..."
+        print(f"{rule.rule_id:<28} {cfg.enabled!s:<8} "
+              f"{cfg.severity.value:<10} {params_str}")
+    print()
+    print("💡 自定义阈值：在 pyproject 里配 / 或代码里 new RuleWithConfig(...)")
     return 0
 
 
@@ -293,11 +342,14 @@ def build_monitor_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})")
     p.add_argument("--log", default=str(DEFAULT_LOG_PATH), help=f"日志路径 (默认 {DEFAULT_LOG_PATH})")
+    p.add_argument("--signals-log", default=str(DEFAULT_SIGNALS_LOG_PATH),
+                   help=f"信号日志路径 (默认 {DEFAULT_SIGNALS_LOG_PATH})")
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
     # snapshot
     p_s = sub.add_parser("snapshot", help="拉一次快照并打印")
+    p_s.add_argument("--with-signals", "-S", action="store_true", help="同时评估告警信号")
     p_s.set_defaults(func=cmd_monitor_snapshot)
 
     # run
@@ -305,12 +357,22 @@ def build_monitor_parser() -> argparse.ArgumentParser:
     p_r.add_argument("--interval", "-i", type=float, default=30.0, help="轮询间隔秒 (默认 30)")
     p_r.add_argument("--max-iterations", "-n", type=int, default=None, help="最大轮询次数")
     p_r.add_argument("--no-clear", action="store_true", help="不清屏，追加输出")
+    p_r.add_argument("--with-signals", "-S", action="store_true", help="同时评估告警信号")
     p_r.set_defaults(func=cmd_monitor_run)
 
     # log
     p_l = sub.add_parser("log", help="查看监控日志（tail）")
     p_l.add_argument("--tail", "-n", type=int, default=20, help="最后 N 行 (默认 20)")
     p_l.set_defaults(func=cmd_monitor_log)
+
+    # signals
+    p_sig = sub.add_parser("signals", help="查看信号日志（tail）")
+    p_sig.add_argument("--tail", "-n", type=int, default=20, help="最后 N 行 (默认 20)")
+    p_sig.set_defaults(func=cmd_monitor_signals)
+
+    # rules
+    p_rl = sub.add_parser("rules", help="列出所有内置告警规则")
+    p_rl.set_defaults(func=cmd_monitor_rules)
 
     # stats
     p_st = sub.add_parser("stats", help="自选池 + 快照汇总")
