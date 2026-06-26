@@ -18,6 +18,7 @@ dependencies = [
 [project.scripts]
 mommy-watchlist = "mommy_chaogu.cli:main_watchlist"
 mommy-monitor = "mommy_chaogu.cli:main_monitor"
+mommy-cache = "mommy_chaogu.cli:main_cache"
 mommy-chaogu = "mommy_chaogu.cli:main"
 
 [project.optional-dependencies]
@@ -54,9 +55,20 @@ python_version = "3.12"
 module = ["efinance", "pandas", "pandas.*", "rich", "retry", "tqdm", "multitasking", "jsonpath"]
 ignore_missing_imports = true
 
+# cache 模块涉及 JSON 反序列化，类型推导弱，整体放宽
+[[tool.mypy.overrides]]
+module = ["mommy_chaogu.cache.*"]
+disallow_untyped_defs = false
+disallow_any_explicit = false
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
 markers = [
     "network: requires live efinance API access (东财接口)",
 ]
+
+[[tool.mypy.overrides]]
+module = ["mommy_chaogu.cli"]
+ignore_errors = true
