@@ -29,6 +29,8 @@ _log = logging.getLogger(__name__)
 def create_app(
     db_path: Path | None = None,
     poll_interval_seconds: float = 5.0,
+    server_chan_key: str | None = None,
+    web_base_url: str = "",
 ) -> FastAPI:
     """FastAPI app 工厂。
 
@@ -56,11 +58,47 @@ def create_app(
         adapter = get_adapter()
         watchlist_store = get_watchlist_store()
         alerter = get_alerter()
+
+        # 初始化推送（如果配置了 Server酱 SendKey）
+        notifier = None
+        if server_chan_key:
+            from mommy_chaogu.push import (
+                JsonFileDeduper,
+                ServerChanPusher,
+                SignalNotifier,
+            )
+            from mommy_chaogu.signals import SignalSeverity
+
+            push_db = (db_path or Path("data/watchlist.db")).parent / "pushed.json"
+            try:
+                pusher = ServerChanPusher(
+                    send_key=server_chan_key,
+                    web_base_url=web_base_url,
+                )
+                deduper = JsonFileDeduper(push_db)
+                notifier = SignalNotifier(
+                    pusher=pusher,
+                    deduper=deduper,
+                    severity_threshold=SignalSeverity.WARNING,  # info 不推
+                    web_base_url=web_base_url,
+                )
+                _log.info(
+                    "✅ Server酱推送已启用（web_base_url=%s, dedup=%s）",
+                    web_base_url or "(none)",
+                    push_db,
+                )
+            except Exception:
+                _log.exception("推送初始化失败，将以无推送模式运行")
+                notifier = None
+        else:
+            _log.info("未配置 Server酱 SendKey，跳过推送（仅 Web UI）")
+
         service = BackgroundService(
             adapter=adapter,
             watchlist=watchlist_store,
             alerter=alerter,
             poll_interval_seconds=poll_interval_seconds,
+            notifier=notifier,
         )
         set_service(service)
         await service.start()

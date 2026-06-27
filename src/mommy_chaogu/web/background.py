@@ -22,15 +22,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from mommy_chaogu.monitor import Monitor, Snapshot
+from mommy_chaogu.push import SignalNotifier
 from mommy_chaogu.signals import Alerter
 from mommy_chaogu.watchlist import WatchlistStore
 
 if TYPE_CHECKING:
+
     from fastapi import WebSocket
 
     from mommy_chaogu.market_data import MarketDataAdapter
@@ -51,11 +52,13 @@ class BackgroundService:
         watchlist: WatchlistStore,
         alerter: Alerter,
         poll_interval_seconds: float = 5.0,
+        notifier: SignalNotifier | None = None,
     ) -> None:
         self.adapter = adapter
         self.watchlist = watchlist
         self.alerter = alerter
         self.poll_interval = poll_interval_seconds
+        self.notifier = notifier
 
         self.monitor = Monitor(
             store=watchlist,
@@ -70,6 +73,7 @@ class BackgroundService:
         self._latest_signals: list[Any] = []
         self._last_poll_at: datetime | None = None
         self._started_at: datetime = _utcnow()
+        self._pushed_signals: list[Any] = []  # 最近推送成功的信号
 
         # WS 客户端集合
         self._quote_subscribers: set[WebSocket] = set()
@@ -127,6 +131,17 @@ class BackgroundService:
         # 信号评估
         signals = self.alerter.evaluate(snapshot)
         self._latest_signals = signals
+
+        # 推送（如果配置了 notifier）
+        if self.notifier and signals:
+            try:
+                pushed = self.notifier.notify_batch(signals)
+                if pushed:
+                    self._pushed_signals.extend(pushed)
+                    # 保留最近 100 条
+                    self._pushed_signals = self._pushed_signals[-100:]
+            except Exception:
+                _log.exception("notifier notify failed (signals broadcast will continue)")
 
         # 广播
         if self._quote_subscribers:
@@ -195,6 +210,11 @@ class BackgroundService:
 
     def last_poll_at(self) -> datetime | None:
         return self._last_poll_at
+
+    @property
+    def pushed_signals(self) -> list[Any]:
+        """最近推送成功的信号（最近 100 条）。"""
+        return self._pushed_signals
 
 
 # 全局单例（FastAPI lifespan 管理生命周期）

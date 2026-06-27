@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import NoReturn
@@ -589,6 +590,16 @@ def build_web_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8000, help="监听端口 (默认 8000)")
     p.add_argument("--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})")
     p.add_argument("--poll-interval", type=float, default=5.0, help="后台轮询间隔（秒）(默认 5)")
+    p.add_argument(
+        "--server-chan-key",
+        default=os.environ.get("SERVER_CHAN_KEY", ""),
+        help="Server酱 SendKey（启用微信推送，默认读 $SERVER_CHAN_KEY）",
+    )
+    p.add_argument(
+        "--web-base-url",
+        default=os.environ.get("WEB_BASE_URL", ""),
+        help="Web 前端的公网/HTTPS URL（推送消息里带 K 线链接用）",
+    )
     p.add_argument("--reload", action="store_true", help="开发模式热重载")
     p.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
     return p
@@ -603,6 +614,8 @@ def cmd_web_serve(args: argparse.Namespace) -> int:
     app = create_app(
         db_path=Path(args.db),
         poll_interval_seconds=args.poll_interval,
+        server_chan_key=args.server_chan_key or None,
+        web_base_url=args.web_base_url,
     )
     uvicorn.run(
         app,
