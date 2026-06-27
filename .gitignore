@@ -37,3 +37,4 @@ htmlcov/
 
 # 行情数据缓存（未来加的话）
 data/cache/
+data/

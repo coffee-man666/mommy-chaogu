@@ -13,12 +13,17 @@ dependencies = [
     "pandas>=2.2",
     "requests>=2.32",
     "sqlalchemy>=2.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "websockets>=13",
 ]
 
 [project.scripts]
 mommy-watchlist = "mommy_chaogu.cli:main_watchlist"
 mommy-monitor = "mommy_chaogu.cli:main_monitor"
 mommy-cache = "mommy_chaogu.cli:main_cache"
+mommy-web = "mommy_chaogu.cli:main_web"
 mommy-chaogu = "mommy_chaogu.cli:main"
 
 [project.optional-dependencies]
@@ -28,6 +33,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-requests",
+    "httpx>=0.27",  # FastAPI 测试客户端
 ]
 
 [build-system]
@@ -67,13 +73,22 @@ ignore_errors = true
 module = ["mommy_chaogu.market_data.tencent_adapter", "mommy_chaogu.market_data.fallback_adapter"]
 ignore_errors = true
 
+# web 模块涉及 FastAPI 依赖注入和 Pydantic，类型相对弱
+[[tool.mypy.overrides]]
+module = ["mommy_chaogu.web.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["mommy_chaogu.cli"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["fastapi", "uvicorn", "starlette", "httpx"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
 markers = [
     "network: requires live efinance API access (东财接口)",
 ]
-
-[[tool.mypy.overrides]]
-module = ["mommy_chaogu.cli"]
-ignore_errors = true

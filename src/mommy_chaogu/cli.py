@@ -576,5 +576,49 @@ def main_cache() -> NoReturn:
     sys.exit(args.func(args))
 
 
+# ============================================================
+# web 子命令
+# ============================================================
+
+def build_web_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="mommy-web",
+        description="妈妈炒股 - Web 后端服务（FastAPI + WebSocket）",
+    )
+    p.add_argument("--host", default="0.0.0.0", help="监听地址 (默认 0.0.0.0)")
+    p.add_argument("--port", type=int, default=8000, help="监听端口 (默认 8000)")
+    p.add_argument("--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})")
+    p.add_argument("--poll-interval", type=float, default=5.0, help="后台轮询间隔（秒）(默认 5)")
+    p.add_argument("--reload", action="store_true", help="开发模式热重载")
+    p.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
+    return p
+
+
+def cmd_web_serve(args: argparse.Namespace) -> int:
+    """启动 Web 服务。"""
+    import uvicorn
+
+    from mommy_chaogu.web import create_app
+
+    app = create_app(
+        db_path=Path(args.db),
+        poll_interval_seconds=args.poll_interval,
+    )
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        log_level=args.log_level,
+    )
+    return 0
+
+
+def main_web() -> NoReturn:
+    parser = build_web_parser()
+    args = parser.parse_args()
+    sys.exit(cmd_web_serve(args))
+
+
 if __name__ == "__main__":
     main()

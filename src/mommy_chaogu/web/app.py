@@ -1,0 +1,131 @@
+"""FastAPI app factory。
+
+用法：
+    from mommy_chaogu.web import create_app
+    app = create_app()
+
+    # 开发模式
+    uvicorn mommy_chaogu.web.app:create_app --factory --reload
+"""
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from mommy_chaogu.web.background import BackgroundService, set_service
+from mommy_chaogu.web.deps import get_adapter, get_alerter, get_watchlist_store
+from mommy_chaogu.web.routes import cache, quotes, signals, watchlist, ws
+from mommy_chaogu.web.schemas import HealthOut
+
+_log = logging.getLogger(__name__)
+
+
+def create_app(
+    db_path: Path | None = None,
+    poll_interval_seconds: float = 5.0,
+) -> FastAPI:
+    """FastAPI app 工厂。
+
+    参数：
+        db_path: 自选股/缓存数据库路径（None 用默认 data/watchlist.db）
+        poll_interval_seconds: 后台轮询间隔（秒）
+    """
+    if db_path is not None:
+        # 覆盖默认 db 路径
+        from mommy_chaogu.web import deps
+
+        deps.get_db_path.cache_clear()  # type: ignore[attr-defined]
+
+        def _custom_db_path() -> Path:
+            return db_path
+
+        deps.get_db_path = _custom_db_path  # type: ignore[assignment]
+        deps.get_adapter.cache_clear()  # type: ignore[attr-defined]
+        deps.get_watchlist_store.cache_clear()  # type: ignore[attr-defined]
+        deps.get_alerter.cache_clear()  # type: ignore[attr-defined]
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        """后台轮询启停。"""
+        adapter = get_adapter()
+        watchlist_store = get_watchlist_store()
+        alerter = get_alerter()
+        service = BackgroundService(
+            adapter=adapter,
+            watchlist=watchlist_store,
+            alerter=alerter,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+        set_service(service)
+        await service.start()
+        try:
+            yield
+        finally:
+            await service.stop()
+
+    app = FastAPI(
+        title="mommy-chaogu API",
+        description="妈妈炒股的 Web 后端",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+
+    # CORS（开发期 H5 跨域）
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # 路由
+    app.include_router(quotes.router)
+    app.include_router(watchlist.router)
+    app.include_router(signals.router)
+    app.include_router(cache.router)
+    app.include_router(ws.router)
+
+    # 健康检查
+    @app.get("/api/health")
+    def health() -> HealthOut:
+        from mommy_chaogu.web.background import get_service
+        from mommy_chaogu.web.deps import get_db_path
+
+        svc = get_service()
+        adapter = get_adapter()
+        return HealthOut(
+            ok=True,
+            adapter_name=adapter.name,
+            db_path=str(get_db_path()),
+            uptime_seconds=svc.uptime_seconds(),
+            last_snapshot_at=svc.last_poll_at(),
+        )
+
+    @app.get("/")
+    def root() -> dict[str, str]:
+        return {
+            "name": "mommy-chaogu",
+            "version": "0.1.0",
+            "docs": "/docs",
+            "health": "/api/health",
+        }
+
+    # 静态文件（构建后的前端）
+    static_dir = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+    if static_dir.exists():
+        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
+        _log.info("static files mounted at %s", static_dir)
+    else:
+        _log.info("frontend dist not found at %s — API only", static_dir)
+
+    return app
+
+
+__all__ = ["create_app"]
