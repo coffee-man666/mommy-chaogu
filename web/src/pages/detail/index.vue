@@ -191,7 +191,11 @@ onUnmounted(() => {
     </div>
 
     <div class="orderbook" v-if="orderBook">
-      <div class="section-title">5档盘口</div>
+      <div class="section-title">
+        5档盘口
+        <span class="ob-legend"><span class="dot sell"></span>卖盘</span>
+        <span class="ob-legend"><span class="dot buy"></span>买盘</span>
+      </div>
       <div class="orderbook-cols">
         <div class="asks">
           <div class="ob-row" v-for="(lv, i) in orderBook.asks.slice().reverse()" :key="`a${i}`">
@@ -333,7 +337,29 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
+
+.ob-legend {
+  font-size: 11px;
+  font-weight: normal;
+  color: #666;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ob-legend .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.ob-legend .dot.sell { background: #c83e3e; }
+.ob-legend .dot.buy { background: #2d8e3d; }
 
 .orderbook-cols {
   display: flex;
@@ -347,12 +373,13 @@ onUnmounted(() => {
 .ob-row {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
-  padding: 4px 0;
+  font-size: 14px;
+  padding: 5px 0;
   font-family: 'Courier New', monospace;
 }
 
-.asks .price { color: #2d8e3d; }
-.bids .price { color: #c83e3e; }
-.volume { color: #999; }
+/* A股约定：卖=红，买=绿 */
+.asks .price { color: #c83e3e; font-weight: 600; }
+.bids .price { color: #2d8e3d; font-weight: 600; }
+.volume { color: #666; font-size: 12px; }
 </style>

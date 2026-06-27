@@ -12,44 +12,67 @@ const showAdd = ref(false)
 const newCode = ref('')
 const newGroup = ref('')
 const newNote = ref('')
+const adding = ref(false)
+const removing = ref<string | null>(null)
+const refreshing = ref(false)
+const lastRefresh = ref<Date>(new Date())
 
 async function load() {
   try {
-    watchlist.value = await listWatchlist()
-    groups.value = await listGroups()
-    cache.value = await cacheStats()
-    healthInfo.value = await health()
+    const [w, g, c, h] = await Promise.all([
+      listWatchlist(),
+      listGroups(),
+      cacheStats(),
+      health()
+    ])
+    watchlist.value = w
+    groups.value = g
+    cache.value = c
+    healthInfo.value = h
+    lastRefresh.value = new Date()
   } catch (e) {
     console.error(e)
   }
 }
 
+async function refreshNow() {
+  refreshing.value = true
+  await load()
+  refreshing.value = false
+}
+
 async function doAdd() {
   if (!newCode.value.trim() || !newGroup.value.trim()) {
-    alert('请填写代码和分组')
+    alert('⚠️ 请填写代码和分组')
     return
   }
+  adding.value = true
   try {
     await addStock(newCode.value.trim(), newGroup.value.trim(), newNote.value.trim())
     newCode.value = ''
     newGroup.value = ''
     newNote.value = ''
     showAdd.value = false
-    alert('已添加')
+    alert('✅ 已添加')
     load()
   } catch (e: any) {
-    alert(e.message || '添加失败')
+    alert('❌ ' + (e.message || '添加失败'))
+  } finally {
+    adding.value = false
   }
 }
 
 async function doRemove(s: WatchlistStock) {
-  if (!confirm(`从 ${s.group} 删除 ${s.code} ${s.name}？`)) return
+  if (!confirm(`从「${s.group}」删除 ${s.code} ${s.name}？`)) return
+  removing.value = `${s.code}-${s.group}`
   try {
     await removeStock(s.code, s.group)
-    alert('已删除')
+    alert('✅ 已删除')
     load()
   } catch (e: any) {
-    alert(e.message || '删除失败')
+    alert('❌ ' + (e.message || '删除失败'))
+  } finally {
+    removing.value = null
   }
 }
 
@@ -60,7 +83,16 @@ function fmtHitRate(r: number): string {
 function fmtAge(s: number): string {
   if (s < 60) return `${Math.floor(s)}秒`
   if (s < 3600) return `${Math.floor(s / 60)}分`
-  return `${Math.floor(s / 3600)}时${Math.floor((s % 3600) / 60)}分`
+  if (s < 86400) return `${Math.floor(s / 3600)}时${Math.floor((s % 3600) / 60)}分`
+  return `${Math.floor(s / 86400)}天`
+}
+
+function fmtLastRefresh(): string {
+  const now = new Date()
+  const diff = (now.getTime() - lastRefresh.value.getTime()) / 1000
+  if (diff < 5) return '刚刚'
+  if (diff < 60) return `${Math.floor(diff)}秒前`
+  return `${Math.floor(diff / 60)}分钟前`
 }
 
 let timer: number | null = null
@@ -78,11 +110,18 @@ onUnmounted(() => {
 <template>
   <div class="settings-page">
     <header class="header">
-      <div class="title">设置</div>
+      <div class="header-row">
+        <div class="title">设置</div>
+        <button class="refresh-btn" @click="refreshNow" :disabled="refreshing">
+          <span :class="['refresh-icon', { spinning: refreshing }]">↻</span>
+          {{ refreshing ? '刷新中' : '刷新' }}
+        </button>
+      </div>
+      <div class="subtitle">上次刷新 {{ fmtLastRefresh() }}</div>
     </header>
 
     <div class="card" v-if="healthInfo">
-      <div class="card-title">服务状态</div>
+      <div class="card-title">🩺 服务状态</div>
       <div class="card-row">
         <span class="label">数据源</span>
         <span class="value">{{ healthInfo.adapter_name }}</span>
@@ -101,10 +140,12 @@ onUnmounted(() => {
     </div>
 
     <div class="card" v-if="cache">
-      <div class="card-title">缓存状态</div>
+      <div class="card-title">📦 缓存状态</div>
       <div class="card-row">
         <span class="label">命中率</span>
-        <span class="value">{{ fmtHitRate(cache.hit_rate) }}</span>
+        <span class="value" :style="{ color: Number(cache.hit_rate) >= 0.8 ? '#2d8e3d' : '#c83e3e' }">
+          {{ fmtHitRate(cache.hit_rate) }}
+        </span>
       </div>
       <div class="card-row">
         <span class="label">命中 / 未命中</span>
@@ -124,7 +165,8 @@ onUnmounted(() => {
     </div>
 
     <div class="card">
-      <div class="card-title">分组 ({{ groups.length }})</div>
+      <div class="card-title">📂 分组 ({{ groups.length }})</div>
+      <div v-if="!groups.length" class="empty-hint-card">还没有分组</div>
       <div v-for="g in groups" :key="g.name" class="group-row">
         <span class="group-name">{{ g.name }}</span>
         <span class="group-count">{{ g.n_stocks }} 只</span>
@@ -133,24 +175,46 @@ onUnmounted(() => {
 
     <div class="card">
       <div class="card-title">
-        自选股 ({{ watchlist.length }})
-        <span class="add-btn" @click="showAdd = !showAdd">+ 添加</span>
+        ⭐ 自选股 ({{ watchlist.length }})
+        <span class="add-btn" @click="showAdd = !showAdd">
+          {{ showAdd ? '✕ 取消' : '+ 添加' }}
+        </span>
       </div>
 
       <div v-if="showAdd" class="add-form">
-        <input v-model="newCode" placeholder="股票代码 600519" class="input" />
-        <input v-model="newGroup" placeholder="分组名 白酒" class="input" />
+        <input v-model="newCode" placeholder="股票代码（如 600519）" class="input" inputmode="numeric" maxlength="6" />
+        <input v-model="newGroup" placeholder="分组名（如 白酒，新分组会自动创建）" class="input" />
         <input v-model="newNote" placeholder="备注（可选）" class="input" />
-        <button class="submit-btn" @click="doAdd">保存</button>
+        <button class="submit-btn" @click="doAdd" :disabled="adding">
+          {{ adding ? '添加中...' : '保存' }}
+        </button>
       </div>
 
-      <div v-for="s in watchlist" :key="`${s.code}-${s.group}`" class="stock-row">
-        <div class="stock-info">
-          <span class="stock-name">{{ s.name }}</span>
-          <span class="stock-code">{{ s.code }} · {{ s.group }}</span>
-        </div>
-        <span class="del-btn" @click="doRemove(s)">删除</span>
+      <div v-if="!watchlist.length" class="empty-hint-card">
+        还没有自选股，点击「+ 添加」开始
       </div>
+
+      <div
+        v-for="s in watchlist"
+        :key="`${s.code}-${s.group}`"
+        class="stock-row"
+      >
+        <div class="stock-info">
+          <div class="stock-name">{{ s.name }}</div>
+          <div class="stock-code">{{ s.code }} · {{ s.group }}<span v-if="s.note"> · {{ s.note }}</span></div>
+        </div>
+        <button
+          class="del-btn"
+          @click="doRemove(s)"
+          :disabled="removing === `${s.code}-${s.group}`"
+        >
+          {{ removing === `${s.code}-${s.group}` ? '删除中' : '删除' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="footer-tip">
+      数据来源：东方财富 + 腾讯财经 · 由 Mac mini 本地服务提供
     </div>
   </div>
 </template>
@@ -159,12 +223,20 @@ onUnmounted(() => {
 .settings-page {
   min-height: 100vh;
   background: #f5f5f5;
+  padding-bottom: 24px;
 }
 
 .header {
   background: #c83e3e;
   color: white;
-  padding: 20px 16px 16px;
+  padding: 18px 16px 14px;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
 }
 
 .title {
@@ -172,16 +244,57 @@ onUnmounted(() => {
   font-weight: bold;
 }
 
+.refresh-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 6px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.6;
+}
+
+.refresh-btn:active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.refresh-icon {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.subtitle {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
 .card {
   background: white;
-  margin: 10px;
+  margin: 12px;
   padding: 16px;
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 .card-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 12px;
   display: flex;
   justify-content: space-between;
@@ -191,103 +304,146 @@ onUnmounted(() => {
 .card-row {
   display: flex;
   justify-content: space-between;
-  padding: 4px 0;
+  padding: 5px 0;
   font-size: 14px;
 }
 
 .card-row .label { color: #999; }
-.card-row .value { color: #333; font-family: 'Courier New', monospace; }
+.card-row .value { color: #333; font-family: 'Courier New', monospace; font-weight: 600; }
 
 .add-btn {
   background: #c83e3e;
   color: white;
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 5px 12px;
+  border-radius: 14px;
   font-size: 13px;
   cursor: pointer;
   user-select: none;
+  font-weight: 600;
+}
+
+.add-btn:active {
+  background: #a52828;
+}
+
+.empty-hint-card {
+  text-align: center;
+  padding: 16px;
+  color: #999;
+  font-size: 13px;
 }
 
 .freshness-list {
   margin-top: 12px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid #f0f0f0;
   padding-top: 12px;
 }
 
 .freshness-title {
   font-size: 13px;
   color: #999;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  font-weight: 600;
 }
 
 .freshness-row {
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .freshness-row .code { color: #333; }
-.freshness-row .age { color: #666; font-family: 'Courier New', monospace; }
+.freshness-row .age {
+  color: #666;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
 
 .group-row {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
+  align-items: center;
+  padding: 10px 0;
   border-bottom: 1px solid #f5f5f5;
 }
 
-.group-name { font-size: 15px; }
-.group-count { font-size: 13px; color: #999; }
+.group-row:last-child { border-bottom: none; }
+
+.group-name { font-size: 15px; font-weight: 500; }
+.group-count {
+  font-size: 12px;
+  color: #999;
+  background: #f5f5f5;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
 
 .add-form {
   background: #f8f8f8;
   padding: 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   margin-bottom: 12px;
 }
 
 .input {
   display: block;
   background: white;
-  padding: 8px;
-  border-radius: 4px;
+  padding: 10px;
+  border-radius: 6px;
   font-size: 14px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   width: 100%;
   border: 1px solid #ddd;
   font-family: inherit;
   box-sizing: border-box;
 }
 
+.input:focus {
+  outline: none;
+  border-color: #c83e3e;
+}
+
 .submit-btn {
   background: #c83e3e;
   color: white;
-  padding: 8px;
+  padding: 10px;
   border-radius: 6px;
   font-size: 14px;
   width: 100%;
   border: none;
   margin-top: 4px;
   cursor: pointer;
+  font-weight: 600;
+}
+
+.submit-btn:disabled {
+  opacity: 0.6;
+}
+
+.submit-btn:active:not(:disabled) {
+  background: #a52828;
 }
 
 .stock-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0;
   border-bottom: 1px solid #f5f5f5;
 }
 
+.stock-row:last-child { border-bottom: none; }
+
 .stock-info {
   flex: 1;
+  min-width: 0;
 }
 
 .stock-name {
   font-size: 15px;
-  font-weight: 500;
-  margin-right: 8px;
+  font-weight: 600;
+  margin-bottom: 2px;
 }
 
 .stock-code {
@@ -298,7 +454,28 @@ onUnmounted(() => {
 .del-btn {
   color: #c83e3e;
   font-size: 13px;
-  padding: 4px 10px;
+  padding: 6px 14px;
   cursor: pointer;
+  background: white;
+  border: 1px solid #c83e3e;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.del-btn:active:not(:disabled) {
+  background: #c83e3e;
+  color: white;
+}
+
+.del-btn:disabled {
+  opacity: 0.6;
+}
+
+.footer-tip {
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+  padding: 24px 16px;
+  line-height: 1.6;
 }
 </style>
