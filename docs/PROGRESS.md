@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-06-27
+最后更新：2026-06-27 19:35
 
 ---
 
@@ -10,236 +10,200 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **M2.5 完成，M3 起步** |
-| 代码量 | **~6900 行**（src 4593 + tests 1891 + scripts 391） |
-| 测试 | **125 个，119 离线通过 + 6 efinance 实时网络**（凌晨抽风时偶发挂） |
+| 项目阶段 | **M3.0 完成（Web UI 跑通），M3.1 待启动** |
+| 代码量 | **~10000 行**（Python src 6900 + tests 1891 + scripts 391 + web 2000） |
+| 测试 | **125 个**（119 离线通过 + 6 efinance 实时网络） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
-| 文档 | **本次新增 DESIGN + LEDGER + PROGRESS** |
-| 实战验证 | ✅ 凌晨东财挂、腾讯顶上、5 只自选股 + 8 条信号全触发 |
+| 文档 | DESIGN / LEDGER / PROGRESS / WEB-UI-PROPOSAL 4 份齐 |
+| **实战验证** | ✅ **妈妈今天已能用** — Mac mini 跑服务，手机访问 192.168.10.84:8765 |
 
 ---
 
 ## 当前架构总览
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  CLI (mommy-chaogu)                                          │
-│  ├─ mommy-watchlist (自选股管理)                              │
-│  ├─ mommy-monitor (实时监控)                                  │
-│  └─ mommy-cache (缓存管理)                                    │
-└────────┬─────────────────────────────────────────────────────┘
-         │
-         ↓
-┌──────────────────────────────────────────────────────────────┐
-│  业务层                                                      │
-│  ├─ monitor.poller   (snapshot / 持续轮询)                    │
-│  ├─ signals.alerter  (7 条规则 + 落盘)                        │
-│  └─ watchlist.store  (Group + StockEntry)                    │
-└────────┬─────────────────────────────────────────────────────┘
-         │
-         ↓  (all via MarketDataAdapter Protocol)
-┌──────────────────────────────────────────────────────────────┐
-│  装饰器链                                                    │
-│  ┌────────────────────────────────────────┐                  │
-│  │ CachedMarketDataAdapter               │ ← 缓存 + 节流    │
-│  │  ├─ DB 命中 → 直接返回 [hit]           │                  │
-│  │  ├─ DB miss → 拉新 → 写回 [miss]       │                  │
-│  │  └─ 拉新失败 → 静默 fallback 旧数据     │                  │
-│  └────────────────────────────────────────┘                  │
-│           ↓                                                   │
-│  ┌────────────────────────────────────────┐                  │
-│  │ FallbackAdapter                        │ ← 多源 fallback │
-│  │  ├─ EfinanceAdapter (主)                │                  │
-│  │  └─ TencentAdapter  (备)                │                  │
-│  └────────────────────────────────────────┘                  │
-└────────┬─────────────────────────────────────────────────────┘
-         │
-         ↓
-┌──────────────────────────────────────────────────────────────┐
-│  数据源                                                      │
-│  ├─ qt.gtimg.cn (腾讯)   行情 + 5 档                          │
-│  └─ push2.eastmoney.com (东财)  K线 + 资金流 + 板块 + 全市场   │
-└──────────────────────────────────────────────────────────────┘
+              📱 妈妈手机（Web）
+                    ↓ HTTP/WS
+        ┌─────────────────────────────┐
+        │  Vite-built 静态文件         │ ← web/dist/（H5 + 移动端友好）
+        └────────────┬────────────────┘
+                     ↓
+        ┌─────────────────────────────┐
+        │  FastAPI (uvicorn :8765)    │ ← mommy-web 子命令
+        │  ├─ /api/* REST (14 端点)   │
+        │  ├─ /ws/* WebSocket          │
+        │  └─ 后台轮询（5s）+ WS 广播 │
+        └────────────┬────────────────┘
+                     ↓
+        ┌─────────────────────────────┐
+        │  BackgroundService          │ ← 单 asyncio task
+        │  每 5s：snapshot + signals   │
+        └────────────┬────────────────┘
+                     ↓
+        ┌─────────────────────────────┐
+        │  CachedMarketDataAdapter    │ ← 缓存 + 节流 + 拉新失败静默 fallback
+        │  ↓                           │
+        │  FallbackAdapter            │
+        │  ├─ EfinanceAdapter (主)     │
+        │  └─ TencentAdapter  (备)     │
+        └─────────────────────────────┘
 ```
 
 ---
 
-## 已完成的里程碑
+## 已完成的里程碑（git log 全部 9 个 commit）
 
-### ✅ M0 — 行情数据层（2026-06-26）
-**Commit**：`dc8fd33` · **行数**：~800
+### ✅ 数据层（M0–M2.5，9 个 milestone）
+| ID | commit | 标题 | 行数 |
+|---|---|---|---|
+| M0 | `dc8fd33` | 通用行情数据层 + efinance 适配器 | ~800 |
+| M1 | `dac4f8d` | 自选池 + 实时监控 | ~800 |
+| M1.5 | `2a44ed8` | 7 条内置告警规则 + Alerter | ~900 |
+| M2 | `30fad29` | 时间戳驱动缓存 + 装饰器 | ~1900 |
+| M2.5 | `1910bc1` | TencentAdapter + FallbackAdapter（凌晨实战） | ~850 |
 
-- 11 个 dataclass + 4 个 StrEnum
-- `MarketDataAdapter` Protocol
-- `EfinanceAdapter` 覆盖 11 路数据
-- 冒烟脚本 11 段全绿
-
-### ✅ M1 — 自选池 + 监控（2026-06-26）
-**Commit**：`dac4f8d` · **行数**：~800
-
-- `watchlist/` SQLite + SQLAlchemy 2.0 ORM
-- `monitor/` snapshot + 持续轮询
-- CLI: `mommy-watchlist` / `mommy-monitor`
-- 控制台表格 + `data/monitor.log`
-
-### ✅ M1.5 — 信号告警（2026-06-26）
-**Commit**：`2a44ed8` · **行数**：~900
-
-- 7 条内置规则（价格/跳空/资金/量/换手/自选股联动）
-- `Alerter` 聚合 + 去重 + 落盘
-- 31 单测
-
-### ✅ M2 — 缓存层（2026-06-26）
-**Commit**：`30fad29` · **行数**：~1900
-
-- 5 张表 DDL（带双时间戳）
-- `CachedMarketDataAdapter` 装饰器
-- `CacheManager` warmup / refresh / stats / freshness
-- CLI: `mommy-cache` 6 子命令
-
-### ✅ M2.5 — 腾讯兜底（2026-06-27）
-**Commit**：`1910bc1` · **行数**：~850
-
-- `TencentAdapter`（qt.gtimg.cn）
-- `FallbackAdapter` 多源 fallback
-- **凌晨实战验证**：东财挂、腾讯顶、5/5 成功
-
-### ✅ M0.5 — 文档体系（2026-06-27）
-**Commit**：（本次提交）· **行数**：~700（markdown）
-
-- `docs/DESIGN.md` — 架构 + 原则 + 5 份 ADR
-- `docs/LEDGER.md` — 5 个 milestone 逐条时间线
-- `docs/PROGRESS.md` — 本文
+### ✅ Web UI（M3.0，3 个 commit）
+| commit | 标题 | 内容 |
+|---|---|---|
+| `ee4170b` | FastAPI 后端 + WebSocket | 14 REST 端点 + 2 WS + 后台轮询 + 依赖注入 |
+| `8c9e38f` | Taro + Vue 3 + klinecharts（实验性，**已放弃**） | 踩坑：webpack 5.91 不兼容 / 加载器错位 / router 找不到页面实例 |
+| `eb23fe5` | **Vite + Vue 3 切换 + 4 页通过实测** | 切换到 Vite，15 分钟跑通 K 线 + 盘口 |
+| `22f4e8b` | UI 优化 for 妈妈 | 5档盘口修色 + 大字号 + 骨架屏 + 信号跳转 |
 
 ---
 
-## 当前功能矩阵
+## 当前功能矩阵（M3.0）
 
-| 能力 | 数据源 | 缓存 | 监控 | 信号 | 状态 |
+| 能力 | 数据源 | 缓存 | Web UI | 信号 | 状态 |
 |---|---|---|---|---|---|
-| 实时报价 | ✅ efin+tencent | ✅ | ✅ | ✅ | 🟢 |
-| 5 档盘口 | ✅ efin+tencent | ✅ | ❌ | ❌ | 🟡 |
-| K 线 | ✅ efinance | ✅ | ❌ | ❌ | 🟡 |
-| 资金流（当日） | ✅ efinance | ✅ | ✅ | ✅ | 🟢 |
-| 资金流（历史） | ✅ efinance | ✅ | ❌ | ❌ | 🟡 |
-| 板块列表 | ✅ efinance | ✅ | ❌ | ❌ | 🟡 |
-| 全市场快照 | ✅ efinance | ✅ | ✅ | ✅ | 🟢 |
-| 自选股分组 | — | — | ✅ | ✅ | 🟢 |
-| 信号告警 | — | — | ✅ | ✅ | 🟢 |
-| 数据新鲜度报告 | — | ✅ | ❌ | — | 🟢 |
+| 实时报价 | ✅ efin+tencent | ✅ | ✅ 首页 + 详情 | ✅ | 🟢 妈妈可用 |
+| 5 档盘口 | ✅ efin+tencent | ✅ | ✅ 详情页（卖=红 买=绿） | ❌ | 🟢 |
+| K 线（日/周/月 + 5/15/30/60 分） | ✅ efinance | ✅ | ✅ klinecharts + MA 均线 | ❌ | 🟢 |
+| 资金流（当日 + 历史） | ✅ efinance | ✅ | ⚠️ 仅显示主力净流入 | ✅ 主力阈值 | 🟢 |
+| 全市场快照 | ✅ efinance | ✅ | ⚠️ 自选股用 | ❌ | 🟢 |
+| 自选股分组管理 | — | ✅ | ✅ 设置页 CRUD | ❌ | 🟢 |
+| 信号告警（7 条规则） | — | — | ✅ 信号中心（可点击跳转） | ✅ 实时 | 🟢 |
+| 数据新鲜度报告 | — | ✅ | ✅ 设置页 | ❌ | 🟢 |
 
-🟢 完整可用 · 🟡 数据可达但未深度集成 · ❌ 未实现
+🟢 妈妈能用 · 🟡 数据可达未深度集成 · ❌ 未实现
+
+---
+
+## M3.0 已交付（Web UI MVP）
+
+### 后端（src/mommy_chaogu/web/）
+- `app.py` — FastAPI 工厂 + lifespan 管理后台轮询
+- `deps.py` — 依赖注入（单例 adapter / store / alerter）
+- `background.py` — 单 asyncio task 后台轮询 + WS 广播
+- `schemas.py` — 14 个 Pydantic 模型（Decimal → str）
+- `mappers.py` — dataclass → Pydantic 转换
+- `routes/{quotes,watchlist,signals,cache,ws}.py` — 5 个路由文件
+- CLI: `mommy-web --port 8765 --poll-interval 3`
+
+### 前端（web/）
+- Vite 6 + Vue 3 + TypeScript + vue-router
+- 4 个页面 + 1 个 App.vue（带底部 Tab）
+- klinecharts 9.8（金融图表专业库）
+- API 客户端（5 个模块）+ WebSocket 客户端（断线重连 + 心跳）
+
+### 实测（headless iPhone 14 viewport）
+| 页面 | 数据 | K 线 / 盘口 / 信号 |
+|---|---|---|
+| 首页 | 5 只自选股 + 主力合计 + 涨跌统计 | A 股红涨绿跌 + 主力箭头 + 骨架屏 |
+| 详情 | 完整报价 + 11 个数据点 | K 线 + MA5/10/30/60 + VOL MA + 5 档盘口 |
+| 信号 | 8 条触发（5 CRIT + 1 WARN + 1 INFO） | 严重度 emoji + 点击跳 K 线 |
+| 设置 | 服务状态 + 缓存 + 自选股 CRUD | 刷新按钮 + 缓存命中率 + 删除二次确认 |
 
 ---
 
 ## 测试覆盖
 
 ```
-tests/
-├── test_market_data/
-│   ├── test_types.py            13  # dataclass 验证
-│   ├── test_efinance_adapter.py 11  # 实时网络（凌晨抽风时挂）
-│   └── test_tencent_adapter.py  17  # 解析 + 边界
-├── test_watchlist/
-│   └── test_store.py            17  # CRUD
-├── test_monitor/
-│   └── test_poller.py           10  # 轮询逻辑（Mock）
-├── test_signals/
-│   └── test_rules.py            31  # 7 条规则各 3-5 case
-└── test_cache/
-    └── test_adapter.py          26  # 命中/拉新/失败 fallback/节流/历史
-                                  ──
-                              125 total
+src/mommy_chaogu/market_data/    13 dataclass + 11 efinance + 17 tencent (含 4 fallback 场景)
+src/mommy_chaogu/watchlist/       17 CRUD
+src/mommy_chaogu/monitor/         10 轮询（Mock adapter）
+src/mommy_chaogu/signals/         31 规则（每条 3-5 case）
+src/mommy_chaogu/cache/           26 命中/拉新/失败/节流/历史/Manager
+                              ───
+                              125 total（119 离线 + 6 live）
 ```
 
-- **离线 119 个全绿**（Mock adapter + 单元逻辑）
-- **efinance 实时网络 6 个** — 凌晨东财抽风时挂，正常时段全绿
-- 后续可加 `pytest -m "not live"` 跳过网络测试
+- `ruff`: All checks passed
+- `mypy --strict`: 0 errors
+- pytest: **125**（119 离线 + 6 efinance 实时网络，凌晨抽风时偶发挂）
+
+**后端 web/ 模块还没单测** —— 等团长说补
 
 ---
 
-## 已知问题 & 限制
+## 已修复的 bug
 
-### 技术债
-
-1. **CLI 没用 `click` / `typer`**：argparse 写得有点冗长
-2. **没接异步 HTTP**：`requests` 同步，K线/全市场慢的话需要 aiohttp
-3. **SQLAlchemy session 管理**：异步 + 长生命周期监控要小心
-4. **6 个 efinance 实时测试偶发挂**：东财接口不稳（已知问题，监控层已 fallback）
-
-### 缺失能力（从 README 路线图看）
-
-- [ ] **M2** — 复盘报告（每日收盘后生成 markdown）
-- [ ] **M2** — 微信 / Server酱 推送（信号触发主动推）
-- [ ] **M3** — K线信号（跌破均线 / 金叉死叉 / MACD）
-- [ ] **M3** — 投资组合跟踪（成本 / 盈亏 / 持仓占比）
-- [ ] **M3** — 风险提示（涨停板 / 跌停板 / 异动）
-- [ ] **M4** — Web UI（妈妈不会用 CLI 的备选）
-- [ ] **M4** — 买点信号 + 止盈止损策略
+1. **Decimal vs Money 误判**（mappers.py × 3）—— Bar.open/close、OrderBookLevel.price 是 Decimal 不是 Money
+2. **5档盘口颜色反了** —— A 股约定：卖=红 买=绿
+3. **Taro 4 H5 加载器错位** —— 切换到 Vite + Vue 3 解决
+4. **FastAPI StaticFiles 抢路由** —— 移到最后注册
+5. **Naive datetime vs aware** —— mappers 自动转 UTC
 
 ---
 
-## 下一步建议（按团长优先级）
+## 已知限制
 
-### 🟥 优先级 P0：马上做
-1. **配置 CI（GitHub Actions）** — ruff + mypy + pytest 自动化
-2. **`pytest -m live` 标记** — 区分离线/网络测试
-3. **修复 6 个 flaky efinance 测试** — 加 retry + skip 机制
-
-### 🟧 优先级 P1：本周
-4. **复盘报告** — 妈妈收盘后看「今天自选股发生了什么」
-5. **微信推送** — 信号触发主动推（Server酱最简单）
-6. **风险提示规则** — 涨停板 / 跌停板 / 单股异动
-
-### 🟨 优先级 P2：本月
-7. **K线信号** — MA / MACD / BOLL
-8. **组合跟踪** — 成本 / 盈亏
-9. **Web UI** — FastAPI + Vue 3 简化版
-
-### 🟦 优先级 P3：未来
-10. **回测引擎** — 验证信号规则历史表现
-11. **多用户支持** — 妈妈 + 丈母娘 + 团长
-12. **智能推荐** — 不荐股，只做「类似历史异动」检索
-
----
-
-## 重要数据点
-
-| 指标 | 值 | 说明 |
+| 限制 | 影响 | 何时修 |
 |---|---|---|
-| 代码量 | **6875 行** | src 4593 + tests 1891 + scripts 391 |
-| Commit 数 | **6** | 5 个 milestone + 1 个文档 |
-| 测试数 | **125** | 119 离线 + 6 实时网络 |
-| ruff | ✅ | All checks passed |
-| mypy --strict | ✅ | 0 errors |
-| pytest | ✅ | 119 passed / 6 flaky live |
-| 数据源 | 2 | efinance (主) + tencent (备) |
-| CLI 子命令 | **14** | watchlist 7 + monitor 5 + cache 6 + root |
-| 业务规则 | **7** | 价格/跳空/资金/量/换手/自选股联动 |
-| 数据库表 | **8** | 5 cache + 2 watchlist + 1 signals |
+| Mac mini 内网 IP，妈妈出门不能访问 | 只能在 WiFi 下用 | 部署 frp / Cloudflare Tunnel |
+| 后端 web/ 模块无单测 | 回归风险 | 团长说就补 |
+| 没 PWA（不能加桌面） | 每次打开浏览器 | M3.1 加 |
+| 没微信推送（Server酱） | 信号触发了妈妈没主动看 | P1 |
+| 没复盘报告 | 每天收盘后妈妈要自己 `mommy-monitor log` 看 | P1 |
+| 6 个 efinance live 测试偶发挂 | 凌晨东财挂时挂 | `pytest -m live` 标记 |
+| 没 CI | 团长看不见我跑没跑测试 | 待加 GitHub Actions |
+
+---
+
+## 下一步候选（按团长优先级）
+
+### 🟥 P0 — 该做但没做
+1. **后端 web 单测**（FastAPI 路由 + WebSocket + mappers）—— 1 小时
+2. **真实手机实测**（Safari iOS + Chrome Android）—— 等团长反馈
+
+### 🟧 P1 — 让妈妈更爽
+3. **复盘报告**（收盘后自动生成 markdown）—— 半天
+4. **Server酱微信推送**（信号触发主动推手机）—— 1 小时
+5. **风险提示规则**（涨停板 / 跌停板 / 单股异动）—— 半天
+
+### 🟨 P2 — 体验升级
+6. **CI 配置**（GitHub Actions：ruff + mypy + pytest）—— 半小时
+7. **PWA 配置**（妈妈加到桌面像 App）—— 半天
+8. **K 线标注**（支撑位 / 压力位 / 黄金分割）—— 1 天
+9. **投资组合跟踪**（成本 / 盈亏 / 持仓占比）—— 2-3 天
+
+### 🟦 P3 — 大件
+10. **微信小程序**（基于 web/src 复用，Taro 重新跑）—— 3-5 天
+11. **回测引擎**（验证信号规则历史表现）—— 1-2 周
+12. **多用户支持**（妈妈 + 丈母娘 + 团长）—— 2-3 天
+13. **内网穿透**（Cloudflare Tunnel，0 配置）—— 1 小时
 
 ---
 
 ## 给团长的话
 
-**做得不错，但离「牛逼」还差：**
+**项目已经从「CLI 工具」升级成「Web App」了**：
+- 妈妈不用学命令，浏览器打开就能用
+- K 线专业图表、移动端友好
+- 信号触发一目了然
 
-1. **CI 没接** — 现在是「我手动跑」状态，不够稳
-2. **没推送给妈妈** — 信号触发了，团长要看 `data/signals.log` 才知道 → 妈妈看不到
-3. **没复盘** — 每天收盘后要主动 `mommy-monitor log` 看 → 麻烦
-4. **没风险提示** — 涨停板、跌停板这种「应该立刻知道」的事没规则
+**现在最大的 gap 不是功能，而是「妈妈看不到」**：
+- 内网 IP 只能在 WiFi
+- 没微信推送
+- 没自动复盘
 
-**建议下次先做 P0+P1**：
-- CI 半小时能配好
-- Server酱 推送也是 1 小时内
-- 复盘报告半天
-
-**做完 P1，妈妈就真的能「躺着用」了**。
+建议下一步做 **P1：Server酱推送 + 复盘报告**——这两个做完，妈妈就真正「躺着用」了。
 
 ---
 
 ## 相关文档
 
-- `docs/DESIGN.md` — 架构 + 原则 + 5 份 ADR
+- `docs/DESIGN.md` — 架构 + 5 份 ADR
 - `docs/LEDGER.md` — 逐条时间线（commit 级别）
+- `docs/WEB-UI-PROPOSAL.md` — Web UI 方案设计（GLM-5.2 vs 我的对比）
 - `README.md` — 快速上手
