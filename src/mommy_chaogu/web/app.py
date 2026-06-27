@@ -108,22 +108,23 @@ def create_app(
             last_snapshot_at=svc.last_poll_at(),
         )
 
-    @app.get("/")
-    def root() -> dict[str, str]:
-        return {
-            "name": "mommy-chaogu",
-            "version": "0.1.0",
-            "docs": "/docs",
-            "health": "/api/health",
-        }
-
     # 静态文件（构建后的前端）
     static_dir = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
     if static_dir.exists():
+        # 静态文件优先（挂载在根），API 路由已在上面注册
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
         _log.info("static files mounted at %s", static_dir)
     else:
         _log.info("frontend dist not found at %s — API only", static_dir)
+        # 没有静态文件时保留 API 根信息
+        @app.get("/")
+        def root() -> dict[str, str]:
+            return {
+                "name": "mommy-chaogu",
+                "version": "0.1.0",
+                "docs": "/docs",
+                "health": "/api/health",
+            }
 
     return app
 

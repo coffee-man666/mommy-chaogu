@@ -1,0 +1,20 @@
+{
+  "miniprogramRoot": "dist/",
+  "projectname": "mommy-chaogu",
+  "description": "妈妈炒股",
+  "appid": "touristappid",
+  "setting": {
+    "urlCheck": false,
+    "es6": false,
+    "enhance": false,
+    "postcss": false,
+    "minified": false,
+    "newFeature": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "compileType": "miniprogram"
+}

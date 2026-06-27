@@ -1,0 +1,38 @@
+{
+  "name": "mommy-chaogu-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "妈妈炒股 - Web 前端（Taro + Vue 3 + klinecharts）",
+  "scripts": {
+    "dev:h5": "taro build --type h5 --watch",
+    "build:h5": "taro build --type h5",
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp",
+    "lint": "eslint . --ext .vue,.ts,.tsx"
+  },
+  "dependencies": {
+    "@tarojs/components": "^4.0",
+    "@tarojs/helper": "^4.0",
+    "@tarojs/plugin-framework-vue3": "^4.0",
+    "@tarojs/plugin-platform-h5": "^4.0",
+    "@tarojs/plugin-platform-weapp": "^4.0",
+    "@tarojs/runtime": "^4.0",
+    "@tarojs/shared": "^4.0",
+    "@tarojs/taro": "^4.0",
+    "klinecharts": "^9.8",
+    "vue": "^3.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25",
+    "@tarojs/cli": "^4.0",
+    "@tarojs/webpack5-runner": "^4.0",
+    "@vue/babel-plugin-jsx": "^1.2",
+    "@vue/compiler-sfc": "^3.5",
+    "babel-preset-taro": "^4.0",
+    "css-loader": "^7.1",
+    "style-loader": "^4.0",
+    "typescript": "^5.6",
+    "vue-loader": "^17.4",
+    "webpack": "5.91.0"
+  }
+}
