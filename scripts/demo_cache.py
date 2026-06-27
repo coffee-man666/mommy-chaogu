@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -21,7 +21,6 @@ from mommy_chaogu.market_data import Quote
 from mommy_chaogu.market_data.types import (
     MarketType,
     Money,
-    MoneyFlow,
     QuoteType,
 )
 
@@ -37,7 +36,7 @@ def mk_quote(code: str, price: str = "100") -> Quote:
         turnover_rate=None, volume_ratio=None,
         pe_dynamic=None, total_market_cap=None,
         circulating_market_cap=None,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -110,7 +109,7 @@ def main() -> int:
         print("【第 4 次】东财接口抽风（连续失败 2 次）")
         mock.fail_next_n = 99  # 之后都失败
         # 重置拉新节流
-        adapter._last_fetch_attempt["quote:600519"] = datetime.min.replace(tzinfo=timezone.utc)
+        adapter._last_fetch_attempt["quote:600519"] = datetime.min.replace(tzinfo=UTC)
         q = adapter.get_quote("600519")
         print(f"  价: {q.price if q else None} (旧缓存), 底层 fetch: {mock.fetch_count}")
         print(f"  stats: {adapter.stats_counters}")

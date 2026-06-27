@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from mommy_chaogu.cache import CacheStore, CachedMarketDataAdapter
+from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
 from mommy_chaogu.market_data import (
     EfinanceAdapter,
     FallbackAdapter,

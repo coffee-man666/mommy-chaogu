@@ -91,7 +91,7 @@ def main() -> int:
     alerter = Alerter.default()
     signals = alerter.evaluate(snap)
 
-    print(f"📊 自选股快照（mock）")
+    print("📊 自选股快照（mock）")
     print(f"   {snap.n_codes} 只 | ↑{snap.n_up} ↓{snap.n_down} —{snap.n_flat}")
     print(f"   主力合计 {float(snap.total_main_net) / 1e8:+.2f}亿\n")
 

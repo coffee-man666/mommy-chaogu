@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -110,13 +111,11 @@ class BackgroundService:
             except Exception:
                 _log.exception("poller tick failed")
             # 等待下一次（被 stop_event 唤醒可立即退出）
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     self._stop_event.wait(),
                     timeout=self.poll_interval,
                 )
-            except TimeoutError:
-                pass
 
     async def _tick(self) -> None:
         """单次轮询。"""

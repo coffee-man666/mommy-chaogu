@@ -8,10 +8,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
 
 from mommy_chaogu.monitor import Snapshot, SnapshotRow
-from mommy_chaogu.signals.types import Signal, SignalSeverity
+from mommy_chaogu.signals.types import Signal
+from mommy_chaogu.watchlist.models import Group, StockEntry
 from mommy_chaogu.web.schemas import (
     BarOut,
     OrderBookLevelOut,
@@ -22,7 +22,6 @@ from mommy_chaogu.web.schemas import (
     WatchlistGroupOut,
     WatchlistStockOut,
 )
-from mommy_chaogu.watchlist.models import Group, StockEntry
 
 
 def _utcnow() -> datetime:

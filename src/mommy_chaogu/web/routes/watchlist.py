@@ -5,6 +5,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from mommy_chaogu.watchlist import WatchlistStore
+from mommy_chaogu.watchlist.store import (
+    GroupAlreadyExistsError,
+    GroupNotFoundError,
+    StockEntryNotFoundError,
+)
 from mommy_chaogu.web.deps import get_watchlist_store
 from mommy_chaogu.web.mappers import group_to_out, stock_entry_to_out
 from mommy_chaogu.web.schemas import (
@@ -12,12 +18,6 @@ from mommy_chaogu.web.schemas import (
     AddStockIn,
     WatchlistGroupOut,
     WatchlistStockOut,
-)
-from mommy_chaogu.watchlist import WatchlistStore
-from mommy_chaogu.watchlist.store import (
-    GroupAlreadyExistsError,
-    GroupNotFoundError,
-    StockEntryNotFoundError,
 )
 
 router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])

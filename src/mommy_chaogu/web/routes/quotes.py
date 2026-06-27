@@ -1,7 +1,6 @@
 """/api/quotes 路由：实时报价 + K 线 + 盘口。"""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from mommy_chaogu.market_data import BarInterval, MarketDataAdapter
 from mommy_chaogu.market_data.types import AdjustmentType
 from mommy_chaogu.web.background import BackgroundService, get_service
-from mommy_chaogu.web.deps import get_adapter, get_watchlist_store
+from mommy_chaogu.web.deps import get_adapter
 from mommy_chaogu.web.mappers import (
     _quote_to_out,
     bar_to_out,
@@ -22,7 +21,6 @@ from mommy_chaogu.web.schemas import (
     QuoteOut,
     SnapshotOut,
 )
-from mommy_chaogu.watchlist import WatchlistStore
 
 router = APIRouter(prefix="/api/quotes", tags=["quotes"])
 
@@ -54,7 +52,7 @@ def get_quote(
         raise HTTPException(status_code=404, detail=f"未找到 {code} 报价（数据源可能挂了）")
     # 构造伪 row
     from mommy_chaogu.monitor import SnapshotRow
-    from mommy_chaogu.watchlist.models import Group, StockEntry
+    from mommy_chaogu.watchlist.models import StockEntry
 
     entry = StockEntry(code=code, group_id=0, name=quote.name)
     row = SnapshotRow(entry=entry, group_name="查询", quote=quote)

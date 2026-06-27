@@ -5,13 +5,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
+from mommy_chaogu.signals import Alerter
 from mommy_chaogu.web.background import BackgroundService, get_service
 from mommy_chaogu.web.deps import get_alerter
 from mommy_chaogu.web.mappers import signal_to_out
 from mommy_chaogu.web.schemas import SignalOut
-from mommy_chaogu.signals import Alerter
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
