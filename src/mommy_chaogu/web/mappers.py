@@ -81,10 +81,10 @@ def bar_to_out(bar: object) -> BarOut:
     """Bar → BarOut（mappers 模块要避免 efinance 类型耦合）。"""
     return BarOut(
         timestamp=bar.timestamp,  # type: ignore[attr-defined]
-        open=bar.open.amount,  # type: ignore[attr-defined]
-        high=bar.high.amount,  # type: ignore[attr-defined]
-        low=bar.low.amount,  # type: ignore[attr-defined]
-        close=bar.close.amount,  # type: ignore[attr-defined]
+        open=bar.open,  # type: ignore[attr-defined]
+        high=bar.high,  # type: ignore[attr-defined]
+        low=bar.low,  # type: ignore[attr-defined]
+        close=bar.close,  # type: ignore[attr-defined]
         volume=int(bar.volume),  # type: ignore[attr-defined]
         turnover=bar.turnover.amount,  # type: ignore[attr-defined]
     )
@@ -92,11 +92,11 @@ def bar_to_out(bar: object) -> BarOut:
 
 def orderbook_to_out(code: str, ob: object) -> OrderBookOut:
     bids = [
-        OrderBookLevelOut(price=lv.price.amount, volume=int(lv.volume))  # type: ignore[attr-defined]
+        OrderBookLevelOut(price=lv.price, volume=int(lv.volume))  # type: ignore[attr-defined]
         for lv in ob.bids  # type: ignore[attr-defined]
     ]
     asks = [
-        OrderBookLevelOut(price=lv.price.amount, volume=int(lv.volume))  # type: ignore[attr-defined]
+        OrderBookLevelOut(price=lv.price, volume=int(lv.volume))  # type: ignore[attr-defined]
         for lv in ob.asks  # type: ignore[attr-defined]
     ]
     return OrderBookOut(

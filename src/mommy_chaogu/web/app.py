@@ -109,7 +109,12 @@ def create_app(
         )
 
     # 静态文件（构建后的前端）
-    static_dir = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+    # 优先用 Vite 输出的 web/dist（H5 更快）；如果有 frontend/dist（Taro 输出）也可以
+    static_candidates = [
+        Path(__file__).parent.parent.parent.parent / "web" / "dist",
+        Path(__file__).parent.parent.parent.parent / "frontend" / "dist",
+    ]
+    static_dir = next((d for d in static_candidates if d.exists()), static_candidates[0])
     if static_dir.exists():
         # 静态文件优先（挂载在根），API 路由已在上面注册
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")

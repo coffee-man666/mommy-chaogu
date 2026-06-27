@@ -1,0 +1,4 @@
+/* 简洁的全局样式 */
+* { box-sizing: border-box; }
+input, button { font-family: inherit; }
+a { color: inherit; text-decoration: none; }
