@@ -56,7 +56,7 @@ def _quote_to_out(row: SnapshotRow) -> QuoteOut:
         turnover_rate=q.turnover_rate,
         volume_ratio=q.volume_ratio,
         main_net_inflow=main_net,
-        timestamp=q.timestamp,
+        timestamp=ts,
         fetched_at=q.timestamp,  # 装饰器链里 Quote 暂时没区分这两个，先放同一个
         data_age_seconds=age,
     )

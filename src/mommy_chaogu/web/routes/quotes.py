@@ -95,8 +95,8 @@ def get_today_money_flow(
         {
             "timestamp": f.timestamp.isoformat(),
             "main_net": str(f.main_net.amount),
-            "super_net": str(f.super_net.amount) if f.super_net else None,
-            "big_net": str(f.big_net.amount) if f.big_net else None,
+            "super_net": str(f.super_large_net.amount) if f.super_large_net else None,
+            "big_net": str(f.large_net.amount) if f.large_net else None,
             "medium_net": str(f.medium_net.amount) if f.medium_net else None,
             "small_net": str(f.small_net.amount) if f.small_net else None,
         }
