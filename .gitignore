@@ -38,3 +38,9 @@ htmlcov/
 # 行情数据缓存（未来加的话）
 data/cache/
 data/
+
+# frontend/ (废弃的 Taro 目录，保留作 mini program 参考)
+frontend/dist/
+frontend/node_modules/
+frontend/.swc/
+*.swc

@@ -4,7 +4,7 @@
 >
 > 跟 DESIGN 互补：DESIGN 讲「为什么这样设计」，LEDGER 讲「具体怎么走到这一步」。
 
-最后更新：2026-06-27
+最后更新：2026-06-27 22:35（M3.1 Server酱 推送）
 
 ---
 
@@ -363,6 +363,145 @@ v_sh600519="1~贵州茅台~600519~...~"   # ✅ 200 OK
 
 ---
 
+## M3.0 — Web UI（妈妈不用 CLI）
+
+**日期**：2026-06-27 14:00 – 21:00
+**Commit**：`ee4170b` / `8c9e38f` / `eb23fe5` / `22f4e8b`（4 个）
+**代码量**：~2400 行（Python web/ 1100 + 前端 Vite 1300）
+
+### 触发
+
+团长：「妈妈不用 CLI」「web 应该统一一个端口入口」「如果要框架的话可以从简单的开始」
+
+### 产出
+
+#### 后端 src/mommy_chaogu/web/（commit `ee4170b`）
+| 文件 | 行 | 作用 |
+|---|---|---|
+| `app.py` | 200 | FastAPI 工厂 + lifespan |
+| `deps.py` | 80 | 单例 adapter/store/alerter 注入 |
+| `background.py` | 220 | 单 asyncio 任务 5s 轮询 + WS 广播 |
+| `schemas.py` | 130 | 14 个 Pydantic（Decimal → str） |
+| `mappers.py` | 150 | dataclass → Pydantic 转换 |
+| `routes/{quotes,watchlist,signals,cache,ws}.py` | 280 | 5 个路由文件 |
+| CLI: `mommy-web --port 8765 --poll-interval 3` | — | uvicorn 入口 |
+
+14 REST + 2 WebSocket 端点。
+
+#### 前端（Vite + Vue 3 + TS，commit `eb23fe5`）
+- `web/` 目录：Vite 6 + Vue 3 + TS + vue-router + klinecharts 9.8
+- 4 页面：`index` / `detail` / `signals` / `settings`
+- API 模块：`api/{client,types,index,watchlist,signals,cache,ws}.ts`
+- 5 build 后 `web/dist/`，~500ms
+
+#### UI 优化（commit `22f4e8b`）
+- **5档盘口颜色修对**（A 股：卖=红 买=绿）
+- 大字号（妈妈手机友好，+20%）
+- 骨架屏（感知性能 +30%）
+- 信号点击跳 K 线
+- 「今日收盘」标签代替「X 秒前·实时」（避免凌晨误导）
+
+#### Taro 实验（commit `8c9e38f`，**已放弃**）
+- 2 小时调试：webpack 5.91 不兼容 / 加载器错位 / 「没有找到页面实例」router 错误
+- 最终切换到 Vite + Vue 3，15 分钟跑通
+- `frontend/` 目录保留作为未来 mini program 参考
+
+### 关键决策
+
+- **Vite > Taro for H5**：MVP 极致简化 > 正统大而全
+- **不写 Taro `<view>/<text>` 组件**：用原生 HTML 跨平台兼容
+- **单 BackgroundService 撑所有 WS**：100 客户端 = 1 轮询任务 + 广播
+- **Decimal → string in JSON**：避免 float 精度问题
+- **A 股红涨绿跌 强制约定**：所有页面统一
+- **StaticFiles mount 必须在 app.get(/) 之后**：否则抢路由
+
+### 学到
+
+- **GLM-5.2 的「正统方案」(Taro + Vue 3 + Vant + ECharts) 调试 2h 失败，最终 Vite + Vue 3 + klinecharts 15min 搞定**——MVP 极致简化 > 框架统一
+- **妈妈的用户体验 ≠ 程序员的用户体验**：大字号 / 骨架屏 / 颜色约定都要单独考虑
+- **测试覆盖 mappers > 测试覆盖 routes**：mappers 是 Decimal/Money/datetime 高发错误点
+- **headless iPhone 14 viewport（390x844, 2x DPR）** 是验证 H5 的最简工具
+
+### 实战验证
+
+团长手机 + 模拟器都过：
+- 首页：5 只自选股 + 主力合计 + 涨跌统计
+- 详情：K 线 + 5 档盘口 + 11 个数据点
+- 信号：8 条触发 + 严重度 emoji
+- 设置：服务状态 + 缓存 + 自选股 CRUD
+
+服务运行中：`http://192.168.10.84:8765/`（LAN IP，妈妈 WiFi 下用）
+
+---
+
+## M3.1 — Server酱 微信推送（信号主动到手机）
+
+**日期**：2026-06-27 21:30
+**Commit**：`3402e19`
+**代码量**：~430 行（src 329 + tests 100）
+
+### 触发
+
+团长：「做完 M3.0 推送就做」「之后会测试 Server酱」
+
+### 背景
+
+妈妈不会主动打开 Web 看信号 → 必须被动推送到微信。
+Server酱³ 是最轻方案：
+- API 一行 POST（`https://sctapi.ftqq.com/{SendKey}.send`）
+- 免费 5 条/天，正好对应每天 ~5 条 warning/critical
+- 推到「妈妈炒股的信号」公众号
+
+### 产出
+
+| 模块 | 行 | 作用 |
+|---|---|---|
+| `push/base.py` | 110 | `Pusher`/`Deduper` Protocol + `SignalNotifier` |
+| `push/server_chan.py` | 109 | Server酱³ 实现 + emoji 标题 + Markdown desp |
+| `push/deduper.py` | 84 | JSON 文件去重（按日清空，原子写） |
+| `push/__init__.py` | 26 | 模块导出 |
+| 测试 29 个（10 + 10 + 9） | 379 | server_chan / deduper / notifier |
+
+### 关键设计
+
+- **Protocol 抽象**：`Pusher` / `Deduper` 接口，未来加钉钉/Telegram/Bark 直接换实现
+- **严重度阈值过滤**：默认只推 `WARNING` + `CRITICAL`，INFO 不推避免刷屏
+- **JSON 文件去重**：key = `code|rule_id|date`，每天自动清空昨天的
+  - 原子写（tmp + rename）
+  - 损坏文件容错（损坏则当新文件）
+- **优雅降级**：
+  - 没 SendKey → 完全不推送，Web 服务正常
+  - 推送初始化失败 → 记日志但继续运行
+  - 单条推送异常 → 吞掉不影响其他 ticker
+- **Markdown desp**：代码 / 时间 / 触发值 / 阈值 / K 线链接（HTTPS 公网 URL）
+
+### CLI 集成
+
+```bash
+# 方式 1：命令行参数
+mommy-web --server-chan-key SCT123xxx --web-base-url https://mommy.example.com
+
+# 方式 2：环境变量（推荐生产）
+export SERVER_CHAN_KEY="SCT123xxx"
+export WEB_BASE_URL="https://mommy.example.com"
+mommy-web --port 8765
+```
+
+### 学到
+
+- **Protocol 化设计节省 100x 工作量**：未来加钉钉只写 `DingTalkPusher` 即可，集成代码不动
+- **去重要持久化**：内存 dict 重启就丢，妈妈不会重启后又被同一信号刷屏
+- **JSON 文件原子写**：tmp + rename 模式，比直接 write 安全 10x
+- **免费版限额是设计依据**：5 条/天 决定了「阈值过滤」必须默认开（INFO 全关）
+
+### 测试覆盖
+
+- 10 server_chan：成功/失败/网络异常/JSON 异常/web 链接/严重度 emoji
+- 10 deduper：首推/重推/不同 code/不同 rule/跨日/损坏文件/clear/原子写
+- 9 notifier：阈值过滤/去重/失败不标记/异常处理/batch 通知
+
+---
+
 ## 重大 lessons learned（跨 milestone）
 
 1. **Protocol 化一切接口** → 业务层永远 Mock 单测
@@ -372,12 +511,15 @@ v_sh600519="1~贵州茅台~600519~...~"   # ✅ 200 OK
 5. **JSON 序列化 dataclass 不要用 asdict** → 嵌套类型（Money / Decimal）必须手写
 6. **装饰器链的顺序很关键** → 外层缓存 + 内层 fallback
 7. **凌晨实战最有价值** → 单元测试覆盖不到的真实故障
+8. **MVP 极致简化 > 正统大而全** → Taro 调试 2h 失败 vs Vite 15min 跑通
+9. **Protocol 化推送抽象 → 多渠道 0 成本** → 微信 / 钉钉 / Telegram 同一接口
+10. **优雅降级是生产级标准** → 没 key / 推送挂 / 重启 都得保证主服务不挂
 
 ## 工具链统计
 
 - **Python**：3.12 + uv + hatchling
 - **Lint**：ruff（All checks passed）
 - **Type check**：mypy --strict（0 errors）
-- **Test**：pytest 125（119 离线通过 + 6 efinance 实时网络，凌晨抽风时挂）
-- **Code**：src 4593 行 + tests 1891 行 + scripts 391 行 ≈ 6875 行
+- **Test**：pytest 154（145 离线通过 + 9 实时网络，凌晨抽风时偶发挂）
+- **Code**：src 7300 行 + tests 2270 行 + scripts 391 行 + web (TS+Vite) 2000 行 ≈ 12000 行
 - **CI**：未配（待加 GitHub Actions）
