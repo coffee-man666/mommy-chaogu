@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-06-27 22:35
+最后更新：2026-06-28 22:45
 
 ---
 
@@ -10,12 +10,13 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **M3.1 完成（Server酱 微信推送上线），M3.2 待启动** |
-| 代码量 | **~10500 行**（Python src 7300 + tests 2270 + web 2000） |
-| 测试 | **154 个**（145 离线通过 + 9 实时网络） |
+| 项目阶段 | **M5.3 完成（cron 自动化）+ PROJECT-LOG 总览上线** |
+| 代码量 | **~14,000+ 行**（Python src 9300 + tests 2400 + web 2500） |
+| 测试 | **154+ 个**（145 离线通过 + 9 实时网络） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
-| 文档 | DESIGN / LEDGER / PROGRESS / WEB-UI-PROPOSAL 4 份齐 |
-| **实战验证** | ✅ **妈妈今天已能用 Web** — Server酱 推送等团长拿到 SendKey 测 |
+| 文档 | DESIGN / **PROJECT-LOG** / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES **6 份齐** |
+| 自动化 | **4 个 OpenClaw cron jobs**（盘前/盘中/收盘/周报） |
+| **实战验证** | ✅ 妈妈已能用 Web + 资金流 ratio 监控跑通 + 明天第一次自动推送 |
 
 ---
 
@@ -32,8 +33,8 @@
         └────────────┬────────────────┘        │
                      ↓                          │
         ┌─────────────────────────────┐        │
-        │  FastAPI (uvicorn :8765)    │        │
-        │  ├─ /api/* REST (14 端点)   │        │
+        │  FastAPI (uvicorn :8000)    │        │
+        │  ├─ /api/* REST (20+ 端点)  │        │
         │  ├─ /ws/* WebSocket          │        │
         │  └─ 后台轮询（5s）+ WS 广播  │        │
         └────────────┬────────────────┘        │
@@ -51,11 +52,13 @@
         │  ├─ EfinanceAdapter (主)     │
         │  └─ TencentAdapter  (备)     │
         └─────────────────────────────┘
+                     + 东方财富 push2.eastmoney.com 直连
+                       （大盘指数 / 板块排行 / 龙虎榜）
 ```
 
 ---
 
-## 已完成的里程碑（git log 全部 10 个 commit）
+## 已完成的里程碑
 
 ### ✅ 数据层（M0–M2.5，5 个 milestone）
 | ID | commit | 标题 | 行数 |
@@ -70,103 +73,93 @@
 | commit | 标题 | 内容 |
 |---|---|---|
 | `ee4170b` | FastAPI 后端 + WebSocket | 14 REST 端点 + 2 WS + 后台轮询 + 依赖注入 |
-| `8c9e38f` | Taro + Vue 3 + klinecharts（实验性，**已放弃**） | 踩坑：webpack 5.91 不兼容 / 加载器错位 / router 找不到页面实例 |
-| `eb23fe5` | **Vite + Vue 3 切换 + 4 页通过实测** | 切换到 Vite，15 分钟跑通 K 线 + 盘口 |
+| `eb23fe5` | Vite + Vue 3 切换 + 4 页通过实测 | 切换到 Vite，15 分钟跑通 K 线 + 盘口 |
 | `22f4e8b` | UI 优化 for 妈妈 | 5档盘口修色 + 大字号 + 骨架屏 + 信号跳转 |
 
-### ✅ 推送（M3.1，1 个 commit）
-| commit | 标题 | 内容 |
-|---|---|---|
-| `3402e19` | **Server酱 微信推送 + JSON 文件去重** | Pusher/Deduper Protocol + 严重度阈值 + 集成 BackgroundService + 29 个单测 |
+### ✅ 推送（M3.1）
+| commit | 标题 |
+|---|---|
+| `3402e19` | Server酱 微信推送 + JSON 文件去重 |
+
+### ✅ 持仓管理 + 语音录入 + 资金流图表 + 盘面扫描（M4, 2026-06-28）
+| 主题 | 内容 |
+|---|---|
+| **持仓管理** | Position + PositionAdjustment 表 / PortfolioStore / 6 个 API 端点 / 加权平均成本 / 实时盈亏计算 |
+| **语音录入** | useSpeechRecognition composable（webkitSpeechRecognition）/ 自然语言解析（"茅台买入价1680 100股"）/ 弹窗录入 |
+| **资金流图表** | 5 维累计卡片 + 日内分时 SVG 折线 + 历史柱状 SVG（零线居中）/ 7/30/90 天切换 |
+| **盘面扫描** | 大盘 6 指数 / 涨幅榜 TOP20 / 跌幅榜 TOP20 / 板块榜 TOP20 / 30 秒轮询 |
+| **持仓快览** | 首页持仓条 + 盘面页持仓条联动 |
+| **删除盘口** | 详情页盘口信息隐藏（聚焦资金流） |
+| **K线 bug 修复** | createIndicator 不判重导致切换周期叠加多张副图 → 用 isFirstInit 标志 |
+| **文档** | KLINE-SPEC.md / DISCUSSION-NOTES.md |
 
 ---
 
-## 当前功能矩阵（M3.1）
+## 当前功能矩阵（M4）
 
 | 能力 | 数据源 | 缓存 | Web UI | 信号 | 推送 |
 |---|---|---|---|---|---|
-| 实时报价 | ✅ efin+tencent | ✅ | ✅ 首页 + 详情 | ✅ | ✅ ⚠️→🚨 |
-| 5 档盘口 | ✅ efin+tencent | ✅ | ✅ 详情页（卖=红 买=绿） | ❌ | — |
-| K 线（日/周/月 + 5/15/30/60 分） | ✅ efinance | ✅ | ✅ klinecharts + MA 均线 | ❌ | — |
-| 资金流（当日 + 历史） | ✅ efinance | ✅ | ⚠️ 仅显示主力净流入 | ✅ 主力阈值 | ✅ |
-| 全市场快照 | ✅ efinance | ✅ | ⚠️ 自选股用 | ❌ | — |
+| 实时报价 | ✅ efin+tencent | ✅ | ✅ 盘面页 + 详情 | ✅ | ✅ ⚠️→🚨 |
+| 5 档盘口 | ✅ efin+tencent | ✅ | ❌ 已隐藏 | ❌ | — |
+| K 线（日/周/月 + 5/15/30/60 分） | ✅ efinance | ✅ | ✅ klinecharts + MA 均线 + VOL（修 bug 后稳定） | ❌ | — |
+| 资金流（日内 + 历史） | ✅ efinance | ✅ | ✅ 累计卡片 + 折线图 + 柱状图 | ✅ | ✅ |
+| 全市场快照 | ✅ efinance | ✅ | ✅ 涨幅榜/跌幅榜 | ❌ | — |
+| 大盘指数（沪深300等6个） | ✅ 东财 push2 | ❌ | ✅ 指数卡片网格 | ❌ | — |
+| 板块涨跌幅榜 | ✅ 东财 push2 | ❌ | ✅ 板块榜 TOP20 | ❌ | — |
 | 自选股分组管理 | — | ✅ | ✅ 设置页 CRUD | ❌ | — |
-| 信号告警（7 条规则） | — | — | ✅ 信号中心（可点击跳转） | ✅ 实时 | ✅ JSON 去重 |
+| **持仓管理** | — | ✅ | ✅ 持仓页 + 总览 + 盈亏 | — | — |
+| **语音录入持仓** | 浏览器 SpeechRecognition | — | ✅ 语音弹窗 | — | — |
+| 信号告警（7 条规则） | — | — | ✅ 信号中心 | ✅ 实时 | ✅ JSON 去重 |
 | 数据新鲜度报告 | — | ✅ | ✅ 设置页 | ❌ | — |
-| **微信推送（Server酱³）** | — | — | ⚠️ 设置页未集成入口 | ✅ 阈值过滤 | ✅ Markdown + 链接 |
+| 微信推送（Server酱³） | — | — | ⚠️ 设置页未集成入口 | ✅ 阈值过滤 | ✅ Markdown + 链接 |
 
 🟢 妈妈能用 · 🟡 数据可达未深度集成 · ❌ 未实现
 
 ---
 
-## M3.0 已交付（Web UI MVP）
+## M4 已交付细节
 
-### 后端（src/mommy_chaogu/web/）
-- `app.py` — FastAPI 工厂 + lifespan 管理后台轮询 + notifier 注入
-- `deps.py` — 依赖注入（单例 adapter / store / alerter / notifier）
-- `background.py` — 单 asyncio task 后台轮询 + WS 广播 + 推送
-- `schemas.py` — 14 个 Pydantic 模型（Decimal → str）
-- `mappers.py` — dataclass → Pydantic 转换
-- `routes/{quotes,watchlist,signals,cache,ws}.py` — 5 个路由文件
-- CLI: `mommy-web --port 8765 --poll-interval 3`
+### 后端（~1500 行新增）
 
-### 前端（web/）
-- Vite 6 + Vue 3 + TypeScript + vue-router
-- 4 个页面 + 1 个 App.vue（带底部 Tab）
-- klinecharts 9.8（金融图表专业库）
-- API 客户端（5 个模块）+ WebSocket 客户端（断线重连 + 心跳）
+#### 持仓管理模块
+- `src/mommy_chaogu/portfolio/models.py` — Position + PositionAdjustment 两表
+- `src/mommy_chaogu/portfolio/store.py` — PortfolioStore（CRUD + 加权平均成本 + summary）
+- `src/mommy_chaogu/web/routes/portfolio.py` — 6 个端点
+- 6 个 Pydantic schemas + mappers
 
-### 实测（headless iPhone 14 viewport）
-| 页面 | 数据 | K 线 / 盘口 / 信号 |
-|---|---|---|
-| 首页 | 5 只自选股 + 主力合计 + 涨跌统计 | A 股红涨绿跌 + 主力箭头 + 骨架屏 |
-| 详情 | 完整报价 + 11 个数据点 | K 线 + MA5/10/30/60 + VOL MA + 5 档盘口 |
-| 信号 | 8 条触发（5 CRIT + 1 WARN + 1 INFO） | 严重度 emoji + 点击跳 K 线 |
-| 设置 | 服务状态 + 缓存 + 自选股 CRUD | 刷新按钮 + 缓存命中率 + 删除二次确认 |
+#### 资金流增强
+- `routes/quotes.py` 改 `money_flow/today` 为 dict（含 cumulative）
+- 新增 `money_flow/history?days=N` 端点
+- 修复缓存层 `store.get_money_flow_history` bug（dict/list 类型混淆）
 
----
+#### 盘面排行模块
+- `src/mommy_chaogu/market_data/rankings.py` — 直连东财 push2
+  - `fetch_indexes()` — 6 个大盘指数
+  - `fetch_sector_ranking()` — 行业+概念板块合并去重
+- `src/mommy_chaogu/web/routes/market.py` — 4 个端点
+  - `GET /api/market/indexes`
+  - `GET /api/market/sectors?limit=30`
+  - `GET /api/market/gainers?limit=20`
+  - `GET /api/market/losers?limit=20`
 
-## M3.1 已交付（Server酱 微信推送）
+### 前端
 
-### 模块（src/mommy_chaogu/push/）
-- `base.py` — `Pusher`/`Deduper` Protocol + `SignalNotifier` 顶层封装
-  - 默认只推 `WARNING` + `CRITICAL`（INFO 太多刷屏）
-  - 失败不致命（异常被吞，下次重试）
-- `server_chan.py` — Server酱³ 实现
-  - POST `https://sctapi.ftqq.com/{SendKey}.send`
-  - 标题带 emoji（🚨 CRIT / ⚠️ WARN / ℹ️ INFO）
-  - Markdown desp 含代码 / 时间 / 详情 / 触发值 / 阈值
-  - K 线详情链接（拼 `web_base_url + code`）
-- `deduper.py` — JSON 文件去重（按日清空）
-  - key = `code|rule_id|date`
-  - 每天自动清空昨天的（避免无限增长）
-  - 原子写（tmp + rename）
-  - 损坏文件容错
+#### 新增文件
+- `web/src/composables/useSpeechRecognition.ts` — 语音识别 composable
+- `web/src/api/market.ts` — 盘面 API client
+- `web/src/api/portfolio.ts` — 持仓 API client
+- `web/src/pages/market/index.vue` — 盘面 Tab（**新的首页**）
+- `web/src/pages/portfolio/index.vue` — 持仓 Tab
 
-### 集成
-- `BackgroundService` 接受可选 notifier
-  - `_tick()` 在信号评估后调用 `notifier.notify_batch()`
-  - 记录最近 100 条推送成功的信号（暴露给 API）
-  - 推送异常被吞，不影响 WS 广播
-- `create_app()` 接受 `server_chan_key` + `web_base_url`
-  - 未配置 SendKey → 完全不推送，服务正常
-  - 推送初始化失败 → 记日志但继续运行（graceful degradation）
-
-### CLI
-```bash
-# 方式 1：命令行参数
-mommy-web --server-chan-key SCT123xxx --web-base-url https://mommy.example.com
-
-# 方式 2：环境变量（推荐生产）
-export SERVER_CHAN_KEY="SCT123xxx"
-export WEB_BASE_URL="https://mommy.example.com"
-mommy-web --port 8765
-```
-
-### 测试（29 个）
-- `test_server_chan.py` (10) — 成功/失败/网络异常/JSON 异常/web 链接/严重度 emoji
-- `test_deduper.py` (10) — 首推/重推/不同 code/不同 rule/跨日/损坏文件/clear
-- `test_notifier.py` (9) — 阈值过滤/去重/失败不标记/异常处理/batch
+#### 改造文件
+- `web/src/router/index.ts` — 路由：index.vue → market/index.vue
+- `web/src/App.vue` — 底部 Tab 加「💰 持仓」
+- `web/src/pages/index/index.vue` → 删除（被 market 取代）
+- `web/src/pages/detail/index.vue`
+  - 删除盘口信息
+  - 资金流改 SVG 图表（折线 + 柱状）
+  - 用 computed 替代 function（修复响应式 bug）
+- `web/src/api/types.ts` — 加 IndexQuote / SectorQuote / RankingQuote / Position / MoneyFlow
 
 ---
 
@@ -178,29 +171,32 @@ src/mommy_chaogu/watchlist/       17 CRUD
 src/mommy_chaogu/monitor/         10 轮询（Mock adapter）
 src/mommy_chaogu/signals/         31 规则（每条 3-5 case）
 src/mommy_chaogu/cache/           26 命中/拉新/失败/节流/历史/Manager
-src/mommy_chaogu/push/            29 server_chan + deduper + notifier  (NEW M3.1)
-src/mommy_chaogu/web/             0  (TODO P0 — 后端单测)
+src/mommy_chaogu/push/            29 server_chan + deduper + notifier
+src/mommy_chaogu/portfolio/       ⚠️ TODO — 当前 0 测试，急补
+src/mommy_chaogu/web/             ⚠️ TODO — 后端单测
+src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
                               ───
-                              154 total（145 离线 + 9 live）
+                              154 total（145 离线 + 9 live） + M4 未补
 ```
 
 - `ruff`: All checks passed
 - `mypy --strict`: 0 errors
-- pytest: **154**（145 离线通过 + 9 实时网络）
-
-**后端 web/ 模块还没单测** —— 等团长说补
 
 ---
 
 ## 已修复的 bug
 
-1. **Decimal vs Money 误判**（mappers.py × 3）—— Bar.open/close、OrderBookLevel.price 是 Decimal 不是 Money
-2. **5档盘口颜色反了** —— A 股约定：卖=红 买=绿
-3. **Taro 4 H5 加载器错位** —— 切换到 Vite + Vue 3 解决
-4. **FastAPI StaticFiles 抢路由** —— 移到最后注册
-5. **Naive datetime vs aware** —— mappers 自动转 UTC
-6. **Server酱 emoji 在标题里 markdown 化** —— desp 用 `\n\n` 分段 + 一行 trigger value
-7. **JSON Decimal 序列化 NaN** —— Money/Decimal 一律转 str
+1. **Decimal vs Money 误判**（mappers.py × 3）
+2. **5档盘口颜色反了** → 已隐藏盘口
+3. **Taro 4 H5 加载器错位** → 切换到 Vite + Vue 3
+4. **FastAPI StaticFiles 抢路由** → 移到最后注册
+5. **Naive datetime vs aware** → mappers 自动转 UTC
+6. **Server酱 emoji 在标题里 markdown 化** → desp 用 `\n\n` 分段
+7. **JSON Decimal 序列化 NaN** → Money/Decimal 一律转 str
+8. **today 资金流累计用 sum 而非最后一条**（efinance 返回的是累计值）→ 取 items[-1]
+9. **money_flow_cache 缓存层 JSON 反序列化类型错误** → 用 wrapper 存 trade_date
+10. **K线 createIndicator 不判重**（切换周期叠加多张 VOL）→ 用 isFirstInit 标志
+11. **Vue function 模板调用不响应式**（资金流 SVG NaN）→ 改 computed
 
 ---
 
@@ -208,71 +204,63 @@ src/mommy_chaogu/web/             0  (TODO P0 — 后端单测)
 
 | 限制 | 影响 | 何时修 |
 |---|---|---|
-| Mac mini 内网 IP，妈妈出门不能访问 | 只能在 WiFi 下用 | 部署 frp / Cloudflare Tunnel |
-| 后端 web/ 模块无单测 | 回归风险 | 团长说就补 |
-| 没 PWA（不能加桌面） | 每次打开浏览器 | M3.2 加 |
-| 没复盘报告 | 每天收盘后妈妈要自己 `mommy-monitor log` 看 | P1 |
-| Server酱 免费版 5 条/天 | 严重信号 >5 时部分丢失 | 升级 VIP 或加钉钉/Telegram 双源 |
+| Mac mini 内网 IP，妈妈出门不能访问 | 只能在 WiFi 下用 | Cloudflare Tunnel / frp |
+| 主力净流入榜没有（数据源限制） | 扫盘缺一个核心维度 | 直连东财 push2 自爬 |
+| portfolio / rankings / web 后端单测未补 | 回归风险 | 半天搞定 |
+| 没 PWA（不能加桌面） | 每次打开浏览器 | 半小时 |
+| 没复盘报告 | 每天收盘后妈妈要自己看 | P1 |
+| Server酱 免费版 5 条/天 | 严重信号 >5 时部分丢失 | 升级 VIP 或加钉钉/Telegram |
 | 9 个 efinance live 测试偶发挂 | 凌晨东财挂时挂 | `pytest -m live` 标记 |
 | 没 CI | 团长看不见我跑没跑测试 | 待加 GitHub Actions |
+| 自选股 / 持仓还无法从详情页直接加 | 体验割裂 | 加「加自选」「加持仓」按钮 |
 
 ---
 
 ## 下一步候选（按团长优先级）
 
-### 🟥 P0 — 该做但没做
-1. **后端 web 单测**（FastAPI 路由 + WebSocket + mappers）—— 1 小时
-2. **真实手机 + 微信推送实测** —— 等团长拿到 SendKey 测
+> 📅 2026-06-29 17:30 更新：M5.3 cron 自动化刚上线，等明天（6/30）验证全链路跑通后再重新评估。
 
-### 🟧 P1 — 让妈妈更爽
-3. **复盘报告**（收盘后自动生成 markdown）—— 半天
-4. **风险提示规则**（涨停板 / 跌停板 / 单股异动）—— 半天
-5. **Server酱 多渠道兜底**（加钉钉/Telegram/Bark 防单源挂）—— 1 小时
+### 🔴 验证中 — M5.3 cron
+1. **明天（6/30 周二）验证 cron 链路** —— 8:30 预热 / 9:30 启动 / 15:30 推送 / 周六 10:00 周报
+2. **观察 15:30 推送内容质量** —— 板块 + TOP 3 + 矛盾股格式是否合适
+3. **调 ratio 阈值** —— 跑两天看 5bp/10bp 触发频率，太频繁就调高
+
+### 🟧 P1 — 该做但没做
+1. **GitHub Actions CI**（ruff + mypy + pytest）—— 半小时
+2. **pytest -m live 标记** —— 区分离线/网络测试
+3. **信号日志汇总** —— 每个交易日收盘后统计本日触发了几条 spike/surge
+4. **风险提示规则** —— 涨停/跌停/异动 → 接到 monitor
 
 ### 🟨 P2 — 体验升级
-6. **CI 配置**（GitHub Actions：ruff + mypy + pytest）—— 半小时
-7. **PWA 配置**（妈妈加到桌面像 App）—— 半天
-8. **K 线标注**（支撑位 / 压力位 / 黄金分割）—— 1 天
-9. **投资组合跟踪**（成本 / 盈亏 / 持仓占比）—— 2-3 天
+5. **详情页 Tab 化改造**（场景 B — 持仓决策驾驶舱）
+6. **PWA 配置**（妈妈加到桌面像 App）
+7. **板块榜加轮动热力图**（什么板块在涨）
+8. **详情页加「加自选」「加持仓」按钮」（体验闭环）
 
 ### 🟦 P3 — 大件
-10. **微信小程序**（基于 web/src 复用，Taro 重新跑）—— 3-5 天
-11. **回测引擎**（验证信号规则历史表现）—— 1-2 周
-12. **多用户支持**（妈妈 + 丈母娘 + 团长）—— 2-3 天
-13. **内网穿透**（Cloudflare Tunnel，0 配置）—— 1 小时
+9. **微信小程序**（基于 web/src 复用，Taro 重新跑）—— 3-5 天
+10. **回测引擎**（验证信号规则历史表现）—— 1-2 周
+11. **多用户支持**（妈妈 + 丈母娘 + 团长）—— 2-3 天
+12. **内网穿透**（Cloudflare Tunnel，0 配置）—— 1 小时
 
 ---
 
-## 给团长的话
+## 团长的话（产品方向）
 
-**M3.1 推送已上线（代码完成）**：
-- 信号触发 → 自动微信推妈妈
-- 免费版 5 条/天，够核心信号用
-- 没配置 SendKey 时优雅降级，不影响 Web 服务
+团长在 2026-06-28 微信对话中明确指出：
 
-**妈妈使用链路**：
-1. 信号在行情里触发（主力净流入 > 阈值）
-2. BackgroundService 评估 → JSON 去重
-3. POST 到 Server酱 → 推微信「妈妈炒股的信号」
-4. 妈妈微信里看到 ⚠️🚨 → 点链接看 K 线
+> **核心定位**：用本地可编程主机能力，做一款**比券商 APP 更聚焦、更快、更主动**的行情陪伴工具。
 
-**测试步骤**：
-```bash
-# 1. 注册 Server酱拿 SendKey: https://sct.ftqq.com/
-# 2. 设置环境变量
-export SERVER_CHAN_KEY="SCT123xxx"
-export WEB_BASE_URL="http://192.168.10.84:8765"
-# 3. 启动服务
-mommy-web --port 8765
-# 4. 等 5s 一个 tick，看妈妈微信是否收到
-```
+**核心痛点**：
+- 信息太多 → 单一屏幕只展示关心的数据
+- 操作太复杂 → 一步到位
+- 延迟高 → 本地直连 + 5 秒轮询
 
-**现在最大的 gap 仍是「妈妈在户外看不到」**：
-- 内网 IP（已 push 即时解决了一半，但 WiFi 外还是不行）
-- 没自动复盘
-- 没 CI
+**两大场景**：
+- **场景 A：观察盘面（发现新机会）** —— 已交付（盘面 Tab）
+- **场景 B：管理仓位（细节决策）** —— 进行中（详情页驾驶舱待做）
 
-建议下一步做 **P1：复盘报告 + 后端 web 单测**——这两个做完，妈妈就真正「躺着用」+ 团长能放心改。
+> 完整讨论：`docs/DISCUSSION-NOTES.md`
 
 ---
 
@@ -280,5 +268,6 @@ mommy-web --port 8765
 
 - `docs/DESIGN.md` — 架构 + 5 份 ADR
 - `docs/LEDGER.md` — 逐条时间线（commit 级别）
-- `docs/WEB-UI-PROPOSAL.md` — Web UI 方案设计（GLM-5.2 vs 我的对比）
+- `docs/KLINE-SPEC.md` — K线技术规格
+- `docs/DISCUSSION-NOTES.md` — 产品讨论纪要
 - `README.md` — 快速上手

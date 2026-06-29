@@ -13,17 +13,23 @@
 - ✅ **M2.5** — 多数据源 fallback（东财 + 腾讯）
 - ✅ **M3.0** — Web UI（Vite + Vue 3 + FastAPI + WebSocket，妈妈手机可用）
 - ✅ **M3.1** — Server酱 微信推送（信号主动推妈妈微信）
-- ⏳ **M3+** — 复盘报告 / 风险提示 / PWA / CI
+- ✅ **M4** — 持仓 + 语音录入 + 资金流图表 + 盘面扫描
+- ✅ **M5** — 半导体产业链参考库 + 资金流 ratio 监控 + 收盘日报
+- ✅ **M5.3** — OpenClaw cron 4 jobs 自动化（盘前/盘中/收盘/周报）
+- ⏳ **M6** — 详情页驾驶舱 / 复盘报告 / CI
 
-详见 [`docs/PROGRESS.md`](docs/PROGRESS.md)
+**新接触项目**？看 [`docs/PROJECT-LOG.md`](docs/PROJECT-LOG.md) — 一站式总览。详见 [`docs/PROGRESS.md`](docs/PROGRESS.md)
 
 ## 文档体系
 
 | 文档 | 解决什么问题 |
 |---|---|
+| **[`docs/PROJECT-LOG.md`](docs/PROJECT-LOG.md)** | 🆕 **一站式总览**。新团队成员 / 未来自己 看完这一份能拿到 80% 项目上下文 |
 | [`docs/PROGRESS.md`](docs/PROGRESS.md) | 现在在哪？做完什么？还差什么？ |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | 为什么这样设计？架构、原则、ADR |
 | [`docs/LEDGER.md`](docs/LEDGER.md) | 怎么走到这一步的？commit 级别时间线 |
+| [`docs/KLINE-SPEC.md`](docs/KLINE-SPEC.md) | K 线组件规范 |
+| [`docs/DISCUSSION-NOTES.md`](docs/DISCUSSION-NOTES.md) | 讨论笔记 · 历史决策上下文 |
 
 ## 架构原则
 

@@ -4,7 +4,7 @@
 >
 > 跟 DESIGN 互补：DESIGN 讲「为什么这样设计」，LEDGER 讲「具体怎么走到这一步」。
 
-最后更新：2026-06-27 22:35（M3.1 Server酱 推送）
+最后更新：2026-06-28 22:45（M4 持仓 + 资金流图表 + 盘面扫描）
 
 ---
 
@@ -17,8 +17,15 @@
 | M1.5 | 2026-06-26 | 7 条内置告警规则 + Alerter 服务 | `2a44ed8` | ✅ |
 | M2 | 2026-06-26 | 时间戳驱动缓存 + 装饰器模式 | `30fad29` | ✅ |
 | M2.5 | 2026-06-27 | TencentAdapter + FallbackAdapter | `1910bc1` | ✅ |
-| M0.5 | 2026-06-27 | 设计文档 + 执行台账 + 进度总结 | （本文） | ✅ |
-| M3+ | TBD | 见 PROGRESS.md 下一步 | — | ⏳ |
+| M0.5 | 2026-06-27 | 设计文档 + 执行台账 + 进度总结 | （本文件） | ✅ |
+| M3.0 | 2026-06-27 | FastAPI 后端 + Web UI（4 页） | `ee4170b` 等 | ✅ |
+| M3.1 | 2026-06-27 | Server酱 微信推送 + 去重 | `3402e19` | ✅ |
+| M4 | 2026-06-28 | 持仓 + 语音 + 资金流图表 + 盘面扫描 | `8033e07` 等 | ✅ |
+| **M5** | **2026-06-29** | **半导体产业链参考库** | **`3a37aa2`** | **✅** |
+| **M5.1** | **2026-06-29** | **资金流拉新 + 排行（基础设施）** | **`d41bc0a`** | **✅** |
+| **M5.2** | **2026-06-29** | **ratio 信号 + 盘中监控 + 收盘日报** | **`45e20fa`** | **✅** |
+| **M5.3** | **2026-06-29** | **OpenClaw cron 4 jobs 自动化** | **（pending commit）** | **✅** |
+| M6 | TBD | 详情页驾驶舱改造（场景 B） + 复盘报告 | — | ⏳ |
 
 ---
 
@@ -514,12 +521,302 @@ mommy-web --port 8765
 8. **MVP 极致简化 > 正统大而全** → Taro 调试 2h 失败 vs Vite 15min 跑通
 9. **Protocol 化推送抽象 → 多渠道 0 成本** → 微信 / 钉钉 / Telegram 同一接口
 10. **优雅降级是生产级标准** → 没 key / 推送挂 / 重启 都得保证主服务不挂
+11. **产品定位清晰比功能多更重要** —— 团长在 2026-06-28 明确「券商三大痛点」+「两个场景」，决定后续开发顺序
+12. **efinance get_today_bill 返回累计值** → 不是增量，盘日总货最取最后一条
+13. **Vue 模板里调函数不能响应式更新** → computed / watch 才是正解（资金流 SVG NaN bug）
+14. **K线库指标叠加要判重** → createIndicator 不去重会重复创建（切换周期多个 VOL）
+
+## M4 — 持仓管理 + 语音录入 + 资金流图表 + 盘面扫描
+
+**日期**：2026-06-28 全天
+**状态**：✅ 全部完成并验证
+**代码量**：~1500 行后端 + ~2000 行前端
+
+### 完整交付清单
+
+#### 后端
+
+1. **持仓管理模块**（~600 行）
+   - `portfolio/models.py` — Position + PositionAdjustment ORM
+   - `portfolio/store.py` — PortfolioStore（CRUD + 加权平均成本 + 盈亏汇总）
+   - `web/routes/portfolio.py` — 6 个 REST 端点
+   - schemas: `PositionOut` / `PositionDetailOut` / `PortfolioSummaryOut` / `AddPositionIn` / `AddAdjustmentIn` / `AdjustmentOut`
+
+2. **资金流增强**（~100 行修改）
+   - `money_flow/today` 返回结构改为 `{items, cumulative}`，累计取最后一条
+   - 新增 `money_flow/history?days=N` 端点，返回 5 维累计
+   - 修复 `cache/store.py` 中 `get_money_flow_history` JSON 反序列化 bug（用 wrapper 存 trade_date）
+
+3. **盘面排行模块**（~300 行）
+   - `market_data/rankings.py` — 直连东财 push2 接口
+     - 6 个大盘指数（沪深300 / 上证 / 深证 / 创业板 / 科创50 / 上证50）
+     - 30 个板块涨跌幅（行业 + 概念合并去重）
+   - `web/routes/market.py` — 4 个端点
+
+#### 前端
+
+1. **语音录入 composable**（`composables/useSpeechRecognition.ts`）
+   - webkitSpeechRecognition 封装
+   - 中文自然语言解析（「茅台买入价1680 100股」 → 字段）
+   - fallback / 错误处理 / iOS Safari 兼容
+
+2. **盘面页**（`pages/market/index.vue`，~600 行）
+   - 6 个大盘指数卡片（上证 / 深证 / 创业板 / 沪深300 / 科创50 / 上证50）
+   - 三个 Tab 切换：涨幅榜 / 跌幅榜 / 板块榜，各 TOP20
+   - 持仓快览条联动跳持仓页
+   - 30 秒轮询 + 数据年龄显示
+
+3. **持仓页**（`pages/portfolio/index.vue`，~400 行）
+   - 总市值 / 总成本 / 浮盈亏 大字号卡片
+   - 持仓列表：成本 / 现价 / 股数 / 市值 / 盈亏标签
+   - 「+ 录入」表单（代码/名称/价格/股数/日期/备注）
+   - 🎙️ 语音录入弹窗（可点麦克风开始说话）
+
+4. **详情页改造**
+   - 删除盘口信息（聚焦资金流）
+   - 资金流：5 维累计卡片 + 日内 SVG 折线 + 历史 SVG 柱状（零线居中）
+   - 7 / 30 / 90 天切换
+
+#### 文档
+
+- `KLINE-SPEC.md` — K线技术规格完整文档
+- `DISCUSSION-NOTES.md` — 产品讨论纪要（核心痛点 / 两大场景 / 设计哲学 / 待办事项）
+
+### 修复的 bug
+
+1. **buy_date 类型**（mappers.py）— date 对象不能调 _aware()，改为直传
+2. **DetachedInstanceError**（store.py）— `cost_basis` 访问 `pos.adjustments` lazy load 失败，加 `selectinload`
+3. **today 累计值错误**（routes/quotes.py）— sum 所有 items 是错的，取最后一条
+4. **缓存层 money_flow JSON 类型错误**（cache/store.py）— 用 wrapper 包装 list
+5. **K线 createIndicator 不判重**（detail/index.vue）— 用 isFirstInit 标志
+6. **Vue function 不响应式**（detail/index.vue）— 改 computed
+
+### 测试
+
+- 后端 ruff + mypy strict 全过
+- 前端 vite build 无警告
+- 启动服务后全链路验证：录入持仓 → 实时拉价 → 计算盈亏 → 推送 → 资金流图 → 盘面榜
+- 没补 portfolio / rankings 单测（P0 清单里）
+
+### 团长交互记录
+
+1. "来我们先跑起来我内网看看" — 启动服务
+2. "我们来考虑如何丰富功能吧" — 讨论方向
+3. "方向一可以，专注持仓管理也很重要" — 确定方向
+4. "行这个输入仓位的时候，有没有更简单点的办法" — 提出录入问题
+5. "要不直接 OCR 这样可以批量，然后再加语音" → "额还是先走语音吧" — 决策语音优先
+6. "好资金流可不可以用图" — 资金流图表化
+7. "有个 Bug：选一个时间尺度，就会增加一个交易量的图" — K线 bug
+8. "跑一个测试给我截图看看效果，尤其是 K 线和资金流" — 验证截图
+9. "说说 6 张呢，怎么只有一张啊" / "继续啊，继续发呀" — 微信渠道限制
+10. "先去掉盘口信息，然后我们讨论如何改进界面" — 删除盘口
+11. "现在的界面前信息量太少" — 信息量不足
+12. "观察大盘行情 / 关注仓位信息 / 两套逻辑" — 产品哲学重大修正
+13. "按计划开始推进吧" — 开工
+14. "把讨论纪要总结成文档发给我" — DISCUSSION-NOTES.md
+15. "把我的发言总结一下" — 后续产品哲学提炼
+
+### 关键设计决策（产品方向）
+
+**两大场景分开：**
+- 场景 A：扫盘（盘面 Tab）—— 发现新机会
+- 场景 B：盯盘（详情页驾驶舱）—— 决策仓位调整
+
+**下一步**：详情页驾驶舱改造（顶部指标常驻 + Tab 切换 K线/资金流/成交/持仓），完成场景 B。
+
+---
 
 ## 工具链统计
 
 - **Python**：3.12 + uv + hatchling
 - **Lint**：ruff（All checks passed）
 - **Type check**：mypy --strict（0 errors）
-- **Test**：pytest 154（145 离线通过 + 9 实时网络，凌晨抽风时偶发挂）
-- **Code**：src 7300 行 + tests 2270 行 + scripts 391 行 + web (TS+Vite) 2000 行 ≈ 12000 行
+- **Test**：pytest 154（145 离线通过 + 9 实时网络，凌晨抽风时偶发挂，**M4 未补单测**）
+- **Code**：src 8500 行 + tests 2270 行 + scripts 391 行 + web (TS+Vite) 4500 行 ≈ 15000 行
 - **CI**：未配（待加 GitHub Actions）
+
+---
+
+## M5 — 半导体产业链参考库
+
+**日期**：2026-06-29 上午
+**Commit**：`3a37aa2` — `feat(semicon): 半导体产业链参考库 + 106 条 A 股种子数据`
+**代码量**：~600 行 src（4 文件：models / store / seed / __init__）
+
+### 目标
+
+妈妈和团长想研究「半导体产业链」，但没有一份结构化的 reference。新模块充当「知识库」，方便后续资金流研究锁定 106 只 A 股。
+
+### 产出
+
+| 文件 | 作用 | LOC |
+|---|---|---|
+| `src/mommy_chaogu/semicon/__init__.py` | 公共 API | 28 |
+| `src/mommy_chaogu/semicon/models.py` | `SemiconStock` ORM（一张表） | 73 |
+| `src/mommy_chaogu/semicon/seed.py` | 106 条种子数据 | 234 |
+| `src/mommy_chaogu/semicon/store.py` | CRUD + 查询 + StrEnum 常量 | 273 |
+
+**Schema 设计（一张表 semicon_stocks）**：
+
+```
+code              UNIQUE  股票代码
+name                       中文名
+chain_position             上游 / 中游 / 下游 / 末端
+subcategory                EDA / IP / 设备 / 材料 / 存储 / ... / 制造 / 封测 / 分销
+product                    具体产品（介质刻蚀 / NOR Flash 等）
+board                      主板 / 创业板 / 科创板 / 北交所
+note                       备注（跨分类 / 龙头标识）
+created_at / updated_at
+```
+
+**关键设计决策**：
+- **独立 db `data/semicon.db`**（不复用 watchlist.db）— 自选股是「我的池子」（动态），产业链是「参考知识库」（基本只读），语义不同
+- **StrEnum 而非 Python enum** — IDE 提示有，但 schema 故意不用 enum 约束，加新分类时不需要改 schema
+- **跨分类公司用 note 兜底** — 韦尔放「传感器」/ 复旦微电放「FPGA」/ 士兰微放「制造」+ note 写「兼：xxx」
+
+### 验证
+
+- ruff ✅ / mypy --strict ✅
+- 106 条种子成功灌入
+- 分布：上游 37 / 中游 55 / 下游 9 / 末端 5
+
+---
+
+## M5.1 — 资金流拉新 + 排行（基础设施）
+
+**日期**：2026-06-29 下午
+**Commit**：`d41bc0a` — `feat(flows): 资金流拉新 + 排行 CLI（按股票池）`
+**代码量**：~600 行 src（3 文件：pool / service / __init__）
+
+### 目标
+
+把「拉哪几只」从「怎么拉」里解耦，避免将来每加一种股票池（比如新能源、白酒）都要复制粘贴一遍。
+
+### 产出
+
+| 文件 | 作用 | LOC |
+|---|---|---|
+| `src/mommy_chaogu/flows/__init__.py` | 公共 API | 36 |
+| `src/mommy_chaogu/flows/pool.py` | `PoolSource` Protocol + 3 实现 | 99 |
+| `src/mommy_chaogu/flows/service.py` | `FlowService` 高层 API | 414 |
+
+**PoolSource 三实现**：
+- `WatchlistPool`（5 只自选股，db=data/watchlist.db）
+- `SemiconPool`（106 只产业链股，db=data/semicon.db）
+- `CustomPool`（CLI --codes 手动指定）
+
+**FlowService API**：`pull_today` / `pull_history` / `top_today` / `top_history` / `show` / `stats` / `clear`
+
+**关键设计决策**：
+- **复用 `CachedMarketDataAdapter`**（节流 + Tencent fallback + cache 表全部白嫖）
+- **资金流缓存落 `data/watchlist.db`** 而非 `data/semicon.db`（缓存按 code 维度，跨池复用）
+- **`--force` 选项**：重置节流时间戳，强制真打接口（首次 warmup 用）
+
+### 验证
+
+- ruff ✅ / mypy --strict ✅
+- 113 个非网络测试全绿
+- 实战：106 只 × today pull 13.5s（105/106 成功）+ 30d history pull 12.4s（106/106 成功）
+- TOP 当日 净流入：澜起 +22亿 / 中微 +11亿 / 深科技 +9.66亿
+- TOP 当日 净流出：长电 -29.7亿 / 华天 -11.3亿 / 通富 -6.2亿
+
+---
+
+## M5.2 — 资金流 ratio 信号 + 盘中监控 + 收盘日报
+
+**日期**：2026-06-29 傍晚
+**Commit**：`45e20fa` — `feat(flows): ratio-based 异动监控 + 收盘日报`
+
+### 触发事件 + 团长反馈
+
+**团长原话**：「数据规则是OK的，但是阈值这个你不要用人民币的绝对值，而是要用相对于市值的比值，这样更有信息量，不会有这个偏差」
+
+**为什么 ratio 更合理**：
+- 同样 5,000万净流入对茅台（1.5万亿）= 0.03bp（噪声）
+- 对凯美特气（144亿）= 35bp（异动）
+- 差 **1000 倍** —— 绝对值完全看不出来
+
+### 产出（3 个新文件）
+
+| 文件 | 作用 | LOC |
+|---|---|---|
+| `src/mommy_chaogu/flows/signals.py` | 4 条 ratio-based 规则 + evaluate() | 174 |
+| `src/mommy_chaogu/flows/monitor.py` | `FlowMonitor` 持续轮询类 | 215 |
+| `src/mommy_chaogu/flows/report.py` | `FlowReport` 收盘日报 markdown | 268 |
+
+**ratio 信号公式**：
+```
+ratio = main_net / circulating_market_cap
+1 bp = 1/10000 = 0.01%
+```
+
+**5 条默认规则**：
+
+| rule_id | 触发条件 | severity |
+|---|---|---|
+| `flow_in_spike` | 5min delta > 5bp 净流入 | WARN |
+| `flow_in_surge` | 5min delta > 10bp 净流入 | CRIT |
+| `flow_out_spike` | 5min delta > 5bp 净流出 | WARN |
+| `flow_out_surge` | 5min delta > 10bp 净流出 | CRIT |
+
+**FlowMonitor 安全机制**：
+- 状态持久化：`data/.flow_monitor_state.json`（断点续传）
+- 失败告警：连续 3 轮 ≥ 50% 失败 → stdout 警告
+- 信号写：`data/flows_monitor.log`
+
+**FlowReport 收盘日报 markdown 包含**：
+1. 池子概况 + 当日/30d 合计
+2. **板块汇总**（按 ratio）：上游/中游/下游/末端
+3. **TOP 10 流入 / TOP 10 流出**（按 ratio，不是绝对值）
+4. **「矛盾股」清单**：今日 ratio>0 但 30d ratio<0
+
+### 修复 bug
+
+`flows/report.py` 第 191 行：板块汇总用错变量名 `cp`（tuple）导致 4 行都显示「中游」
+
+### 实战数据（6/29 收盘）
+
+- 板块 ratio：上游 +14.3bp / 中游 +10.1bp / 末端 -25.0bp / 下游 -77.4bp
+- TOP 流入：凯美特气 +358bp / 聚辰 +127bp / 深科技 +104bp
+- TOP 流出：晶方 -191bp / 长电 -161bp / 华天 -156bp
+- 矛盾股 15 只（含澜起 +22亿/兆易 +4.4亿 反转信号）
+
+### 验证
+
+- ruff ✅ / mypy --strict ✅
+- 113 个非网络测试全绿
+
+---
+
+## M5.3 — OpenClaw cron 4 jobs 自动化
+
+**日期**：2026-06-29 17:30
+**Commit**：（待 commit）— `chore(docs): M5.3 cron jobs + PROJECT-LOG 总览`
+
+### 目标
+
+把「每天盘前/盘中/收盘/周报」从手动 → 自动化。妈妈和团长不用记着跑命令。
+
+### 4 个 OpenClaw cron jobs（model=deepseek-flash 省 token）
+
+| 时间 | 名称 | Job ID | 推送 |
+|---|---|---|---|
+| 8:30 周一~五 | 盘前预热 | `f3fa79c8-689a-42e6-9db4-b617e5830b17` | silent |
+| 9:30 周一~五 | 盘中监控启动 | `f39f3cbc-d723-49f8-b65e-28a2f5b1576b` | silent |
+| 15:30 周一~五 | 收盘日报 | `94bd6c91-aadc-4796-b324-cdc4c0c89af7` | 推微信 |
+| 周六 10:00 | 周报汇总 | `e902f385-3394-42d9-aeb0-db5d79634aa2` | 推微信 |
+
+**关键设计决策**：
+- **监控进程用 `--max-seconds 19800`（5.5h）自动退出** — 9:30 → 15:00，比 cron `pkill` 干净
+- **启动前 `pgrep` 幂等检查** — 避免昨天没退干净时重复启动
+- **silent 启动不打扰** — 只 15:30 + 周六推送，一天最多 1-2 条机器人消息
+- **推送目标 = 团长当前聊天**（`channel=openclaw-weixin, accountId=0b4018927074-im-bot`）
+
+### API 稳定性摸底结论（同步到本文件）
+
+**东财资金流**：10/10、50/50、20/20 全绿，5min 节奏富余 22 倍
+**腾讯资金流**：❌ 没有（stub 永远返回 []），资金流没有兜底
+
+### 实战待验证
+
+- ⏳ 6/30 周二第一次 cron 完整跑通（盘前预热 8:30 / 监控启动 9:30 / 收盘日报 15:30 / 周报 7/4）
