@@ -46,6 +46,8 @@ DEFAULT_CACHE_DB_PATH = Path("data/watchlist.db")  # cache 与 watchlist 共用�
 DEFAULT_SEMICON_DB_PATH = Path("data/semicon.db")  # 半导体产业链独立 db
 DEFAULT_FLOWS_SEMICON_DB_PATH = Path("data/semicon.db")  # flows 拉哪只从哪取
 DEFAULT_FLOWS_DB_PATH = Path("data/watchlist.db")  # 资金流缓存落到哪（复用 cache 表）
+DEFAULT_FLOWS_MONITOR_LOG_PATH = Path("data/flows_monitor.log")  # monitor 信号日志
+DEFAULT_FLOWS_REPORT_DIR = Path("data/")  # 收盘日报输出目录
 
 
 # ---------- 共用 ----------
@@ -988,6 +990,55 @@ def cmd_flows_clear(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_flows_run(args: argparse.Namespace) -> int:
+    """持续轮询 + ratio-based 异动检测。"""
+    from mommy_chaogu.flows import FlowMonitor
+    pool = _flows_resolve_pool(args)
+    service = _flows_service(args)
+    log_path = Path(args.log) if args.log else None
+    state_path = Path(args.state) if args.state else None
+    monitor = FlowMonitor(
+        pool=pool,
+        service=service,
+        interval_seconds=args.interval,
+        log_path=log_path,
+        state_path=state_path,
+    )
+    print(f"🚀 启动资金流监控 · {pool.describe()}")
+    print(f"   轮询间隔: {args.interval}s   日志: {log_path or '(stdout only)'}")
+    print(f"   状态文件: {state_path or '(in-memory only)'}")
+    print("   Ctrl+C 优雅退出")
+    print("─" * 70)
+    n = monitor.run(max_iterations=args.max_iterations, max_seconds=args.max_seconds)
+    print(f"\n[monitor] 完成 {n} 轮迭代")
+    return 0
+
+
+def cmd_flows_report(args: argparse.Namespace) -> int:
+    """生成收盘日报（markdown）。"""
+    from datetime import date as _date
+
+    from mommy_chaogu.flows import FlowReport
+    pool = _flows_resolve_pool(args)
+    service = _flows_service(args)
+    reporter = FlowReport(service)
+    day = _date.fromisoformat(args.day) if args.day else _date.today()
+    output = Path(args.output) if args.output else (
+        Path(args.report_dir) / f"flows_report_{day.isoformat()}.md"
+    )
+    print(f"📝 生成 {pool.name} 资金流日报 · {day}")
+    print(f"   输出: {output}")
+    print("─" * 70)
+    final = reporter.generate(
+        pool=pool,
+        day=day,
+        history_days=args.history_days,
+        output=output,
+    )
+    print(f"✅ 报告已生成: {final}")
+    return 0
+
+
 def build_flows_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-flows",
@@ -1044,6 +1095,30 @@ def build_flows_parser() -> argparse.ArgumentParser:
     p_c = sub.add_parser("clear", help="清空某池子的 today + history 缓存")
     p_c.add_argument("--yes", "-y", action="store_true", help="跳过确认")
     p_c.set_defaults(func=cmd_flows_clear)
+
+    # run (持续监控)
+    p_run = sub.add_parser("run", help="持续轮询 + ratio-based 异动检测（Ctrl+C 退出）")
+    p_run.add_argument("--interval", "-i", type=float, default=300.0,
+                       help="轮询间隔秒（默认 300 = 5 分钟）")
+    p_run.add_argument("--max-iterations", "-n", type=int, default=None,
+                       help="最多跑 N 轮（默认无限）")
+    p_run.add_argument("--max-seconds", type=float, default=None,
+                       help="最多跑 N 秒（默认无限）")
+    p_run.add_argument("--log", default=str(DEFAULT_FLOWS_MONITOR_LOG_PATH),
+                       help=f"信号日志路径 (默认 {DEFAULT_FLOWS_MONITOR_LOG_PATH})")
+    p_run.add_argument("--state", default="data/.flow_monitor_state.json",
+                       help="状态文件路径（断点续传用）")
+    p_run.set_defaults(func=cmd_flows_run)
+
+    # report (收盘日报)
+    p_rep = sub.add_parser("report", help="生成资金流收盘日报（markdown）")
+    p_rep.add_argument("--day", help="日期 YYYY-MM-DD（默认今天）")
+    p_rep.add_argument("--history-days", type=int, default=30,
+                       help="历史累计天数（默认 30）")
+    p_rep.add_argument("--output", "-o", help="输出文件路径")
+    p_rep.add_argument("--report-dir", default=str(DEFAULT_FLOWS_REPORT_DIR),
+                       help=f"报告输出目录 (默认 {DEFAULT_FLOWS_REPORT_DIR})")
+    p_rep.set_defaults(func=cmd_flows_report)
 
     return p
 

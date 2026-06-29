@@ -115,7 +115,7 @@ class FlowService:
             base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])  # type: ignore[list-item]
         else:
             base = EfinanceAdapter()
-        adapter = CachedMarketDataAdapter(base, store)  # type: ignore[arg-type,unused-ignore]
+        adapter = CachedMarketDataAdapter(base, store)
         return cls(adapter, store)
 
     # ============================================================
@@ -327,6 +327,35 @@ class FlowService:
     # ============================================================
     # 单只查询
     # ============================================================
+
+    def get_market_caps(self, codes: list[str]) -> dict[str, tuple[str, Decimal]]:
+        """批量拉取 (name, total_market_cap, circulating_market_cap)。
+
+        走 CachedMarketDataAdapter.get_quote，自动启用节流 + 缓存。
+        返回 {code: (name, circ_mcap)}，拿不到市值的 code 不在结果里。
+        """
+        out: dict[str, tuple[str, Decimal]] = {}
+        # 强制重置节流（让监控模式能每轮都拿到最新市值）
+        for code in codes:
+            self.adapter._last_fetch_attempt[f"quote:{code}"] = datetime.min.replace(
+                tzinfo=UTC
+            )
+        for code in codes:
+            try:
+                q = self.adapter.get_quote(code)
+            except Exception as e:
+                _log.warning("get_market_caps(%s) failed: %s", code, e)
+                continue
+            if q is None:
+                continue
+            circ = q.circulating_market_cap.amount if q.circulating_market_cap else None
+            if circ is None or circ == 0:
+                # fallback 到总市值（这种股很罕见）
+                circ = q.total_market_cap.amount if q.total_market_cap else None
+            if circ is None or circ == 0:
+                continue
+            out[code] = (q.name, circ)
+        return out
 
     def show(self, code: str, days: int = 30) -> dict[str, Any]:
         """查单只：当日 + 最近 N 天历史 + 缓存新鲜度。"""

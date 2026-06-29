@@ -7,29 +7,48 @@
   - SemiconPool：从 data/semicon.db 半导体产业链拿 codes
   - CustomPool：CLI --codes 传入
 - FlowService 高层 API：pull / top / show / stats
-
-不重新发明缓存层，不重复 schema。
+- FlowMonitor：持续轮询 + ratio-based 异动检测
+- FlowReport：收盘日报（markdown）
 """
 from __future__ import annotations
 
+from mommy_chaogu.flows.monitor import FlowMonitor, TickResult
 from mommy_chaogu.flows.pool import (
     CustomPool,
     PoolSource,
     SemiconPool,
     WatchlistPool,
 )
+from mommy_chaogu.flows.report import FlowReport
 from mommy_chaogu.flows.service import (
     FlowService,
     FlowSummary,
     PullResult,
 )
+from mommy_chaogu.flows.signals import (
+    FlowRule,
+    FlowSignal,
+    Severity,
+    StockSnapshot,
+    default_rules,
+    evaluate,
+)
 
 __all__ = [
     "CustomPool",
+    "FlowMonitor",
+    "FlowReport",
+    "FlowRule",
     "FlowService",
+    "FlowSignal",
     "FlowSummary",
     "PoolSource",
     "PullResult",
     "SemiconPool",
+    "Severity",
+    "StockSnapshot",
+    "TickResult",
     "WatchlistPool",
+    "default_rules",
+    "evaluate",
 ]
