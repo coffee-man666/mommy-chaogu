@@ -23,6 +23,7 @@ dependencies = [
 mommy-watchlist = "mommy_chaogu.cli:main_watchlist"
 mommy-monitor = "mommy_chaogu.cli:main_monitor"
 mommy-cache = "mommy_chaogu.cli:main_cache"
+mommy-semicon = "mommy_chaogu.cli:main_semicon"
 mommy-web = "mommy_chaogu.cli:main_web"
 mommy-chaogu = "mommy_chaogu.cli:main"
 
