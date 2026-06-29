@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="{{ theme_color }}" />
+  <title>{% if is_index %}妈妈炒股 · 资金流收盘报告索引{% else %}{{ report.day.isoformat() }} 资金流收盘报告 · {{ report.pool_name }}{% endif %}</title>
+  <style>
+    :root {
+      --accent: {{ theme_color }};
+      --accent-soft: {{ theme_soft }};
+      --bg: {{ bg_color }};
+      --fg: #1c1f23;
+      --fg-muted: #6a6f76;
+      --border: #e6e8eb;
+      --card-bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; min-height: 100vh;
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--fg);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.55;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    .container {
+      max-width: 880px; margin: 0 auto; padding: 32px 20px 80px;
+    }
+
+    /* ── Hero ─────────────────────────────── */
+    .hero {
+      background: var(--card-bg);
+      border-radius: 18px;
+      padding: 32px 28px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03);
+      margin-bottom: 24px;
+      border-left: 6px solid var(--accent);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::after {
+      content: "";
+      position: absolute; right: -40px; top: -40px;
+      width: 160px; height: 160px;
+      background: var(--accent-soft);
+      border-radius: 50%;
+      opacity: 0.6;
+      z-index: 0;
+    }
+    .hero-inner { position: relative; z-index: 1; }
+    .hero-meta {
+      font-size: 13px; color: var(--fg-muted);
+      display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .hero-meta .pill {
+      background: var(--accent-soft);
+      padding: 2px 10px; border-radius: 999px;
+      color: var(--accent); font-weight: 600;
+    }
+    .hero h1 {
+      margin: 0 0 14px 0;
+      font-size: 30px;
+      letter-spacing: 0.02em;
+      line-height: 1.25;
+    }
+    .hero .lede {
+      font-size: 16px;
+      color: var(--fg);
+      margin: 0;
+      line-height: 1.65;
+    }
+    .hero .lede strong { color: var(--accent); }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 14px;
+      margin-top: 22px;
+    }
+    .kpi {
+      background: #fafbfc;
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .kpi-label {
+      font-size: 11px;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+    .kpi-value { font-size: 22px; font-weight: 700; }
+    .kpi-sub { font-size: 12px; color: var(--fg-muted); margin-top: 2px; }
+    .pos { color: #d6336c; }
+    .neg { color: #1971c2; }
+    .neutral { color: var(--fg-muted); }
+
+    /* ── Section ──────────────────────────── */
+    .section {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 24px 26px;
+      margin-bottom: 18px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+    }
+    .section h2 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section h2 .em { font-size: 22px; }
+    .section .sub {
+      color: var(--fg-muted); font-size: 13px;
+      margin: -10px 0 16px 0;
+    }
+
+    /* ── Bars (板块汇总) ──────────────────── */
+    .bar-row {
+      display: grid;
+      grid-template-columns: 56px 1fr 110px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-top: 1px dashed var(--border);
+    }
+    .bar-row:first-of-type { border-top: none; }
+    .bar-row .tag {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .bar-row .bar {
+      position: relative;
+      height: 24px;
+      background: #f3f4f6;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .bar-row .bar > span {
+      position: absolute;
+      top: 0; bottom: 0;
+      border-radius: 6px;
+    }
+    .bar-row .bar.in  > span { background: linear-gradient(90deg, #e64980, #d6336c); right: 50%; }
+    .bar-row .bar.out > span { background: linear-gradient(90deg, #1971c2, #1864ab); left: 50%; }
+    .bar-row .bar.zero > span { background: #ced4da; }
+    .bar-row .axis {
+      position: absolute;
+      left: 50%; top: 0; bottom: 0;
+      width: 1px; background: var(--border);
+    }
+    .bar-row .meta {
+      text-align: right;
+      font-size: 13px;
+    }
+    .bar-row .meta .bp { font-weight: 700; font-size: 15px; }
+
+    /* ── Stock Grid ───────────────────────── */
+    .stocks {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .stock {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #fafbfc;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .stock .rank {
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .stock .name {
+      font-weight: 700; font-size: 15px;
+    }
+    .stock .sub {
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .stock .ratio {
+      font-size: 18px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .stock .num {
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .stock .num b { color: var(--fg); font-weight: 600; }
+
+    /* ── Contradictions ───────────────────── */
+    .contra-list {
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .contra-item {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 14px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: #fafbfc;
+      border-left: 4px solid var(--accent);
+      align-items: center;
+    }
+    .contra-item .name { font-weight: 700; }
+    .contra-item .sub { font-size: 11px; color: var(--fg-muted); }
+    .contra-item .bp-pair {
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .contra-item .bp-pair .now { font-weight: 700; font-size: 15px; }
+    .contra-item .flip {
+      font-size: 18px;
+    }
+
+    /* ── Footer ───────────────────────────── */
+    .footer {
+      color: var(--fg-muted);
+      font-size: 12px;
+      text-align: center;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      margin-top: 32px;
+    }
+    .footer kbd {
+      background: #f1f3f5;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, "SF Mono", monospace;
+      font-size: 11px;
+    }
+
+    /* ── Index (list page) ────────────────── */
+    .index-list {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .index-item {
+      display: grid;
+      grid-template-columns: 100px 1fr auto auto;
+      gap: 14px;
+      padding: 14px 18px;
+      background: var(--card-bg);
+      border-radius: 10px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.03);
+      align-items: center;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .index-item:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }
+    .index-item .day {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .index-item .pool { color: var(--fg-muted); font-size: 13px; }
+    .index-item .net { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    /* responsive */
+    @media (max-width: 540px) {
+      .container { padding: 18px 14px 60px; }
+      .hero { padding: 22px 18px; }
+      .hero h1 { font-size: 24px; }
+      .bar-row { grid-template-columns: 44px 1fr 92px; gap: 8px; }
+      .contra-item { grid-template-columns: 1fr; gap: 6px; }
+      .contra-item .flip { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    {% if is_index %}
+    {# ───────────────────────── Index 索引页 ───────────────────────── #}
+    <div class="hero">
+      <div class="hero-inner">
+        <div class="hero-meta"><span class="pill">📚 历史报告</span></div>
+        <h1>妈妈炒股 · 资金流收盘报告</h1>
+        <p class="lede">共 <strong>{{ reports | length }}</strong> 份报告，按日期倒序。点开看当日详情。</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2><span class="em">📋</span> 全部报告</h2>
+      <div class="index-list">
+        {% for r in reports %}
+          {% set day_str = r.day.isoformat() %}
+          <a class="index-item" href="{{ day_str }}.html">
+            <div class="day">{{ day_str }}</div>
+            <div class="pool">池子：{{ r.pool_name }} · 覆盖 {{ r.covered }}/{{ r.pool_size }}</div>
+            <div class="net {% if r.today_total > 0 %}pos{% elif r.today_total < 0 %}neg{% else %}neutral{% endif %}">
+              {% if r.today_total >= 0 %}+{% endif %}{{ r.today_total | yi_str(2) }} 亿
+            </div>
+            <div>→</div>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% else %}
+    {# ───────────────────────── 单日报告页 ─────────────────────────── #}
+
+    {# breadcrumb #}
+    <div style="font-size:13px;color:var(--fg-muted);margin-bottom:14px;">
+      <a href="index.html">← 全部报告</a>
+    </div>
+
+    {# HERO #}
+    <div class="hero">
+      <div class="hero-inner">
+        <div class="hero-meta">
+          <span class="pill">{{ report.pool_name }}</span>
+          <span>{{ report.day.isoformat() }} 周{{ weekday_cn }}</span>
+          <span>· 覆盖 {{ report.covered }}/{{ report.pool_size }}</span>
+        </div>
+        <h1>{{ hero_title }}</h1>
+        <p class="lede">{{ hero_lede | safe }}</p>
+
+        <div class="kpis">
+          <div class="kpi">
+            <div class="kpi-label">当日主力净</div>
+            <div class="kpi-value {% if report.today_total > 0 %}pos{% elif report.today_total < 0 %}neg{% else %}neutral{% endif %}">
+              {% if report.today_total >= 0 %}+{% endif %}{{ report.today_total | yi_str(2) }}亿
+            </div>
+            <div class="kpi-sub">全池子合计</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">30d 累计</div>
+            <div class="kpi-value {% if report.days_30_total > 0 %}pos{% elif report.days_30_total < 0 %}neg{% else %}neutral{% endif %}">
+              {% if report.days_30_total >= 0 %}+{% endif %}{{ report.days_30_total | yi_str(2) }}亿
+            </div>
+            <div class="kpi-sub">{{ report.days_30_total > 0 and "净流入格局" or report.days_30_total < 0 and "仍在净流出" or "基本平衡" }}</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">最强板块</div>
+            <div class="kpi-value" style="font-size:18px;">{{ strongest_sector.name }}</div>
+            <div class="kpi-sub">{% if strongest_sector.ratio_bp > 0 %}+{% endif %}{{ strongest_sector.ratio_bp | bp_str(1) }} bp</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">最弱板块</div>
+            <div class="kpi-value" style="font-size:18px;">{{ weakest_sector.name }}</div>
+            <div class="kpi-sub">{% if weakest_sector.ratio_bp > 0 %}+{% endif %}{{ weakest_sector.ratio_bp | bp_str(1) }} bp</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# 板块汇总 #}
+    <div class="section">
+      <h2><span class="em">📊</span> 板块温度</h2>
+      <p class="sub">按 <strong>ratio</strong> 排序：当天主力净 / 流通市值。绝对值一样的两只小票与大票，这里会拉开差距。</p>
+      <div class="axis" style="position:relative;height:1px;background:var(--border);margin:0 0 6px;"></div>
+      {% for s in report.sectors %}
+      <div class="bar-row">
+        <div class="tag">{{ s.name }}</div>
+        <div class="bar {% if s.ratio_bp > 0 %}in{% elif s.ratio_bp < 0 %}out{% else %}zero{% endif %}">
+          <span style="width: {{ sector_bar_width(s) }}%;"></span>
+        </div>
+        <div class="meta">
+          <span class="bp {% if s.ratio_bp > 0 %}pos{% elif s.ratio_bp < 0 %}neg{% else %}neutral{% endif %}">
+            {% if s.ratio_bp > 0 %}+{% endif %}{{ s.ratio_bp | bp_str(1) }} bp
+          </span>
+          <div style="font-size:11px;color:var(--fg-muted);">
+            {{ s.stock_count }} 只 · {% if s.today_main_net >= 0 %}+{% endif %}{{ s.today_main_net | yi_str(2) }}亿
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# TOP 流入 #}
+    <div class="section">
+      <h2><span class="em">🟢</span> TOP 净流入（按 ratio）</h2>
+      <p class="sub">前 10 只「小盘流入大资金」的领涨者。小市值会拉满分。</p>
+      <div class="stocks">
+        {% for s in report.top_inflows %}
+        <div class="stock">
+          <div class="rank">第 {{ s.rank }} 名 · {{ s.subcategory }}</div>
+          <div class="name">{{ s.name }}</div>
+          <div class="ratio pos">
+            {% if s.ratio_bp > 0 %}+{% endif %}{{ s.ratio_bp | bp_str(1) }} bp
+          </div>
+          <div class="num">流入 <b>{% if s.main_net >= 0 %}+{% endif %}{{ s.main_net | yi_str(2) }}亿</b> · 市值 {{ s.float_market_cap | yi_str(0) }}亿</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# TOP 流出 #}
+    <div class="section">
+      <h2><span class="em">🔴</span> TOP 净流出（按 ratio）</h2>
+      <p class="sub">主力跑得最狠的 10 只。</p>
+      <div class="stocks">
+        {% for s in report.top_outflows %}
+        <div class="stock">
+          <div class="rank">第 {{ s.rank }} 名 · {{ s.subcategory }}</div>
+          <div class="name">{{ s.name }}</div>
+          <div class="ratio neg">
+            {{ s.ratio_bp | bp_str(1) }} bp
+          </div>
+          <div class="num">流出 <b>{% if s.main_net >= 0 %}+{% endif %}{{ s.main_net | yi_str(2) }}亿</b> · 市值 {{ s.float_market_cap | yi_str(0) }}亿</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# 矛盾股 #}
+    {% if report.contradictions %}
+    <div class="section">
+      <h2><span class="em">⚠️</span> 矛盾股 · 今日反转</h2>
+      <p class="sub">30d 整体在流出，但今天净流入——可能是「跌出来的机会」。</p>
+      <div class="contra-list">
+        {% for c in report.contradictions %}
+        <div class="contra-item">
+          <div>
+            <div class="name">{{ c.name }}</div>
+            <div class="sub">{{ c.code }} · 今日 {% if c.extra.today_bp > 0 %}+{% endif %}{{ c.extra.today_bp | bp_str(1) }}bp · 30d {{ c.extra.days_30_bp | bp_str(1) }}bp</div>
+          </div>
+          <div class="bp-pair">
+            <div class="now pos">今日 {% if c.extra.today_net >= 0 %}+{% endif %}{{ c.extra.today_net | yi_str(2) }}亿</div>
+            <div class="neg" style="font-size:12px;">30d {{ c.extra.days_30_net | yi_str(2) }}亿</div>
+          </div>
+          <div class="flip">↩️</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# Footer #}
+    <div class="footer">
+      <p>数据源：东财 efinance · 池子定义：<code>{{ report.pool_name }}</code></p>
+      <p style="margin-top:6px;">
+        全部 <strong>ratio-based</strong>（流通市值分母）—— 茅台的 5 亿 ≈ 小票的 2000 万。<br>
+        方法论：bp = 1/10000 · 同等绝对金额下小盘股的「异动信号」= 大盘股的几十倍。
+      </p>
+      <p style="margin-top:10px;">
+        <a href="index.html">← 返回索引</a> · 生成于 {{ generated_at }}
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>

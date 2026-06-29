@@ -24,6 +24,8 @@ from typing import Any
 from mommy_chaogu.flows.pool import PoolSource, SemiconPool
 from mommy_chaogu.flows.service import FlowService
 
+DEFAULT_FLOWS_REPORT_DIR = Path("data/")
+
 
 def _fmt_bp(d: Decimal) -> str:
     """ratio 转 bp 显示。"""
