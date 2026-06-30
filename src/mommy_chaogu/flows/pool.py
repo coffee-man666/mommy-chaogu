@@ -109,3 +109,4 @@ def build_pool(name: str, db_path: Path, custom_codes: list[str] | None = None) 
             raise ValueError("custom pool 需要 --codes 参数")
         return CustomPool(custom_codes)
     raise ValueError(f"未知 pool: {name!r}，可选 watchlist/semicon/custom")
+

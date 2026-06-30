@@ -23,8 +23,12 @@ export function getOrderBook(code: string): Promise<OrderBook> {
   return apiGet(`/api/quotes/${code}/orderbook`)
 }
 
-export function getTodayMoneyFlow(code: string): Promise<any[]> {
+export function getTodayMoneyFlow(code: string): Promise<any> {
   return apiGet(`/api/quotes/${code}/money_flow/today`)
+}
+
+export function getHistoryMoneyFlow(code: string, days = 30): Promise<any> {
+  return apiGet(`/api/quotes/${code}/money_flow/history?days=${days}`)
 }
 
 // 格式化辅助

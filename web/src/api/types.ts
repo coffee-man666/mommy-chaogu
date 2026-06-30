@@ -104,3 +104,108 @@ export interface Health {
   uptime_seconds: number
   last_snapshot_at: string | null
 }
+
+// ---------- Portfolio ----------
+
+export interface PositionDetail {
+  id: number
+  code: string
+  name: string | null
+  avg_cost: string
+  shares: number
+  current_price: string | null
+  market_value: string | null
+  total_cost: string
+  unrealized_pnl: string | null
+  unrealized_pnl_pct: string | null
+  buy_date: string | null
+  note: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PortfolioSummary {
+  positions: PositionDetail[]
+  total_cost: string
+  total_market_value: string | null
+  total_unrealized_pnl: string | null
+  total_unrealized_pnl_pct: string | null
+  n_positions: number
+}
+
+export interface Position {
+  id: number
+  code: string
+  name: string | null
+  buy_price: string
+  shares: number
+  buy_date: string | null
+  note: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Adjustment {
+  id: number
+  position_id: number
+  action: 'buy' | 'sell' | 'dividend'
+  price: string
+  shares: number
+  timestamp: string
+  note: string
+}
+
+// ---------- Market Ranking ----------
+
+export interface IndexQuote {
+  code: string
+  name: string
+  price: string
+  change_pct: string
+  prev_close: string
+}
+
+export interface SectorQuote {
+  code: string
+  name: string
+  change_pct: string
+  price: string
+}
+
+export interface RankingQuote {
+  code: string
+  name: string
+  price: string
+  change_pct: string
+  change: string
+  volume: number
+  turnover: string
+  market: string
+}
+
+// ---------- Money Flow ----------
+
+export interface MoneyFlowItem {
+  timestamp: string
+  date?: string
+  main_net: string
+  super_net: string | null
+  big_net: string | null
+  medium_net: string | null
+  small_net: string | null
+  main_ratio: string | null
+}
+
+export interface MoneyFlowCumulative {
+  main_net: string
+  super_net: string
+  big_net: string
+  medium_net: string
+  small_net: string
+}
+
+export interface MoneyFlowResponse {
+  items: MoneyFlowItem[]
+  cumulative: MoneyFlowCumulative
+  days?: number
+}

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { listWatchlist, listGroups, addStock, removeStock } from '../../api/watchlist'
+import { useTheme } from '../../composables/useTheme'
 import { cacheStats, health } from '../../api/cache'
 import type { WatchlistStock, WatchlistGroup, CacheStats, Health } from '../../api/types'
 
 const watchlist = ref<WatchlistStock[]>([])
 const groups = ref<WatchlistGroup[]>([])
+const { themes, currentThemeId, currentTheme, setTheme } = useTheme()
 const cache = ref<CacheStats | null>(null)
 const healthInfo = ref<Health | null>(null)
 const showAdd = ref(false)
@@ -120,6 +122,33 @@ onUnmounted(() => {
       <div class="subtitle">上次刷新 {{ fmtLastRefresh() }}</div>
     </header>
 
+    <!-- 主题选择 -->
+    <div class="card">
+      <div class="card-title">
+        🎨 主题
+        <span class="theme-cur-name">{{ currentTheme().name }} · {{ currentTheme().nameEn }}</span>
+      </div>
+      <div class="theme-grid">
+        <div
+          v-for="t in themes"
+          :key="t.id"
+          :class="['theme-item', { active: currentThemeId === t.id }]"
+          @click="setTheme(t.id)"
+        >
+          <div class="theme-preview">
+            <span class="ts-c1" :style="{ background: t.colors.primary }"></span>
+            <span class="ts-c2" :style="{ background: t.colors.up }"></span>
+            <span class="ts-c3" :style="{ background: t.colors.down }"></span>
+            <span class="ts-c4" :style="{ background: t.colors.gold }"></span>
+          </div>
+          <div class="theme-meta">
+            <div class="theme-num">{{ t.number }}</div>
+            <div class="theme-name">{{ t.name }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card" v-if="healthInfo">
       <div class="card-title">🩺 服务状态</div>
       <div class="card-row">
@@ -143,7 +172,7 @@ onUnmounted(() => {
       <div class="card-title">📦 缓存状态</div>
       <div class="card-row">
         <span class="label">命中率</span>
-        <span class="value" :style="{ color: Number(cache.hit_rate) >= 0.8 ? '#2d8e3d' : '#c83e3e' }">
+        <span class="value" :style="{ color: Number(cache.hit_rate) >= 0.8 ? 'var(--color-down)' : 'var(--color-primary)' }">
           {{ fmtHitRate(cache.hit_rate) }}
         </span>
       </div>
@@ -222,12 +251,12 @@ onUnmounted(() => {
 <style scoped>
 .settings-page {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: var(--color-bg);
   padding-bottom: 24px;
 }
 
 .header {
-  background: #c83e3e;
+  background: var(--color-primary);
   color: white;
   padding: 18px 16px 14px;
 }
@@ -312,7 +341,7 @@ onUnmounted(() => {
 .card-row .value { color: #333; font-family: 'Courier New', monospace; font-weight: 600; }
 
 .add-btn {
-  background: #c83e3e;
+  background: var(--color-primary);
   color: white;
   padding: 5px 12px;
   border-radius: 14px;
@@ -323,7 +352,7 @@ onUnmounted(() => {
 }
 
 .add-btn:active {
-  background: #a52828;
+  background: var(--color-primary-dark);
 }
 
 .empty-hint-card {
@@ -365,7 +394,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--color-bg);
 }
 
 .group-row:last-child { border-bottom: none; }
@@ -374,7 +403,7 @@ onUnmounted(() => {
 .group-count {
   font-size: 12px;
   color: #999;
-  background: #f5f5f5;
+  background: var(--color-bg);
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -401,11 +430,11 @@ onUnmounted(() => {
 
 .input:focus {
   outline: none;
-  border-color: #c83e3e;
+  border-color: var(--color-primary);
 }
 
 .submit-btn {
-  background: #c83e3e;
+  background: var(--color-primary);
   color: white;
   padding: 10px;
   border-radius: 6px;
@@ -422,7 +451,7 @@ onUnmounted(() => {
 }
 
 .submit-btn:active:not(:disabled) {
-  background: #a52828;
+  background: var(--color-primary-dark);
 }
 
 .stock-row {
@@ -430,7 +459,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--color-bg);
 }
 
 .stock-row:last-child { border-bottom: none; }
@@ -452,18 +481,18 @@ onUnmounted(() => {
 }
 
 .del-btn {
-  color: #c83e3e;
+  color: var(--color-primary);
   font-size: 13px;
   padding: 6px 14px;
   cursor: pointer;
   background: white;
-  border: 1px solid #c83e3e;
+  border: 1px solid var(--color-primary);
   border-radius: 14px;
   font-weight: 600;
 }
 
 .del-btn:active:not(:disabled) {
-  background: #c83e3e;
+  background: var(--color-primary);
   color: white;
 }
 
@@ -473,9 +502,71 @@ onUnmounted(() => {
 
 .footer-tip {
   text-align: center;
-  color: #999;
+  color: var(--color-text-muted);
   font-size: 12px;
   padding: 24px 16px;
   line-height: 1.6;
+}
+
+/* 主题选择 */
+.theme-cur-name {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--color-text-muted);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.theme-item {
+  border: 2px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--color-card);
+}
+
+.theme-item.active {
+  border-color: var(--color-primary);
+  background: var(--color-bg);
+}
+
+.theme-item:active {
+  transform: scale(0.98);
+}
+
+.theme-preview {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.ts-c1, .ts-c2, .ts-c3, .ts-c4 {
+  flex: 1;
+  height: 24px;
+  border-radius: 4px;
+}
+
+.theme-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.theme-num {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+}
+
+.theme-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
 }
 </style>

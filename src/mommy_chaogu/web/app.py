@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from mommy_chaogu.web.background import BackgroundService, set_service
 from mommy_chaogu.web.deps import get_adapter, get_alerter, get_watchlist_store
-from mommy_chaogu.web.routes import cache, quotes, signals, watchlist, ws
+from mommy_chaogu.web.routes import cache, market, portfolio, quotes, signals, watchlist, ws
 from mommy_chaogu.web.schemas import HealthOut
 
 _log = logging.getLogger(__name__)
@@ -51,6 +51,7 @@ def create_app(
         deps.get_adapter.cache_clear()  # type: ignore[attr-defined]
         deps.get_watchlist_store.cache_clear()  # type: ignore[attr-defined]
         deps.get_alerter.cache_clear()  # type: ignore[attr-defined]
+        deps.get_portfolio_store.cache_clear()  # type: ignore[attr-defined]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -125,7 +126,9 @@ def create_app(
 
     # 路由
     app.include_router(quotes.router)
+    app.include_router(market.router)
     app.include_router(watchlist.router)
+    app.include_router(portfolio.router)
     app.include_router(signals.router)
     app.include_router(cache.router)
     app.include_router(ws.router)

@@ -5,7 +5,7 @@ datetime 全部 ISO 8601 + UTC。
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -128,6 +128,100 @@ class HealthOut(BaseModel):
     db_path: str
     uptime_seconds: float
     last_snapshot_at: datetime | None = None
+
+
+# ---------- Market Ranking ----------
+
+class IndexOut(BaseModel):
+    """大盘指数。"""
+
+    code: str
+    name: str
+    price: Decimal
+    change_pct: Decimal
+    prev_close: Decimal
+
+
+class SectorOut(BaseModel):
+    """板块报价。"""
+
+    code: str
+    name: str
+    change_pct: Decimal
+    price: Decimal
+
+
+# ---------- Portfolio ----------
+
+
+class PositionOut(BaseModel):
+    """单笔持仓。"""
+
+    id: int
+    code: str
+    name: str | None = None
+    buy_price: Decimal
+    shares: int
+    buy_date: date | None = None
+    note: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class PositionDetailOut(BaseModel):
+    """持仓详情（含盈亏计算）。"""
+
+    id: int
+    code: str
+    name: str | None = None
+    avg_cost: Decimal
+    shares: int
+    current_price: Decimal | None = None
+    market_value: Decimal | None = None
+    total_cost: Decimal
+    unrealized_pnl: Decimal | None = None
+    unrealized_pnl_pct: Decimal | None = None
+    buy_date: date | None = None
+    note: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class PortfolioSummaryOut(BaseModel):
+    """持仓总览。"""
+
+    positions: list[PositionDetailOut]
+    total_cost: Decimal
+    total_market_value: Decimal | None = None
+    total_unrealized_pnl: Decimal | None = None
+    total_unrealized_pnl_pct: Decimal | None = None
+    n_positions: int
+
+
+class AddPositionIn(BaseModel):
+    code: str
+    name: str | None = None
+    buy_price: Decimal
+    shares: int
+    buy_date: str | None = None  # YYYY-MM-DD
+    note: str = ""
+
+
+class AddAdjustmentIn(BaseModel):
+    action: Literal["buy", "sell", "dividend"]
+    price: Decimal
+    shares: int
+    note: str = ""
+
+
+class AdjustmentOut(BaseModel):
+    id: int
+    position_id: int
+    action: str
+    price: Decimal
+    shares: int
+    timestamp: datetime
+    note: str = ""
 
 
 class WSQuoteMessage(BaseModel):

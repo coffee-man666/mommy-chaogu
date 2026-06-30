@@ -10,6 +10,10 @@ import { RouterView, RouterLink } from 'vue-router'
         <span class="tab-icon">📊</span>
         <span>行情</span>
       </RouterLink>
+      <RouterLink to="/portfolio" class="tab-item">
+        <span class="tab-icon">💰</span>
+        <span>持仓</span>
+      </RouterLink>
       <RouterLink to="/signals" class="tab-item">
         <span class="tab-icon">🔔</span>
         <span>信号</span>
@@ -29,7 +33,7 @@ html, body, #app, .app {
   padding: 0;
   width: 100%;
   min-height: 100vh;
-  background: #f5f5f5;
+  background: var(--color-bg);
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   color: #333;
@@ -52,7 +56,7 @@ button {
   right: 0;
   height: 56px;
   background: white;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border);
   display: flex;
   z-index: 100;
 }
@@ -69,7 +73,7 @@ button {
 }
 
 .tab-item.router-link-active {
-  color: #c83e3e;
+  color: var(--color-primary);
   font-weight: 600;
 }
 

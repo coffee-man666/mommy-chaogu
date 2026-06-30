@@ -8,14 +8,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from mommy_chaogu.monitor import Snapshot, SnapshotRow
+from mommy_chaogu.portfolio.models import Position, PositionAdjustment
 from mommy_chaogu.signals.types import Signal
 from mommy_chaogu.watchlist.models import Group, StockEntry
 from mommy_chaogu.web.schemas import (
+    AdjustmentOut,
     BarOut,
     OrderBookLevelOut,
     OrderBookOut,
+    PositionDetailOut,
+    PositionOut,
     QuoteOut,
     SignalOut,
     SnapshotOut,
@@ -159,4 +164,68 @@ def signal_to_out(signal: Signal) -> SignalOut:
         detail=signal.detail,
         trigger_value=signal.trigger_value,
         threshold_value=signal.threshold_value,
+    )
+
+
+# ---------- Portfolio mappers ----------
+
+
+def _aware(dt: datetime) -> datetime:
+    """naive datetime → UTC aware。"""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+def position_to_out(pos: Position) -> PositionOut:
+    return PositionOut(
+        id=pos.id,
+        code=pos.code,
+        name=pos.name,
+        buy_price=Decimal(pos.buy_price),
+        shares=pos.shares,
+        buy_date=pos.buy_date,  # date, not datetime
+        note=pos.note or "",
+        created_at=_aware(pos.created_at),
+        updated_at=_aware(pos.updated_at),
+    )
+
+
+def position_detail_to_out(
+    pos: Position,
+    avg_cost: Decimal,
+    shares: int,
+    current_price: Decimal | None,
+    market_value: Decimal | None,
+    total_cost: Decimal,
+    unrealized_pnl: Decimal | None,
+    unrealized_pnl_pct: Decimal | None,
+) -> PositionDetailOut:
+    return PositionDetailOut(
+        id=pos.id,
+        code=pos.code,
+        name=pos.name,
+        avg_cost=avg_cost,
+        shares=shares,
+        current_price=current_price,
+        market_value=market_value,
+        total_cost=total_cost,
+        unrealized_pnl=unrealized_pnl,
+        unrealized_pnl_pct=unrealized_pnl_pct,
+        buy_date=pos.buy_date,  # date, not datetime
+        note=pos.note or "",
+        created_at=_aware(pos.created_at),
+        updated_at=_aware(pos.updated_at),
+    )
+
+
+def adjustment_to_out(adj: PositionAdjustment) -> AdjustmentOut:
+    return AdjustmentOut(
+        id=adj.id,
+        position_id=adj.position_id,
+        action=adj.action,
+        price=Decimal(adj.price),
+        shares=adj.shares,
+        timestamp=_aware(adj.timestamp),
+        note=adj.note or "",
     )

@@ -88,10 +88,14 @@ def get_orderbook(
 def get_today_money_flow(
     code: str,
     adapter: Annotated[MarketDataAdapter, Depends(get_adapter)],
-) -> list[dict[str, Any]]:
-    """当日资金流。"""
+) -> dict[str, Any]:
+    """当日资金流（含累计汇总）。
+
+    注意：efinance get_today_bill 返回的每条数据是到该时刻的**累计值**，
+    不是增量。最后一条即为当日全天累计。
+    """
     flows = adapter.get_today_money_flow(code)
-    return [
+    items = [
         {
             "timestamp": f.timestamp.isoformat(),
             "main_net": str(f.main_net.amount),
@@ -99,6 +103,60 @@ def get_today_money_flow(
             "big_net": str(f.large_net.amount) if f.large_net else None,
             "medium_net": str(f.medium_net.amount) if f.medium_net else None,
             "small_net": str(f.small_net.amount) if f.small_net else None,
+            "main_ratio": str(f.main_net_ratio) if f.main_net_ratio is not None else None,
         }
         for f in flows
     ]
+    # 当日累计 = 最后一条（已经是累计值）
+    cumulative = items[-1] if items else {}
+    return {"items": items, "cumulative": {
+        "main_net": cumulative.get("main_net", "0"),
+        "super_net": cumulative.get("super_net") or "0",
+        "big_net": cumulative.get("big_net") or "0",
+        "medium_net": cumulative.get("medium_net") or "0",
+        "small_net": cumulative.get("small_net") or "0",
+    }}
+
+
+@router.get("/{code}/money_flow/history")
+def get_history_money_flow(
+    code: str,
+    adapter: Annotated[MarketDataAdapter, Depends(get_adapter)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> dict[str, Any]:
+    """历史资金流（每日一条 + 累计汇总）。
+
+    返回：
+    - items: 每日资金流列表（按日期升序）
+    - cumulative: 整个时间段累计
+    """
+    flows = adapter.get_history_money_flow(code, days=days)
+    items = [
+        {
+            "timestamp": f.timestamp.isoformat(),
+            "date": f.timestamp.strftime("%Y-%m-%d"),
+            "main_net": str(f.main_net.amount),
+            "super_net": str(f.super_large_net.amount) if f.super_large_net else None,
+            "big_net": str(f.large_net.amount) if f.large_net else None,
+            "medium_net": str(f.medium_net.amount) if f.medium_net else None,
+            "small_net": str(f.small_net.amount) if f.small_net else None,
+            "main_ratio": str(f.main_net_ratio) if f.main_net_ratio is not None else None,
+        }
+        for f in flows
+    ]
+    cumulative = _cumulative_from_items(items)
+    return {"items": items, "cumulative": cumulative, "days": days}
+
+
+def _cumulative_from_items(items: list[dict[str, Any]]) -> dict[str, str]:
+    """从资金流列表算累计。"""
+    from decimal import Decimal
+
+    fields = ["main_net", "super_net", "big_net", "medium_net", "small_net"]
+    totals: dict[str, Decimal] = {f: Decimal("0") for f in fields}
+    for item in items:
+        for f in fields:
+            v = item.get(f)
+            if v is not None:
+                totals[f] += Decimal(v)
+    return {f: str(totals[f]) for f in fields}

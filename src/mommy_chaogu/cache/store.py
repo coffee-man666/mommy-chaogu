@@ -224,9 +224,9 @@ class CacheStore:
             for trade_date, flow_json, _fetched in rows:
                 if start_date and trade_date < start_date:
                     continue
-                d = json.loads(flow_json)
-                d["__trade_date__"] = trade_date  # 标记
-                out.append(d)
+                flows = json.loads(flow_json)
+                # flow_json 存的是 list[dict]，用 wrapper 标记 trade_date
+                out.append({"__trade_date__": trade_date, "flows": flows})
             return out
 
     def set_money_flow_history(self, code: str, trade_date: str, flows: list[dict]) -> None:

@@ -108,13 +108,27 @@ class TestGetMoneyFlow:
     def test_found(self, client: TestClient) -> None:
         resp = client.get("/api/quotes/600519/money_flow/today")
         assert resp.status_code == 200
-        flows = resp.json()
-        assert len(flows) == 1
-        assert "main_net" in flows[0]
-        assert flows[0]["main_net"] == "120000000"  # str not float
+        data = resp.json()
+        # API 设计：{items: [...], cumulative: {...}}
+        assert "items" in data
+        assert "cumulative" in data
+        assert len(data["items"]) == 1
+        assert "main_net" in data["items"][0]
+        assert data["items"][0]["main_net"] == "120000000"  # str not float
+        # 最后一条即累计
+        assert data["cumulative"]["main_net"] == "120000000"
 
     def test_empty_list(self, client: TestClient, mock_adapter: MagicMock) -> None:
         mock_adapter.get_today_money_flow.return_value = []
         resp = client.get("/api/quotes/600519/money_flow/today")
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert data["items"] == []
+        # 空数据累计全 0
+        assert data["cumulative"] == {
+            "main_net": "0",
+            "super_net": "0",
+            "big_net": "0",
+            "medium_net": "0",
+            "small_net": "0",
+        }

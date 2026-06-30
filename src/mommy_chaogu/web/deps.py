@@ -17,6 +17,7 @@ from mommy_chaogu.market_data import (
     MarketDataAdapter,
     TencentAdapter,
 )
+from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.signals import Alerter
 from mommy_chaogu.watchlist import WatchlistStore
 
@@ -56,3 +57,9 @@ def get_alerter() -> Alerter:
     log_path = Path("data/signals.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     return Alerter.default(log_path=log_path)
+
+
+@lru_cache(maxsize=1)
+def get_portfolio_store() -> PortfolioStore:
+    """全局持仓存储。"""
+    return PortfolioStore(get_db_path())

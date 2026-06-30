@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#5c6168" />
+  <title>妈妈炒股 · 资金流收盘报告索引</title>
+  <style>
+    :root {
+      --accent: #5c6168;
+      --accent-soft: rgba(92,97,104,0.10);
+      --bg: #f8f9fa;
+      --fg: #1c1f23;
+      --fg-muted: #6a6f76;
+      --border: #e6e8eb;
+      --card-bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; min-height: 100vh;
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--fg);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.55;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    .container {
+      max-width: 880px; margin: 0 auto; padding: 32px 20px 80px;
+    }
+
+    /* ── Hero ─────────────────────────────── */
+    .hero {
+      background: var(--card-bg);
+      border-radius: 18px;
+      padding: 32px 28px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03);
+      margin-bottom: 24px;
+      border-left: 6px solid var(--accent);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::after {
+      content: "";
+      position: absolute; right: -40px; top: -40px;
+      width: 160px; height: 160px;
+      background: var(--accent-soft);
+      border-radius: 50%;
+      opacity: 0.6;
+      z-index: 0;
+    }
+    .hero-inner { position: relative; z-index: 1; }
+    .hero-meta {
+      font-size: 13px; color: var(--fg-muted);
+      display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .hero-meta .pill {
+      background: var(--accent-soft);
+      padding: 2px 10px; border-radius: 999px;
+      color: var(--accent); font-weight: 600;
+    }
+    .hero h1 {
+      margin: 0 0 14px 0;
+      font-size: 30px;
+      letter-spacing: 0.02em;
+      line-height: 1.25;
+    }
+    .hero .lede {
+      font-size: 16px;
+      color: var(--fg);
+      margin: 0;
+      line-height: 1.65;
+    }
+    .hero .lede strong { color: var(--accent); }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 14px;
+      margin-top: 22px;
+    }
+    .kpi {
+      background: #fafbfc;
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .kpi-label {
+      font-size: 11px;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+    .kpi-value { font-size: 22px; font-weight: 700; }
+    .kpi-sub { font-size: 12px; color: var(--fg-muted); margin-top: 2px; }
+    .pos { color: #d6336c; }
+    .neg { color: #1971c2; }
+    .neutral { color: var(--fg-muted); }
+
+    /* ── Section ──────────────────────────── */
+    .section {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 24px 26px;
+      margin-bottom: 18px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+    }
+    .section h2 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section h2 .em { font-size: 22px; }
+    .section .sub {
+      color: var(--fg-muted); font-size: 13px;
+      margin: -10px 0 16px 0;
+    }
+
+    /* ── Bars (板块汇总) ──────────────────── */
+    .bar-row {
+      display: grid;
+      grid-template-columns: 56px 1fr 110px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-top: 1px dashed var(--border);
+    }
+    .bar-row:first-of-type { border-top: none; }
+    .bar-row .tag {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .bar-row .bar {
+      position: relative;
+      height: 24px;
+      background: #f3f4f6;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .bar-row .bar > span {
+      position: absolute;
+      top: 0; bottom: 0;
+      border-radius: 6px;
+    }
+    .bar-row .bar.in  > span { background: linear-gradient(90deg, #e64980, #d6336c); right: 50%; }
+    .bar-row .bar.out > span { background: linear-gradient(90deg, #1971c2, #1864ab); left: 50%; }
+    .bar-row .bar.zero > span { background: #ced4da; }
+    .bar-row .axis {
+      position: absolute;
+      left: 50%; top: 0; bottom: 0;
+      width: 1px; background: var(--border);
+    }
+    .bar-row .meta {
+      text-align: right;
+      font-size: 13px;
+    }
+    .bar-row .meta .bp { font-weight: 700; font-size: 15px; }
+
+    /* ── Stock Grid ───────────────────────── */
+    .stocks {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .stock {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #fafbfc;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .stock .rank {
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .stock .name {
+      font-weight: 700; font-size: 15px;
+    }
+    .stock .sub {
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .stock .ratio {
+      font-size: 18px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .stock .num {
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .stock .num b { color: var(--fg); font-weight: 600; }
+
+    /* ── Contradictions ───────────────────── */
+    .contra-list {
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .contra-item {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 14px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: #fafbfc;
+      border-left: 4px solid var(--accent);
+      align-items: center;
+    }
+    .contra-item .name { font-weight: 700; }
+    .contra-item .sub { font-size: 11px; color: var(--fg-muted); }
+    .contra-item .bp-pair {
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .contra-item .bp-pair .now { font-weight: 700; font-size: 15px; }
+    .contra-item .flip {
+      font-size: 18px;
+    }
+
+    /* ── Footer ───────────────────────────── */
+    .footer {
+      color: var(--fg-muted);
+      font-size: 12px;
+      text-align: center;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      margin-top: 32px;
+    }
+    .footer kbd {
+      background: #f1f3f5;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, "SF Mono", monospace;
+      font-size: 11px;
+    }
+
+    /* ── Index (list page) ────────────────── */
+    .index-list {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .index-item {
+      display: grid;
+      grid-template-columns: 100px 1fr auto auto;
+      gap: 14px;
+      padding: 14px 18px;
+      background: var(--card-bg);
+      border-radius: 10px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.03);
+      align-items: center;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .index-item:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }
+    .index-item .day {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .index-item .pool { color: var(--fg-muted); font-size: 13px; }
+    .index-item .net { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    /* responsive */
+    @media (max-width: 540px) {
+      .container { padding: 18px 14px 60px; }
+      .hero { padding: 22px 18px; }
+      .hero h1 { font-size: 24px; }
+      .bar-row { grid-template-columns: 44px 1fr 92px; gap: 8px; }
+      .contra-item { grid-template-columns: 1fr; gap: 6px; }
+      .contra-item .flip { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="hero">
+      <div class="hero-inner">
+        <div class="hero-meta"><span class="pill">📚 历史报告</span></div>
+        <h1>妈妈炒股 · 资金流收盘报告</h1>
+        <p class="lede">共 <strong>1</strong> 份报告，按日期倒序。点开看当日详情。</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2><span class="em">📋</span> 全部报告</h2>
+      <div class="index-list">
+          <a class="index-item" href="2026-06-29.html">
+            <div class="day">2026-06-29</div>
+            <div class="pool">池子：semicon · 覆盖 105/106</div>
+            <div class="net pos">
++50.85 亿
+            </div>
+            <div>→</div>
+          </a>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

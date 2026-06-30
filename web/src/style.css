@@ -1,4 +1,18 @@
-/* 简洁的全局样式 */
+/* 全局样式 + 主题 CSS 变量默认值 */
+
+:root {
+  --color-primary: #C23A2B;
+  --color-primary-dark: #9B2335;
+  --color-up: #C23A2B;
+  --color-down: #4A6741;
+  --color-gold: #D4A853;
+  --color-bg: #F0EDE4;
+  --color-card: #FFFFFF;
+  --color-text: #2B2B2B;
+  --color-text-muted: #8B7355;
+  --color-border: #E8E2D2;
+}
+
 * { box-sizing: border-box; }
 input, button { font-family: inherit; }
 a { color: inherit; text-decoration: none; }

@@ -131,11 +131,11 @@ onUnmounted(() => {
 <style scoped>
 .signals-page {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: var(--color-bg);
 }
 
 .header {
-  background: #c83e3e;
+  background: var(--color-primary);
   color: white;
   padding: 18px 16px 14px;
 }
@@ -170,8 +170,8 @@ onUnmounted(() => {
 }
 
 .tab.active {
-  color: #c83e3e;
-  border-bottom-color: #c83e3e;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
   font-weight: 700;
 }
 
@@ -191,12 +191,12 @@ onUnmounted(() => {
 
 .signal-card:active {
   transform: scale(0.98);
-  background: #fafafa;
+  background: var(--color-bg);
 }
 
 .signal-card.signal-critical {
-  border-left-color: #c83e3e;
-  background: linear-gradient(to right, #fff5f5, white);
+  border-left-color: var(--color-primary);
+  background: linear-gradient(to right, var(--color-bg), white);
 }
 
 .signal-card.signal-warning {
@@ -224,7 +224,7 @@ onUnmounted(() => {
   letter-spacing: 0.5px;
 }
 
-.severity-tag.signal-critical { background: #c83e3e; color: white; }
+.severity-tag.signal-critical { background: var(--color-primary); color: white; }
 .severity-tag.signal-warning { background: #f59e0b; color: white; }
 .severity-tag.signal-info { background: #6b7280; color: white; }
 
@@ -258,7 +258,7 @@ onUnmounted(() => {
 .signal-action {
   margin-top: 8px;
   font-size: 12px;
-  color: #c83e3e;
+  color: var(--color-primary);
   font-weight: 600;
 }
 
