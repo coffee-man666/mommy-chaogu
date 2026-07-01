@@ -439,6 +439,9 @@ def main() -> int:
     sub.add_parser("report", help="报告 HTML 渲染（单日 / 索引 / 预览）").set_defaults(
         func=lambda _: _dispatch_subcommand(build_report_parser(), "mommy-report")
     )
+    sub.add_parser("agent", help="AI 行情助手（对话 / 日报）").set_defaults(
+        func=lambda _: _dispatch_subcommand(build_agent_parser(), "mommy-agent")
+    )
 
     args = p.parse_args()
     rc = args.func(args)
@@ -1243,6 +1246,191 @@ def build_report_parser() -> argparse.ArgumentParser:
 
 def main_report() -> NoReturn:
     parser = build_report_parser()
+    args = parser.parse_args()
+    rc = args.func(args)
+    sys.exit(rc)
+
+
+# ============================================================
+# agent 子命令
+# ============================================================
+
+def _build_agent_ctx(args: argparse.Namespace) -> object:
+    """构造 AgentService 的 ToolContext。"""
+    from mommy_chaogu.agent.tools import ToolContext
+    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.portfolio.store import PortfolioStore
+    from mommy_chaogu.watchlist.store import WatchlistStore
+
+    db_path = Path(args.db)
+    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    store = CacheStore(db_path)
+    adapter = CachedMarketDataAdapter(base, store)
+
+    watchlist_store = WatchlistStore(db_path)
+    portfolio_store = PortfolioStore(db_path)
+
+    return ToolContext(
+        adapter=adapter,
+        watchlist_store=watchlist_store,
+        portfolio_store=portfolio_store,
+        db_path=db_path,
+    )
+
+
+def cmd_agent_chat(args: argparse.Namespace) -> int:
+    """交互式对话。"""
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+
+    print("=" * 60)
+    print("  💬 妈妈行情助手（输入 quit/exit 退出）")
+    print("=" * 60)
+    print()
+
+    history: list[dict[str, str]] = []
+    while True:
+        try:
+            user_input = input("🧑 ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n再见！")
+            break
+
+        if not user_input:
+            continue
+        if user_input.lower() in ("quit", "exit", "q"):
+            print("再见！")
+            break
+
+        print()
+        try:
+            resp = agent.chat(user_input, history=history)
+            print(f"🤖 {resp.text}")
+            if resp.tool_calls:
+                tools_str = ", ".join(tc.name for tc in resp.tool_calls)
+                print(f"\n   [使用了工具: {tools_str}]")
+        except Exception as e:
+            print(f"❌ 出错了: {e}")
+        print()
+
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": resp.text})
+        # 保留最近 10 轮
+        if len(history) > 20:
+            history = history[-20:]
+
+    return 0
+
+
+def cmd_agent_report(args: argparse.Namespace) -> int:
+    """生成收盘日报。"""
+    from mommy_chaogu.agent.reports import AgentReportService
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+    report_svc = AgentReportService(agent)
+
+    print(f"📊 生成收盘日报 ({args.board or args.pool})...")
+    print("─" * 60)
+
+    text = report_svc.generate_daily_report(
+        pool_name=args.pool,
+        board_code=args.board,
+        board_name=args.board_name,
+    )
+
+    print(text)
+
+    # 可选保存到文件
+    if args.output:
+        out = Path(args.output)
+        out.write_text(text, encoding="utf-8")
+        print(f"\n✅ 已保存到 {out}")
+
+    # 可选推送到微信
+    if args.push:
+        try:
+            key = os.environ.get("SERVER_CHAN_KEY", "")
+            if not key:
+                print("⚠️  未设置 SERVER_CHAN_KEY 环境变量，跳过推送")
+            else:
+                title = f"📊 收盘日报 {args.pool or args.board}"
+                import requests as req
+                r = req.post(
+                    f"https://sctapi.ftqq.com/{key}.send",
+                    data={"title": title, "desp": text},
+                    timeout=10,
+                )
+                if r.json().get("code") == 0:
+                    print("✅ 已推送到微信")
+                else:
+                    print(f"❌ 推送失败: {r.json()}")
+        except Exception as e:
+            print(f"❌ 推送出错: {e}")
+
+    return 0
+
+
+def cmd_agent_tools(_args: argparse.Namespace) -> int:
+    """列出所有可用工具。"""
+    from mommy_chaogu.agent.tools import ToolRegistry
+
+    print("🔧 Agent 可用工具")
+    print("=" * 70)
+    for name in ToolRegistry.tool_names():
+        print(f"  • {name}")
+    print(f"\n共 {len(ToolRegistry.tool_names())} 个工具")
+    return 0
+
+
+def build_agent_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="mommy-agent",
+        description="妈妈炒股 - AI 行情助手（对话 / 日报）",
+    )
+    p.add_argument("--db", default=str(DEFAULT_DB_PATH),
+                   help=f"数据库路径 (默认 {DEFAULT_DB_PATH})")
+    p.add_argument("--model", default=None, help="LLM 模型名（默认按 provider）")
+    p.add_argument("--provider", default=None,
+                   help="LLM provider: deepseek / openai / kimi（默认读 $AGENT_PROVIDER）")
+
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    # chat
+    sub.add_parser("chat", help="交互式对话").set_defaults(func=cmd_agent_chat)
+
+    # report
+    p_r = sub.add_parser("report", help="生成收盘分析日报")
+    p_r.add_argument("--pool", default="semicon",
+                     help="flows 池名 (semicon/watchlist，默认 semicon)")
+    p_r.add_argument("--board", default=None,
+                     help="东财板块代码（如 BK1106 创新药），优先于 pool")
+    p_r.add_argument("--board-name", default=None,
+                     help="板块中文名（用于报告标题）")
+    p_r.add_argument("--output", "-o", default=None, help="保存到文件")
+    p_r.add_argument("--push", action="store_true", help="推送到微信")
+    p_r.set_defaults(func=cmd_agent_report)
+
+    # tools
+    sub.add_parser("tools", help="列出所有可用工具").set_defaults(func=cmd_agent_tools)
+
+    return p
+
+
+def main_agent() -> NoReturn:
+    parser = build_agent_parser()
     args = parser.parse_args()
     rc = args.func(args)
     sys.exit(rc)

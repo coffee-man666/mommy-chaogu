@@ -18,6 +18,7 @@ dependencies = [
     "pydantic>=2.9",
     "websockets>=13",
     "jinja2>=3.1.6",
+    "openai>=1.0",
 ]
 
 [project.scripts]
@@ -28,6 +29,7 @@ mommy-cache = "mommy_chaogu.cli:main_cache"
 mommy-semicon = "mommy_chaogu.cli:main_semicon"
 mommy-flows = "mommy_chaogu.cli:main_flows"
 mommy-web = "mommy_chaogu.cli:main_web"
+mommy-agent = "mommy_chaogu.cli:main_agent"
 mommy-chaogu = "mommy_chaogu.cli:main"
 
 [project.optional-dependencies]
@@ -79,7 +81,7 @@ ignore_errors = true
 
 # web 模块涉及 FastAPI 依赖注入和 Pydantic，类型相对弱
 [[tool.mypy.overrides]]
-module = ["mommy_chaogu.web.*"]
+module = ["mommy_chaogu.web.*", "mommy_chaogu.agent.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -87,7 +89,7 @@ module = ["mommy_chaogu.cli"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["fastapi", "uvicorn", "starlette", "httpx"]
+module = ["fastapi", "uvicorn", "starlette", "httpx", "openai", "openai.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
