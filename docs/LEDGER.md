@@ -820,3 +820,147 @@ ratio = main_net / circulating_market_cap
 ### 实战待验证
 
 - ⏳ 6/30 周二第一次 cron 完整跑通（盘前预热 8:30 / 监控启动 9:30 / 收盘日报 15:30 / 周报 7/4）
+
+---
+
+## M6.1 — 修 cron model + 实战第一次跑通
+
+**日期**：2026-07-01 08:30
+**Commit**：（本次 7/1 文档 commit 一起）
+
+### 触发事件
+
+早上 8:30 盘前预热 cron 报错 `HTTP 401: Authentication Fails, Your api key: ****e993 is invalid`。
+
+### 根因 + 修复
+
+- **根因**：4 个 cron job 用的 `model: "minimax/MiniMax-M2.7"` 在新 provider 上不存在（M2.7 已下线，M3 上线）
+- **修复**：
+  1. 4 个 job model 改为 `deepseek/deepseek-v4-flash`（按 MEMORY 设计本的省 token 路径）
+  2. message 顶部加 `export PATH="$HOME/.local/bin:$PATH"`，避免 cron 里 `uv` 找不到
+
+### 验证结果（7/1 当日实战）
+
+- 8:30 盘前预热：**105/106 只半导体资金流拉成功**（仅 002549 timeout 12.6s）
+- 13.2s 总耗时，hub webhook **实际收到**（id=2 task_id=f3fa79c8）
+- 证明：mommy-chaogu → hub → SQLite → 前端 ReportList **全链路打通**
+
+---
+
+## M6.2 — reports 目录结构化
+
+**日期**：2026-07-01 07:30
+**Commit**：`5bf2323 docs: reports/ 目录结构化（README + .gitignore）`
+
+### 改动
+
+- `reports/README.md`：解释用途 / 命名规则 / 怎么生成
+- `reports/.gitignore`：排除 `index.html`（临时索引）+ `*.tmp.html`
+- 保留 `reports/{YYYY-MM-DD}.html` 作为每日实战产物入仓
+- 现有 `reports/2026-06-29.html` 6/29 首份实战保留
+
+---
+
+## M6.3 — supply_chains 数据资产
+
+**日期**：2026-07-01 16:43-18:24
+**Commit**：（本次 7/1 一起）
+
+### 触发
+
+发现 mommy-chaogu 缺一个标准化的"产业链标的数据"格式，妈妈需要扫描多板块时，每次都现拉现分析，效率低。
+
+### 新增 3 个 JSON
+
+| 文件 | 标的 | 大小 | 内容 |
+|---|---|---|---|
+| `data/supply_chains/humanoid_robot.json` | 25 只 | 13.5KB | 4 个层级（核心/Tier1/总成/设备）+ 16 个角色 |
+| `data/supply_chains/semiconductor.json` | 106 只 | 39.5KB | 4 个 chain_position + 15 个 subcategory |
+| `data/supply_chains/materials.json` | 41 只 | 19.0KB | **10 个子类**（化工/钢铁/煤炭/建材/稀土/工业金属/贵金属/小金属/新能源金属/石油）|
+
+### 共同结构
+
+```json
+{
+  "meta": {
+    "name": "...",
+    "description": "...",
+    "total_stocks": N,
+    "levels": [...]    // 或 categories / chain_positions
+  },
+  "snapshot": {
+    "ts": "...",
+    "up": N, "down": N, "flat": N,
+    "sector_avg_pct": X,
+    "total_main_net_yi": Y
+  },
+  "stocks": [
+    {
+      "code": "...",
+      "name": "...",
+      "role": "...",
+      "level": "..." | "category": "..." | "subcategory": "...",
+      "price": X, "change_pct": X, "volume_ratio": X,
+      "circulating_market_cap": X, "pe_dynamic": X,
+      "main_net": X, "super_large_net": X, ...
+    },
+    ...
+  ]
+}
+```
+
+### 复用方式
+
+```python
+import json
+from pathlib import Path
+data = json.loads(Path('data/supply_chains/semiconductor.json').read_text())
+# 按 level 过滤
+上游 = [s for s in data['stocks'] if s['level'] == '上游']
+# 按涨幅排序
+data['stocks'].sort(key=lambda x: -x['change_pct'])
+```
+
+### Mommy-hub 同步
+
+3 个 JSON 同步复制到 `~/Git/mommy-hub/data/chains/`，hub 通过 `/api/chains` 自动发现。
+
+---
+
+## M6.4 — 7/1 多板块实战扫描
+
+**日期**：2026-07-01 09:00-18:30
+**Commit**：（本次 7/1 一起）
+
+### 实战记录
+
+一天内完成 10+ 次板块扫描 + 6 个股深挖，全部推 hub 留底。
+
+| 时间 | 板块/个股 | 关键发现 | hub report |
+|---|---|---|---|
+| 09:47 | 自选股 5 只 | 全跌，主力 -19.4亿（宁德 -12.15亿）| — |
+| 10:42 | 半导体 106 只 | 涨 82/跌 23，均价 +0.74%，上游强 | — |
+| 10:51 | AI 推理 4 只 | 寒武纪 -4.11% 高位调整 | — |
+| 10:42 | 光模块 14 只 | 普跌 -2.74%，联特 +4.75% 异动 | — |
+| 13:38 | 联特科技深挖 | PE 514 倍 + 60 日 +55.4% = 已 price in | — |
+| 13:39 | 潍柴动力深挖 | **半年主力 -43.17亿出货**（修正"接盘"误判）| — |
+| 15:47 | 证券 18 只 | +4.55% 普涨，**6 月机构 +12.5亿 龙头建仓** | — |
+| 16:43 | 机器人 25 只 | 21 涨/4 跌，均价 +2.38% | id=9 |
+| 17:06 | 机器人 6 只强股 | 雷赛智能「5日机构 +1.79亿」最稳健 | — |
+| 18:22 | 雷赛智能深挖 | 5/10 日机构 +1.79/+2.40亿 + 量价 +0.65 | — |
+| 18:24 | 材料 41 只 | 化工 +3.62% 强，稀土 -3.17% 弱 | id=10 |
+| 18:39 | 多氟多深挖 | 60日+100% / 250日+408% / 20日机构 -87.7亿 | — |
+
+### 5 大教训
+
+1. **「机构 5 日在买 vs 20 日仍在出货」** 是市场普遍形态（多氟多/雷赛/联特都如此）
+2. **「价格已 price in」** 是主要风险——多氟多 60 日 +100% / 250 日 +408%
+3. **「量价背离 -0.5 以下」** 是出货信号（多氟多 10 日 -0.48）
+4. **「半年数据是真相，5 日数据是噪声」**—— 潍柴 5 日看似"接盘"实为 -43亿派发
+5. **「Efinance push2his 接口凌晨 2-3 点会主动断」**—— 改用腾讯 K线作为备选
+
+### 临时脚本（不提交，存 /tmp）
+
+- `screenshot.js` / `screenshot_chains.js` —— playwright + chromium 截图 hub 前端
+- `voice_brief.txt` + `voice_brief.m4a` —— macOS `say` + `afconvert` 生成语音版简报
+- `push_scan_report.py` —— 推扫描结果到 hub webhook

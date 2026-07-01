@@ -37,7 +37,17 @@ htmlcov/
 
 # 行情数据缓存（未来加的话）
 data/cache/
-data/
+data/*.db
+data/*.db-journal
+data/*.sqlite
+data/monitor.log
+data/.flow_monitor_state.json
+data/.cache/
+data/flows_monitor.log
+data/quote_snapshot.json
+# 排除以上运行时文件，但保留 supply_chains/ 供应链数据资产
+!data/supply_chains/
+
 
 # frontend/ (废弃的 Taro 目录，保留作 mini program 参考)
 frontend/dist/
