@@ -1,13 +1,20 @@
 # 妈妈炒股 (mommy-chaogu)
 
+<div align="center">
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-270%20passed-brightgreen.svg)](#测试)
+[![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-270%20passed-brightgreen.svg)](#-开发)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type check: mypy strict](https://img.shields.io/badge/mypy--strict-0%20errors-blue.svg)](https://mypy-lang.org/)
 
 > 给妈妈用的 **A 股行情监控 + 投资陪伴** 工具。
 > 从「行情监控」切入，逐步扩展到「资金流 / 产业链 / 财报 / 推送 / 风险提示」。
+
+[快速上手](#-快速上手) · [架构](#-架构) · [功能](#-功能模块) · [财报实战](#-财报窗口实战) · [CLI](#-cli-速查) · [文档](#-文档体系) · [开发](#-开发)
+
+</div>
 
 妈妈不需要成为技术专家，妈妈的手机应该比基金经理的彭博终端更懂她 —— 这是这个项目的初衷。
 
@@ -188,6 +195,65 @@ uv run mommy-report render --chain humanoid_robot
 
 ---
 
+## 📸 实际效果示例
+
+### 资金流扫描（半导体板块）
+
+```bash
+$ uv run mommy-flows pull --pool semicon --days 30
+
+📊 半导体板块资金流 (近 30 天)
+================================================
+板块总计: 19 家公司 / 8.4 万亿成交额
+主力净流入总计: +47.6亿 (主线资金偏多)
+日均主力: +1.59亿
+
+💥 TOP 5 净流入 (按 bp):
+  +127bp 聚辰股份     +8.94亿
+  +104bp 深科技       +3.42亿
+   +89bp 澜起科技     +12.50亿
+   +78bp 兆易创新     +14.23亿
+   +52bp 北京君正     +5.67亿
+
+⚠️ TOP 3 净流出 (按 bp):
+   -191bp 晶方科技    -3.21亿
+   -161bp 长电科技    -5.89亿
+   -156bp 华天科技    -3.45亿
+```
+
+### 财报前瞻 vs 实际比对
+
+```bash
+$ uv run mommy-earnings score --period "H1 2026"
+
+📊 比对完成: 成功 2, 失败 0
+耗时: 1.23s
+
+🏆 TOP 5 (按置信度 + gap 排序):
+代码       名称         预测区间         实际          verdict
+──────────────────────────────────────────────────────
+603662  柯力传感     188~217%      202.5%     🟢 超预期
+603986  兆易创新    1070~1370%    1220.0%    🟡 符合
+```
+
+### Web UI（手机可访问）
+
+```
++─────────────────────────────+
+│ 🥳 妈妈的自选股               │
+│                                  │
+│ 600519 贵州茅台 ▲ +1.85%       │
+│         主力 +1.2亿 (37bp)     │
+│                                  │
+│ 300750 宁德时代 ▼ -0.42%      │
+│         主力 -0.8亿 (-22bp)    │
+│                                  │
+│ [查看详情]  [资金流]  [K线]      │
++─────────────────────────────+
+```
+
+---
+
 ## 🛠️ CLI 速查（9 个子应用）
 
 ```
@@ -335,6 +401,71 @@ mommy-chaogu/
 ├── reports/              # 实战产物
 └── pyproject.toml        # 项目配置
 ```
+
+---
+
+## 🗺️ 路线图
+
+### 🎯 v1.0（下一个发布）
+- [ ] CI 集成 GitHub Actions 徽章（已上线 CI, 即将加徽章）
+- [ ] EarningsCalendar 公告日历爬取（巨潮资讯 API）
+- [ ] 7/15 起 cron 集成财报扫描（日报推送）
+- [ ] 沪股 / 深股 / 北交所 全面覆盖
+
+### 🌱 v1.1（中期）
+- [ ] 回测引擎（验证信号规则历史表现）
+- [ ] WebSocket 实时多客户端推送
+- [ ] PWA 离线访问（妈妈加桌面像 App）
+- [ ] 多用户支持（妈妈 + 丈母娘 + 团长）
+- [ ] 回放系统（资金流 + 报表）
+
+### 🔭 v2.0（长期）
+- [ ] 微信小程序（复用 web 资产，Taro 重编译）
+- [ ] 内网穿透（Cloudflare Tunnel 0 配置）
+- [ ] 多语言（English README）
+- [ ] 插件市场（允许外部策略包）
+
+### 💡 灵感收集
+- 实时异动扫盘（龙虎榜 + 大宗交易）
+- 主力重仓股跟踪（社保 / QFII / 公募）
+- 财报季自动生成「个人持仓影响」报告
+- 二级行业轮动热力图
+- 估值指标体系（PE/PB/PS 历史百分位）
+
+---
+
+## 🤔 FAQ
+
+### Q: 这个项目和同花顺 / 东方财富 / 雪球有什么区别？
+
+A: **同花顺/东财** 是通用终端，面向所有股民，功能多但复杂。**雪球** 是社区。**mommy-chaogu** 是为「妈妈的特定需求」定制：
+- 资金流按 **流通市值比率 (bp)** 计算，绝对值可比性
+- 财报前瞻 vs 实际打分（券商偏差自动跟踪）
+- 多源 fallback，妈妈手机从不卡住
+- 中文文案 + 口语化输出（“主力在买” 而不是 “net_inflow > threshold”）
+
+### Q: 为什么用 Protocol + Adapter 模式？
+
+A: 三层好处：
+1. **可测**：mock adapter 不依赖网络
+2. **可扩展**：加东财/腾讯/cninfo 只需实现 Protocol
+3. **降级**：东财挂了自动走腾讯，妈妈无感
+
+### Q: 为什么不直接买同花顺 iFinD？
+
+A: 年费 ¥5000+ 对个人不划算。这个项目代码量 ~16,000 行，单人 1 个月能维护完。妈妈本身已有 Web UI + 推送 + 自选股覆盖 90% 场景。
+
+### Q: 性能怎么样？
+
+A: 实际实测（7/1 实战验证）：
+- 半导体 106 只 × 拉资金流 = 1.5 秒
+- 全市场快照 = 4 秒
+- Web 首屏 = < 1 秒
+- 微信推送 = 0.3 秒
+
+### Q: 会上传妈妈的自选股吗？
+
+A: **不会**。`data/watchlist.db` 已在 `.gitignore` 中。妈妈的自选股、持仓是隐私，项目本身只追踪「公开产业链主题股」作为示例。
 
 ---
 
