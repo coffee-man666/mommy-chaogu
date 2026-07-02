@@ -6,11 +6,17 @@
     from mommy_chaogu.earnings import (
         EarningsAdapter,
         MockEarningsAdapter,
+        EfinanceEarningsAdapter,
         EarningsService,
         EarningsStore,
     )
 
+    # Mock（测试用）
     adapter = MockEarningsAdapter()
+
+    # 真实数据（efinance，依赖网络）
+    adapter = EfinanceEarningsAdapter()
+
     store = EarningsStore(Path("data/earnings_actual.db"))
     service = EarningsService(adapter, store, Path("data/earnings_preview.db"))
 
@@ -33,6 +39,7 @@ from mommy_chaogu.earnings.adapter import (
     EarningsAdapter,
     MockEarningsAdapter,
 )
+from mommy_chaogu.earnings.efinance_adapter import EfinanceEarningsAdapter
 from mommy_chaogu.earnings.service import EarningsService, ServiceResult
 from mommy_chaogu.earnings.store import EarningsStore
 from mommy_chaogu.earnings.types import (
@@ -54,6 +61,7 @@ __all__ = [
     "EarningsSource",
     "EarningsStore",
     "EarningsVerdict",
+    "EfinanceEarningsAdapter",
     "MockEarningsAdapter",
     "ServiceResult",
 ]

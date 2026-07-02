@@ -27,6 +27,7 @@ from typing import NoReturn
 from mommy_chaogu.earnings import (
     EarningsService,
     EarningsStore,
+    EfinanceEarningsAdapter,
     MockEarningsAdapter,
 )
 from mommy_chaogu.earnings.types import VERDICT_LABEL, EarningsVerdict
@@ -35,11 +36,20 @@ from mommy_chaogu.earnings.types import VERDICT_LABEL, EarningsVerdict
 
 
 def _build_service(args: argparse.Namespace) -> EarningsService:
-    """构造 EarningsService（目前用 Mock adapter，未来可加 efinance）。"""
+    """构造 EarningsService。
+
+    默认 adapter: EfinanceEarningsAdapter（真实数据，依赖网络）
+    可选 --adapter mock 切换为 MockEarningsAdapter（测试用）
+    """
     actual_db = Path(args.db)
     preview_db = Path(args.preview_db)
     store = EarningsStore(actual_db)
-    adapter = MockEarningsAdapter()
+
+    adapter_choice = getattr(args, "adapter", "efinance")
+    adapter: MockEarningsAdapter | EfinanceEarningsAdapter = (
+        MockEarningsAdapter() if adapter_choice == "mock" else EfinanceEarningsAdapter()
+    )
+
     return EarningsService(adapter, store, preview_db)
 
 
@@ -137,6 +147,12 @@ def build_earnings_parser() -> argparse.ArgumentParser:
         "--preview-db",
         default="data/earnings_preview.db",
         help="earnings_preview 数据库路径 (default: data/earnings_preview.db)",
+    )
+    p.add_argument(
+        "--adapter",
+        choices=["efinance", "mock"],
+        default="efinance",
+        help="数据源 adapter (default: efinance)",
     )
 
     sub = p.add_subparsers(dest="cmd", required=True)
