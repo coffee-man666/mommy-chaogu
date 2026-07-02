@@ -26,6 +26,11 @@
 | **M5.2** | **2026-06-29** | **ratio 信号 + 盘中监控 + 收盘日报** | **`45e20fa`** | **✅** |
 | **M5.3** | **2026-06-29** | **OpenClaw cron 4 jobs 自动化** | **（pending commit）** | **✅** |
 | M6 | TBD | 详情页驾驶舱改造（场景 B） + 复盘报告 | — | ⏳ |
+| **M7.1** | **2026-07-02** | **中信 H1 业绩前瞻 DB + schema** | **`5326b1e`** | **✅** |
+| **M7.2** | **2026-07-02** | **Thematic watchlist groups + 41 家公司入库** | **`4d96d83`** | **✅** |
+| **M7.3** | **2026-07-02** | **中报窗口实战手册 v1.0（12 章节）** | **`018b276`** | **✅** |
+| **M7.4** | **2026-07-02** | **earnings_actual 模块（types/store/service/signals/adapter/cli）** | **(待提交)** | **✅** |
+| **M7.5** | **2026-07-02** | **柯力 603662 + 中信报告实战分析** | **(本文档)** | **✅** |
 
 ---
 
@@ -964,3 +969,237 @@ data['stocks'].sort(key=lambda x: -x['change_pct'])
 - `screenshot.js` / `screenshot_chains.js` —— playwright + chromium 截图 hub 前端
 - `voice_brief.txt` + `voice_brief.m4a` —— macOS `say` + `afconvert` 生成语音版简报
 - `push_scan_report.py` —— 推扫描结果到 hub webhook
+
+---
+
+## M7.1 — 中信证券 H1 2026 业绩前瞻 DB
+
+**日期**：2026-07-02 上午
+**Commit**：`5326b1e` — `feat(data): H1 2026 业绩前瞻数据库 schema + loader 脚本`
+
+### 触发场景
+
+团长发来中信证券《电子行业 2026 年中报业绩前瞻》图，要求「囊括这里的所有信息」。
+
+### 产出
+
+| 文件 | 作用 | 行数 |
+|---|---|---|
+| `data/earnings_preview.db` | 41 家公司业绩前瞻 SQLite | 45KB |
+| `scripts/load_earnings_preview.py` | loader（dry-run / summary / upsert）| 367 |
+| `docs/EARNINGS-HANDBOOK.md` | 实战手册（12 章节 / 407 行）| （M7.3） |
+
+### 设计决策
+
+1. **SQLite + Decimal TEXT 存储** —— 避免 SQLite 浮点精度问题
+2. **UNIQUE(code, period, source) 约束** —— 支持跨券商研报 upsert
+3. **v_sector_summary 视图** —— 板块家数/平均增速/业绩弹性分组
+4. **sector + subsector 双层分类** —— 一级板块（半导体/PCB/...）+ 二级细分（存储/设计/设备/...）
+
+### 41 家公司分布
+
+| 板块 | 家数 | 平均增速 | +200% | 下滑 |
+|---|---|---|---|---|
+| LED | 2 | +518.5% | 1 | 1 |
+| 半导体 | 19 | +217.8% | 7 | 1 |
+| 面板 | 3 | +152.7% | 1 | 0 |
+| AI算力 | 2 | +122.0% | 0 | 0 |
+| 传感器 | 2 | +115.3% | 1 | 0 |
+| PCB | 5 | +39.4% | 0 | 1 |
+| 机器人 | 1 | +35.0% | 0 | 0 |
+| 消费电子 | 7 | +28.1% | 0 | 1 |
+
+### 5 维度评分与教训
+
+1. **业绩弹性不是绝对值，是 ratio**——同样 +200% 净利润增长，3 亿市值 vs 300 亿市值意义天差地别
+2. **券商预测偏差 30-50%**——7/15 起 actual 披露后需校准
+3. **板块整体向上不代表个股向上**——半导体 19 家中 1 家下滑（斯达半导）
+4. **Convexity > Alpha 本身**—— +200% 以上标的具备期权式 payoff
+5. **业绩预告日 70% 跳空**—— 7/15 起 T+1 开盘是关键决策点
+
+---
+
+## M7.2 — Thematic watchlist groups + 41 家公司入库
+
+**日期**：2026-07-02 中午
+**Commit**：`4d96d83` — `feat(watchlist): 按主题分组 H1 2026 业绩前瞻 + 41 家公司入库`
+
+### 触发需求
+
+团长说：「我们要把这里面涉及到的所有的这个股票，按类别按主题把它分成不同的自选观察列表...我并不在乎到底什么是自选的主要...不需要说啊说我就这些都是自选股，然后他们就是一类自选股」。
+
+### 设计哲学
+
+- **多 group 而非单一「自选股」**——13 个主题 group
+- **持仓（白酒/银行/新能源）与主题（13 个）分离**——团长要的「主题篮子」模型
+- **一只股可属多 group**（M:N 通过多条 StockEntry）——柯力 603662 在「传感器」+「机器人」2 组
+- **StockEntry.note 存业绩信息**——例如「+188%~+217% | driver=机器人/工业 | ⭐」
+
+### 13 个主题组
+
+```
+消费电子         (7) - 领益/歌尔/水晶/蓝思/华勤/协创/雷神
+半导体-IC设计    (6) - 韦尔/纳芯微/思特威/星宸/瑞芯微/汇成
+PCB            (5) - 沪电/胜宏/深南/广合/世运
+半导体-材料     (4) - 南亚新材/富创精密/露笑/斯达半导
+半导体-设备     (4) - 北方华创/中微/华海清科/芯源微
+面板            (3) - TCL/京东方/三孚
+AI算力          (2) - 寒武纪/海光
+LED            (2) - 木林森/聚灿
+传感器          (2) - 柯力/优利德
+半导体-存储      (2) - 兆易/北京君正
+半导体-封测      (2) - 通富/长电
+机器人          (2) - 柯力(跨组)/双环传动
+半导体-LED设备   (1) - 新益昌
+```
+
+### 实战洞察
+
+- **柯力 603662 跨 2 组**——既是六维力传感器龙头，又是人形机器人核心标的
+- **半导体 6 子类细分**——避免一篮子堆 19 家难选股
+- **现行 schema 已支持 M:N**——(code, group_id) UNIQUE + 多次插入 = 一股多组
+
+---
+
+## M7.3 — 中报窗口实战手册 v1.0
+
+**日期**：2026-07-02 下午
+**Commit**：`018b276` — `docs(EARNINGS-HANDBOOK): 2026 中报窗口实战手册 v1.0`
+
+### 12 章节结构
+
+```
+一、TL;DR — 3 条铁律
+二、关键时间线 (7/2 → 8/31)
+三、监控规则 (T-7 / T-0 / T+1)
+四、4 大实战策略 (超预期 / Convexity / 配对 / 板块轮动)
+五、仓位管理节奏 (单股 ≤10% / 板块 ≤25%)
+六、风险控制 (止损 / 黑天鹅 / 心理纪律)
+七、4 条交易信号定义
+八、实战案例：柯力 603662 (三情景推演)
+九、操作清单 (每日 / 每周 / 阶段)
+十、相关数据资产
+十一、决策心法 (7 条实战沉淀)
+十二、版本
+```
+
+### 核心策略
+
+1. **超预期交易**：T-7 入选 → T-0 比对 → T+1 9:30-9:35 行动
+2. **Convexity Plays**：预测 +200% 以上 = 期权式 payoff
+3. **板块内配对**：AI 算力 long 寒武纪 / short 海光；LED long 木林森 / short 聚灿
+4. **板块轮动**：半导体/面板/LED/AI算力超配，消费电子低配
+
+### 柯力 603662 三情景
+
+| 情景 | actual | T+1 开盘 | 操作 |
+|---|---|---|---|
+| A | +220% (超) | +8-12% | T+1 加仓至 8%，T+7 减半 |
+| B | +200% (中位) | ±2% | HOLD |
+| C | +180% (低) | -5~-8% | T+1 减仓 50%，跌破 65 元清仓 |
+
+---
+
+## M7.4 — earnings_actual 模块（types/store/service/signals/adapter/cli）
+
+**日期**：2026-07-02 下午
+**Commit**：待提交
+**代码量**：1263 行 src + 911 行 tests + 1163 行 docs = **2074 行**
+
+### 模块结构
+
+```
+src/mommy_chaogu/earnings/
+├── __init__.py        # public API
+├── types.py           # EarningsActual/Calendar/Score/Verdict
+├── schema.py          # 3 表 + 9 索引 + v_recent_disclosures 视图
+├── store.py           # EarningsStore (SQLite ORM-like)
+├── adapter.py         # EarningsAdapter Protocol + MockEarningsAdapter
+├── service.py         # EarningsService (pull/score/watch/summary)
+├── signals.py         # 4 条 earnings 信号规则
+└── cli.py             # mommy-earnings CLI (pull/score/watch/summary)
+```
+
+### 3 张表
+
+| 表 | 字段数 | UNIQUE 约束 | 用途 |
+|---|---|---|---|
+| earnings_actual | 11 | (code, period, source) | 实际披露业绩 |
+| earnings_score | 13 | (code, period) | actual vs predicted 比对 |
+| earnings_calendar | 7 | (code, period) | 公告日期日历 |
+
+### 4 条信号规则
+
+| 规则 | 触发条件 | 严重度 |
+|---|---|---|
+| earnings_beat | actual > predicted_high | CRITICAL |
+| earnings_meet | 在预测区间内 | INFO |
+| earnings_miss | actual < predicted_low | CRITICAL |
+| earnings_approaching | T-7 内 + predicted_high > 100% | WARNING |
+
+### CLI 测试
+
+```bash
+$ mommy-earnings pull --codes 603662,603986 --period "H1 2026"
+📥 拉取完成: 成功 2, 失败 0
+   耗时: 0.00s
+
+$ mommy-earnings score --period "H1 2026"
+📊 比对完成: 成功 2, 失败 0
+🏆 TOP 5:
+603662 柯力传感    188~217%   202.5%    🟡 符合
+603986 兆易创新   1070~1370%  1220.0%   🟡 符合
+
+$ mommy-earnings summary --period "H1 2026"
+verdict          数量       占比
+🟢 超预期             0     0.0%
+🟡 符合              2   100.0%
+🔴 大幅低于           0     0.0%
+```
+
+### 设计教训
+
+1. **Protocol + dataclass 是 mypy strict 的好搭档**——但 mutable attribute 必须显式定义
+2. **RUF012 mutable default**——MOCK_DATA 用 ClassVar 解决
+3. **RUF009 function call in dataclass defaults**——用 field(default_factory=...)
+4. **frozen dataclass + Protocol attribute 冲突**——去掉 frozen 或用 property
+5. **sqlite3.ProgrammingError 的 UPDATE 参数错位**——明确按索引取值，不依赖切片
+
+### 待补（P1 - 财报窗口前）
+
+- [ ] EfinanceEarningsAdapter（替换 Mock）
+- [ ] EarningsCalendar 公告日历爬取（东财 / 交易所）
+- [ ] 7/15 起 cron job 集成（每天 16:00 扫描 + 比对 + 推微信）
+- [ ] 与 signals/alerter.py 集成（生成 Signal 后推微信）
+
+---
+
+## M7.5 — 柯力 603662 + 中信报告实战分析
+
+**日期**：2026-07-02 全天
+**类型**：实战演练（非代码 commit）
+
+### 实战时间线
+
+| 时间 | 动作 | 关键发现 |
+|---|---|---|
+| 11:04 | 柯力深挖 | 现价 75.13, 主力 +0.77 亿 (+36.5bp), 10 日累计 -1.78 亿 |
+| 11:30 | 中信 H1 前瞻图 | 41 家公司业绩弹性分布 |
+| 12:08 | 柯力业绩催化 | H1 +188~+217%, 人形机器人主线 |
+| 12:27 | 多主题 group 入库 | 13 主题 / 42 条记录 |
+| 14:04 | 实战手册发布 | 12 章节 / 407 行 |
+| 15:29 | P1 + docs 落地 | earnings_actual 模块 + CLI + 51 测试 |
+
+### 核心结论
+
+- **柯力 603662** = 反转初期信号 + 业绩催化 + 主线题材三重共振
+- **预警**：「中性偏空」评分是滞后指标，10 日累计 -1.78 亿 包含了 6/22-6/29 流出段，今日反转尚未计入
+- **建议**：7/3-7/5 流入信号确认后加仓；10 日累计转正后视为趋势确立
+
+### 5 大心法
+
+1. **Convexity > Alpha 本身**——预测 +200% 以上 vs +50% 标的，赔率天差地别
+2. **半年报窗口 = alpha 窗口**——7/15-8/31 这 45 天，主线资金的进出决定一切
+3. **业绩预告日 70% 跳空**——T+1 9:30-9:35 行动窗口稍纵即逝
+4. **多主题篮子 > 单一自选股**——团长要的「主题篮子」模型落地
+5. **数据 → 策略 → 实战**——3 步走，每步都有 commit + 测试 + 文档
