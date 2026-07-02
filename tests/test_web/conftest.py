@@ -5,6 +5,7 @@
 - 不走真实网络、不依赖 DB 文件
 - TestClient 启动时不触发 lifespan（避免真实 polling）
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from mommy_chaogu.signals.types import Signal, SignalSeverity
 from mommy_chaogu.watchlist.models import StockEntry
 
 # ---------- 数据工厂 ----------
+
 
 def make_quote(
     code: str = "600519",
@@ -106,12 +108,10 @@ def make_bar(code: str = "600519") -> Bar:
 def make_orderbook(code: str = "600519") -> OrderBook:
     """造一个测试用 5 档盘口。"""
     bids = tuple(
-        OrderBookLevel(price=Decimal(f"168{i}.00"), volume=100 * (5 - i))
-        for i in range(5)
+        OrderBookLevel(price=Decimal(f"168{i}.00"), volume=100 * (5 - i)) for i in range(5)
     )
     asks = tuple(
-        OrderBookLevel(price=Decimal(f"168{i + 5}.00"), volume=80 * (5 - i))
-        for i in range(5)
+        OrderBookLevel(price=Decimal(f"168{i + 5}.00"), volume=80 * (5 - i)) for i in range(5)
     )
     return OrderBook(
         code=code,
@@ -179,6 +179,7 @@ def make_signal(
 
 # ---------- Mock 依赖 ----------
 
+
 def make_mock_adapter() -> MagicMock:
     """造一个 Mock MarketDataAdapter，预填返回值。"""
     adapter = MagicMock()
@@ -209,6 +210,7 @@ def make_mock_service() -> MagicMock:
 
 
 # ---------- FastAPI test client ----------
+
 
 @pytest.fixture()
 def mock_adapter() -> MagicMock:

@@ -1,4 +1,5 @@
 """earnings 模块 — Signals 单元测试。"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -118,32 +119,38 @@ def test_approaching_triggers_within_window():
 def test_approaching_triggers_with_high_growth():
     """predicted_high > 100% 触发。"""
     rule = EarningsApproachingRule()
-    sigs = rule.evaluate(make_ctx(
-        today=date(2026, 7, 15),
-        disclosure_date=date(2026, 7, 20),
-        predicted_high=Decimal("150"),
-    ))
+    sigs = rule.evaluate(
+        make_ctx(
+            today=date(2026, 7, 15),
+            disclosure_date=date(2026, 7, 20),
+            predicted_high=Decimal("150"),
+        )
+    )
     assert len(sigs) == 1
 
 
 def test_approaching_no_trigger_far_away():
     """T > 7 不触发。"""
     rule = EarningsApproachingRule()
-    sigs = rule.evaluate(make_ctx(
-        today=date(2026, 7, 1),
-        disclosure_date=date(2026, 7, 20),  # T-19
-    ))
+    sigs = rule.evaluate(
+        make_ctx(
+            today=date(2026, 7, 1),
+            disclosure_date=date(2026, 7, 20),  # T-19
+        )
+    )
     assert len(sigs) == 0
 
 
 def test_approaching_no_trigger_low_growth():
     """predicted_high < 100% 不触发。"""
     rule = EarningsApproachingRule()
-    sigs = rule.evaluate(make_ctx(
-        today=date(2026, 7, 15),
-        disclosure_date=date(2026, 7, 20),
-        predicted_high=Decimal("50"),  # < 100
-    ))
+    sigs = rule.evaluate(
+        make_ctx(
+            today=date(2026, 7, 15),
+            disclosure_date=date(2026, 7, 20),
+            predicted_high=Decimal("50"),  # < 100
+        )
+    )
     assert len(sigs) == 0
 
 
@@ -156,11 +163,13 @@ def test_approaching_no_trigger_no_disclosure_date():
 
 def test_approaching_fire_emoji_for_extreme():
     rule = EarningsApproachingRule()
-    sigs = rule.evaluate(make_ctx(
-        today=date(2026, 7, 15),
-        disclosure_date=date(2026, 7, 20),
-        predicted_high=Decimal("1000"),  # > 500 → 🔥
-    ))
+    sigs = rule.evaluate(
+        make_ctx(
+            today=date(2026, 7, 15),
+            disclosure_date=date(2026, 7, 20),
+            predicted_high=Decimal("1000"),  # > 500 → 🔥
+        )
+    )
     assert "🔥" in sigs[0].detail
 
 

@@ -14,6 +14,7 @@
 字段长度都按实际数据上限放大，没做严格枚举约束（subcategory 故意放开，
 方便后续增补新分类时不需要改 schema）。
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -71,8 +72,4 @@ class SemiconStock(SemiconBase):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<SemiconStock {self.code} {self.name} "
-            f"{self.chain_position}/{self.subcategory}>"
-        )
-
+        return f"<SemiconStock {self.code} {self.name} {self.chain_position}/{self.subcategory}>"

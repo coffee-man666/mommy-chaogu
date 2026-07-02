@@ -1,4 +1,5 @@
 """/api/quotes 路由：实时报价 + K 线 + 盘口。"""
+
 from __future__ import annotations
 
 from typing import Annotated, Any
@@ -109,13 +110,16 @@ def get_today_money_flow(
     ]
     # 当日累计 = 最后一条（已经是累计值）
     cumulative = items[-1] if items else {}
-    return {"items": items, "cumulative": {
-        "main_net": cumulative.get("main_net", "0"),
-        "super_net": cumulative.get("super_net") or "0",
-        "big_net": cumulative.get("big_net") or "0",
-        "medium_net": cumulative.get("medium_net") or "0",
-        "small_net": cumulative.get("small_net") or "0",
-    }}
+    return {
+        "items": items,
+        "cumulative": {
+            "main_net": cumulative.get("main_net", "0"),
+            "super_net": cumulative.get("super_net") or "0",
+            "big_net": cumulative.get("big_net") or "0",
+            "medium_net": cumulative.get("medium_net") or "0",
+            "small_net": cumulative.get("small_net") or "0",
+        },
+    }
 
 
 @router.get("/{code}/money_flow/history")

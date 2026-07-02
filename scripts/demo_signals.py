@@ -3,6 +3,7 @@
 
 展示规则触发效果，便于调试 / 给妈妈演示。
 """
+
 from __future__ import annotations
 
 import sys
@@ -61,27 +62,32 @@ def main() -> int:
     # 模拟场景：4 只自选股 + 1 只跳空
     rows = [
         SnapshotRow(
-            entry=None, group_name="白酒",
+            entry=None,
+            group_name="白酒",
             quote=mk_quote("600519", "1300", "+6.5", volume_ratio="2.8"),
             latest_flow=mk_flow("600519", 350_000_000),
         ),
         SnapshotRow(
-            entry=None, group_name="白酒",
+            entry=None,
+            group_name="白酒",
             quote=mk_quote("000858", "78", "-4.2", turnover_rate="5.5"),
             latest_flow=mk_flow("000858", -180_000_000),
         ),
         SnapshotRow(
-            entry=None, group_name="银行",
+            entry=None,
+            group_name="银行",
             quote=mk_quote("000001", "10.5", "+0.5"),
             latest_flow=mk_flow("000001", 30_000_000),
         ),
         SnapshotRow(
-            entry=None, group_name="银行",
+            entry=None,
+            group_name="银行",
             quote=mk_quote("600036", "36", "+1.2"),
             latest_flow=mk_flow("600036", 50_000_000),
         ),
         SnapshotRow(
-            entry=None, group_name="新能源",
+            entry=None,
+            group_name="新能源",
             quote=mk_quote("300750", "400", "-2.8", open="385", prev_close="380"),
             latest_flow=mk_flow("300750", -250_000_000),
         ),

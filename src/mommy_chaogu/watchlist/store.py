@@ -6,6 +6,7 @@ API 设计原则：
 - 所有"按 name/code 找"的查询，要么返回对象要么抛 NotFound，让调用方决定怎么处理
 - 重复 add 静默返回已有对象（幂等），方便 CLI 反复执行
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -57,6 +58,7 @@ class WatchlistStore:
         # SQLite 外键默认关，开一下
         with self.engine.begin() as conn:
             from sqlalchemy import text
+
             conn.execute(text("PRAGMA foreign_keys = ON"))
         # 创建表
         WatchlistBase.metadata.create_all(self.engine)
@@ -114,16 +116,14 @@ class WatchlistStore:
         """返回 [(Group, entry_count), ...]，按组名排序。"""
         with self.session() as s:
             from sqlalchemy import func
+
             stmt = (
                 select(Group, func.count(StockEntry.id).label("n_entries"))
                 .outerjoin(StockEntry, StockEntry.group_id == Group.id)
                 .group_by(Group.id)
                 .order_by(Group.name)
             )
-            return [
-                (g, n_entries)
-                for g, n_entries in s.execute(stmt).all()
-            ]
+            return [(g, n_entries) for g, n_entries in s.execute(stmt).all()]
 
     def remove_group(self, name: str) -> None:
         """删除分组（级联删 entry）。"""
@@ -135,9 +135,7 @@ class WatchlistStore:
 
     # ---------- StockEntry CRUD ----------
 
-    def add_entry(
-        self, code: str, group_name: str, note: str | None = None
-    ) -> StockEntry:
+    def add_entry(self, code: str, group_name: str, note: str | None = None) -> StockEntry:
         """添加自选股到指定分组。
 
         - 分组不存在抛 GroupNotFoundError
@@ -146,9 +144,7 @@ class WatchlistStore:
         - 返回的 entry 已 eagerly 加载 group 属性（session 关闭后仍可访问）
         """
         with self.session() as s:
-            g = s.execute(
-                select(Group).where(Group.name == group_name)
-            ).scalar_one_or_none()
+            g = s.execute(select(Group).where(Group.name == group_name)).scalar_one_or_none()
             if g is None:
                 raise GroupNotFoundError(f"分组不存在: {group_name!r}")
             existing = s.execute(
@@ -173,20 +169,14 @@ class WatchlistStore:
     def remove_entry(self, code: str, group_name: str) -> None:
         """从指定分组删除自选股。"""
         with self.session() as s:
-            g = s.execute(
-                select(Group).where(Group.name == group_name)
-            ).scalar_one_or_none()
+            g = s.execute(select(Group).where(Group.name == group_name)).scalar_one_or_none()
             if g is None:
                 raise GroupNotFoundError(f"分组不存在: {group_name!r}")
             entry = s.execute(
-                select(StockEntry).where(
-                    StockEntry.group_id == g.id, StockEntry.code == code
-                )
+                select(StockEntry).where(StockEntry.group_id == g.id, StockEntry.code == code)
             ).scalar_one_or_none()
             if entry is None:
-                raise StockEntryNotFoundError(
-                    f"自选股 {code} 不在分组 {group_name!r}"
-                )
+                raise StockEntryNotFoundError(f"自选股 {code} 不在分组 {group_name!r}")
             s.delete(entry)
 
     def list_entries(self, group_name: str | None = None) -> list[StockEntry]:
@@ -208,9 +198,7 @@ class WatchlistStore:
     def list_entries_by_group(self) -> dict[str, list[StockEntry]]:
         """按分组返回 {group_name: [entries]}，按组名排序。"""
         with self.session() as s:
-            groups = list(
-                s.execute(select(Group).order_by(Group.name)).scalars().all()
-            )
+            groups = list(s.execute(select(Group).order_by(Group.name)).scalars().all())
             result: dict[str, list[StockEntry]] = {}
             for g in groups:
                 result[g.name] = list(
@@ -219,7 +207,10 @@ class WatchlistStore:
                         .options(joinedload(StockEntry.group))
                         .where(StockEntry.group_id == g.id)
                         .order_by(StockEntry.code)
-                    ).scalars().unique().all()
+                    )
+                    .scalars()
+                    .unique()
+                    .all()
                 )
             return result
 
@@ -234,9 +225,7 @@ class WatchlistStore:
     def backfill_name(self, code: str, name: str) -> int:
         """拉取行情后回填 name 字段，返回更新的 entry 数。"""
         with self.session() as s:
-            entries = s.execute(
-                select(StockEntry).where(StockEntry.code == code)
-            ).scalars().all()
+            entries = s.execute(select(StockEntry).where(StockEntry.code == code)).scalars().all()
             for e in entries:
                 e.name = name
             return len(entries)
@@ -247,11 +236,10 @@ class WatchlistStore:
         """汇总统计：分组数 / 自选股数 / 唯一股票数。"""
         with self.session() as s:
             from sqlalchemy import func
+
             n_groups = s.execute(select(func.count(Group.id))).scalar_one()
             n_entries = s.execute(select(func.count(StockEntry.id))).scalar_one()
-            n_distinct = s.execute(
-                select(func.count(func.distinct(StockEntry.code)))
-            ).scalar_one()
+            n_distinct = s.execute(select(func.count(func.distinct(StockEntry.code)))).scalar_one()
         return {
             "groups": n_groups,
             "entries": n_entries,

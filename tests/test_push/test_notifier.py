@@ -1,4 +1,5 @@
 """SignalNotifier 测试。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -30,10 +31,15 @@ def make_notifier(tmp_path: Path, threshold: SignalSeverity = SignalSeverity.WAR
     pusher = MagicMock()
     pusher.push.return_value = True
     deduper = JsonFileDeduper(tmp_path / "pushed.json")
-    return SignalNotifier(pusher=pusher, deduper=deduper, severity_threshold=threshold), pusher, deduper
+    return (
+        SignalNotifier(pusher=pusher, deduper=deduper, severity_threshold=threshold),
+        pusher,
+        deduper,
+    )
 
 
 # ---------- 阈值过滤 ----------
+
 
 def test_info_below_threshold_not_pushed(tmp_path: Path):
     notifier, pusher, _ = make_notifier(tmp_path, threshold=SignalSeverity.WARNING)
@@ -62,6 +68,7 @@ def test_info_meets_threshold_when_info_allowed(tmp_path: Path):
 
 # ---------- 去重 ----------
 
+
 def test_dedup_skips_already_pushed(tmp_path: Path):
     notifier, pusher, deduper = make_notifier(tmp_path)
     signal = make_signal()
@@ -72,6 +79,7 @@ def test_dedup_skips_already_pushed(tmp_path: Path):
 
 
 # ---------- 推送失败 ----------
+
 
 def test_pusher_failure_does_not_mark_pushed(tmp_path: Path):
     notifier, pusher, deduper = make_notifier(tmp_path)
@@ -91,6 +99,7 @@ def test_pusher_exception_handled(tmp_path: Path):
 
 
 # ---------- 批量 ----------
+
 
 def test_notify_batch(tmp_path: Path):
     notifier, pusher, _ = make_notifier(tmp_path)

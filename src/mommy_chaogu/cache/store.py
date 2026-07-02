@@ -3,6 +3,7 @@
 所有数据带 fetched_at 时间戳，quote_cache 还带 quote_ts（数据自身时间）。
 失败时保留旧数据 — 永远不让数据库"消失"一份已有数据。
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ def _utcnow() -> datetime:
 @dataclass(frozen=True, slots=True)
 class QuoteCacheEntry:
     """quote_cache 表的单行。"""
+
     code: str
     quote: object  # Quote dataclass
     fetched_at: datetime
@@ -79,7 +81,9 @@ class CacheStore:
     def get_quote(self, code: str) -> QuoteCacheEntry | None:
         with self.session() as s:
             row = s.execute(
-                text("SELECT code, quote_json, fetched_at, quote_ts FROM quote_cache WHERE code = :code"),
+                text(
+                    "SELECT code, quote_json, fetched_at, quote_ts FROM quote_cache WHERE code = :code"
+                ),
                 {"code": code},
             ).first()
             if row is None:
@@ -89,7 +93,9 @@ class CacheStore:
             return QuoteCacheEntry(
                 code=row[0],
                 quote=quote,
-                fetched_at=row[2] if isinstance(row[2], datetime) else datetime.fromisoformat(row[2]),
+                fetched_at=row[2]
+                if isinstance(row[2], datetime)
+                else datetime.fromisoformat(row[2]),
                 quote_ts=row[3] if isinstance(row[3], datetime) else datetime.fromisoformat(row[3]),
             )
 
@@ -123,24 +129,36 @@ class CacheStore:
     def get_all_quote_entries(self) -> list[QuoteCacheEntry]:
         with self.session() as s:
             rows = s.execute(
-                text("SELECT code, quote_json, fetched_at, quote_ts FROM quote_cache ORDER BY fetched_at DESC")
+                text(
+                    "SELECT code, quote_json, fetched_at, quote_ts FROM quote_cache ORDER BY fetched_at DESC"
+                )
             ).all()
             out: list[QuoteCacheEntry] = []
             for row in rows:
                 quote_dict = json.loads(row[1])
                 quote = quote_from_dict(quote_dict)
-                out.append(QuoteCacheEntry(
-                    code=row[0],
-                    quote=quote,
-                    fetched_at=row[2] if isinstance(row[2], datetime) else datetime.fromisoformat(row[2]),
-                    quote_ts=row[3] if isinstance(row[3], datetime) else datetime.fromisoformat(row[3]),
-                ))
+                out.append(
+                    QuoteCacheEntry(
+                        code=row[0],
+                        quote=quote,
+                        fetched_at=row[2]
+                        if isinstance(row[2], datetime)
+                        else datetime.fromisoformat(row[2]),
+                        quote_ts=row[3]
+                        if isinstance(row[3], datetime)
+                        else datetime.fromisoformat(row[3]),
+                    )
+                )
             return out
 
     # ---------- Bar cache ----------
 
     def get_bars(
-        self, code: str, interval: str, adj_type: str, start_date: str | None = None,
+        self,
+        code: str,
+        interval: str,
+        adj_type: str,
+        start_date: str | None = None,
         end_date: str | None = None,
     ) -> list[dict[str, Any]] | None:
         """返回 [bar_dict, ...]（如果该 code 已有任何缓存）或 None。"""
@@ -151,9 +169,14 @@ class CacheStore:
                 WHERE code = :code AND interval = :interval AND adj_type = :adj_type
                 ORDER BY trade_date
             """)
-            rows = s.execute(stmt, {
-                "code": code, "interval": interval, "adj_type": adj_type,
-            }).all()
+            rows = s.execute(
+                stmt,
+                {
+                    "code": code,
+                    "interval": interval,
+                    "adj_type": adj_type,
+                },
+            ).all()
             if not rows:
                 return None
             out: list[dict] = []
@@ -178,8 +201,12 @@ class CacheStore:
                         fetched_at = excluded.fetched_at
                 """),
                 {
-                    "code": code, "interval": interval, "adj_type": adj_type,
-                    "date": trade_date, "json": bar_json, "fetched": _utcnow(),
+                    "code": code,
+                    "interval": interval,
+                    "adj_type": adj_type,
+                    "date": trade_date,
+                    "json": bar_json,
+                    "fetched": _utcnow(),
                 },
             )
 
@@ -188,7 +215,9 @@ class CacheStore:
     def get_today_money_flow(self, code: str) -> list[dict[str, Any]] | None:
         with self.session() as s:
             row = s.execute(
-                text("SELECT flows_json, fetched_at FROM today_money_flow_cache WHERE code = :code"),
+                text(
+                    "SELECT flows_json, fetched_at FROM today_money_flow_cache WHERE code = :code"
+                ),
                 {"code": code},
             ).first()
             if row is None:
@@ -209,7 +238,9 @@ class CacheStore:
                 {"code": code, "json": flows_json, "fetched": _utcnow()},
             )
 
-    def get_money_flow_history(self, code: str, start_date: str | None = None) -> list[dict[str, Any]] | None:
+    def get_money_flow_history(
+        self, code: str, start_date: str | None = None
+    ) -> list[dict[str, Any]] | None:
         with self.session() as s:
             stmt = text("""
                 SELECT trade_date, flow_json, fetched_at
@@ -263,7 +294,9 @@ class CacheStore:
             )
             return result.lastrowid or 0
 
-    def get_latest_market_snapshot(self) -> tuple[int, datetime, datetime | None, list[dict]] | None:
+    def get_latest_market_snapshot(
+        self,
+    ) -> tuple[int, datetime, datetime | None, list[dict]] | None:
         """最新一份全市场快照。"""
         with self.session() as s:
             row = s.execute(
@@ -278,7 +311,9 @@ class CacheStore:
             return (
                 row[0],
                 row[1] if isinstance(row[1], datetime) else datetime.fromisoformat(row[1]),
-                row[2] if isinstance(row[2], datetime) else (datetime.fromisoformat(row[2]) if row[2] else None),
+                row[2]
+                if isinstance(row[2], datetime)
+                else (datetime.fromisoformat(row[2]) if row[2] else None),
                 json.loads(row[3]),
             )
 
@@ -324,9 +359,13 @@ class CacheStore:
         with self.session() as s:
             n_quotes = s.execute(text("SELECT COUNT(*) FROM quote_cache")).scalar() or 0
             n_bars = s.execute(text("SELECT COUNT(*) FROM bar_cache")).scalar() or 0
-            n_flows_today = s.execute(text("SELECT COUNT(*) FROM today_money_flow_cache")).scalar() or 0
+            n_flows_today = (
+                s.execute(text("SELECT COUNT(*) FROM today_money_flow_cache")).scalar() or 0
+            )
             n_flows_history = s.execute(text("SELECT COUNT(*) FROM money_flow_cache")).scalar() or 0
-            n_snapshots = s.execute(text("SELECT COUNT(*) FROM market_snapshot_cache")).scalar() or 0
+            n_snapshots = (
+                s.execute(text("SELECT COUNT(*) FROM market_snapshot_cache")).scalar() or 0
+            )
         return {
             "quotes": n_quotes,
             "bars": n_bars,

@@ -3,6 +3,7 @@
 所有表都带 fetched_at 时间戳，标明"我们什么时候抓的"。
 quote_cache 还带 quote_ts，记录"数据自身的时间"（行情接口给的时间戳）。
 """
+
 from __future__ import annotations
 
 SCHEMA_SQL = """

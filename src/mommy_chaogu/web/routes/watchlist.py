@@ -1,4 +1,5 @@
 """/api/watchlist 路由：自选池 CRUD。"""
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -39,10 +40,7 @@ def list_groups(
     store: Annotated[WatchlistStore, Depends(get_watchlist_store)],
 ) -> list[WatchlistGroupOut]:
     """所有分组（带股票数）。"""
-    return [
-        group_to_out(group, count)
-        for group, count in store.list_groups()
-    ]
+    return [group_to_out(group, count) for group, count in store.list_groups()]
 
 
 @router.post("/groups", response_model=WatchlistGroupOut, status_code=201)

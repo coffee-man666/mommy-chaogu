@@ -8,6 +8,7 @@ API 文档：https://sct.ftqq.com/
 注意：requests 是同步调用，但 BackgroundService._tick 是 async task，
 单次推送 ~100ms 不影响其他 WS 客户端。如果以后需要异步换成 aiohttp。
 """
+
 from __future__ import annotations
 
 import logging
@@ -99,9 +100,7 @@ class ServerChanPusher:
             f"- **详情**：{signal.detail}",
         ]
         if signal.trigger_value is not None and signal.threshold_value is not None:
-            lines.append(
-                f"- **触发值**：{signal.trigger_value}（阈值 {signal.threshold_value}）"
-            )
+            lines.append(f"- **触发值**：{signal.trigger_value}（阈值 {signal.threshold_value}）")
         if self.web_base_url and signal.code and len(signal.code) == 6:
             lines.append("")
             lines.append(f"[**📈 查看 K 线 →**]({self.web_base_url}/#/detail/{signal.code})")

@@ -10,6 +10,7 @@
 - FlowMonitor：持续轮询 + ratio-based 异动检测
 - FlowReport：收盘日报（markdown）
 """
+
 from __future__ import annotations
 
 from mommy_chaogu.flows.monitor import FlowMonitor, TickResult

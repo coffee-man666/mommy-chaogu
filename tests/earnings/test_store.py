@@ -1,4 +1,5 @@
 """earnings 模块 — Store 单元测试。"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -137,16 +138,28 @@ def test_upsert_calendar(store: EarningsStore):
 def test_list_calendars_filter(store: EarningsStore):
     """日历可按日期范围过滤。"""
     c1 = EarningsCalendar(
-        code="603662", name="柯力", period="H1 2026",
-        disclosure_date=date(2026, 7, 20), is_estimated=False, source="x",
+        code="603662",
+        name="柯力",
+        period="H1 2026",
+        disclosure_date=date(2026, 7, 20),
+        is_estimated=False,
+        source="x",
     )
     c2 = EarningsCalendar(
-        code="603986", name="兆易", period="H1 2026",
-        disclosure_date=date(2026, 7, 25), is_estimated=False, source="x",
+        code="603986",
+        name="兆易",
+        period="H1 2026",
+        disclosure_date=date(2026, 7, 25),
+        is_estimated=False,
+        source="x",
     )
     c3 = EarningsCalendar(
-        code="002745", name="木林森", period="H1 2026",
-        disclosure_date=date(2026, 8, 5), is_estimated=False, source="x",
+        code="002745",
+        name="木林森",
+        period="H1 2026",
+        disclosure_date=date(2026, 8, 5),
+        is_estimated=False,
+        source="x",
     )
     for c in [c1, c2, c3]:
         store.upsert_calendar(c)
@@ -185,20 +198,32 @@ def test_upsert_score(store: EarningsStore):
 def test_list_scores_filter_by_verdict(store: EarningsStore):
     """按 verdict 过滤。"""
     s1 = EarningsScore(
-        code="603662", name="柯力", period="H1 2026",
-        predicted_low=Decimal("188"), predicted_high=Decimal("217"),
+        code="603662",
+        name="柯力",
+        period="H1 2026",
+        predicted_low=Decimal("188"),
+        predicted_high=Decimal("217"),
         predicted_mid=Decimal("202.5"),
-        actual_value=Decimal("900000000"), actual_growth=Decimal("225.0"),
-        gap_to_mid=Decimal("22.5"), gap_to_high=Decimal("8.0"),
-        verdict=EarningsVerdict.SUPER_BEAT, confidence=Decimal("0.9"),
+        actual_value=Decimal("900000000"),
+        actual_growth=Decimal("225.0"),
+        gap_to_mid=Decimal("22.5"),
+        gap_to_high=Decimal("8.0"),
+        verdict=EarningsVerdict.SUPER_BEAT,
+        confidence=Decimal("0.9"),
     )
     s2 = EarningsScore(
-        code="603986", name="兆易", period="H1 2026",
-        predicted_low=Decimal("1070"), predicted_high=Decimal("1370"),
+        code="603986",
+        name="兆易",
+        period="H1 2026",
+        predicted_low=Decimal("1070"),
+        predicted_high=Decimal("1370"),
         predicted_mid=Decimal("1220"),
-        actual_value=Decimal("2.5e9"), actual_growth=Decimal("1200"),
-        gap_to_mid=Decimal("-20"), gap_to_high=Decimal("-170"),
-        verdict=EarningsVerdict.MEET, confidence=Decimal("0.7"),
+        actual_value=Decimal("2.5e9"),
+        actual_growth=Decimal("1200"),
+        gap_to_mid=Decimal("-20"),
+        gap_to_high=Decimal("-170"),
+        verdict=EarningsVerdict.MEET,
+        confidence=Decimal("0.7"),
     )
     store.upsert_score(s1)
     store.upsert_score(s2)
@@ -216,7 +241,9 @@ def test_decimal_precision_preserved(store: EarningsStore):
     """Decimal 精度不应丢失（TEXT 存储）。"""
     precise = Decimal("123456789.123456789")
     a = EarningsActual(
-        code="603662", name="柯力", period="H1 2026",
+        code="603662",
+        name="柯力",
+        period="H1 2026",
         actual_value=precise,
         growth_pct=Decimal("200.123"),
         disclosure_date=date(2026, 7, 20),

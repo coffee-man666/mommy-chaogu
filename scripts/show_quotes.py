@@ -1,4 +1,5 @@
 """临时脚本：显示自选股 + 半导体产业链行情快照。"""
+
 import json
 from datetime import datetime
 from pathlib import Path

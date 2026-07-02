@@ -7,6 +7,7 @@
   - (code, group_id) 唯一约束：同一分组内不能重复
   - 不同分组可以重复（妈妈可能同时在「白酒」和「长线」里都加茅台）
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

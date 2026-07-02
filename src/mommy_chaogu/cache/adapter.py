@@ -10,6 +10,7 @@
 - 实现 MarketDataAdapter Protocol（runtime_checkable）
 - 业务层使用无感 — 像直接调底层 adapter 一样
 """
+
 from __future__ import annotations
 
 import logging
@@ -111,8 +112,9 @@ class CachedMarketDataAdapter:
             # 拉新失败
             if cached is not None:
                 self.stats_counters["hits"] += 1
-                _log.info("serving cached quote(%s) age=%.0fs (fetch failed)",
-                          code, cached.age_seconds)
+                _log.info(
+                    "serving cached quote(%s) age=%.0fs (fetch failed)", code, cached.age_seconds
+                )
                 return cached.quote  # type: ignore[return-value]
 
             self.stats_counters["miss"] += 1
@@ -144,6 +146,7 @@ class CachedMarketDataAdapter:
             self.stats_counters["hits"] += 1
             # 从快照还原 Quote 对象列表
             from mommy_chaogu.cache.serializer import quote_from_dict
+
             return [quote_from_dict(d) for d in snap[3]]
 
         # 尝试拉新
@@ -160,6 +163,7 @@ class CachedMarketDataAdapter:
             self.stats_counters["fetch_ok"] += 1
             try:
                 from mommy_chaogu.cache.serializer import quote_to_dict
+
                 quote_dicts = [quote_to_dict(q) for q in fresh]
                 quote_ts = fresh[0].timestamp if fresh else None
                 self.store.save_market_snapshot(quote_dicts, quote_ts=quote_ts)
@@ -172,8 +176,11 @@ class CachedMarketDataAdapter:
         if snap is not None:
             self.stats_counters["hits"] += 1
             from mommy_chaogu.cache.serializer import quote_from_dict
-            _log.info("serving cached market_snapshot age=%.0fs (fetch failed)",
-                      (_utcnow() - snap[1]).total_seconds())
+
+            _log.info(
+                "serving cached market_snapshot age=%.0fs (fetch failed)",
+                (_utcnow() - snap[1]).total_seconds(),
+            )
             return [quote_from_dict(d) for d in snap[3]]
 
         self.stats_counters["miss"] += 1
@@ -216,8 +223,14 @@ class CachedMarketDataAdapter:
             self._mark_fetched(key)
             self.stats_counters["fetches"] += 1
             try:
-                fresh = self.inner.get_bars(code, interval=interval, adjustment=adjustment,
-                                              start=start, end=end, limit=limit)
+                fresh = self.inner.get_bars(
+                    code,
+                    interval=interval,
+                    adjustment=adjustment,
+                    start=start,
+                    end=end,
+                    limit=limit,
+                )
                 self.stats_counters["fetch_ok"] += 1
             except Exception as e:
                 self.stats_counters["fetch_fail"] += 1
@@ -228,12 +241,14 @@ class CachedMarketDataAdapter:
             for bar in fresh:
                 trade_date = bar.timestamp.strftime("%Y-%m-%d")
                 from dataclasses import asdict
+
                 bar_dict = asdict(bar)
                 # 转换 datetime/Decimal/enum
                 bar_dict["timestamp"] = bar.timestamp.isoformat()
                 bar_dict["interval"] = interval_str
                 bar_dict["adjustment"] = adj_str
                 from decimal import Decimal
+
                 for k, v in list(bar_dict.items()):
                     if isinstance(v, Decimal):
                         bar_dict[k] = str(v)
@@ -248,17 +263,25 @@ class CachedMarketDataAdapter:
             self._mark_fetched(key)
             self.stats_counters["fetches"] += 1
             try:
-                fresh = self.inner.get_bars(code, interval=interval, adjustment=adjustment,
-                                              start=start, end=end, limit=limit)
+                fresh = self.inner.get_bars(
+                    code,
+                    interval=interval,
+                    adjustment=adjustment,
+                    start=start,
+                    end=end,
+                    limit=limit,
+                )
                 self.stats_counters["fetch_ok"] += 1
                 for bar in fresh:
                     trade_date = bar.timestamp.strftime("%Y-%m-%d")
                     from dataclasses import asdict
+
                     bar_dict = asdict(bar)
                     bar_dict["timestamp"] = bar.timestamp.isoformat()
                     bar_dict["interval"] = interval_str
                     bar_dict["adjustment"] = adj_str
                     from decimal import Decimal
+
                     for k, v in list(bar_dict.items()):
                         if isinstance(v, Decimal):
                             bar_dict[k] = str(v)
@@ -269,28 +292,36 @@ class CachedMarketDataAdapter:
         # 从缓存构造 Bar 列表
         self.stats_counters["hits"] += 1
         from mommy_chaogu.market_data.types import Bar, Money
+
         bars: list[Bar] = []
         for bar_dict in cached_bars:
             ts = bar_dict["timestamp"]
             if isinstance(ts, str):
                 ts = datetime.fromisoformat(ts)
             from decimal import Decimal
-            bars.append(Bar(
-                code=code,
-                name=bar_dict.get("name", ""),
-                interval=interval,
-                adjustment=adjustment,
-                timestamp=ts,
-                open=Decimal(bar_dict["open"]),
-                high=Decimal(bar_dict["high"]),
-                low=Decimal(bar_dict["low"]),
-                close=Decimal(bar_dict["close"]),
-                volume=bar_dict["volume"],
-                turnover=Money(Decimal(str(bar_dict["turnover"])), "CNY"),
-                change_pct=Decimal(bar_dict["change_pct"]) if bar_dict.get("change_pct") else None,
-                turnover_rate=Decimal(bar_dict["turnover_rate"]) if bar_dict.get("turnover_rate") else None,
-                amplitude=Decimal(bar_dict["amplitude"]) if bar_dict.get("amplitude") else None,
-            ))
+
+            bars.append(
+                Bar(
+                    code=code,
+                    name=bar_dict.get("name", ""),
+                    interval=interval,
+                    adjustment=adjustment,
+                    timestamp=ts,
+                    open=Decimal(bar_dict["open"]),
+                    high=Decimal(bar_dict["high"]),
+                    low=Decimal(bar_dict["low"]),
+                    close=Decimal(bar_dict["close"]),
+                    volume=bar_dict["volume"],
+                    turnover=Money(Decimal(str(bar_dict["turnover"])), "CNY"),
+                    change_pct=Decimal(bar_dict["change_pct"])
+                    if bar_dict.get("change_pct")
+                    else None,
+                    turnover_rate=Decimal(bar_dict["turnover_rate"])
+                    if bar_dict.get("turnover_rate")
+                    else None,
+                    amplitude=Decimal(bar_dict["amplitude"]) if bar_dict.get("amplitude") else None,
+                )
+            )
         return bars
 
     # ============================================================
@@ -360,6 +391,7 @@ class CachedMarketDataAdapter:
 
             # 按 trade_date 分组存
             from collections import defaultdict
+
             by_date: dict[str, list[MoneyFlow]] = defaultdict(list)
             for f in fresh:
                 trade_date = f.timestamp.strftime("%Y-%m-%d")
@@ -408,24 +440,28 @@ class CachedMarketDataAdapter:
         now = _utcnow()
         out_list: list = []
         for e in entries:
-            out_list.append({
-                "code": e.code,
-                "name": e.quote.name,
-                "fetched_at": e.fetched_at,
-                "quote_ts": e.quote_ts,
-                "age_seconds": (now - e.fetched_at).total_seconds(),
-            })
+            out_list.append(
+                {
+                    "code": e.code,
+                    "name": e.quote.name,
+                    "fetched_at": e.fetched_at,
+                    "quote_ts": e.quote_ts,
+                    "age_seconds": (now - e.fetched_at).total_seconds(),
+                }
+            )
         out_list.sort(key=lambda x: x["age_seconds"])  # 最新的在前
         return out_list
 
 
 # ---------- 内部：MoneyFlow 序列化（简化版） ----------
 
+
 def _money_flow_to_dict(f: MoneyFlow) -> dict[str, Any]:  # type: ignore[no-untyped-def]
     """MoneyFlow → JSON-safe dict。
 
     Money 拆 {amount: str, currency}，Decimal → str，datetime → ISO str。
     """
+
     def _money(m: object) -> dict[str, str]:
         # 适配 Money dataclass 和 dict
         if hasattr(m, "amount") and not isinstance(m, dict):  # type: ignore[unreachable]
@@ -450,6 +486,7 @@ def _money_flow_to_dict(f: MoneyFlow) -> dict[str, Any]:  # type: ignore[no-unty
 def _recursive_safe(obj: object) -> object:
     """递归把所有 Decimal/datetime 转 JSON-safe。"""
     from decimal import Decimal
+
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, datetime):

@@ -2,6 +2,7 @@
 
 模板 + 数据 + (后续)AI 导语，三件合并出一份当日专属的报告页。
 """
+
 from __future__ import annotations
 
 import calendar

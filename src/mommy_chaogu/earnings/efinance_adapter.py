@@ -13,6 +13,7 @@ period 映射：
 注意：此 adapter 依赖网络（efinance 调用东方财富接口）。
 测试时用 monkeypatch mock 掉 ef.stock.get_all_company_performance。
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -49,14 +50,14 @@ def _period_to_date(period: str) -> str:
 class EfinanceEarningsAdapter:
     """从东方财富拉取业绩数据。
 
-    优点：
-- 单次请求覆盖全市场（5535 只），无需逐只查询
-- 字段完整（净利润 / 同比 / 公告日期 / 季报环比 / 季报同比 / EPS / ROE / 毛利率）
-- 数据稳定（efinance 已验证）
+        优点：
+    - 单次请求覆盖全市场（5535 只），无需逐只查询
+    - 字段完整（净利润 / 同比 / 公告日期 / 季报环比 / 季报同比 / EPS / ROE / 毛利率）
+    - 数据稳定（efinance 已验证）
 
-    缺点：
-- 全市场数据量大，filter 时只取关注的 code
-- period 必须能映射到 ISO 日期（H1/Q3/FY YYYY）
+        缺点：
+    - 全市场数据量大，filter 时只取关注的 code
+    - period 必须能映射到 ISO 日期（H1/Q3/FY YYYY）
     """
 
     name: str = "efinance"

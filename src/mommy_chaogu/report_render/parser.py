@@ -2,6 +2,7 @@
 
 专为 `flows/report.py` 输出的固定结构做解析，不做通用 markdown parser。
 """
+
 from __future__ import annotations
 
 import re
@@ -15,11 +16,11 @@ from pathlib import Path
 class SectorRow:
     """板块汇总行。"""
 
-    name: str                # 上游 / 中游 / 下游 / 末端
+    name: str  # 上游 / 中游 / 下游 / 末端
     stock_count: int
     today_main_net: Decimal  # 元
     float_market_cap: Decimal  # 元
-    ratio_bp: Decimal        # bp
+    ratio_bp: Decimal  # bp
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,8 +46,8 @@ class ReportData:
     pool_size: int
     covered: int
     covered_ratio: float
-    today_total: Decimal              # 元
-    days_30_total: Decimal            # 元
+    today_total: Decimal  # 元
+    days_30_total: Decimal  # 元
     sectors: list[SectorRow]
     top_inflows: list[StockRow]
     top_outflows: list[StockRow]

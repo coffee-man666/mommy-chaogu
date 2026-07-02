@@ -11,6 +11,7 @@
 - UNIQUE 约束支持 upsert
 - 索引覆盖常见查询路径
 """
+
 from __future__ import annotations
 
 SCHEMA_SQL = """

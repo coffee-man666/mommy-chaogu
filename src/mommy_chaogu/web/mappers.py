@@ -5,6 +5,7 @@
 - datetime 全部 ISO 8601（FastAPI 自动处理）
 - 不在 mapper 里做数据格式化（格式化在前端）
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

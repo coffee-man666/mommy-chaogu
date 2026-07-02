@@ -18,6 +18,7 @@
     mommy-monitor run --interval 30
     mommy-monitor log --tail 20
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,6 +53,7 @@ DEFAULT_FLOWS_REPORT_DIR = Path("data/")  # 收盘日报输出目录
 
 # ---------- 共用 ----------
 
+
 def _store(args: argparse.Namespace) -> WatchlistStore:
     return WatchlistStore(Path(args.db))
 
@@ -59,6 +61,7 @@ def _store(args: argparse.Namespace) -> WatchlistStore:
 # ============================================================
 # watchlist 子命令
 # ============================================================
+
 
 def cmd_watchlist_add_group(args: argparse.Namespace) -> int:
     s = _store(args)
@@ -170,11 +173,7 @@ def cmd_watchlist_list(args: argparse.Namespace) -> int:
 def cmd_watchlist_stats(args: argparse.Namespace) -> int:
     s = _store(args)
     st = s.stats()
-    print(
-        f"分组数: {st['groups']}  "
-        f"自选股条目: {st['entries']}  "
-        f"去重股票数: {st['codes']}"
-    )
+    print(f"分组数: {st['groups']}  自选股条目: {st['entries']}  去重股票数: {st['codes']}")
     return 0
 
 
@@ -183,7 +182,9 @@ def build_watchlist_parser() -> argparse.ArgumentParser:
         prog="mommy-watchlist",
         description="妈妈炒股 - 自选股池管理",
     )
-    p.add_argument("--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})")
+    p.add_argument(
+        "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
+    )
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -238,6 +239,7 @@ def main_watchlist() -> NoReturn:
 # monitor 子命令
 # ============================================================
 
+
 def _make_adapter(args: argparse.Namespace) -> object:
     """构造 adapter，默认用 fallback + 缓存包装。
 
@@ -246,6 +248,7 @@ def _make_adapter(args: argparse.Namespace) -> object:
     """
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+
     base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(Path(args.db))
     return CachedMarketDataAdapter(base, store)
@@ -276,7 +279,12 @@ def cmd_monitor_run(args: argparse.Namespace) -> int:
     adp = _make_adapter(args)
     log_path = Path(args.log) if args.log else None
     signals_log_path = Path(args.signals_log) if args.signals_log else None
-    m = Monitor(s, adp, log_path=log_path, alerter=Alerter.default(log_path=signals_log_path) if args.with_signals else None)  # type: ignore[arg-type]
+    m = Monitor(
+        s,
+        adp,
+        log_path=log_path,
+        alerter=Alerter.default(log_path=signals_log_path) if args.with_signals else None,
+    )  # type: ignore[arg-type]
     m.run(
         interval_seconds=args.interval,
         max_iterations=args.max_iterations,
@@ -293,7 +301,7 @@ def cmd_monitor_log(args: argparse.Namespace) -> int:
     # 简单 tail：读最后 N 行
     with log_path.open("r", encoding="utf-8") as f:
         lines = f.readlines()
-    tail = lines[-args.tail:] if args.tail > 0 else lines
+    tail = lines[-args.tail :] if args.tail > 0 else lines
     print("".join(tail), end="")
     if not tail or not tail[-1].endswith("\n"):
         print()
@@ -308,7 +316,7 @@ def cmd_monitor_signals(args: argparse.Namespace) -> int:
         return 1
     with log_path.open("r", encoding="utf-8") as f:
         lines = f.readlines()
-    tail = lines[-args.tail:] if args.tail > 0 else lines
+    tail = lines[-args.tail :] if args.tail > 0 else lines
     print(f"📡 信号日志 (最后 {len(tail)} 条):")
     print("─" * 60)
     print("".join(tail), end="")
@@ -320,18 +328,19 @@ def cmd_monitor_signals(args: argparse.Namespace) -> int:
 def cmd_monitor_rules(_args: argparse.Namespace) -> int:
     """列出所有内置规则 + 默认配置。"""
     from mommy_chaogu.signals.rules import RULES_REGISTRY  # noqa: F401
+
     print("📐 内置告警规则")
     print("=" * 70)
     print(f"{'rule_id':<28} {'enabled':<8} {'severity':<10} {'params'}")
     print("─" * 70)
     from mommy_chaogu.signals.rules import default_rules
+
     for rule in default_rules():
         cfg = rule.config
         params_str = ", ".join(f"{k}={v}" for k, v in cfg.params.items())
         if len(params_str) > 40:
             params_str = params_str[:37] + "..."
-        print(f"{rule.rule_id:<28} {cfg.enabled!s:<8} "
-              f"{cfg.severity.value:<10} {params_str}")
+        print(f"{rule.rule_id:<28} {cfg.enabled!s:<8} {cfg.severity.value:<10} {params_str}")
     print()
     print("💡 自定义阈值：在 pyproject 里配 / 或代码里 new RuleWithConfig(...)")
     return 0
@@ -361,10 +370,17 @@ def build_monitor_parser() -> argparse.ArgumentParser:
         prog="mommy-monitor",
         description="妈妈炒股 - 自选股监控",
     )
-    p.add_argument("--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})")
-    p.add_argument("--log", default=str(DEFAULT_LOG_PATH), help=f"日志路径 (默认 {DEFAULT_LOG_PATH})")
-    p.add_argument("--signals-log", default=str(DEFAULT_SIGNALS_LOG_PATH),
-                   help=f"信号日志路径 (默认 {DEFAULT_SIGNALS_LOG_PATH})")
+    p.add_argument(
+        "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
+    )
+    p.add_argument(
+        "--log", default=str(DEFAULT_LOG_PATH), help=f"日志路径 (默认 {DEFAULT_LOG_PATH})"
+    )
+    p.add_argument(
+        "--signals-log",
+        default=str(DEFAULT_SIGNALS_LOG_PATH),
+        help=f"信号日志路径 (默认 {DEFAULT_SIGNALS_LOG_PATH})",
+    )
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -413,6 +429,7 @@ def main_monitor() -> NoReturn:
 # 顶级命令 mommy-chaogu
 # ============================================================
 
+
 def main() -> int:
     """顶级入口（mommy-chaogu）。"""
     p = argparse.ArgumentParser(
@@ -458,8 +475,10 @@ def _dispatch_subcommand(parser: argparse.ArgumentParser, prog: str) -> int:
 # cache 子命令
 # ============================================================
 
+
 def _cache_manager(args: argparse.Namespace) -> object:
     from mommy_chaogu.cache import CacheManager
+
     return CacheManager.default(Path(args.db))
 
 
@@ -488,6 +507,7 @@ def cmd_cache_stats(args: argparse.Namespace) -> int:
 
 def cmd_cache_warmup(args: argparse.Namespace) -> int:
     from mommy_chaogu.watchlist import WatchlistStore
+
     s = WatchlistStore(Path(args.db))
     m = _cache_manager(args)
     print("🔥 预热全市场快照...")
@@ -516,6 +536,7 @@ def cmd_cache_refresh(args: argparse.Namespace) -> int:
 
 def cmd_cache_clear(args: argparse.Namespace) -> int:
     from mommy_chaogu.cache import CacheStore
+
     s = CacheStore(Path(args.db))
     if args.all:
         s.clear_all()
@@ -528,6 +549,7 @@ def cmd_cache_clear(args: argparse.Namespace) -> int:
 
 def cmd_cache_snapshots(args: argparse.Namespace) -> int:
     from mommy_chaogu.cache import CacheStore
+
     s = CacheStore(Path(args.db))
     rows = s.list_market_snapshots(limit=args.limit)
     if not rows:
@@ -545,14 +567,23 @@ def cmd_cache_snapshots(args: argparse.Namespace) -> int:
 
 def cmd_cache_config(_args: argparse.Namespace) -> int:
     from mommy_chaogu.cache import default_config
+
     cfg = default_config()
     print("⚙️ 缓存拉新间隔配置（默认值）")
     print("─" * 60)
-    print(f"  quote_fetch_interval_seconds:             {cfg.quote_fetch_interval_seconds} 秒 ({cfg.quote_fetch_interval_seconds // 60} 分钟)")
-    print(f"  today_money_flow_fetch_interval_seconds:  {cfg.today_money_flow_fetch_interval_seconds} 秒")
-    print(f"  market_snapshot_fetch_interval_seconds:   {cfg.market_snapshot_fetch_interval_seconds} 秒 ({cfg.market_snapshot_fetch_interval_seconds // 3600} 小时)")
+    print(
+        f"  quote_fetch_interval_seconds:             {cfg.quote_fetch_interval_seconds} 秒 ({cfg.quote_fetch_interval_seconds // 60} 分钟)"
+    )
+    print(
+        f"  today_money_flow_fetch_interval_seconds:  {cfg.today_money_flow_fetch_interval_seconds} 秒"
+    )
+    print(
+        f"  market_snapshot_fetch_interval_seconds:   {cfg.market_snapshot_fetch_interval_seconds} 秒 ({cfg.market_snapshot_fetch_interval_seconds // 3600} 小时)"
+    )
     print(f"  bar_fetch_interval_seconds:               {cfg.bar_fetch_interval_seconds} 秒 (1 天)")
-    print(f"  money_flow_history_fetch_interval_seconds:{cfg.money_flow_history_fetch_interval_seconds} 秒")
+    print(
+        f"  money_flow_history_fetch_interval_seconds:{cfg.money_flow_history_fetch_interval_seconds} 秒"
+    )
     print(f"  market_snapshot_history_keep:             {cfg.market_snapshot_history_keep} 份")
     return 0
 
@@ -562,7 +593,11 @@ def build_cache_parser() -> argparse.ArgumentParser:
         prog="mommy-cache",
         description="妈妈炒股 - 行情缓存管理",
     )
-    p.add_argument("--db", default=str(DEFAULT_CACHE_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_CACHE_DB_PATH})")
+    p.add_argument(
+        "--db",
+        default=str(DEFAULT_CACHE_DB_PATH),
+        help=f"数据库路径 (默认 {DEFAULT_CACHE_DB_PATH})",
+    )
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -596,6 +631,7 @@ def main_cache() -> NoReturn:
 # web 子命令
 # ============================================================
 
+
 def build_web_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-web",
@@ -603,7 +639,9 @@ def build_web_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--host", default="0.0.0.0", help="监听地址 (默认 0.0.0.0)")
     p.add_argument("--port", type=int, default=8000, help="监听端口 (默认 8000)")
-    p.add_argument("--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})")
+    p.add_argument(
+        "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
+    )
     p.add_argument("--poll-interval", type=float, default=5.0, help="后台轮询间隔（秒）(默认 5)")
     p.add_argument(
         "--server-chan-key",
@@ -652,13 +690,16 @@ def main_web() -> NoReturn:
 # semicon 子命令
 # ============================================================
 
+
 def _semicon_store(args: argparse.Namespace) -> object:
     from mommy_chaogu.semicon import SemiconStore
+
     return SemiconStore(Path(args.db))
 
 
 def cmd_semicon_seed(args: argparse.Namespace) -> int:
     from mommy_chaogu.semicon import seed_store
+
     s = _semicon_store(args)
     r = seed_store(s, overwrite=args.overwrite)
     print(f"✅ seed 完成: 新增 {r['inserted']}  更新 {r['updated']}  跳过 {r['skipped']}")
@@ -674,8 +715,10 @@ def _print_stocks(stocks: list[object]) -> None:
     for s in stocks:
         prod = (s.product or "—")[:14]
         note = (s.note or "")[:30]
-        print(f"{s.code:<8} {s.name:<10} {s.chain_position:<6} {s.subcategory:<8} "
-              f"{prod:<16} {s.board:<6} {note}")
+        print(
+            f"{s.code:<8} {s.name:<10} {s.chain_position:<6} {s.subcategory:<8} "
+            f"{prod:<16} {s.board:<6} {note}"
+        )
 
 
 def cmd_semicon_list(args: argparse.Namespace) -> int:
@@ -702,6 +745,7 @@ def cmd_semicon_search(args: argparse.Namespace) -> int:
 
 def cmd_semicon_get(args: argparse.Namespace) -> int:
     from mommy_chaogu.semicon.store import StockNotFoundError
+
     s = _semicon_store(args)
     try:
         row = s.require(args.code)
@@ -744,6 +788,7 @@ def cmd_semicon_stats(args: argparse.Namespace) -> int:
 
 def cmd_semicon_add(args: argparse.Namespace) -> int:
     from mommy_chaogu.semicon.store import StockAlreadyExistsError
+
     s = _semicon_store(args)
     try:
         row = s.add(
@@ -764,6 +809,7 @@ def cmd_semicon_add(args: argparse.Namespace) -> int:
 
 def cmd_semicon_remove(args: argparse.Namespace) -> int:
     from mommy_chaogu.semicon.store import StockNotFoundError
+
     s = _semicon_store(args)
     try:
         s.remove(args.code)
@@ -779,21 +825,27 @@ def build_semicon_parser() -> argparse.ArgumentParser:
         prog="mommy-semicon",
         description="妈妈炒股 - 半导体产业链参考库（A 股，按位置/产品分组）",
     )
-    p.add_argument("--db", default=str(DEFAULT_SEMICON_DB_PATH),
-                   help=f"数据库路径 (默认 {DEFAULT_SEMICON_DB_PATH})")
+    p.add_argument(
+        "--db",
+        default=str(DEFAULT_SEMICON_DB_PATH),
+        help=f"数据库路径 (默认 {DEFAULT_SEMICON_DB_PATH})",
+    )
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
     # seed
     p_seed = sub.add_parser("seed", help="灌入种子数据")
-    p_seed.add_argument("--overwrite", action="store_true",
-                        help="覆盖已有记录（更新字段）")
+    p_seed.add_argument("--overwrite", action="store_true", help="覆盖已有记录（更新字段）")
     p_seed.set_defaults(func=cmd_semicon_seed)
 
     # list
     p_l = sub.add_parser("list", help="列出股票")
-    p_l.add_argument("--chain", "-c", choices=[c.value for c in ChainPosition],
-                     help="按主位置过滤（上游/中游/下游/末端）")
+    p_l.add_argument(
+        "--chain",
+        "-c",
+        choices=[c.value for c in ChainPosition],
+        help="按主位置过滤（上游/中游/下游/末端）",
+    )
     p_l.add_argument("--subcategory", "-s", help="按子分类过滤（如 设备/材料/存储/...）")
     p_l.set_defaults(func=cmd_semicon_list)
 
@@ -814,13 +866,20 @@ def build_semicon_parser() -> argparse.ArgumentParser:
     p_a = sub.add_parser("add", help="手动添加一条记录")
     p_a.add_argument("code", help="股票代码")
     p_a.add_argument("name", help="中文名")
-    p_a.add_argument("--chain", "-c", required=True,
-                     choices=[c.value for c in ChainPosition], help="主位置")
-    p_a.add_argument("--subcategory", "-s", required=True,
-                     choices=[sc.value for sc in Subcategory], help="子分类")
+    p_a.add_argument(
+        "--chain", "-c", required=True, choices=[c.value for c in ChainPosition], help="主位置"
+    )
+    p_a.add_argument(
+        "--subcategory",
+        "-s",
+        required=True,
+        choices=[sc.value for sc in Subcategory],
+        help="子分类",
+    )
     p_a.add_argument("--product", "-p", help="具体产品")
-    p_a.add_argument("--board", "-b", default="主板",
-                     choices=[b.value for b in Board], help="板块（默认 主板）")
+    p_a.add_argument(
+        "--board", "-b", default="主板", choices=[b.value for b in Board], help="板块（默认 主板）"
+    )
     p_a.add_argument("--note", "-n", help="备注")
     p_a.set_defaults(func=cmd_semicon_add)
 
@@ -843,12 +902,12 @@ def main_semicon() -> NoReturn:
 # flows 子命令
 # ============================================================
 
+
 def _flows_resolve_pool(args: argparse.Namespace) -> object:
     """根据 --pool / --codes 构造 PoolSource。"""
     from mommy_chaogu.flows.pool import build_pool
-    pool_db = (
-        Path(args.semicon_db) if args.pool == "semicon" else Path(args.db)
-    )
+
+    pool_db = Path(args.semicon_db) if args.pool == "semicon" else Path(args.db)
     return build_pool(
         name=args.pool,
         db_path=pool_db,
@@ -858,12 +917,14 @@ def _flows_resolve_pool(args: argparse.Namespace) -> object:
 
 def _flows_service(args: argparse.Namespace) -> object:
     from mommy_chaogu.flows.service import FlowService
+
     return FlowService.from_default(Path(args.db), use_fallback=not args.no_fallback)
 
 
 def _format_yi(amount) -> str:
     """把元 转成 亿元（保留 2 位小数）。"""
     from decimal import Decimal
+
     if not isinstance(amount, Decimal):
         amount = Decimal(str(amount))
     yi = amount / Decimal("100000000")
@@ -874,6 +935,7 @@ def _format_yi(amount) -> str:
 def _format_wan(amount) -> str:
     """把元 转成 万元（保留 0 位）。"""
     from decimal import Decimal
+
     if not isinstance(amount, Decimal):
         amount = Decimal(str(amount))
     wan = amount / Decimal("10000")
@@ -891,12 +953,16 @@ def cmd_flows_pull(args: argparse.Namespace) -> int:
         r = service.pull_today(pool, force=args.force)
         print(f"  当日:  ✅ {r.ok}  ❌ {r.failed}  ⏱ {r.elapsed_seconds:.1f}s")
         if r.failed_codes:
-            print(f"    失败 codes: {r.failed_codes[:10]}{'...' if len(r.failed_codes) > 10 else ''}")
+            print(
+                f"    失败 codes: {r.failed_codes[:10]}{'...' if len(r.failed_codes) > 10 else ''}"
+            )
     if args.target in ("history", "all"):
         r = service.pull_history(pool, days=args.days, force=args.force)
         print(f"  历史({args.days}d): ✅ {r.ok}  ❌ {r.failed}  ⏱ {r.elapsed_seconds:.1f}s")
         if r.failed_codes:
-            print(f"    失败 codes: {r.failed_codes[:10]}{'...' if len(r.failed_codes) > 10 else ''}")
+            print(
+                f"    失败 codes: {r.failed_codes[:10]}{'...' if len(r.failed_codes) > 10 else ''}"
+            )
     return 0
 
 
@@ -908,7 +974,9 @@ def cmd_flows_top(args: argparse.Namespace) -> int:
         rows = service.top_today(pool, n=args.n, by=args.by, direction=args.direction)
         period_label = "当日"
     else:
-        rows = service.top_history(pool, days=args.days, n=args.n, by=args.by, direction=args.direction)
+        rows = service.top_history(
+            pool, days=args.days, n=args.n, by=args.by, direction=args.direction
+        )
         period_label = f"近{args.days}日累计"
 
     direction_label = "净流入" if args.direction == "in" else "净流出"
@@ -939,8 +1007,10 @@ def cmd_flows_show(args: argparse.Namespace) -> int:
     if today:
         print("📌 当日（最新快照）:")
         print(f"   主力净:   {_format_yi(today.main_net)}")
-        print(f"   大资金净: {_format_yi(today.big_money_net())}  "
-              f"(超大 {_format_yi(today.super_large_net)} + 大单 {_format_yi(today.large_net)})")
+        print(
+            f"   大资金净: {_format_yi(today.big_money_net())}  "
+            f"(超大 {_format_yi(today.super_large_net)} + 大单 {_format_yi(today.large_net)})"
+        )
         print(f"   中单净:   {_format_yi(today.medium_net)}")
         print(f"   小单净:   {_format_yi(today.small_net)}")
         if today.main_net_ratio is not None:
@@ -996,6 +1066,7 @@ def cmd_flows_clear(args: argparse.Namespace) -> int:
 def cmd_flows_run(args: argparse.Namespace) -> int:
     """持续轮询 + ratio-based 异动检测。"""
     from mommy_chaogu.flows import FlowMonitor
+
     pool = _flows_resolve_pool(args)
     service = _flows_service(args)
     log_path = Path(args.log) if args.log else None
@@ -1022,12 +1093,15 @@ def cmd_flows_report(args: argparse.Namespace) -> int:
     from datetime import date as _date
 
     from mommy_chaogu.flows import FlowReport
+
     pool = _flows_resolve_pool(args)
     service = _flows_service(args)
     reporter = FlowReport(service)
     day = _date.fromisoformat(args.day) if args.day else _date.today()
-    output = Path(args.output) if args.output else (
-        Path(args.report_dir) / f"flows_report_{day.isoformat()}.md"
+    output = (
+        Path(args.output)
+        if args.output
+        else (Path(args.report_dir) / f"flows_report_{day.isoformat()}.md")
     )
     print(f"📝 生成 {pool.name} 资金流日报 · {day}")
     print(f"   输出: {output}")
@@ -1048,41 +1122,52 @@ def build_flows_parser() -> argparse.ArgumentParser:
         description="妈妈炒股 - 资金流拉新 / 排行 / 监控（按股票池）",
     )
     # ---- 全局参数 ----
-    p.add_argument("--db", default=str(DEFAULT_FLOWS_DB_PATH),
-                   help=f"资金流缓存 db (默认 {DEFAULT_FLOWS_DB_PATH})")
-    p.add_argument("--semicon-db", default=str(DEFAULT_FLOWS_SEMICON_DB_PATH),
-                   help=f"产业链 db (默认 {DEFAULT_FLOWS_SEMICON_DB_PATH})")
-    p.add_argument("--pool", default="watchlist",
-                   choices=["watchlist", "semicon", "custom"],
-                   help="股票池 (默认 watchlist)")
-    p.add_argument("--codes", nargs="*",
-                   help="--pool custom 时手动指定 codes（空格分隔）")
-    p.add_argument("--no-fallback", action="store_true",
-                   help="只用东财，不用腾讯兜底")
+    p.add_argument(
+        "--db",
+        default=str(DEFAULT_FLOWS_DB_PATH),
+        help=f"资金流缓存 db (默认 {DEFAULT_FLOWS_DB_PATH})",
+    )
+    p.add_argument(
+        "--semicon-db",
+        default=str(DEFAULT_FLOWS_SEMICON_DB_PATH),
+        help=f"产业链 db (默认 {DEFAULT_FLOWS_SEMICON_DB_PATH})",
+    )
+    p.add_argument(
+        "--pool",
+        default="watchlist",
+        choices=["watchlist", "semicon", "custom"],
+        help="股票池 (默认 watchlist)",
+    )
+    p.add_argument("--codes", nargs="*", help="--pool custom 时手动指定 codes（空格分隔）")
+    p.add_argument("--no-fallback", action="store_true", help="只用东财，不用腾讯兜底")
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
     # pull
     p_p = sub.add_parser("pull", help="批量拉新到缓存（today 和/或 history）")
-    p_p.add_argument("--target", choices=["today", "history", "all"], default="all",
-                     help="拉哪种（默认 all）")
-    p_p.add_argument("--days", type=int, default=30,
-                     help="历史天数（默认 30）")
-    p_p.add_argument("--force", action="store_true",
-                     help="绕过节流，强制重拉（用于首次 warmup）")
+    p_p.add_argument(
+        "--target", choices=["today", "history", "all"], default="all", help="拉哪种（默认 all）"
+    )
+    p_p.add_argument("--days", type=int, default=30, help="历史天数（默认 30）")
+    p_p.add_argument("--force", action="store_true", help="绕过节流，强制重拉（用于首次 warmup）")
     p_p.set_defaults(func=cmd_flows_pull)
 
     # top
     p_t = sub.add_parser("top", help="按资金净流入/流出排行")
-    p_t.add_argument("--period", choices=["today", "history"], default="today",
-                     help="时间窗（默认 today）")
-    p_t.add_argument("--days", type=int, default=30,
-                     help="period=history 时的天数")
+    p_t.add_argument(
+        "--period", choices=["today", "history"], default="today", help="时间窗（默认 today）"
+    )
+    p_t.add_argument("--days", type=int, default=30, help="period=history 时的天数")
     p_t.add_argument("--n", type=int, default=20, help="取前 N (默认 20)")
-    p_t.add_argument("--by", choices=["main_net", "big_money"], default="main_net",
-                     help="排序指标（默认 主力净 = main_net）")
-    p_t.add_argument("--direction", choices=["in", "out"], default="in",
-                     help="净流入 / 净流出（默认 in）")
+    p_t.add_argument(
+        "--by",
+        choices=["main_net", "big_money"],
+        default="main_net",
+        help="排序指标（默认 主力净 = main_net）",
+    )
+    p_t.add_argument(
+        "--direction", choices=["in", "out"], default="in", help="净流入 / 净流出（默认 in）"
+    )
     p_t.set_defaults(func=cmd_flows_top)
 
     # show
@@ -1101,26 +1186,33 @@ def build_flows_parser() -> argparse.ArgumentParser:
 
     # run (持续监控)
     p_run = sub.add_parser("run", help="持续轮询 + ratio-based 异动检测（Ctrl+C 退出）")
-    p_run.add_argument("--interval", "-i", type=float, default=300.0,
-                       help="轮询间隔秒（默认 300 = 5 分钟）")
-    p_run.add_argument("--max-iterations", "-n", type=int, default=None,
-                       help="最多跑 N 轮（默认无限）")
-    p_run.add_argument("--max-seconds", type=float, default=None,
-                       help="最多跑 N 秒（默认无限）")
-    p_run.add_argument("--log", default=str(DEFAULT_FLOWS_MONITOR_LOG_PATH),
-                       help=f"信号日志路径 (默认 {DEFAULT_FLOWS_MONITOR_LOG_PATH})")
-    p_run.add_argument("--state", default="data/.flow_monitor_state.json",
-                       help="状态文件路径（断点续传用）")
+    p_run.add_argument(
+        "--interval", "-i", type=float, default=300.0, help="轮询间隔秒（默认 300 = 5 分钟）"
+    )
+    p_run.add_argument(
+        "--max-iterations", "-n", type=int, default=None, help="最多跑 N 轮（默认无限）"
+    )
+    p_run.add_argument("--max-seconds", type=float, default=None, help="最多跑 N 秒（默认无限）")
+    p_run.add_argument(
+        "--log",
+        default=str(DEFAULT_FLOWS_MONITOR_LOG_PATH),
+        help=f"信号日志路径 (默认 {DEFAULT_FLOWS_MONITOR_LOG_PATH})",
+    )
+    p_run.add_argument(
+        "--state", default="data/.flow_monitor_state.json", help="状态文件路径（断点续传用）"
+    )
     p_run.set_defaults(func=cmd_flows_run)
 
     # report (收盘日报)
     p_rep = sub.add_parser("report", help="生成资金流收盘日报（markdown）")
     p_rep.add_argument("--day", help="日期 YYYY-MM-DD（默认今天）")
-    p_rep.add_argument("--history-days", type=int, default=30,
-                       help="历史累计天数（默认 30）")
+    p_rep.add_argument("--history-days", type=int, default=30, help="历史累计天数（默认 30）")
     p_rep.add_argument("--output", "-o", help="输出文件路径")
-    p_rep.add_argument("--report-dir", default=str(DEFAULT_FLOWS_REPORT_DIR),
-                       help=f"报告输出目录 (默认 {DEFAULT_FLOWS_REPORT_DIR})")
+    p_rep.add_argument(
+        "--report-dir",
+        default=str(DEFAULT_FLOWS_REPORT_DIR),
+        help=f"报告输出目录 (默认 {DEFAULT_FLOWS_REPORT_DIR})",
+    )
     p_rep.set_defaults(func=cmd_flows_report)
 
     return p
@@ -1144,6 +1236,7 @@ DEFAULT_REPORT_HTML_DIR = Path("reports")
 def _resolve_report_md(day: str | None) -> Path:
     """根据 --day 找到对应的 .md 报告。"""
     from datetime import date
+
     d = date.fromisoformat(day) if day else date.today()
     return Path(DEFAULT_FLOWS_REPORT_DIR) / f"flows_report_{d.isoformat()}.md"
 
@@ -1223,19 +1316,28 @@ def build_report_parser() -> argparse.ArgumentParser:
     p_r = sub.add_parser("render", help="渲染单日报告 HTML")
     p_r.add_argument("--day", help="日期 YYYY-MM-DD（默认今天）")
     p_r.add_argument("--pool", default="semicon", help="池子（决定报告路径）")
-    p_r.add_argument("--out-dir", default=str(DEFAULT_REPORT_HTML_DIR),
-                     help=f"HTML 输出目录 (默认 {DEFAULT_REPORT_HTML_DIR})")
+    p_r.add_argument(
+        "--out-dir",
+        default=str(DEFAULT_REPORT_HTML_DIR),
+        help=f"HTML 输出目录 (默认 {DEFAULT_REPORT_HTML_DIR})",
+    )
     p_r.set_defaults(func=cmd_report_render)
 
     p_i = sub.add_parser("index", help="扫描全部 .md 报告，重建 index.html")
-    p_i.add_argument("--out-dir", default=str(DEFAULT_REPORT_HTML_DIR),
-                     help=f"HTML 输出目录 (默认 {DEFAULT_REPORT_HTML_DIR})")
+    p_i.add_argument(
+        "--out-dir",
+        default=str(DEFAULT_REPORT_HTML_DIR),
+        help=f"HTML 输出目录 (默认 {DEFAULT_REPORT_HTML_DIR})",
+    )
     p_i.set_defaults(func=cmd_report_index)
 
     p_s = sub.add_parser("serve", help="起 HTTP server 预览 reports/")
     p_s.add_argument("--port", type=int, default=8787, help="端口（默认 8787）")
-    p_s.add_argument("--out-dir", default=str(DEFAULT_REPORT_HTML_DIR),
-                     help=f"HTML 输出目录 (默认 {DEFAULT_REPORT_HTML_DIR})")
+    p_s.add_argument(
+        "--out-dir",
+        default=str(DEFAULT_REPORT_HTML_DIR),
+        help=f"HTML 输出目录 (默认 {DEFAULT_REPORT_HTML_DIR})",
+    )
     p_s.set_defaults(func=cmd_report_serve)
 
     return p

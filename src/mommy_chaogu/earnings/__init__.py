@@ -33,6 +33,7 @@
     # 4. 看 verdict 分布
     summary = service.summary("H1 2026")
 """
+
 from __future__ import annotations
 
 from mommy_chaogu.earnings.adapter import (

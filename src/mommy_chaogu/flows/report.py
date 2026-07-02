@@ -13,6 +13,7 @@
 - 横向对比（板块 / 子分类）
 - 纵向对比（今日 vs 30d）
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -67,14 +68,17 @@ class FlowReport:
             market_caps = self.service.get_market_caps(pool.codes())
 
         # 1. 收集数据
-        today_rows: list[dict[str, Any]] = []  # {code, name, main_net, ratio, chain_position, subcategory}
-        history_agg: dict[str, Decimal] = {}    # code -> 30d 累计 main_net
+        today_rows: list[
+            dict[str, Any]
+        ] = []  # {code, name, main_net, ratio, chain_position, subcategory}
+        history_agg: dict[str, Decimal] = {}  # code -> 30d 累计 main_net
         no_data: list[str] = []
 
         # 拉板块 / 子分类信息（仅 semicon 池有）
         chain_info: dict[str, tuple[str, str]] = {}  # code -> (chain_position, subcategory)
         if isinstance(pool, SemiconPool):
             from mommy_chaogu.semicon import SemiconStore
+
             store = SemiconStore(pool._db_path)
             for s in store.list_all():
                 chain_info[s.code] = (s.chain_position, s.subcategory)
@@ -91,24 +95,30 @@ class FlowReport:
             today_raw = self.service.store.get_today_money_flow(code)
             if today_raw:
                 from mommy_chaogu.flows.service import _money_flow_from_dict
+
                 last = _money_flow_from_dict(today_raw[-1])
                 main_net = last.main_net.amount
                 ratio = main_net / float_mcap if float_mcap else Decimal("0")
                 cp_tup = chain_info.get(code, ("?", "?"))
                 chain_position_val: str = cp_tup[0]
                 subcategory_val: str = cp_tup[1]
-                today_rows.append({
-                    "code": code, "name": name,
-                    "main_net": main_net, "float_mcap": float_mcap,
-                    "ratio": ratio,
-                    "chain_position": chain_position_val,
-                    "subcategory": subcategory_val,
-                })
+                today_rows.append(
+                    {
+                        "code": code,
+                        "name": name,
+                        "main_net": main_net,
+                        "float_mcap": float_mcap,
+                        "ratio": ratio,
+                        "chain_position": chain_position_val,
+                        "subcategory": subcategory_val,
+                    }
+                )
 
             # 历史 30d 累计
             hist_raw = self.service.store.get_money_flow_history(code)
             if hist_raw:
                 from mommy_chaogu.flows.service import _money_flow_from_dict
+
                 agg = Decimal("0")
                 for d in hist_raw:
                     flows = d.get("flows", [])
@@ -145,11 +155,13 @@ class FlowReport:
                 if hist_mc != 0 and r["float_mcap"] > 0:
                     hist_ratio = hist_mc / r["float_mcap"]
                     if hist_ratio < 0:
-                        contradictions.append({
-                            **r,
-                            "hist_main_net": hist_mc,
-                            "hist_ratio": hist_ratio,
-                        })
+                        contradictions.append(
+                            {
+                                **r,
+                                "hist_main_net": hist_mc,
+                                "hist_ratio": hist_ratio,
+                            }
+                        )
         contradictions.sort(key=lambda r: r["ratio"] - r["hist_ratio"], reverse=True)
 
         # 5. 写 markdown
@@ -158,20 +170,18 @@ class FlowReport:
         lines.append("")
         lines.append(f"**池子**：{pool.describe()}")
         lines.append("")
-        lines.append(
-            f"**覆盖**：{len(today_rows)}/{pool.codes().__len__()} 只拉到了当日数据"
-        )
+        lines.append(f"**覆盖**：{len(today_rows)}/{pool.codes().__len__()} 只拉到了当日数据")
         if no_data:
-            lines.append(f"**无数据**：{len(no_data)} 只（{no_data[:5]}{'...' if len(no_data) > 5 else ''}）")
+            lines.append(
+                f"**无数据**：{len(no_data)} 只（{no_data[:5]}{'...' if len(no_data) > 5 else ''}）"
+            )
         lines.append("")
-        _today_sum = sum(r['main_net'] for r in today_rows) if today_rows else Decimal("0")
+        _today_sum = sum(r["main_net"] for r in today_rows) if today_rows else Decimal("0")
         total_main_today: Decimal = _today_sum if isinstance(_today_sum, Decimal) else Decimal("0")
         _hist_sum = sum(history_agg.values()) if history_agg else Decimal("0")
         total_main_hist: Decimal = _hist_sum if isinstance(_hist_sum, Decimal) else Decimal("0")
         lines.append(f"**当日主力净合计**：{_fmt_yi(total_main_today)}")
-        lines.append(
-            f"**30d 累计主力净合计**：{_fmt_yi(total_main_hist)}"
-        )
+        lines.append(f"**30d 累计主力净合计**：{_fmt_yi(total_main_hist)}")
         lines.append("")
 
         # 板块汇总
@@ -221,7 +231,9 @@ class FlowReport:
         lines.append("## ⚠️ 矛盾股：今日流入 vs 30d 流出")
         lines.append("")
         if contradictions:
-            lines.append("| 代码 | 名称 | 当日 ratio | 30d 累计 ratio | 当日主力净 | 30d 累计主力净 |")
+            lines.append(
+                "| 代码 | 名称 | 当日 ratio | 30d 累计 ratio | 当日主力净 | 30d 累计主力净 |"
+            )
             lines.append("|---|---|---|---|---|---|")
             for r in contradictions[:15]:
                 lines.append(
@@ -245,4 +257,3 @@ class FlowReport:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text("\n".join(lines), encoding="utf-8")
         return output
-

@@ -9,6 +9,7 @@
 设计：与 signals/rules.py 类似，但 evaluate() 输入是 EarningsContext（不是 Snapshot）。
 所以这里定义一个独立的 EarningsRule Protocol，不混入主 signals/ 协议的 Snapshot 类型。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -26,10 +27,10 @@ class EarningsContext:
     code: str
     name: str
     period: str
-    disclosure_date: date | None   # None = 不知道日期
+    disclosure_date: date | None  # None = 不知道日期
     today: date
     predicted_high: Decimal | None
-    score_verdict: str | None      # SUPER_BEAT/BEAT/MEET/MISS/DEEP_MISS/UNKNOWN
+    score_verdict: str | None  # SUPER_BEAT/BEAT/MEET/MISS/DEEP_MISS/UNKNOWN
     score_confidence: Decimal | None
 
     @property
@@ -118,10 +119,7 @@ class EarningsMeetRule:
     def evaluate(self, ctx: EarningsContext) -> list[Signal]:
         if ctx.score_verdict not in ("beat", "meet"):
             return []
-        msg = (
-            f"📊 {ctx.name}({ctx.code}) 符合预期 "
-            f"({ctx.score_verdict})"
-        )
+        msg = f"📊 {ctx.name}({ctx.code}) 符合预期 ({ctx.score_verdict})"
         return [
             Signal(
                 timestamp=ctx.now,
@@ -155,10 +153,7 @@ class EarningsMissRule:
     def evaluate(self, ctx: EarningsContext) -> list[Signal]:
         if ctx.score_verdict != "deep_miss":
             return []
-        msg = (
-            f"⚠️ {ctx.name}({ctx.code}) 大幅低于预期！"
-            f"实际增速低于预测下限"
-        )
+        msg = f"⚠️ {ctx.name}({ctx.code}) 大幅低于预期！实际增速低于预测下限"
         return [
             Signal(
                 timestamp=ctx.now,

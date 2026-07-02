@@ -18,6 +18,7 @@
 - WS 客户端用 set 管理，broadcast 时遍历
 - 优雅启停（lifespan 事件）
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,7 +33,6 @@ from mommy_chaogu.signals import Alerter
 from mommy_chaogu.watchlist import WatchlistStore
 
 if TYPE_CHECKING:
-
     from fastapi import WebSocket
 
     from mommy_chaogu.market_data import MarketDataAdapter
@@ -156,6 +156,7 @@ class BackgroundService:
         # 立即推送最新一份
         if self._latest_snapshot is not None:
             from mommy_chaogu.web.routes.ws import push_snapshot
+
             await push_snapshot(ws, self._latest_snapshot)
 
     def remove_quote_subscriber(self, ws: WebSocket) -> None:

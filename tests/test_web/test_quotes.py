@@ -1,4 +1,5 @@
 """/api/quotes 路由测试。"""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -94,9 +95,7 @@ class TestGetOrderbook:
         assert len(data["bids"]) == 5
         assert len(data["asks"]) == 5
 
-    def test_404_when_none(
-        self, client: TestClient, mock_adapter: MagicMock
-    ) -> None:
+    def test_404_when_none(self, client: TestClient, mock_adapter: MagicMock) -> None:
         mock_adapter.get_order_book.return_value = None
         resp = client.get("/api/quotes/999999/orderbook")
         assert resp.status_code == 404

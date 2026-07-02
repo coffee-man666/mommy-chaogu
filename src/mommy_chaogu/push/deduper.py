@@ -9,6 +9,7 @@
   "pushed_keys": ["600519|main_flow_threshold|2026-06-27", ...]
 }
 """
+
 from __future__ import annotations
 
 import json

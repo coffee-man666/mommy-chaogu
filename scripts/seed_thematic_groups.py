@@ -16,6 +16,7 @@
     uv run python scripts/seed_thematic_groups.py --dry-run  # 只打印不写库
     uv run python scripts/seed_thematic_groups.py --show     # 写完后展示分组
 """
+
 from __future__ import annotations
 
 import argparse
@@ -249,8 +250,10 @@ def main() -> None:
 
     print()
     print("=" * 70)
-    print(f"🌱 开始建组 + 入股（{len(THEMATIC_GROUPS)} 个主题组，"
-          f"{sum(len(v) for v in THEMATIC_GROUPS.values())} 条记录）")
+    print(
+        f"🌱 开始建组 + 入股（{len(THEMATIC_GROUPS)} 个主题组，"
+        f"{sum(len(v) for v in THEMATIC_GROUPS.values())} 条记录）"
+    )
     print("=" * 70)
 
     g_added, e_added, e_skipped = seed_groups(dry_run=args.dry_run)

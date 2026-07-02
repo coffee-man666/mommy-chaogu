@@ -1,4 +1,5 @@
 """earnings 模块 — Service 单元测试。"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -113,7 +114,9 @@ def test_score_one_no_predicted(service: EarningsService, earnings_store: Earnin
     from mommy_chaogu.earnings.types import EarningsActual, EarningsSource
 
     a = EarningsActual(
-        code="999999", name="未知", period="H1 2026",
+        code="999999",
+        name="未知",
+        period="H1 2026",
         actual_value=Decimal("100"),
         growth_pct=Decimal("100"),
         disclosure_date=date(2026, 7, 20),
@@ -141,8 +144,11 @@ def test_score_verdict_logic_at_low(service: EarningsService):
 
     # 手动写入 actual = low = 188
     a = EarningsActual(
-        code="603662", name="柯力", period="H1 2026",
-        actual_value=Decimal("850000000"), growth_pct=Decimal("188.0"),
+        code="603662",
+        name="柯力",
+        period="H1 2026",
+        actual_value=Decimal("850000000"),
+        growth_pct=Decimal("188.0"),
         disclosure_date=date(2026, 7, 20),
         source=EarningsSource.FORECAST,
     )
@@ -158,8 +164,11 @@ def test_score_verdict_above_high(service: EarningsService):
     from mommy_chaogu.earnings.types import EarningsActual, EarningsSource
 
     a = EarningsActual(
-        code="603662", name="柯力", period="H1 2026",
-        actual_value=Decimal("900000000"), growth_pct=Decimal("225.0"),  # > 217
+        code="603662",
+        name="柯力",
+        period="H1 2026",
+        actual_value=Decimal("900000000"),
+        growth_pct=Decimal("225.0"),  # > 217
         disclosure_date=date(2026, 7, 20),
         source=EarningsSource.FORECAST,
     )
@@ -179,8 +188,11 @@ def test_score_verdict_deep_miss(service: EarningsService):
     from mommy_chaogu.earnings.types import EarningsActual, EarningsSource
 
     a = EarningsActual(
-        code="603662", name="柯力", period="H1 2026",
-        actual_value=Decimal("600000000"), growth_pct=Decimal("150.0"),  # < 195.25
+        code="603662",
+        name="柯力",
+        period="H1 2026",
+        actual_value=Decimal("600000000"),
+        growth_pct=Decimal("150.0"),  # < 195.25
         disclosure_date=date(2026, 7, 20),
         source=EarningsSource.FORECAST,
     )
@@ -197,15 +209,23 @@ def test_summary_returns_counts(service: EarningsService):
 
     # 1 个 SUPER_BEAT
     a1 = EarningsActual(
-        code="603662", name="柯力", period="H1 2026",
-        actual_value=Decimal("1"), growth_pct=Decimal("225"),
-        disclosure_date=date(2026, 7, 20), source=EarningsSource.FORECAST,
+        code="603662",
+        name="柯力",
+        period="H1 2026",
+        actual_value=Decimal("1"),
+        growth_pct=Decimal("225"),
+        disclosure_date=date(2026, 7, 20),
+        source=EarningsSource.FORECAST,
     )
     # 1 个 DEEP_MISS
     a2 = EarningsActual(
-        code="603986", name="兆易", period="H1 2026",
-        actual_value=Decimal("1"), growth_pct=Decimal("900"),
-        disclosure_date=date(2026, 7, 20), source=EarningsSource.FORECAST,
+        code="603986",
+        name="兆易",
+        period="H1 2026",
+        actual_value=Decimal("1"),
+        growth_pct=Decimal("900"),
+        disclosure_date=date(2026, 7, 20),
+        source=EarningsSource.FORECAST,
     )
     service.store.upsert_actual(a1)
     service.store.upsert_actual(a2)
@@ -227,12 +247,20 @@ def test_watch_calendar_with_data(service: EarningsService):
     from mommy_chaogu.earnings.types import EarningsCalendar
 
     c1 = EarningsCalendar(
-        code="603662", name="柯力", period="H1 2026",
-        disclosure_date=date.today(), is_estimated=False, source="x",
+        code="603662",
+        name="柯力",
+        period="H1 2026",
+        disclosure_date=date.today(),
+        is_estimated=False,
+        source="x",
     )
     c2 = EarningsCalendar(
-        code="603986", name="兆易", period="H1 2026",
-        disclosure_date=date.today(), is_estimated=False, source="x",
+        code="603986",
+        name="兆易",
+        period="H1 2026",
+        disclosure_date=date.today(),
+        is_estimated=False,
+        source="x",
     )
     service.store.upsert_calendar(c1)
     service.store.upsert_calendar(c2)

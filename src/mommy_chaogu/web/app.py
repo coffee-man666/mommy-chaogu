@@ -7,6 +7,7 @@
     # 开发模式
     uvicorn mommy_chaogu.web.app:create_app --factory --reload
 """
+
 from __future__ import annotations
 
 import logging
@@ -162,6 +163,7 @@ def create_app(
         _log.info("static files mounted at %s", static_dir)
     else:
         _log.info("frontend dist not found at %s — API only", static_dir)
+
         # 没有静态文件时保留 API 根信息
         @app.get("/")
         def root() -> dict[str, str]:

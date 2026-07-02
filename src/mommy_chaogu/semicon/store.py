@@ -10,6 +10,7 @@
 是因为这玩意儿是人工维护的 reference，频繁加新分类的话 enum 反而累赘。
 不过为了 IDE 提示和打字安全，下面用 ChainPosition / Subcategory 给个常量集合。
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -24,6 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from mommy_chaogu.semicon.models import SemiconBase, SemiconStock
 
 # ---------- 常量集合 ----------
+
 
 class ChainPosition(StrEnum):
     """产业链主位置。"""
@@ -65,6 +67,7 @@ class Board(StrEnum):
 
 # ---------- 异常 ----------
 
+
 class SemiconError(Exception):
     """semicon 模块基础异常。"""
 
@@ -78,6 +81,7 @@ class StockAlreadyExistsError(SemiconError):
 
 
 # ---------- Store ----------
+
 
 class SemiconStore:
     """SQLite-backed 半导体产业链参考库。
@@ -283,9 +287,7 @@ class SemiconStore:
     def list_codes(self) -> list[str]:
         """所有股票代码（按字母序）。"""
         with self.session() as s:
-            rows = s.execute(
-                select(SemiconStock.code).order_by(SemiconStock.code)
-            ).scalars().all()
+            rows = s.execute(select(SemiconStock.code).order_by(SemiconStock.code)).scalars().all()
             return list(rows)
 
     def count_by_chain(self) -> list[tuple[str, int]]:
@@ -332,18 +334,14 @@ class SemiconStore:
 
     def stats(self) -> dict[str, int]:
         with self.session() as s:
-            n_total = s.execute(
-                select(func.count(SemiconStock.id))
-            ).scalar_one()
+            n_total = s.execute(select(func.count(SemiconStock.id))).scalar_one()
             n_chain = s.execute(
                 select(func.count(func.distinct(SemiconStock.chain_position)))
             ).scalar_one()
             n_sub = s.execute(
                 select(func.count(func.distinct(SemiconStock.subcategory)))
             ).scalar_one()
-            n_board = s.execute(
-                select(func.count(func.distinct(SemiconStock.board)))
-            ).scalar_one()
+            n_board = s.execute(select(func.count(func.distinct(SemiconStock.board)))).scalar_one()
         return {
             "total": int(n_total),
             "chains": int(n_chain),

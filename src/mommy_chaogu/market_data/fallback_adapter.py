@@ -16,6 +16,7 @@
 - 每个方法独立 fallback（一个方法在主源失败不影响其他方法）
 - 指标统计：primary_hits / fallback_hits / all_fail
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -48,11 +49,13 @@ class FallbackAdapter:
         self.name = name or f"fallback({','.join(a.name for a in adapters)})"
         # 指标
         self._stats: dict[str, dict[str, int]] = {
-            adapter.name: {"calls": 0, "ok": 0, "fail": 0}
-            for adapter in self.adapters
+            adapter.name: {"calls": 0, "ok": 0, "fail": 0} for adapter in self.adapters
         }
         self._stats["__total__"] = {
-            "primary_hits": 0, "fallback_hits": 0, "all_fail": 0, "calls": 0,
+            "primary_hits": 0,
+            "fallback_hits": 0,
+            "all_fail": 0,
+            "calls": 0,
         }
 
     def stats(self) -> dict[str, dict[str, int]]:
@@ -74,7 +77,11 @@ class FallbackAdapter:
                 self._stats[adapter.name]["fail"] += 1
                 _log.warning(
                     "fallback: %s.%s(%s) raised %s: %s",
-                    adapter.name, method_name, args, type(e).__name__, e,
+                    adapter.name,
+                    method_name,
+                    args,
+                    type(e).__name__,
+                    e,
                 )
                 last_exc = e
                 continue
@@ -87,13 +94,22 @@ class FallbackAdapter:
                 self._stats["__total__"]["primary_hits"] += 1
             else:
                 self._stats["__total__"]["fallback_hits"] += 1
-                _log.info("fallback: %s used (primary %s.%s failed)",
-                          adapter.name, self.adapters[0].name, method_name)
+                _log.info(
+                    "fallback: %s used (primary %s.%s failed)",
+                    adapter.name,
+                    self.adapters[0].name,
+                    method_name,
+                )
             return result
         self._stats["__total__"]["all_fail"] += 1
         if last_exc is not None:
-            _log.debug("fallback: all %d adapters failed for %s(%s), last exc: %s",
-                       len(self.adapters), method_name, args, last_exc)
+            _log.debug(
+                "fallback: all %d adapters failed for %s(%s), last exc: %s",
+                len(self.adapters),
+                method_name,
+                args,
+                last_exc,
+            )
         return None
 
     # ---------- MarketDataAdapter 接口实现 ----------
@@ -113,7 +129,9 @@ class FallbackAdapter:
     def get_bars(self, code, interval=None, adjustment=None, **kwargs):
         """K 线：fallback 链中任何一个能返回就用。"""
         if interval is not None and adjustment is not None:
-            return self._try_call("get_bars", code, interval=interval, adjustment=adjustment, **kwargs)
+            return self._try_call(
+                "get_bars", code, interval=interval, adjustment=adjustment, **kwargs
+            )
         return self._try_call("get_bars", code, **kwargs)
 
     def get_ticks(self, code, limit=None):

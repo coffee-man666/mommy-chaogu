@@ -8,6 +8,7 @@
 - 拉新失败 → fallback 旧缓存
 - 数据新鲜度报告
 """
+
 from __future__ import annotations
 
 import sys
@@ -27,14 +28,23 @@ from mommy_chaogu.market_data.types import (
 
 def mk_quote(code: str, price: str = "100") -> Quote:
     return Quote(
-        code=code, name=f"名称{code}",
-        market=MarketType.SH, quote_type=QuoteType.STOCK,
-        price=Decimal(price), open=Decimal(price), high=Decimal(price),
-        low=Decimal(price), prev_close=Decimal(price),
-        change=Decimal("0"), change_pct=Decimal("1.5"),
-        volume=100000, turnover=Money.from_yuan(100000000),
-        turnover_rate=None, volume_ratio=None,
-        pe_dynamic=None, total_market_cap=None,
+        code=code,
+        name=f"名称{code}",
+        market=MarketType.SH,
+        quote_type=QuoteType.STOCK,
+        price=Decimal(price),
+        open=Decimal(price),
+        high=Decimal(price),
+        low=Decimal(price),
+        prev_close=Decimal(price),
+        change=Decimal("0"),
+        change_pct=Decimal("1.5"),
+        volume=100000,
+        turnover=Money.from_yuan(100000000),
+        turnover_rate=None,
+        volume_ratio=None,
+        pe_dynamic=None,
+        total_market_cap=None,
         circulating_market_cap=None,
         timestamp=datetime.now(UTC),
     )
@@ -42,6 +52,7 @@ def mk_quote(code: str, price: str = "100") -> Quote:
 
 class MockAdapter:
     """可预设 fetch 行为。"""
+
     def __init__(self, quote: Quote, fail_next_n: int = 0) -> None:
         self.name = "mock"
         self.quote = quote
@@ -54,15 +65,32 @@ class MockAdapter:
             raise ConnectionError(f"simulated fail #{self.fetch_count}")
         return self.quote
 
-    def get_quotes(self, codes): return []
-    def list_market_quotes(self): return []
-    def get_order_book(self, code): return None
-    def get_bars(self, code, **kw): return []
-    def get_ticks(self, code, limit=None): return []
-    def get_today_money_flow(self, code): return []
-    def get_history_money_flow(self, code, days=30): return []
-    def get_belonging_boards(self, code): return []
-    def health_check(self): return True
+    def get_quotes(self, codes):
+        return []
+
+    def list_market_quotes(self):
+        return []
+
+    def get_order_book(self, code):
+        return None
+
+    def get_bars(self, code, **kw):
+        return []
+
+    def get_ticks(self, code, limit=None):
+        return []
+
+    def get_today_money_flow(self, code):
+        return []
+
+    def get_history_money_flow(self, code, days=30):
+        return []
+
+    def get_belonging_boards(self, code):
+        return []
+
+    def health_check(self):
+        return True
 
 
 def main() -> int:
@@ -74,6 +102,7 @@ def main() -> int:
         cfg = CacheConfig(quote_fetch_interval_seconds=2)
         mock = MockAdapter(mk_quote("600519", "1184.98"))
         from mommy_chaogu.cache import CachedMarketDataAdapter
+
         adapter = CachedMarketDataAdapter(mock, store, config=cfg)
         mgr = CacheManager(store=store, adapter=adapter)
 
@@ -99,6 +128,7 @@ def main() -> int:
         # 等过期
         print("【第 3 次】等待 3 秒（超过拉新间隔）")
         import time
+
         time.sleep(3)
         q = adapter.get_quote("600519")
         print(f"  价: {q.price if q else None}, 底层 fetch: {mock.fetch_count}")

@@ -5,6 +5,7 @@
 - 测试时用 app.dependency_overrides 替换
 - 不在 import 时拉网络（fail-fast 但不起连接）
 """
+
 from __future__ import annotations
 
 from functools import lru_cache

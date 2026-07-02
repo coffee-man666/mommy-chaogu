@@ -2,6 +2,7 @@
 
 设计：与 CacheStore 类似的 dataclass + sqlite3 text-mode 模式（Decimal 精度安全）。
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -88,9 +89,18 @@ class EarningsStore:
                         disclosure_date = ?, source = ?, note = ?, fetched_at = ?
                     WHERE code = ? AND period = ? AND source = ?
                     """,
-                    (params[1], params[3], params[4], params[5],
-                     params[6], params[7], params[8],
-                     params[0], params[2], params[6]),
+                    (
+                        params[1],
+                        params[3],
+                        params[4],
+                        params[5],
+                        params[6],
+                        params[7],
+                        params[8],
+                        params[0],
+                        params[2],
+                        params[6],
+                    ),
                 )
                 return False
 
@@ -173,9 +183,14 @@ class EarningsStore:
                         name = ?, disclosure_date = ?, is_estimated = ?, source = ?
                     WHERE code = ? AND period = ?
                     """,
-                    (cal.name, cal.disclosure_date.isoformat(),
-                     1 if cal.is_estimated else 0, cal.source,
-                     cal.code, cal.period),
+                    (
+                        cal.name,
+                        cal.disclosure_date.isoformat(),
+                        1 if cal.is_estimated else 0,
+                        cal.source,
+                        cal.code,
+                        cal.period,
+                    ),
                 )
                 return False
             conn.execute(
@@ -184,8 +199,14 @@ class EarningsStore:
                     code, name, period, disclosure_date, is_estimated, source
                 ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (cal.code, cal.name, cal.period, cal.disclosure_date.isoformat(),
-                 1 if cal.is_estimated else 0, cal.source),
+                (
+                    cal.code,
+                    cal.name,
+                    cal.period,
+                    cal.disclosure_date.isoformat(),
+                    1 if cal.is_estimated else 0,
+                    cal.source,
+                ),
             )
             return True
 
@@ -265,10 +286,20 @@ class EarningsStore:
                         verdict = ?, confidence = ?, scored_at = CURRENT_TIMESTAMP
                     WHERE code = ? AND period = ?
                     """,
-                    (params[1], params[3], params[4], params[5],
-                     params[6], params[7], params[8], params[9],
-                     params[10], params[11],
-                     params[0], params[2]),
+                    (
+                        params[1],
+                        params[3],
+                        params[4],
+                        params[5],
+                        params[6],
+                        params[7],
+                        params[8],
+                        params[9],
+                        params[10],
+                        params[11],
+                        params[0],
+                        params[2],
+                    ),
                 )
                 return False
 

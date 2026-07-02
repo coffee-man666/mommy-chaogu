@@ -9,6 +9,7 @@ Monitor：执行轮询 + 输出到控制台 + 追加日志
 - 控制台输出用 ANSI 清屏 + 重绘（妈妈体验友好）
 - 日志每行一条（plain text），团长问起来直接 grep / tail
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,6 +33,7 @@ _log = logging.getLogger(__name__)
 @dataclass(frozen=True, slots=True)
 class SnapshotRow:
     """自选股池里一只股票的一行快照。"""
+
     entry: StockEntry
     group_name: str
     quote: Quote
@@ -41,6 +43,7 @@ class SnapshotRow:
 @dataclass(frozen=True, slots=True)
 class Snapshot:
     """一次完整的快照。"""
+
     timestamp: datetime
     snapshot_id: int
     rows: tuple[SnapshotRow, ...]
@@ -175,12 +178,14 @@ class Monitor:
             flow = flows_by_code.get(code)
             entry = by_code[code][0]  # 多 group 重复时取第一个
             group_name = by_code[code][1]
-            rows.append(SnapshotRow(
-                entry=entry,
-                group_name=group_name,
-                quote=quote,
-                latest_flow=flow,
-            ))
+            rows.append(
+                SnapshotRow(
+                    entry=entry,
+                    group_name=group_name,
+                    quote=quote,
+                    latest_flow=flow,
+                )
+            )
 
         return Snapshot.build(rows, self._snapshot_id)
 
@@ -238,8 +243,7 @@ class Monitor:
         - max_iterations: 限制轮询次数（测试用，None = 无限）
         - clear_screen: 每次清屏重绘
         """
-        self._log(f"monitor started  interval={interval_seconds}s  "
-                  f"log={self.log_path or '(none)'}")
+        self._log(f"monitor started  interval={interval_seconds}s  log={self.log_path or '(none)'}")
 
         iteration = 0
         try:

@@ -5,6 +5,7 @@
 - 把「拉哪几只」做成可插拔的：watchlist / semicon / 自定义 codes
 - 上层 FlowService 只跟 PoolSource 接口打交道，不耦合具体数据源
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,6 +41,7 @@ class WatchlistPool:
 
     def codes(self) -> list[str]:
         from mommy_chaogu.watchlist import WatchlistStore
+
         store = WatchlistStore(self._db_path)
         return store.get_all_codes()
 
@@ -60,6 +62,7 @@ class SemiconPool:
 
     def codes(self) -> list[str]:
         from mommy_chaogu.semicon import SemiconStore
+
         store = SemiconStore(self._db_path)
         return store.list_codes()
 
@@ -109,4 +112,3 @@ def build_pool(name: str, db_path: Path, custom_codes: list[str] | None = None) 
             raise ValueError("custom pool 需要 --codes 参数")
         return CustomPool(custom_codes)
     raise ValueError(f"未知 pool: {name!r}，可选 watchlist/semicon/custom")
-

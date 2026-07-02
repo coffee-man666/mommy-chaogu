@@ -1,4 +1,5 @@
 """/api/health 路由测试。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -19,9 +20,7 @@ class TestHealth:
         assert "uptime_seconds" in data
         assert "db_path" in data
 
-    def test_health_with_last_snapshot(
-        self, client: TestClient, mock_service: MagicMock
-    ) -> None:
+    def test_health_with_last_snapshot(self, client: TestClient, mock_service: MagicMock) -> None:
         mock_service.last_poll_at.return_value = datetime.now(UTC)
         resp = client.get("/api/health")
         data = resp.json()

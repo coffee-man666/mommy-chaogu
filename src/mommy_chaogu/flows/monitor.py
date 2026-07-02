@@ -12,6 +12,7 @@
 - 连续 N 轮失败率 > 50% → 写告警日志
 - 进程被杀重启时，状态可持久化到 .flow_monitor_state.json
 """
+
 from __future__ import annotations
 
 import json
@@ -70,7 +71,7 @@ class FlowMonitor:
         self.interval = interval_seconds
         self.rules = rules or default_rules()
         self.state_path = state_path  # 状态持久化
-        self.log_path = log_path      # 信号日志
+        self.log_path = log_path  # 信号日志
         # 运行时状态
         self._last_ratios: dict[str, Decimal] = {}
         self._consecutive_high_failure = 0  # 连续高失败率轮数
@@ -111,12 +112,14 @@ class FlowMonitor:
             if float_mcap is None or float_mcap == 0:
                 n_failed += 1
                 continue
-            snap.append(StockSnapshot(
-                code=code,
-                name=name,
-                main_net=last.main_net.amount,
-                float_market_cap=float_mcap,
-            ))
+            snap.append(
+                StockSnapshot(
+                    code=code,
+                    name=name,
+                    main_net=last.main_net.amount,
+                    float_market_cap=float_mcap,
+                )
+            )
             n_ok += 1
 
         # 3. 评估信号
@@ -243,4 +246,3 @@ class FlowMonitor:
             )
         except Exception as e:
             _log.warning("save state failed: %s", e)
-

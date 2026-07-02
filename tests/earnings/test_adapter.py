@@ -1,4 +1,5 @@
 """earnings 模块 — Adapter 单元测试。"""
+
 from __future__ import annotations
 
 from datetime import date

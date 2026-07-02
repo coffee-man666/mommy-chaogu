@@ -1,4 +1,5 @@
 """/api/signals 路由测试。"""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -42,6 +43,7 @@ class TestHistorySignals:
         import pathlib
 
         from mommy_chaogu.web.deps import get_alerter
+
         log_file = pathlib.Path("/tmp/test_signals.log")
         log_file.write_text(
             "2026-06-27 14:32:15 [CRITICAL] 600519 贵州茅台 main_flow_threshold: "

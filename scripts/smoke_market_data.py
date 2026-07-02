@@ -5,6 +5,7 @@
     uv run python scripts/smoke_market_data.py [STOCK_CODE]...
     默认拉 600519（茅台）、000001（平安）、300750（宁德）
 """
+
 from __future__ import annotations
 
 import sys
@@ -58,8 +59,10 @@ def main() -> int:
             print(f"  {code} -> None  ({dt:.2f}s)")
         else:
             show_quote(q)
-            print(f"    -> {dt:.2f}s, market={q.market.value}, "
-                  f"pe={q.pe_dynamic}, mcap={q.total_market_cap}")
+            print(
+                f"    -> {dt:.2f}s, market={q.market.value}, "
+                f"pe={q.pe_dynamic}, mcap={q.total_market_cap}"
+            )
 
     # 3. 批量实时
     section("3. get_quotes (批量)")
@@ -106,9 +109,11 @@ def main() -> int:
         bars = adp.get_bars(code, interval=iv, limit=3)
         print(f"  {code} {iv.value}: {len(bars)} bars (last 3)")
         for b in bars[-3:]:
-            print(f"    {b.timestamp:%Y-%m-%d %H:%M}  "
-                  f"O {b.open}  H {b.high}  L {b.low}  C {b.close}  "
-                  f"V {b.volume}  {b.change_pct:+.2f}%")
+            print(
+                f"    {b.timestamp:%Y-%m-%d %H:%M}  "
+                f"O {b.open}  H {b.high}  L {b.low}  C {b.close}  "
+                f"V {b.volume}  {b.change_pct:+.2f}%"
+            )
 
     # 7. K 线区间 + 复权
     section("7. get_bars (区间 + 复权)")
@@ -129,19 +134,23 @@ def main() -> int:
     flows = adp.get_today_money_flow(code)
     print(f"  {code}: {len(flows)} time points today, latest 3:")
     for f in flows[-3:]:
-        print(f"    {f.timestamp:%H:%M}  "
-              f"主力 {f.main_net.amount:+,.0f}  "
-              f"超大 {f.super_large_net.amount:+,.0f}  "
-              f"大 {f.large_net.amount:+,.0f}  "
-              f"中 {f.medium_net.amount:+,.0f}  "
-              f"小 {f.small_net.amount:+,.0f}")
+        print(
+            f"    {f.timestamp:%H:%M}  "
+            f"主力 {f.main_net.amount:+,.0f}  "
+            f"超大 {f.super_large_net.amount:+,.0f}  "
+            f"大 {f.large_net.amount:+,.0f}  "
+            f"中 {f.medium_net.amount:+,.0f}  "
+            f"小 {f.small_net.amount:+,.0f}"
+        )
 
     # 10. 历史资金流
     section("10. get_history_money_flow (30天)")
     hflows = adp.get_history_money_flow(code, days=30)
     print(f"  {code}: {len(hflows)} days, last 5:")
     for f in hflows[-5:]:
-        print(f"    {f.timestamp:%Y-%m-%d}  主力 {f.main_net.amount:+,.0f} ({f.main_net_ratio:+.2f}%)")
+        print(
+            f"    {f.timestamp:%Y-%m-%d}  主力 {f.main_net.amount:+,.0f} ({f.main_net_ratio:+.2f}%)"
+        )
 
     # 11. 板块
     section("11. get_belonging_boards (所属板块)")

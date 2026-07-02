@@ -1,4 +1,5 @@
 """/api/signals 路由：历史信号。"""
+
 from __future__ import annotations
 
 from datetime import datetime

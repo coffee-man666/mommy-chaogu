@@ -6,6 +6,7 @@
 - P4 装饰器链：CachedMarketDataAdapter(FallbackAdapter([Efinance, Tencent]))
 - 不动 market_data / watchlist / monitor / signals / cache 任何已有代码
 """
+
 from mommy_chaogu.web.app import create_app
 
 __all__ = ["create_app"]

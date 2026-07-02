@@ -6,6 +6,7 @@
 
 测试运行需要联网（push2.eastmoney.com）。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -19,6 +20,7 @@ from mommy_chaogu.market_data import (
 )
 
 # ---------- 真实接口（标记为网络依赖） ----------
+
 
 @pytest.fixture(scope="module")
 def adp() -> EfinanceAdapter:
@@ -82,6 +84,7 @@ def test_get_bars_d1_limit(adp: EfinanceAdapter) -> None:
     assert len(bars) == 10
     # 时间递增
     from itertools import pairwise
+
     for a, b in pairwise(bars):
         assert a.timestamp <= b.timestamp
     # 字段合理性
@@ -94,6 +97,7 @@ def test_get_bars_d1_limit(adp: EfinanceAdapter) -> None:
 @pytest.mark.network
 def test_get_bars_d1_date_range(adp: EfinanceAdapter) -> None:
     from datetime import date, timedelta
+
     end = date.today()
     start = end - timedelta(days=30)
     bars = adp.get_bars("600519", interval=BarInterval.D1, start=start, end=end)
@@ -111,10 +115,12 @@ def test_get_bars_5m_recent(adp: EfinanceAdapter) -> None:
 @pytest.mark.network
 def test_get_bars_adjustment_types_distinct(adp: EfinanceAdapter) -> None:
     """前复权和后复权在分红送股日会有差异。"""
-    fwd = adp.get_bars("600519", interval=BarInterval.D1, limit=20,
-                        adjustment=AdjustmentType.FORWARD)
-    bwd = adp.get_bars("600519", interval=BarInterval.D1, limit=20,
-                        adjustment=AdjustmentType.BACKWARD)
+    fwd = adp.get_bars(
+        "600519", interval=BarInterval.D1, limit=20, adjustment=AdjustmentType.FORWARD
+    )
+    bwd = adp.get_bars(
+        "600519", interval=BarInterval.D1, limit=20, adjustment=AdjustmentType.BACKWARD
+    )
     assert len(fwd) == len(bwd) == 20
     # 价格应该大致接近但通常有差异（茅台可能除权过）
     # (removed)

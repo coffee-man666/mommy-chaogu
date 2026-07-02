@@ -5,6 +5,7 @@
 - Rule 是 Protocol（runtime_checkable），方便 mock 测试
 - RuleConfig 把规则参数和元数据集中管理
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -19,8 +20,9 @@ if TYPE_CHECKING:
 
 class SignalSeverity(StrEnum):
     """告警严重程度（妈妈易懂的三档）。"""
-    INFO = "info"          # 日常观察（组合涨跌幅分布等）
-    WARNING = "warning"    # 需要关注
+
+    INFO = "info"  # 日常观察（组合涨跌幅分布等）
+    WARNING = "warning"  # 需要关注
     CRITICAL = "critical"  # 建议行动
 
 
@@ -44,13 +46,14 @@ class Signal:
 
     一条 Signal 对应一个标的在一个时间点的某条规则触发结果。
     """
+
     timestamp: datetime
     code: str
     name: str
     rule_id: str
     severity: SignalSeverity
-    title: str          # 短标题（适合控制台 + 通知）："茅台涨超 5%"
-    detail: str         # 详情（适合日志）：当前价、涨跌额、量能等
+    title: str  # 短标题（适合控制台 + 通知）："茅台涨超 5%"
+    detail: str  # 详情（适合日志）：当前价、涨跌额、量能等
     metrics: dict[str, Any] = field(default_factory=dict)
     # 触发该信号的具体阈值（用于审计 / debug）
     trigger_value: Decimal | None = None
@@ -78,6 +81,7 @@ class RuleConfig:
     - severity: 触发时的默认严重度（规则可在 evaluate 时升级）
     - params: 规则特定的参数字典（threshold、window、...）
     """
+
     rule_id: str
     enabled: bool = True
     severity: SignalSeverity = SignalSeverity.WARNING

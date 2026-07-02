@@ -1,4 +1,5 @@
 """WatchlistStore CRUD 单测。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,6 +21,7 @@ def store(tmp_path: Path) -> WatchlistStore:
 
 
 # ---------- Group CRUD ----------
+
 
 def test_empty_store_has_no_groups(store: WatchlistStore) -> None:
     assert store.list_groups() == []
@@ -69,6 +71,7 @@ def test_require_group(store: WatchlistStore) -> None:
 
 
 # ---------- StockEntry CRUD ----------
+
 
 def test_add_entry(store: WatchlistStore) -> None:
     store.add_group("白酒")

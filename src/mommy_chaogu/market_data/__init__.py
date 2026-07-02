@@ -1,4 +1,5 @@
 """market_data 包：行情数据源抽象层。"""
+
 from mommy_chaogu.market_data.adapter import (
     MarketDataAdapter,
     filter_by_market,

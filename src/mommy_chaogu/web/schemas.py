@@ -3,6 +3,7 @@
 Decimal 全部转 str（避免 float 精度问题，符合团队约定）。
 datetime 全部 ISO 8601 + UTC。
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -131,6 +132,7 @@ class HealthOut(BaseModel):
 
 
 # ---------- Market Ranking ----------
+
 
 class IndexOut(BaseModel):
     """大盘指数。"""

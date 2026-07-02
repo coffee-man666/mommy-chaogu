@@ -1,4 +1,5 @@
 """Monitor 单测 — 用 MockMarketDataAdapter 不依赖外部网络。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -18,6 +19,7 @@ from mommy_chaogu.monitor import Monitor
 from mommy_chaogu.watchlist import WatchlistStore
 
 # ---------- Mock Adapter ----------
+
 
 class MockMarketDataAdapter:
     """测试用 mock adapter，可预设返回值。"""
@@ -43,9 +45,14 @@ class MockMarketDataAdapter:
     def list_market_quotes(self) -> list[Quote]:
         return list(self._quotes.values())
 
-    def get_order_book(self, code: str): return None
-    def get_bars(self, code: str, **kw): return []
-    def get_ticks(self, code: str, limit=None): return []
+    def get_order_book(self, code: str):
+        return None
+
+    def get_bars(self, code: str, **kw):
+        return []
+
+    def get_ticks(self, code: str, limit=None):
+        return []
 
     def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
         self.call_log.append(("get_today_money_flow", (code,)))
@@ -54,7 +61,9 @@ class MockMarketDataAdapter:
     def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
         return self._flows.get(code, [])
 
-    def get_belonging_boards(self, code: str): return []
+    def get_belonging_boards(self, code: str):
+        return []
+
     def health_check(self) -> bool:
         return True
 
@@ -98,6 +107,7 @@ def _make_flow(code: str, main: str, ts: datetime | None = None) -> MoneyFlow:
 
 # ---------- Fixtures ----------
 
+
 @pytest.fixture
 def store(tmp_path: Path) -> WatchlistStore:
     s = WatchlistStore(tmp_path / "test.db")
@@ -123,6 +133,7 @@ def monitor(store: WatchlistStore, tmp_path: Path) -> Monitor:
 
 
 # ---------- Snapshot 构建 ----------
+
 
 def test_snapshot_now_pulls_quotes_and_flows(monitor: Monitor, store: WatchlistStore) -> None:
     snap = monitor.snapshot_now()
@@ -163,6 +174,7 @@ def test_snapshot_skips_codes_with_no_quote(store: WatchlistStore, tmp_path: Pat
 
 
 # ---------- 日志 ----------
+
 
 def test_log_line_format(monitor: Monitor) -> None:
     snap = monitor.snapshot_now()
@@ -206,9 +218,12 @@ def test_format_table_empty_pool(store: WatchlistStore) -> None:
         from sqlalchemy import delete
 
         from mommy_chaogu.watchlist.models import StockEntry
+
         with store.engine.begin() as conn:
             conn.execute(delete(StockEntry))
-            conn.execute(delete(__import__('mommy_chaogu.watchlist.models', fromlist=['Group']).Group))
+            conn.execute(
+                delete(__import__("mommy_chaogu.watchlist.models", fromlist=["Group"]).Group)
+            )
 
     adapter = MockMarketDataAdapter()
     monitor = Monitor(store, adapter, log_path=None)
@@ -219,6 +234,7 @@ def test_format_table_empty_pool(store: WatchlistStore) -> None:
 
 
 # ---------- 空 adapter 健康检查 ----------
+
 
 def test_protocol_satisfaction() -> None:
     """MockAdapter 必须实现 MarketDataAdapter Protocol。"""

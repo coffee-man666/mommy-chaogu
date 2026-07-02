@@ -7,6 +7,7 @@
 
 不污染 Adapter 层（这些不是标准行情数据），路由层直接调用。
 """
+
 from __future__ import annotations
 
 import logging
@@ -115,12 +116,14 @@ def fetch_sector_ranking(limit: int = 30) -> list[dict[str, Any]]:
             # 去重（同 code 同 name 只保留第一个）
             if any(i["code"] == code for i in items):
                 continue
-            items.append({
-                "code": code,
-                "name": name,
-                "change_pct": Decimal(str(pct)),
-                "price": _to_dec(d.get("f2")),
-            })
+            items.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "change_pct": Decimal(str(pct)),
+                    "price": _to_dec(d.get("f2")),
+                }
+            )
             if len(items) >= limit:
                 break
         if len(items) >= limit:

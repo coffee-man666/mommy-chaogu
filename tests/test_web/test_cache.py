@@ -1,4 +1,5 @@
 """/api/cache 路由测试。"""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -24,9 +25,7 @@ class TestCacheStats:
         assert len(data["freshness"]) == 1
         assert data["freshness"][0]["code"] == "600519"
 
-    def test_empty_stats(
-        self, client: TestClient, mock_adapter: MagicMock
-    ) -> None:
+    def test_empty_stats(self, client: TestClient, mock_adapter: MagicMock) -> None:
         mock_adapter.stats_counters = {
             "hits": 0,
             "fetches": 0,

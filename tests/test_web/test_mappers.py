@@ -2,6 +2,7 @@
 
 这是 bug 高发区（Decimal vs Money、naive vs aware datetime）。
 """
+
 from __future__ import annotations
 
 from datetime import datetime

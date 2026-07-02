@@ -1,4 +1,5 @@
 """/api/cache 路由：缓存统计。"""
+
 from __future__ import annotations
 
 from typing import Annotated

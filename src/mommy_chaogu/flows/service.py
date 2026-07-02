@@ -15,6 +15,7 @@ API：
 - 排行时直接从 CacheStore 读（不重复拉接口）
 - 内部汇总用 dataclass，外部不暴露 ORM
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,14 +46,14 @@ class FlowSummary:
 
     code: str
     name: str
-    main_net: Decimal               # 主力净流入（元）
-    super_large_net: Decimal        # 超大单净流入
-    large_net: Decimal              # 大单净流入
-    medium_net: Decimal             # 中单净流入
-    small_net: Decimal              # 小单净流入
+    main_net: Decimal  # 主力净流入（元）
+    super_large_net: Decimal  # 超大单净流入
+    large_net: Decimal  # 大单净流入
+    medium_net: Decimal  # 中单净流入
+    small_net: Decimal  # 小单净流入
     main_net_ratio: Decimal | None  # 主力净流入占比（%）
-    sample_count: int = 1           # 聚合了几条记录
-    period: str = ""                # "today" / "history:2026-06-01~2026-06-29"
+    sample_count: int = 1  # 聚合了几条记录
+    period: str = ""  # "today" / "history:2026-06-01~2026-06-29"
 
     def big_money_net(self) -> Decimal:
         """大资金（超大单+大单）净流入。"""
@@ -64,7 +65,7 @@ class PullResult:
     """一次批量拉新的结果（可变：调用过程中累计计数）。"""
 
     pool_name: str
-    target: str                                  # "today" / "history:30d"
+    target: str  # "today" / "history:30d"
     ok: int = 0
     failed: int = 0
     failed_codes: list[str] = field(default_factory=list)
@@ -125,16 +126,12 @@ class FlowService:
     def _force_fetch_today(self, code: str) -> list[MoneyFlow]:
         """绕过 today_money_flow 节流，强制拉新。"""
         # 重置该 code 的拉新节流（私有 API，但 CacheManager 也用这招）
-        self.adapter._last_fetch_attempt[f"today_flow:{code}"] = datetime.min.replace(
-            tzinfo=UTC
-        )
+        self.adapter._last_fetch_attempt[f"today_flow:{code}"] = datetime.min.replace(tzinfo=UTC)
         flows = self.adapter.get_today_money_flow(code)
         return flows
 
     def _force_fetch_history(self, code: str, days: int) -> list[MoneyFlow]:
-        self.adapter._last_fetch_attempt[f"history_flow:{code}"] = datetime.min.replace(
-            tzinfo=UTC
-        )
+        self.adapter._last_fetch_attempt[f"history_flow:{code}"] = datetime.min.replace(tzinfo=UTC)
         flows = self.adapter.get_history_money_flow(code, days=days)
         return flows
 
@@ -205,10 +202,16 @@ class FlowService:
         """当日资金流：取最新一条（efinance 当日数据是滚动更新，最后一条是当前累计）。"""
         if not flows:
             return FlowSummary(
-                code=code, name="",
-                main_net=Decimal(0), super_large_net=Decimal(0),
-                large_net=Decimal(0), medium_net=Decimal(0), small_net=Decimal(0),
-                main_net_ratio=None, sample_count=0, period="today",
+                code=code,
+                name="",
+                main_net=Decimal(0),
+                super_large_net=Decimal(0),
+                large_net=Decimal(0),
+                medium_net=Decimal(0),
+                small_net=Decimal(0),
+                main_net_ratio=None,
+                sample_count=0,
+                period="today",
             )
         latest = flows[-1]
         return FlowSummary(
@@ -224,9 +227,7 @@ class FlowService:
             period="today",
         )
 
-    def _aggregate_history(
-        self, code: str, days: int, flows: list[MoneyFlow]
-    ) -> FlowSummary:
+    def _aggregate_history(self, code: str, days: int, flows: list[MoneyFlow]) -> FlowSummary:
         """历史资金流：按天累加（每天的最末一条是当日累计）。"""
         # 按 trade_date 分组
         by_date: dict[str, list[MoneyFlow]] = {}
@@ -235,10 +236,16 @@ class FlowService:
             by_date.setdefault(d, []).append(f)
         if not by_date:
             return FlowSummary(
-                code=code, name="",
-                main_net=Decimal(0), super_large_net=Decimal(0),
-                large_net=Decimal(0), medium_net=Decimal(0), small_net=Decimal(0),
-                main_net_ratio=None, sample_count=0, period=f"history:{days}d",
+                code=code,
+                name="",
+                main_net=Decimal(0),
+                super_large_net=Decimal(0),
+                large_net=Decimal(0),
+                medium_net=Decimal(0),
+                small_net=Decimal(0),
+                main_net_ratio=None,
+                sample_count=0,
+                period=f"history:{days}d",
             )
         # 每天取最后一条（当日累计），再把所有天相加
         main = super_large = large = medium = small = Decimal(0)
@@ -337,9 +344,7 @@ class FlowService:
         out: dict[str, tuple[str, Decimal]] = {}
         # 强制重置节流（让监控模式能每轮都拿到最新市值）
         for code in codes:
-            self.adapter._last_fetch_attempt[f"quote:{code}"] = datetime.min.replace(
-                tzinfo=UTC
-            )
+            self.adapter._last_fetch_attempt[f"quote:{code}"] = datetime.min.replace(tzinfo=UTC)
         for code in codes:
             try:
                 q = self.adapter.get_quote(code)
@@ -397,6 +402,7 @@ class FlowService:
         """清空某池子的 today + history 缓存（不删其他池子的）。"""
         codes = set(pool.codes())
         from sqlalchemy import text
+
         n_today = 0
         n_history = 0
         s: Any = self.store.session()
@@ -416,6 +422,7 @@ class FlowService:
 
 
 # ---------- 内部：MoneyFlow 反序列化（与 adapter.py 同款） ----------
+
 
 def _money_flow_from_dict(d: dict[str, Any]) -> MoneyFlow:
     from decimal import Decimal
@@ -441,4 +448,3 @@ def _money_flow_from_dict(d: dict[str, Any]) -> MoneyFlow:
         super_large_net=_money(d["super_large_net"]),
         main_net_ratio=Decimal(str(d["main_net_ratio"])) if d.get("main_net_ratio") else None,
     )
-

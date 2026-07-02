@@ -2,6 +2,7 @@
 
 和 WatchlistStore 同一个 SQLite 文件，独立表。
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -48,6 +49,7 @@ class PortfolioStore:
         )
         with self.engine.begin() as conn:
             from sqlalchemy import text
+
             conn.execute(text("PRAGMA foreign_keys = ON"))
         PortfolioBase.metadata.create_all(self.engine)
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
@@ -110,15 +112,15 @@ class PortfolioStore:
                     select(Position)
                     .options(selectinload(Position.adjustments))
                     .order_by(Position.code)
-                ).scalars().all()
+                )
+                .scalars()
+                .all()
             )
 
     def remove_position(self, position_id: int) -> None:
         """删除持仓（级联删 adjustments）。"""
         with self.session() as s:
-            pos = s.execute(
-                select(Position).where(Position.id == position_id)
-            ).scalar_one_or_none()
+            pos = s.execute(select(Position).where(Position.id == position_id)).scalar_one_or_none()
             if pos is None:
                 raise PositionNotFoundError(f"持仓 id={position_id} 不存在")
             s.delete(pos)
@@ -126,9 +128,7 @@ class PortfolioStore:
     def update_position_name(self, code: str, name: str) -> int:
         """行情拉到名字后回填，返回更新数。"""
         with self.session() as s:
-            positions = s.execute(
-                select(Position).where(Position.code == code)
-            ).scalars().all()
+            positions = s.execute(select(Position).where(Position.code == code)).scalars().all()
             for p in positions:
                 if p.name is None:
                     p.name = name
@@ -151,9 +151,7 @@ class PortfolioStore:
             raise PortfolioError("shares 必须为正数")
 
         with self.session() as s:
-            pos = s.execute(
-                select(Position).where(Position.id == position_id)
-            ).scalar_one_or_none()
+            pos = s.execute(select(Position).where(Position.id == position_id)).scalar_one_or_none()
             if pos is None:
                 raise PositionNotFoundError(f"持仓 id={position_id} 不存在")
 
@@ -184,7 +182,9 @@ class PortfolioStore:
                     select(PositionAdjustment)
                     .where(PositionAdjustment.position_id == position_id)
                     .order_by(PositionAdjustment.timestamp)
-                ).scalars().all()
+                )
+                .scalars()
+                .all()
             )
 
     # ---------- 计算 ----------
@@ -273,16 +273,18 @@ class PortfolioStore:
 
             grand_cost += total_cost
 
-            positions_data.append({
-                "position": pos,
-                "avg_cost": avg_cost,
-                "shares": shares,
-                "current_price": cur_price,
-                "market_value": market_value,
-                "total_cost": total_cost,
-                "unrealized_pnl": pnl,
-                "unrealized_pnl_pct": pnl_pct,
-            })
+            positions_data.append(
+                {
+                    "position": pos,
+                    "avg_cost": avg_cost,
+                    "shares": shares,
+                    "current_price": cur_price,
+                    "market_value": market_value,
+                    "total_cost": total_cost,
+                    "unrealized_pnl": pnl,
+                    "unrealized_pnl_pct": pnl_pct,
+                }
+            )
 
         total_pnl = (grand_market - grand_cost) if has_market else None
         total_pnl_pct = (

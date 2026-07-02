@@ -6,6 +6,7 @@
 
 不做富文本（rich/tabulate 依赖），保持 vanilla print 风格，避免动妈妈机器上的字体。
 """
+
 from __future__ import annotations
 
 from datetime import datetime

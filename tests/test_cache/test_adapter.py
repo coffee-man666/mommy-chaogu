@@ -1,4 +1,5 @@
 """缓存层单测 — MockMarketDataAdapter + tmp_path db。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,7 @@ from mommy_chaogu.market_data import (
 )
 
 # ---------- Mock Adapter ----------
+
 
 class MockAdapter:
     """可预设行为：quote 返回值 + fetch 异常次数。"""
@@ -49,14 +51,25 @@ class MockAdapter:
         self.fetch_count += 1
         return list(self._quotes.values())
 
-    def get_order_book(self, code: str): return None
-    def get_bars(self, code: str, **kw): return []
-    def get_ticks(self, code: str, limit=None): return []
+    def get_order_book(self, code: str):
+        return None
+
+    def get_bars(self, code: str, **kw):
+        return []
+
+    def get_ticks(self, code: str, limit=None):
+        return []
+
     def get_today_money_flow(self, code: str):
         self.fetch_count += 1
         return []
-    def get_history_money_flow(self, code: str, days: int = 30): return []
-    def get_belonging_boards(self, code: str): return []
+
+    def get_history_money_flow(self, code: str, days: int = 30):
+        return []
+
+    def get_belonging_boards(self, code: str):
+        return []
+
     def health_check(self) -> bool:
         return len(self._quotes) > 0
 
@@ -87,6 +100,7 @@ def _make_quote(code: str = "600519", price: str = "1184.98", pct: str = "0.08")
 
 # ---------- Fixtures ----------
 
+
 @pytest.fixture
 def store(tmp_path: Path) -> CacheStore:
     return CacheStore(tmp_path / "test.db")
@@ -110,12 +124,15 @@ def cached(store: CacheStore, mock_adp: MockAdapter) -> CachedMarketDataAdapter:
 
 # ---------- Protocol & basic ----------
 
+
 def test_cached_satisfies_protocol(cached: CachedMarketDataAdapter) -> None:
     assert isinstance(cached, MarketDataAdapter)
     assert cached.name.startswith("cached(")
 
 
-def test_get_quote_first_call_fetches(cached: CachedMarketDataAdapter, mock_adp: MockAdapter) -> None:
+def test_get_quote_first_call_fetches(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
     q = cached.get_quote("600519")
     assert q is not None
     assert q.code == "600519"
@@ -139,9 +156,7 @@ def test_get_quote_after_interval_fetches_again(
     cached.get_quote("600519")
     assert mock_adp.fetch_count == 1
     # 强制让 fetch 节流过期（绕过 interval 检查）
-    cached._last_fetch_attempt["quote:600519"] = (
-        datetime.now(UTC) - timedelta(seconds=120)
-    )
+    cached._last_fetch_attempt["quote:600519"] = datetime.now(UTC) - timedelta(seconds=120)
     q = cached.get_quote("600519")
     assert q is not None
     assert mock_adp.fetch_count == 2
@@ -155,9 +170,7 @@ def test_get_quote_failure_falls_back_to_cached(
 
     # 让下一次 fetch 失败
     mock_adp.fail_until_attempt = 2  # 第 2 次会失败
-    cached._last_fetch_attempt["quote:600519"] = (
-        datetime.now(UTC) - timedelta(seconds=120)
-    )
+    cached._last_fetch_attempt["quote:600519"] = datetime.now(UTC) - timedelta(seconds=120)
 
     q = cached.get_quote("600519")
     # 失败 → 返回旧缓存
@@ -187,6 +200,7 @@ def test_get_quote_unknown_code_no_cache_attempts_fetch(
 
 # ---------- 全市场快照 ----------
 
+
 def test_list_market_quotes_first_call_fetches(
     cached: CachedMarketDataAdapter, mock_adp: MockAdapter
 ) -> None:
@@ -204,9 +218,7 @@ def test_list_market_quotes_cached_hit(
     assert mock_adp.fetch_count == 1
 
 
-def test_list_market_quotes_history_kept(
-    store: CacheStore, mock_adp: MockAdapter
-) -> None:
+def test_list_market_quotes_history_kept(store: CacheStore, mock_adp: MockAdapter) -> None:
     """多次拉新应保留多份历史快照。"""
     cfg = CacheConfig(market_snapshot_fetch_interval_seconds=0)
     cached = CachedMarketDataAdapter(mock_adp, store, config=cfg)
@@ -217,9 +229,7 @@ def test_list_market_quotes_history_kept(
     assert len(snaps) == 3
 
 
-def test_list_market_quotes_trim_history(
-    store: CacheStore, mock_adp: MockAdapter
-) -> None:
+def test_list_market_quotes_trim_history(store: CacheStore, mock_adp: MockAdapter) -> None:
     """保留最近 N 份。"""
     cfg = CacheConfig(market_snapshot_fetch_interval_seconds=0, market_snapshot_history_keep=2)
     cached = CachedMarketDataAdapter(mock_adp, store, config=cfg)
@@ -229,23 +239,20 @@ def test_list_market_quotes_trim_history(
     assert len(snaps) == 2  # 只保留最新 2 份
 
 
-def test_list_market_quotes_failure_uses_cached(
-    store: CacheStore, mock_adp: MockAdapter
-) -> None:
+def test_list_market_quotes_failure_uses_cached(store: CacheStore, mock_adp: MockAdapter) -> None:
     cfg = CacheConfig(market_snapshot_fetch_interval_seconds=60)
     cached = CachedMarketDataAdapter(mock_adp, store, config=cfg)
     cached.list_market_quotes()  # 成功
 
     # 让下一次 fetch 失败
     mock_adp.fail_until_attempt = 2
-    cached._last_fetch_attempt["market_snapshot:all"] = (
-        datetime.now(UTC) - timedelta(seconds=120)
-    )
+    cached._last_fetch_attempt["market_snapshot:all"] = datetime.now(UTC) - timedelta(seconds=120)
     quotes = cached.list_market_quotes()
     assert len(quotes) >= 1  # 用旧快照
 
 
 # ---------- 持久化 ----------
+
 
 def test_data_persists_across_instances(tmp_path: Path, mock_adp: MockAdapter) -> None:
     """新实例化 CachedMarketDataAdapter 后能读旧数据。"""
@@ -282,11 +289,11 @@ def test_data_freshness_report(cached: CachedMarketDataAdapter) -> None:
 
 # ---------- 当日资金流 ----------
 
-def test_get_today_money_flow_caches(
-    store: CacheStore, mock_adp: MockAdapter
-) -> None:
+
+def test_get_today_money_flow_caches(store: CacheStore, mock_adp: MockAdapter) -> None:
     flow = MoneyFlow(
-        code="600519", name="茅台",
+        code="600519",
+        name="茅台",
         timestamp=datetime.now(UTC),
         main_net=Money.from_yuan(100_000_000),
         small_net=Money.from_yuan(0),
@@ -311,11 +318,15 @@ def test_get_today_money_flow_caches(
 
 # ---------- Store 基础 ----------
 
+
 def test_store_stats_empty(store: CacheStore) -> None:
     st = store.stats()
     assert st == {
-        "quotes": 0, "bars": 0,
-        "flows_today": 0, "flows_history": 0, "snapshots": 0,
+        "quotes": 0,
+        "bars": 0,
+        "flows_today": 0,
+        "flows_history": 0,
+        "snapshots": 0,
     }
 
 
@@ -368,6 +379,7 @@ def test_store_market_snapshot_roundtrip(store: CacheStore) -> None:
 def test_store_get_all_quote_entries_sorted(store: CacheStore) -> None:
     store.set_quote("600519", _make_quote("600519", "100"))
     import time
+
     time.sleep(0.01)
     store.set_quote("000001", _make_quote("000001", "10"))
     entries = store.get_all_quote_entries()
@@ -383,13 +395,24 @@ def test_store_quote_cache_quote_ts_distinct_from_fetched_at(store: CacheStore) 
     # 行情时间在 5 分钟前（模拟“东财接口 5 分钟前返回的数据”）
     past_ts = datetime.now(UTC) - timedelta(minutes=5)
     q = Quote(
-        code="600519", name="茅台",
-        market=MarketType.SH, quote_type=QuoteType.STOCK,
-        price=Decimal("100"), open=Decimal("100"), high=Decimal("100"), low=Decimal("100"),
-        prev_close=Decimal("100"), change=Decimal("0"), change_pct=Decimal("0"),
-        volume=0, turnover=Money.from_yuan(0),
-        turnover_rate=None, volume_ratio=None, pe_dynamic=None,
-        total_market_cap=None, circulating_market_cap=None,
+        code="600519",
+        name="茅台",
+        market=MarketType.SH,
+        quote_type=QuoteType.STOCK,
+        price=Decimal("100"),
+        open=Decimal("100"),
+        high=Decimal("100"),
+        low=Decimal("100"),
+        prev_close=Decimal("100"),
+        change=Decimal("0"),
+        change_pct=Decimal("0"),
+        volume=0,
+        turnover=Money.from_yuan(0),
+        turnover_rate=None,
+        volume_ratio=None,
+        pe_dynamic=None,
+        total_market_cap=None,
+        circulating_market_cap=None,
         timestamp=past_ts,
     )
     store.set_quote("600519", q)
@@ -404,8 +427,10 @@ def test_store_quote_cache_quote_ts_distinct_from_fetched_at(store: CacheStore) 
 
 # ---------- CacheManager ----------
 
+
 def test_cache_manager_format_freshness(cached: CachedMarketDataAdapter) -> None:
     from mommy_chaogu.cache import CacheManager
+
     cached.get_quote("600519")
     mgr = CacheManager(store=cached.store, adapter=cached)
     out = mgr.format_freshness()
@@ -415,6 +440,7 @@ def test_cache_manager_format_freshness(cached: CachedMarketDataAdapter) -> None
 
 def test_cache_manager_stats(cached: CachedMarketDataAdapter) -> None:
     from mommy_chaogu.cache import CacheManager
+
     cached.get_quote("600519")
     cached.get_quote("600519")
     mgr = CacheManager(store=cached.store, adapter=cached)

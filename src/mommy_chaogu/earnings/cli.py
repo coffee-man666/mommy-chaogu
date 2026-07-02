@@ -17,6 +17,7 @@
     # 看 period 的 verdict 分布
     mommy-earnings summary --period "H1 2026"
 """
+
 from __future__ import annotations
 
 import argparse

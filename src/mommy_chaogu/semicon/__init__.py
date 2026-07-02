@@ -11,6 +11,7 @@
 - 不与 watchlist 同步（妈妈可能临时从产业链里捞几只观察，不入自选）
 - 不拉实时行情（需要时让用户从 watchlist / monitor 走）
 """
+
 from __future__ import annotations
 
 from mommy_chaogu.semicon.models import SemiconBase, SemiconStock
@@ -30,4 +31,3 @@ __all__ = [
     "Subcategory",
     "seed_store",
 ]
-

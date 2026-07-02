@@ -8,6 +8,7 @@
 - （未来）EfinanceEarningsAdapter：从东方财富拉业绩预告/快报
 - （未来）TencentEarningsAdapter：从腾讯财经拉
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -54,15 +55,15 @@ class EarningsAdapter(Protocol):
 class MockEarningsAdapter:
     """Mock 数据源，固定 41 家公司的假数据。
 
-    用于：
-- 单元测试
-- 演示：手动触发 actual vs predicted 比对流程
-- 演练：实战前预演信号触发
+        用于：
+    - 单元测试
+    - 演示：手动触发 actual vs predicted 比对流程
+    - 演练：实战前预演信号触发
 
-数据生成规则：
-- 80% 概率在预测区间内
-- 10% 概率超预测上限 20%
-- 10% 概率低于预测下限 20%
+    数据生成规则：
+    - 80% 概率在预测区间内
+    - 10% 概率超预测上限 20%
+    - 10% 概率低于预测下限 20%
     """
 
     name = "mock"
@@ -110,8 +111,8 @@ class MockEarningsAdapter:
         # 假设 H1 2026 净利润 = 1 亿 × (1 + growth/100)
         # mock 净利润值（基于 PE 反推得近似值）
         mock_base = {
-            "603662": 3.0e8,   # 3 亿
-            "603986": 2.5e9,   # 25 亿（兆易体量大）
+            "603662": 3.0e8,  # 3 亿
+            "603986": 2.5e9,  # 25 亿（兆易体量大）
             "002745": 1.2e9,
             "688383": 4.0e8,
             "300223": 5.0e8,

@@ -5,6 +5,7 @@
 - DataFrame 列名是中文，映射到英文 dataclass 字段
 - Decimal 转换时统一 str() 走一遍，避免 float 精度漂移
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -36,6 +37,7 @@ warnings.filterwarnings("ignore")
 
 # ---------- 内部工具 ----------
 
+
 def _to_dec(v: Any) -> Decimal | None:
     """安全转 Decimal，失败返回 None。"""
     if v is None or (isinstance(v, float) and pd.isna(v)):
@@ -64,11 +66,11 @@ def _to_money(v: Any) -> Money:
 
 def _detect_market(code: str) -> MarketType:
     """根据股票代码头推断市场。"""
-    if code.startswith(("60", "68", "9")):    # 60xxx沪A主板, 688科创板, 9xx北交所
+    if code.startswith(("60", "68", "9")):  # 60xxx沪A主板, 688科创板, 9xx北交所
         if code.startswith("9"):
             return MarketType.BJ
         return MarketType.SH
-    if code.startswith(("00", "30")):          # 00/30 深A
+    if code.startswith(("00", "30")):  # 00/30 深A
         return MarketType.SZ
     if code.startswith(("51", "15", "16", "18")):  # 场内基金/债券
         return MarketType.SH
@@ -106,6 +108,7 @@ _FQT_MAP: dict[AdjustmentType, int] = {
 
 # ---------- Adapter 实现 ----------
 
+
 class EfinanceAdapter:
     """基于东方财富的行情数据源。"""
 
@@ -115,6 +118,7 @@ class EfinanceAdapter:
 
     def _row_to_quote(self, row: pd.Series) -> Quote:
         """将单行（从 get_latest_quote 或 get_realtime_quotes）转成 Quote。"""
+
         # 兼容两种列名：中文大写 vs "代码/名称"等
         def g(*keys: str) -> Any:
             for k in keys:
@@ -176,6 +180,7 @@ class EfinanceAdapter:
         东财 push2.eastmoney.com 冷启动可能超时，本方法带 2 次重试。
         """
         import time as _time
+
         df = None
         last_err: Exception | None = None
         for attempt in range(3):
@@ -189,14 +194,18 @@ class EfinanceAdapter:
         if df is None or df.empty:
             if last_err is not None:
                 import logging
+
                 logging.getLogger(__name__).warning(
-                    "get_quote(%s) failed after 3 retries: %s", code, last_err,
+                    "get_quote(%s) failed after 3 retries: %s",
+                    code,
+                    last_err,
                 )
             return None
         try:
             return self._row_to_quote(df.iloc[0])
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).warning("_row_to_quote(%s) failed: %s", code, e)
             return None
 
@@ -384,7 +393,13 @@ class EfinanceAdapter:
             elif interval == BarInterval.M:
                 months = max(24, (limit or 60) + 2)
                 start_d = end_d - timedelta(days=int(months * 31))
-            elif interval in (BarInterval.M1, BarInterval.M5, BarInterval.M15, BarInterval.M30, BarInterval.M60):
+            elif interval in (
+                BarInterval.M1,
+                BarInterval.M5,
+                BarInterval.M15,
+                BarInterval.M30,
+                BarInterval.M60,
+            ):
                 # 分钟线 ~ 240 根/天
                 days = max(5, (limit or 240) // 240 + 5)
                 start_d = end_d - timedelta(days=days)
@@ -473,9 +488,7 @@ class EfinanceAdapter:
             return []
         return self._bill_rows_to_flow(df, code)
 
-    def get_history_money_flow(
-        self, code: str, days: int = 30
-    ) -> list[MoneyFlow]:
+    def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
         try:
             df = ef.stock.get_history_bill(code)
         except Exception:

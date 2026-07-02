@@ -11,6 +11,7 @@
 - 同步接口（阻塞），上层用 asyncio.to_thread 包成异步
 - 所有方法要幂等且无副作用
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -89,9 +90,7 @@ class MarketDataAdapter(Protocol):
         """当日按时间点的资金流。"""
         ...
 
-    def get_history_money_flow(
-        self, code: str, days: int = 30
-    ) -> list[MoneyFlow]:
+    def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
         """历史资金流（默认 30 天）。"""
         ...
 
@@ -110,9 +109,8 @@ class MarketDataAdapter(Protocol):
 
 # ---------- 工具函数 ----------
 
-def filter_by_market(
-    quotes: list[Quote], markets: list[str] | None = None
-) -> list[Quote]:
+
+def filter_by_market(quotes: list[Quote], markets: list[str] | None = None) -> list[Quote]:
     """按市场类型过滤报价列表。markets 例：['SH', 'SZ']。None 不过滤。"""
     if markets is None:
         return quotes

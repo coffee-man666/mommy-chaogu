@@ -7,6 +7,7 @@
 - 和 watchlist.StockEntry 同一个 SQLite，独立表（不 FK 到 stock_entries，
   因为持仓可以在加入自选池之前就录入）
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -59,9 +60,7 @@ class Position(PortfolioBase):
         order_by="PositionAdjustment.timestamp",
     )
 
-    __table_args__ = (
-        Index("ix_position_code", "code"),
-    )
+    __table_args__ = (Index("ix_position_code", "code"),)
 
     def __repr__(self) -> str:
         return f"<Position {self.code} ({self.name or '?'}) shares={self.shares}>"

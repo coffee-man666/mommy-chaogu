@@ -1,4 +1,5 @@
 """/api/watchlist 路由测试。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

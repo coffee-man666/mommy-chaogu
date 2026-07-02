@@ -14,6 +14,7 @@
 
 全市场快照保留 N 份历史，默认 30 份（够看一个月内的变化）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,10 +29,10 @@ class CacheConfig:
     - 上次拉新时间距离现在 >= interval → 尝试拉新
     """
 
-    quote_fetch_interval_seconds: int = 300            # 5 分钟
+    quote_fetch_interval_seconds: int = 300  # 5 分钟
     today_money_flow_fetch_interval_seconds: int = 300  # 5 分钟
     market_snapshot_fetch_interval_seconds: int = 3600  # 1 小时
-    bar_fetch_interval_seconds: int = 86400             # 1 天
+    bar_fetch_interval_seconds: int = 86400  # 1 天
     money_flow_history_fetch_interval_seconds: int = 86400  # 1 天
 
     market_snapshot_history_keep: int = 30  # 保留最近 N 份全市场快照

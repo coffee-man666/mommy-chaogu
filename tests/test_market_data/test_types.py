@@ -6,6 +6,7 @@
 - Protocol 接口契约（runtime_checkable）
 - helper 函数行为
 """
+
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, fields, is_dataclass
@@ -32,6 +33,7 @@ from mommy_chaogu.market_data import (
 
 # ---------- Money ----------
 
+
 def test_money_from_yuan_accepts_float_int_str_decimal() -> None:
     assert Money.from_yuan(10.5).amount == Decimal("10.5")
     assert Money.from_yuan(100).amount == Decimal("100")
@@ -45,6 +47,7 @@ def test_money_str() -> None:
 
 
 # ---------- dataclass frozen 行为 ----------
+
 
 def _make_quote() -> Quote:
     return Quote(
@@ -139,21 +142,32 @@ def test_order_book_empty_spread_is_none() -> None:
 
 # ---------- helper ----------
 
+
 def test_filter_by_market_none_returns_all() -> None:
     qs = [
         _make_quote(),
         _make_quote(),
     ]
     qs[1] = Quote(
-        code="000001", name="平安", market=MarketType.SZ,
+        code="000001",
+        name="平安",
+        market=MarketType.SZ,
         quote_type=QuoteType.STOCK,
-        price=Decimal("10"), open=Decimal("10"), high=Decimal("10"),
-        low=Decimal("10"), prev_close=Decimal("10"),
-        change=Decimal("0"), change_pct=Decimal("0"),
-        volume=0, turnover=Money.from_yuan(0),
-        turnover_rate=None, volume_ratio=None,
-        pe_dynamic=None, total_market_cap=None,
-        circulating_market_cap=None, timestamp=datetime.now(),
+        price=Decimal("10"),
+        open=Decimal("10"),
+        high=Decimal("10"),
+        low=Decimal("10"),
+        prev_close=Decimal("10"),
+        change=Decimal("0"),
+        change_pct=Decimal("0"),
+        volume=0,
+        turnover=Money.from_yuan(0),
+        turnover_rate=None,
+        volume_ratio=None,
+        pe_dynamic=None,
+        total_market_cap=None,
+        circulating_market_cap=None,
+        timestamp=datetime.now(),
     )
     assert len(filter_by_market(qs, None)) == 2
 
@@ -161,15 +175,25 @@ def test_filter_by_market_none_returns_all() -> None:
 def test_filter_by_market_sh_only() -> None:
     q1 = _make_quote()  # SH
     q2 = Quote(
-        code="000001", name="平安", market=MarketType.SZ,
+        code="000001",
+        name="平安",
+        market=MarketType.SZ,
         quote_type=QuoteType.STOCK,
-        price=Decimal("10"), open=Decimal("10"), high=Decimal("10"),
-        low=Decimal("10"), prev_close=Decimal("10"),
-        change=Decimal("0"), change_pct=Decimal("0"),
-        volume=0, turnover=Money.from_yuan(0),
-        turnover_rate=None, volume_ratio=None,
-        pe_dynamic=None, total_market_cap=None,
-        circulating_market_cap=None, timestamp=datetime.now(),
+        price=Decimal("10"),
+        open=Decimal("10"),
+        high=Decimal("10"),
+        low=Decimal("10"),
+        prev_close=Decimal("10"),
+        change=Decimal("0"),
+        change_pct=Decimal("0"),
+        volume=0,
+        turnover=Money.from_yuan(0),
+        turnover_rate=None,
+        volume_ratio=None,
+        pe_dynamic=None,
+        total_market_cap=None,
+        circulating_market_cap=None,
+        timestamp=datetime.now(),
     )
     assert filter_by_market([q1, q2], ["SH"]) == [q1]
     assert filter_by_market([q1, q2], ["SZ"]) == [q2]
@@ -179,15 +203,25 @@ def test_filter_by_market_sh_only() -> None:
 def test_find_quote() -> None:
     q1 = _make_quote()
     q2 = Quote(
-        code="000001", name="平安", market=MarketType.SZ,
+        code="000001",
+        name="平安",
+        market=MarketType.SZ,
         quote_type=QuoteType.STOCK,
-        price=Decimal("10"), open=Decimal("10"), high=Decimal("10"),
-        low=Decimal("10"), prev_close=Decimal("10"),
-        change=Decimal("0"), change_pct=Decimal("0"),
-        volume=0, turnover=Money.from_yuan(0),
-        turnover_rate=None, volume_ratio=None,
-        pe_dynamic=None, total_market_cap=None,
-        circulating_market_cap=None, timestamp=datetime.now(),
+        price=Decimal("10"),
+        open=Decimal("10"),
+        high=Decimal("10"),
+        low=Decimal("10"),
+        prev_close=Decimal("10"),
+        change=Decimal("0"),
+        change_pct=Decimal("0"),
+        volume=0,
+        turnover=Money.from_yuan(0),
+        turnover_rate=None,
+        volume_ratio=None,
+        pe_dynamic=None,
+        total_market_cap=None,
+        circulating_market_cap=None,
+        timestamp=datetime.now(),
     )
     assert find_quote([q1, q2], "000001") is q2
     assert find_quote([q1, q2], "999999") is None
@@ -195,6 +229,7 @@ def test_find_quote() -> None:
 
 
 # ---------- Protocol 契约 ----------
+
 
 def test_efinance_adapter_satisfies_protocol() -> None:
     """EfinanceAdapter 必须实现 MarketDataAdapter 的所有方法。"""
@@ -209,15 +244,34 @@ def test_protocol_is_runtime_checkable_with_dummy() -> None:
     class DummyAdapter:
         name = "dummy"
 
-        def get_quote(self, code): return None
-        def get_quotes(self, codes): return []
-        def list_market_quotes(self): return []
-        def get_order_book(self, code): return None
-        def get_bars(self, code, **kw): return []
-        def get_ticks(self, code, limit=None): return []
-        def get_today_money_flow(self, code): return []
-        def get_history_money_flow(self, code, days=30): return []
-        def get_belonging_boards(self, code): return []
-        def health_check(self): return True
+        def get_quote(self, code):
+            return None
+
+        def get_quotes(self, codes):
+            return []
+
+        def list_market_quotes(self):
+            return []
+
+        def get_order_book(self, code):
+            return None
+
+        def get_bars(self, code, **kw):
+            return []
+
+        def get_ticks(self, code, limit=None):
+            return []
+
+        def get_today_money_flow(self, code):
+            return []
+
+        def get_history_money_flow(self, code, days=30):
+            return []
+
+        def get_belonging_boards(self, code):
+            return []
+
+        def health_check(self):
+            return True
 
     assert isinstance(DummyAdapter(), MarketDataAdapter)

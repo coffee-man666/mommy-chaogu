@@ -4,6 +4,7 @@
 - WS /ws/quotes   — 推送最新报价快照（每 5s）
 - WS /ws/signals  — 推送触发的信号（有就推）
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,6 +22,7 @@ router = APIRouter(tags=["websocket"])
 
 # ---------- 辅助函数 ----------
 
+
 async def push_snapshot(ws: WebSocket, snapshot: Any) -> None:
     """推送报价快照。"""
     payload = snapshot_to_out(snapshot).model_dump(mode="json")
@@ -34,6 +36,7 @@ async def push_signals(ws: WebSocket, signals: list[Any]) -> None:
 
 
 # ---------- 端点 ----------
+
 
 @router.websocket("/ws/quotes")
 async def ws_quotes(

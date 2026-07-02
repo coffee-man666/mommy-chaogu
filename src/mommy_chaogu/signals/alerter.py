@@ -10,6 +10,7 @@
 - 不依赖具体 Adapter，只接收 Snapshot
 - 不依赖 CLI，纯函数式服务
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,6 +46,7 @@ class Alerter:
     def default(cls, log_path: Path | None = None) -> Alerter:
         """用默认规则集构造。"""
         from mommy_chaogu.signals.rules import default_rules
+
         return cls(default_rules(), log_path=log_path)
 
     def evaluate(self, snapshot: Snapshot) -> list[Signal]:
@@ -53,10 +55,13 @@ class Alerter:
         for rule in self.rules:
             signals = rule.evaluate(snapshot)
             all_signals.extend(signals)
-        all_signals.sort(key=lambda s: (
-            _SEVERITY_WEIGHT[s.severity],
-            s.code, s.rule_id,
-        ))
+        all_signals.sort(
+            key=lambda s: (
+                _SEVERITY_WEIGHT[s.severity],
+                s.code,
+                s.rule_id,
+            )
+        )
         return all_signals
 
     # ---------- 输出 ----------

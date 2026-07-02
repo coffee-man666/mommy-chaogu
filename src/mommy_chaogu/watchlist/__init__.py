@@ -4,6 +4,7 @@
     CLI → WatchlistStore (CRUD) → SQLite
     CLI / Monitor → WatchlistStore.get_all_codes() → MarketDataAdapter
 """
+
 from mommy_chaogu.watchlist.models import (
     Group,
     StockEntry,

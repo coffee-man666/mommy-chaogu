@@ -1,4 +1,5 @@
 """Server酱 推送测试。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -39,6 +40,7 @@ def make_mock_response(code: int = 0, msg: str = "OK") -> MagicMock:
 
 # ---------- 构造器 ----------
 
+
 def test_empty_key_raises():
     with pytest.raises(ValueError, match="不能为空"):
         ServerChanPusher("")
@@ -55,6 +57,7 @@ def test_endpoint_construction():
 
 
 # ---------- push 成功 ----------
+
 
 def test_push_success_critical():
     pusher = ServerChanPusher("test_key")
@@ -95,6 +98,7 @@ def test_push_includes_web_link_when_configured():
 
 
 # ---------- push 失败 ----------
+
 
 def test_push_failure_non_zero_code():
     pusher = ServerChanPusher("bad_key")

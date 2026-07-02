@@ -4,6 +4,7 @@
 - Quote / Bar / Tick / MoneyFlow / OrderBook / Board
 - 所有 Money / Decimal / datetime / Enum 字段都要正确转换
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ class Serializer:
 def _json_default(obj: Any) -> Any:  # type: ignore[no-untyped-def]
     return _default(obj)
 
+
 def _default(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return {"__decimal__": str(obj)}
@@ -39,6 +41,7 @@ def _default(obj: Any) -> Any:
 def _json_object_hook(d: dict[str, Any]) -> Any:  # type: ignore[no-untyped-def]
     return _hook(d)
 
+
 def _hook(d: dict[str, Any]) -> Any:
     if "__decimal__" in d:
         return Decimal(d["__decimal__"])
@@ -49,11 +52,13 @@ def _hook(d: dict[str, Any]) -> Any:
 
 # ---------- 单个 dataclass 的 encode/decode ----------
 
+
 def quote_to_dict(q: Any) -> dict[str, Any]:
     """Quote dataclass → JSON-safe dict。
 
     所有 Decimal 转 str，datetime 转 ISO str，enum 转 .value，Money 拆 amount/currency。
     """
+
     def _money(m) -> dict[str, Any] | None:
         if m is None:
             return None

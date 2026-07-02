@@ -14,6 +14,7 @@
 K线/资金流/历史数据：腾讯公开接口没有 → 用父类默认实现返回空 list。
 业务层用 FallbackAdapter 自动从东财拉这些数据。
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -37,15 +38,15 @@ _log = logging.getLogger(__name__)
 
 # 腾讯接口前缀映射
 _PREFIX_MAP = {
-    "6": "sh",   # 上证
-    "5": "sh",   # 沪基金
-    "9": "sh",   # 上证 B 股
-    "0": "sz",   # 深证
-    "3": "sz",   # 创业板
-    "1": "sz",   # 深基金
-    "4": "bj",   # 北证
-    "8": "bj",   # 北证 B 股
-    "2": "sz",   # 深 B 股
+    "6": "sh",  # 上证
+    "5": "sh",  # 沪基金
+    "9": "sh",  # 上证 B 股
+    "0": "sz",  # 深证
+    "3": "sz",  # 创业板
+    "1": "sz",  # 深基金
+    "4": "bj",  # 北证
+    "8": "bj",  # 北证 B 股
+    "2": "sz",  # 深 B 股
 }
 
 
@@ -109,10 +110,12 @@ class TencentAdapter:
     def __init__(self, timeout: float = 10.0) -> None:
         self.timeout = timeout
         self._session = requests.Session()
-        self._session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            "Referer": "https://stockapp.finance.qq.com/",
-        })
+        self._session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Referer": "https://stockapp.finance.qq.com/",
+            }
+        )
         self._last_call_ts: float = 0.0  # 简单节流，避免打爆腾讯
 
     # ---------- 内部：HTTP 请求 ----------
@@ -142,8 +145,8 @@ class TencentAdapter:
             if not line or "=" not in line:
                 continue
             try:
-                key, content = line.split("=\"", 1)
-                content = content.rstrip(";\n\"")
+                key, content = line.split('="', 1)
+                content = content.rstrip(';\n"')
             except ValueError:
                 continue
             # key 格式: v_sh600519
@@ -195,6 +198,7 @@ class TencentAdapter:
           48:  跌停价
           49:  量比
         """
+
         def f(idx: int) -> str:
             return fields[idx] if idx < len(fields) else ""
 
@@ -250,7 +254,9 @@ class TencentAdapter:
             volume_ratio=volume_ratio,
             pe_dynamic=pe,
             total_market_cap=Money(total_cap, "CNY") if total_cap is not None else None,
-            circulating_market_cap=Money(circulating_cap, "CNY") if circulating_cap is not None else None,
+            circulating_market_cap=Money(circulating_cap, "CNY")
+            if circulating_cap is not None
+            else None,
             timestamp=ts,
             quote_id=None,
         )
@@ -264,19 +270,23 @@ class TencentAdapter:
             bid_price = _dec(fields[9 + i * 2]) if 9 + i * 2 < len(fields) else None
             bid_vol_str = fields[10 + i * 2] if 10 + i * 2 < len(fields) else ""
             if bid_price and bid_price > 0:
-                bids.append(OrderBookLevel(
-                    price=bid_price,
-                    volume=int(float(bid_vol_str)) if bid_vol_str else 0,
-                ))
+                bids.append(
+                    OrderBookLevel(
+                        price=bid_price,
+                        volume=int(float(bid_vol_str)) if bid_vol_str else 0,
+                    )
+                )
         # 卖1-5: 价格在 [20, 22, 24, 26, 28]，量在 [21, 23, 25, 27, 29]
         for i in range(5):
             ask_price = _dec(fields[19 + i * 2]) if 19 + i * 2 < len(fields) else None
             ask_vol_str = fields[20 + i * 2] if 20 + i * 2 < len(fields) else ""
             if ask_price and ask_price > 0:
-                asks.append(OrderBookLevel(
-                    price=ask_price,
-                    volume=int(float(ask_vol_str)) if ask_vol_str else 0,
-                ))
+                asks.append(
+                    OrderBookLevel(
+                        price=ask_price,
+                        volume=int(float(ask_vol_str)) if ask_vol_str else 0,
+                    )
+                )
 
         if not bids and not asks:
             return None
@@ -309,7 +319,7 @@ class TencentAdapter:
         out: list[Quote] = []
         # 分批（腾讯单次最多 80）
         for i in range(0, len(codes), 80):
-            batch = codes[i:i + 80]
+            batch = codes[i : i + 80]
             results = self._fetch_raw(batch)
             for code in batch:
                 fields = results.get(code)

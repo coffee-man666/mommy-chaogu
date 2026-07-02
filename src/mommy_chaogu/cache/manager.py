@@ -1,4 +1,5 @@
 """CacheManager：高层操作（warmup / refresh / stats）。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ class CacheManager:
         """默认构造：EfinanceAdapter + CacheStore + CachedMarketDataAdapter。"""
         from mommy_chaogu.cache.adapter import CachedMarketDataAdapter
         from mommy_chaogu.market_data import EfinanceAdapter
+
         store = CacheStore(db_path)
         adapter = CachedMarketDataAdapter(EfinanceAdapter(), store, config=config)
         return cls(store, adapter)
@@ -31,6 +33,7 @@ class CacheManager:
     def warmup_market(self) -> dict[str, Any]:
         """盘前预热：拉一次全市场。"""
         from mommy_chaogu.cache.adapter import CachedMarketDataAdapter  # noqa: F401
+
         # 强制重置拉新节流，让全市场先拉一次
         self.adapter._last_fetch_attempt["market_snapshot:all"] = datetime.min.replace(tzinfo=UTC)
         quotes = self.adapter.list_market_quotes()
@@ -46,7 +49,9 @@ class CacheManager:
         # 重置节流
         for code in codes:
             self.adapter._last_fetch_attempt[f"quote:{code}"] = datetime.min.replace(tzinfo=UTC)
-            self.adapter._last_fetch_attempt[f"today_flow:{code}"] = datetime.min.replace(tzinfo=UTC)
+            self.adapter._last_fetch_attempt[f"today_flow:{code}"] = datetime.min.replace(
+                tzinfo=UTC
+            )
         for code in codes:
             q = self.adapter.get_quote(code)
             if q is not None:
@@ -108,6 +113,8 @@ class CacheManager:
                 emoji = "🔴"
             fetched = e["fetched_at"].strftime("%m-%d %H:%M:%S") if e["fetched_at"] else "—"
             quote_ts = e["quote_ts"].strftime("%m-%d %H:%M:%S") if e["quote_ts"] else "—"
-            lines.append(f"{e['code']:<8} {(e['name'] or '—')[:10]:<10} "
-                         f"{fetched:<20} {quote_ts:<20} {emoji} {age:.0f}s 前")
+            lines.append(
+                f"{e['code']:<8} {(e['name'] or '—')[:10]:<10} "
+                f"{fetched:<20} {quote_ts:<20} {emoji} {age:.0f}s 前"
+            )
         return "\n".join(lines)

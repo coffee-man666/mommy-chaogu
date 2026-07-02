@@ -7,6 +7,7 @@
 - watch_calendar()：列出未来 N 天的披露日历
 - summary()：汇总某 period 的比对结果
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -33,10 +34,10 @@ class ServiceResult:
 class EarningsService:
     """业绩高层 Service。
 
-    依赖：
-- EarningsAdapter：数据源（mock / efinance / tencent）
-- EarningsStore：本地存储（data/earnings_actual.db）
-- 外部：业绩前瞻 DB（data/earnings_preview.db，用于 score 比对）
+        依赖：
+    - EarningsAdapter：数据源（mock / efinance / tencent）
+    - EarningsStore：本地存储（data/earnings_actual.db）
+    - 外部：业绩前瞻 DB（data/earnings_preview.db，用于 score 比对）
     """
 
     def __init__(

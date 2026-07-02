@@ -6,6 +6,7 @@
 - 不触发场景返回空
 - 配置可改
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -36,6 +37,7 @@ from mommy_chaogu.signals.rules import (
 from mommy_chaogu.signals.types import SignalSeverity
 
 # ---------- Helpers ----------
+
 
 def _make_quote(
     code: str = "600519",
@@ -86,16 +88,19 @@ def _make_snapshot(rows: list[tuple[Quote, MoneyFlow | None]]) -> Snapshot:
     """rows: [(quote, flow_or_None), ...]"""
     snap_rows: list[SnapshotRow] = []
     for q, f in rows:
-        snap_rows.append(SnapshotRow(
-            entry=None,  # type: ignore[arg-type]  # rule tests don't care about entry
-            group_name="test",
-            quote=q,
-            latest_flow=f,
-        ))
+        snap_rows.append(
+            SnapshotRow(
+                entry=None,  # type: ignore[arg-type]  # rule tests don't care about entry
+                group_name="test",
+                quote=q,
+                latest_flow=f,
+            )
+        )
     return Snapshot.build(snap_rows, snapshot_id=1)
 
 
 # ========== PriceChangeThresholdRule ==========
+
 
 def test_price_change_above_warning() -> None:
     snap = _make_snapshot([(_make_quote(change_pct="3.5"), None)])
@@ -137,6 +142,7 @@ def test_price_change_custom_threshold() -> None:
 
 # ========== GapOpenRule ==========
 
+
 def test_gap_open_high() -> None:
     snap = _make_snapshot([(_make_quote(open_p="103.00", prev_close="100.00"), None)])
     signals = GapOpenRule().evaluate(snap)
@@ -163,6 +169,7 @@ def test_gap_open_zero_prev_close_skipped() -> None:
 
 
 # ========== MainFlowThresholdRule ==========
+
 
 def test_main_flow_above_warning() -> None:
     snap = _make_snapshot([(_make_quote(), _make_flow(main_yuan=60_000_000))])
@@ -191,6 +198,7 @@ def test_main_flow_missing_flow_skipped() -> None:
 
 # ========== VolumeSurgeRule ==========
 
+
 def test_volume_surge_triggers() -> None:
     snap = _make_snapshot([(_make_quote(volume_ratio="2.5"), None)])
     signals = VolumeSurgeRule().evaluate(snap)
@@ -210,6 +218,7 @@ def test_volume_surge_missing_skipped() -> None:
 
 # ========== TurnoverSurgeRule ==========
 
+
 def test_turnover_surge_triggers() -> None:
     snap = _make_snapshot([(_make_quote(turnover_rate="6.5"), None)])
     signals = TurnoverSurgeRule().evaluate(snap)
@@ -224,23 +233,28 @@ def test_turnover_surge_below() -> None:
 
 # ========== PortfolioBreadthRule ==========
 
+
 def test_portfolio_breadth_all_up() -> None:
-    snap = _make_snapshot([
-        (_make_quote("1", change_pct="1"), None),
-        (_make_quote("2", change_pct="2"), None),
-        (_make_quote("3", change_pct="-1"), None),
-    ])
+    snap = _make_snapshot(
+        [
+            (_make_quote("1", change_pct="1"), None),
+            (_make_quote("2", change_pct="2"), None),
+            (_make_quote("3", change_pct="-1"), None),
+        ]
+    )
     # 2/3 = 66.7% < 70% → 不触发
     assert PortfolioBreadthRule().evaluate(snap) == []
 
 
 def test_portfolio_breadth_triggers_above_70pct() -> None:
-    snap = _make_snapshot([
-        (_make_quote("1", change_pct="1"), None),
-        (_make_quote("2", change_pct="2"), None),
-        (_make_quote("3", change_pct="-1"), None),
-        (_make_quote("4", change_pct="3"), None),
-    ])
+    snap = _make_snapshot(
+        [
+            (_make_quote("1", change_pct="1"), None),
+            (_make_quote("2", change_pct="2"), None),
+            (_make_quote("3", change_pct="-1"), None),
+            (_make_quote("4", change_pct="3"), None),
+        ]
+    )
     # 3/4 = 75% → 触发
     signals = PortfolioBreadthRule().evaluate(snap)
     assert len(signals) == 1
@@ -255,11 +269,14 @@ def test_portfolio_breadth_empty() -> None:
 
 # ========== PortfolioMainFlowRule ==========
 
+
 def test_portfolio_main_flow_warning() -> None:
-    snap = _make_snapshot([
-        (_make_quote("1", change_pct="1"), _make_flow("1", 200_000_000)),
-        (_make_quote("2", change_pct="-1"), _make_flow("2", -50_000_000)),
-    ])
+    snap = _make_snapshot(
+        [
+            (_make_quote("1", change_pct="1"), _make_flow("1", 200_000_000)),
+            (_make_quote("2", change_pct="-1"), _make_flow("2", -50_000_000)),
+        ]
+    )
     # 合计 = +150_000_000 > 1亿 → warning
     signals = PortfolioMainFlowRule().evaluate(snap)
     assert len(signals) == 1
@@ -268,10 +285,12 @@ def test_portfolio_main_flow_warning() -> None:
 
 
 def test_portfolio_main_flow_critical() -> None:
-    snap = _make_snapshot([
-        (_make_quote("1"), _make_flow("1", 1_000_000_000)),
-        (_make_quote("2"), _make_flow("2", -300_000_000)),
-    ])
+    snap = _make_snapshot(
+        [
+            (_make_quote("1"), _make_flow("1", 1_000_000_000)),
+            (_make_quote("2"), _make_flow("2", -300_000_000)),
+        ]
+    )
     # 合计 = +700M > 5亿 → critical
     signals = PortfolioMainFlowRule().evaluate(snap)
     assert signals[0].severity == SignalSeverity.CRITICAL
@@ -283,6 +302,7 @@ def test_portfolio_main_flow_below() -> None:
 
 
 # ========== Alerter ==========
+
 
 def test_default_rules_returns_all_seven() -> None:
     rules = default_rules()
@@ -330,14 +350,17 @@ def test_signal_format_log_one_line() -> None:
 
 # ========== Alerter 集成 ==========
 
+
 def test_alerter_evaluate_multiple_rules(tmp_path: Path) -> None:
     """Alerter 接收 Snapshot，调度多个规则，合并输出。"""
     from mommy_chaogu.signals import Alerter
 
-    snap = _make_snapshot([
-        (_make_quote("600519", change_pct="6.0"), _make_flow("600519", -300_000_000)),
-        (_make_quote("000001", change_pct="1.0", volume_ratio="3.0"), None),
-    ])
+    snap = _make_snapshot(
+        [
+            (_make_quote("600519", change_pct="6.0"), _make_flow("600519", -300_000_000)),
+            (_make_quote("000001", change_pct="1.0", volume_ratio="3.0"), None),
+        ]
+    )
     alerter = Alerter.default(log_path=tmp_path / "s.log")
     signals = alerter.evaluate(snap)
 
@@ -357,13 +380,16 @@ def test_alerter_evaluate_multiple_rules(tmp_path: Path) -> None:
 
 def test_alerter_no_signal_returns_empty(tmp_path: Path) -> None:
     from mommy_chaogu.signals import Alerter
+
     # 4 只股票中 2 涨 2 跌 = 50/50，不触发任何规则
-    snap = _make_snapshot([
-        (_make_quote("1", change_pct="1.0"), None),
-        (_make_quote("2", change_pct="-1.0"), None),
-        (_make_quote("3", change_pct="0.5"), None),
-        (_make_quote("4", change_pct="-0.5"), None),
-    ])
+    snap = _make_snapshot(
+        [
+            (_make_quote("1", change_pct="1.0"), None),
+            (_make_quote("2", change_pct="-1.0"), None),
+            (_make_quote("3", change_pct="0.5"), None),
+            (_make_quote("4", change_pct="-0.5"), None),
+        ]
+    )
     alerter = Alerter.default(log_path=tmp_path / "s.log")
     signals = alerter.evaluate(snap)
     assert signals == []

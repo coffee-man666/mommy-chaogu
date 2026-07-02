@@ -6,6 +6,7 @@
 - Alerter：规则调度 + 信号评估
 - rules：内置规则集合
 """
+
 from mommy_chaogu.signals.alerter import Alerter
 from mommy_chaogu.signals.rules import (
     GapOpenRule,

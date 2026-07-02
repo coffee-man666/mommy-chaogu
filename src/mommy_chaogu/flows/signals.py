@@ -10,6 +10,7 @@ ratio 含义：
 - 例：main_net = +5000万, float_mcap = 1000亿 → ratio = 0.0005 = 5bp
 - 「5min 内 ratio 上升 5bp」= 主力在 5 分钟内吃进了流通市值 0.05% 的筹码
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -45,11 +46,11 @@ class FlowSignal:
     code: str
     name: str
     severity: Severity
-    metric: str                  # 触发指标的描述
-    ratio: Decimal               # 当前 ratio (绝对值)
-    delta_ratio: Decimal | None   # 相对上轮的变化（5min delta 类才有）
-    main_net: Decimal             # 原始主力净（元）
-    float_market_cap: Decimal     # 流通市值（元）
+    metric: str  # 触发指标的描述
+    ratio: Decimal  # 当前 ratio (绝对值)
+    delta_ratio: Decimal | None  # 相对上轮的变化（5min delta 类才有）
+    main_net: Decimal  # 原始主力净（元）
+    float_market_cap: Decimal  # 流通市值（元）
     note: str
     triggered_at: datetime = field(default_factory=_utcnow)
 
@@ -78,11 +79,17 @@ class FlowRule:
     severity: Severity
     metric: Literal["delta_5min", "cumulative_daily"]
     direction: Literal["in", "out"]
-    threshold_bp: Decimal         # 阈值（bp），5bp = 0.05%
+    threshold_bp: Decimal  # 阈值（bp），5bp = 0.05%
     description: str
 
-    def matches(self, *, ratio: Decimal, delta_ratio: Decimal | None,
-                main_net: Decimal, float_market_cap: Decimal) -> bool:
+    def matches(
+        self,
+        *,
+        ratio: Decimal,
+        delta_ratio: Decimal | None,
+        main_net: Decimal,
+        float_market_cap: Decimal,
+    ) -> bool:
         """判断当前数据是否触发本规则。"""
         threshold = self.threshold_bp / Decimal("10000")
         if self.metric == "delta_5min":
@@ -148,8 +155,8 @@ class StockSnapshot:
 
     code: str
     name: str
-    main_net: Decimal             # 主力净流入（元）
-    float_market_cap: Decimal     # 流通市值（元）
+    main_net: Decimal  # 主力净流入（元）
+    float_market_cap: Decimal  # 流通市值（元）
 
     @property
     def ratio(self) -> Decimal:
@@ -180,23 +187,26 @@ def evaluate(
         delta_ratio = (s.ratio - prev[s.code]) if s.code in prev else None
         for rule in rules:
             if not rule.matches(
-                ratio=s.ratio, delta_ratio=delta_ratio,
-                main_net=s.main_net, float_market_cap=s.float_market_cap,
-            ):
-                continue
-            metric_label = "5min delta" if rule.metric == "delta_5min" else "当日累计"
-            direction_label = "净流入" if rule.direction == "in" else "净流出"
-            signals.append(FlowSignal(
-                rule_id=rule.rule_id,
-                code=s.code,
-                name=s.name,
-                severity=rule.severity,
-                metric=f"{metric_label}·{direction_label}>{rule.threshold_bp}bp",
                 ratio=s.ratio,
                 delta_ratio=delta_ratio,
                 main_net=s.main_net,
                 float_market_cap=s.float_market_cap,
-                note=rule.description,
-            ))
+            ):
+                continue
+            metric_label = "5min delta" if rule.metric == "delta_5min" else "当日累计"
+            direction_label = "净流入" if rule.direction == "in" else "净流出"
+            signals.append(
+                FlowSignal(
+                    rule_id=rule.rule_id,
+                    code=s.code,
+                    name=s.name,
+                    severity=rule.severity,
+                    metric=f"{metric_label}·{direction_label}>{rule.threshold_bp}bp",
+                    ratio=s.ratio,
+                    delta_ratio=delta_ratio,
+                    main_net=s.main_net,
+                    float_market_cap=s.float_market_cap,
+                    note=rule.description,
+                )
+            )
     return signals
-

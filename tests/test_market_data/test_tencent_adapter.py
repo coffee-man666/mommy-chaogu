@@ -3,6 +3,7 @@
 腾讯部分用 mock response（避免测试依赖外部网络）；
 fallback 部分用 mock adapter。
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -29,9 +30,9 @@ _MOCK_TENCENT_RAW = (
     'v_sh600519="1~XD贵州茅~600519~1168.63~1184.08~1199.00~50066~20841~29226~'
     "1168.63~2~1168.60~2~1168.52~1~1168.51~1~1168.50~4~1168.78~1~1168.80~7~"
     "1168.81~5~1168.82~142~1168.98~1~~20260626161408~-15.45~-1.30~1199.00~1168.10~"
-    '1168.63/50066/5922014054~50066~592201~0.40~17.66~~1199.00~1168.10~2.61~'
-    '14608.83~14608.83~6.27~1302.49~1065.67~0.94~-146~1182.83~13.41~17.75~~~'
-    '0.34~592201.4054~0.0000~0~ ~GP-A~-13.38~-1.55~4.45~30.53~26.78~1539.98~'
+    "1168.63/50066/5922014054~50066~592201~0.40~17.66~~1199.00~1168.10~2.61~"
+    "14608.83~14608.83~6.27~1302.49~1065.67~0.94~-146~1182.83~13.41~17.75~~~"
+    "0.34~592201.4054~0.0000~0~ ~GP-A~-13.38~-1.55~4.45~30.53~26.78~1539.98~"
     '1168.10~-6.58~-6.36~-15.80~1250081601~1250081601~-87.95~-16.61~12500...";'
 )
 
@@ -53,8 +54,11 @@ def _mock_session_with_response(text: str):
 def _patch_session(monkeypatch, text: str) -> None:
     """把 TencentAdapter._session 替换成 mock。"""
     from mommy_chaogu.market_data import tencent_adapter
+
     monkeypatch.setattr(
-        tencent_adapter.TencentAdapter, "__init__", lambda self, timeout=10.0: None,
+        tencent_adapter.TencentAdapter,
+        "__init__",
+        lambda self, timeout=10.0: None,
         raising=False,
     )
     # 重新构造 session
@@ -68,6 +72,7 @@ def _patch_session(monkeypatch, text: str) -> None:
 
 
 # ---------- TencentAdapter 单测 ----------
+
 
 def test_tencent_protocol_satisfies() -> None:
     a = TencentAdapter()
@@ -122,14 +127,14 @@ def test_tencent_get_quote_unknown_code_returns_none(monkeypatch: pytest.MonkeyP
 def test_tencent_get_quotes_batch(monkeypatch: pytest.MonkeyPatch) -> None:
     """批量：返回多个 code。"""
     batch_raw = (
-        _MOCK_TENCENT_RAW +
-        '\nv_sz000001="51~平安银行~000001~10.23~10.42~10.42~1236482~480819~755663~'
-        '10.23~236~10.22~7029~10.21~6570~10.20~16561~10.19~6604~10.24~2867~10.25~'
-        '1783~10.26~1525~10.27~1022~10.28~2501~~20260626161457~-0.19~-1.82~10.47~'
-        '10.19~10.23/1236482/1270902948~1236482~127090~0.64~4.61~~10.47~10.19~'
-        '2.69~1985.19~1985.23~0.43~11.46~9.38~1.01~27302~10.28~3.42~4.66~~~0.39~'
-        '127090.2948~0.0000~0~ ~GP-A~-7.42~-2.76~5.83~7.91~0.71~12.73~10.07~-6.49~'
-        '-0.68~-4.03~19405600653~19405918198~58.47~-5.14~19405600653~~~-13.41~-0.10'
+        _MOCK_TENCENT_RAW
+        + '\nv_sz000001="51~平安银行~000001~10.23~10.42~10.42~1236482~480819~755663~'
+        "10.23~236~10.22~7029~10.21~6570~10.20~16561~10.19~6604~10.24~2867~10.25~"
+        "1783~10.26~1525~10.27~1022~10.28~2501~~20260626161457~-0.19~-1.82~10.47~"
+        "10.19~10.23/1236482/1270902948~1236482~127090~0.64~4.61~~10.47~10.19~"
+        "2.69~1985.19~1985.23~0.43~11.46~9.38~1.01~27302~10.28~3.42~4.66~~~0.39~"
+        "127090.2948~0.0000~0~ ~GP-A~-7.42~-2.76~5.83~7.91~0.71~12.73~10.07~-6.49~"
+        "-0.68~-4.03~19405600653~19405918198~58.47~-5.14~19405600653~~~-13.41~-0.10"
         '~~CNY~0~~10.18~7876~";'
     )
     _patch_session(monkeypatch, batch_raw)
@@ -172,6 +177,7 @@ def test_tencent_unsupported_methods_return_empty() -> None:
 
 
 # ---------- FallbackAdapter 单测 ----------
+
 
 class BrokenAdapter:
     name = "broken"
@@ -246,14 +252,24 @@ class GoodAdapter:
 
 def _make_quote() -> Quote:
     return Quote(
-        code="600519", name="测试", market=MarketType.SH,
+        code="600519",
+        name="测试",
+        market=MarketType.SH,
         quote_type=QuoteType.STOCK,
-        price=Decimal("100"), open=Decimal("100"), high=Decimal("100"),
-        low=Decimal("100"), prev_close=Decimal("100"),
-        change=Decimal("0"), change_pct=Decimal("0"),
-        volume=0, turnover=Money.from_yuan(0),
-        turnover_rate=None, volume_ratio=None, pe_dynamic=None,
-        total_market_cap=None, circulating_market_cap=None,
+        price=Decimal("100"),
+        open=Decimal("100"),
+        high=Decimal("100"),
+        low=Decimal("100"),
+        prev_close=Decimal("100"),
+        change=Decimal("0"),
+        change_pct=Decimal("0"),
+        volume=0,
+        turnover=Money.from_yuan(0),
+        turnover_rate=None,
+        volume_ratio=None,
+        pe_dynamic=None,
+        total_market_cap=None,
+        circulating_market_cap=None,
         timestamp=datetime.now(UTC),
     )
 
@@ -285,18 +301,39 @@ def test_fallback_primary_fails_uses_secondary() -> None:
 
 def test_fallback_primary_returns_none_falls_back() -> None:
     """主源返回 None → 触发 fallback。"""
+
     class EmptyAdapter:
         name = "empty"
-        def get_quote(self, code): return None
-        def get_quotes(self, codes): return []
-        def list_market_quotes(self): return []
-        def get_order_book(self, code): return None
-        def get_bars(self, code, **kw): return []
-        def get_ticks(self, code, limit=None): return []
-        def get_today_money_flow(self, code): return []
-        def get_history_money_flow(self, code, days=30): return []
-        def get_belonging_boards(self, code): return []
-        def health_check(self): return False
+
+        def get_quote(self, code):
+            return None
+
+        def get_quotes(self, codes):
+            return []
+
+        def list_market_quotes(self):
+            return []
+
+        def get_order_book(self, code):
+            return None
+
+        def get_bars(self, code, **kw):
+            return []
+
+        def get_ticks(self, code, limit=None):
+            return []
+
+        def get_today_money_flow(self, code):
+            return []
+
+        def get_history_money_flow(self, code, days=30):
+            return []
+
+        def get_belonging_boards(self, code):
+            return []
+
+        def health_check(self):
+            return False
 
     fb = FallbackAdapter([EmptyAdapter(), GoodAdapter()])
     q = fb.get_quote("600519")
@@ -330,6 +367,7 @@ def test_fallback_health_check_all_false() -> None:
 
 def test_fallback_does_not_call_secondary_when_primary_works() -> None:
     """主源 OK 时不调次源。"""
+
     class CountingGood(GoodAdapter):
         def __init__(self, name="counting"):
             super().__init__()

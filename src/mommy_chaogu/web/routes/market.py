@@ -1,4 +1,5 @@
 """/api/market 路由：市场行情扫描 + 大盘指数 + 板块排行。"""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -91,14 +92,16 @@ def _ranking(quotes: list[object], top: str, limit: int) -> list[dict[str, objec
     filtered.sort(key=lambda x: x[1], reverse=(top == "up"))
     out: list[dict[str, object]] = []
     for q, pct in filtered[:limit]:
-        out.append({
-            "code": str(getattr(q, "code", "")),
-            "name": str(getattr(q, "name", "")),
-            "price": str(getattr(q, "price", 0)),
-            "change_pct": str(pct),
-            "change": str(getattr(q, "change", 0)),
-            "volume": int(getattr(q, "volume", 0)),
-            "turnover": str(q.turnover.amount if getattr(q, "turnover", None) else 0),
-            "market": q.market.value if getattr(q, "market", None) else "",
-        })
+        out.append(
+            {
+                "code": str(getattr(q, "code", "")),
+                "name": str(getattr(q, "name", "")),
+                "price": str(getattr(q, "price", 0)),
+                "change_pct": str(pct),
+                "change": str(getattr(q, "change", 0)),
+                "volume": int(getattr(q, "volume", 0)),
+                "turnover": str(q.turnover.amount if getattr(q, "turnover", None) else 0),
+                "market": q.market.value if getattr(q, "market", None) else "",
+            }
+        )
     return out
