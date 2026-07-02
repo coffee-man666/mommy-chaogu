@@ -16,6 +16,7 @@
 - ✅ **M4** — 持仓 + 语音录入 + 资金流图表 + 盘面扫描
 - ✅ **M5** — 半导体产业链参考库 + 资金流 ratio 监控 + 收盘日报
 - ✅ **M5.3** — OpenClaw cron 4 jobs 自动化（盘前/盘中/收盘/周报）
+- ✅ **M7** — Agent-Centric 重构（LLM agent + 工具调用 + Web 对话页）
 - ⏳ **M6** — 详情页驾驶舱 / 复盘报告 / CI
 
 **新接触项目**？看 [`docs/PROJECT-LOG.md`](docs/PROJECT-LOG.md) — 一站式总览。详见 [`docs/PROGRESS.md`](docs/PROGRESS.md)
@@ -61,6 +62,11 @@ mommy-chaogu/
 │   ├── cache/           # 装饰器链（5 张表 + 节流 + freshness）
 │   ├── web/             # FastAPI 后端（Web UI 服務）
 │   ├── push/            # Server酱 微信推送（Pusher/Deduper Protocol）
+│   ├── agent/            # LLM agent（工具调用 + 推理）
+│   │   ├── tools.py             # 11 个 function-calling tools
+│   │   ├── service.py           # AgentService（deepseek/openai/kimi）
+│   │   ├── prompt.py            # system prompt
+│   │   └── reports.py           # agent 收盘日报
 │   └── cli.py           # argparse 入口
 ├── web/                 # Vite + Vue 3 前端（H5 / 手机友好）
 ├── tests/               # 154 测试（145 离线 + 9 实时网络）
@@ -68,6 +74,7 @@ mommy-chaogu/
 │   ├── smoke_market_data.py  # 行情冒烟
 │   ├── demo_signals.py       # 信号 mock 演示
 │   └── demo_cache.py         # 缓存 mock 演示
+│   # 还有 mommy-agent — AI 行情助手（chat / report / tools）
 └── data/                # 运行时数据（不入库）
     ├── watchlist.db
     ├── monitor.log
@@ -101,6 +108,12 @@ export SERVER_CHAN_KEY="SCT123xxx"
 export WEB_BASE_URL="https://mommy.example.com"
 uv run mommy-web --port 8765
 
+# AI 行情助手
+export DEEPSEEK_API_KEY="sk-xxx"     # 或 OPENAI_API_KEY / MOONSHOT_API_KEY
+uv run mommy-agent chat              # 交互式对话
+uv run mommy-agent report --board BK1106 --board-name "创新药"  # 板块分析日报
+uv run mommy-agent tools             # 列出所有工具
+
 # 开发
 uv run pytest                      # 跑测试（154）
 uv run ruff check .                # lint
@@ -122,6 +135,9 @@ mommy-chaogu
 │   └── snapshots / config
 └── mommy-web          # Web 服务（手机 UI + WS 推送）
     └── --port / --poll-interval / --server-chan-key / --web-base-url
+└── mommy-agent        # AI 行情助手
+    ├── chat / report / tools
+    └── --provider deepseek|openai|kimi
 ```
 
 ## 📱 Web UI 使用（妈妈手机）
@@ -135,11 +151,12 @@ http://<mac-mini-ip>:8765/
 # 例：http://192.168.10.84:8765/
 ```
 
-4 个页面：
+5 个页面：
 - **首页** — 5 只自选股 + 主力合计 + 涨跌统计 + WebSocket 实时推送
 - **详情** — K 线（klinecharts）+ MA5/10/30/60 + 5 档盘口 + 资金流
 - **信号** — 触发历史（点跳详情页 K 线）
 - **设置** — 服务状态 + 缓存命中率 + 自选股 CRUD
+- **问** — AI 对话（问行情、问持仓、问板块分析，WebSocket 流式回复）
 
 ## 🔔 Server酱 微信推送
 
@@ -181,17 +198,19 @@ uv run mommy-web --port 8765
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~12000 行（src 7300 + tests 2270 + web Vite 2000 + scripts 391） |
-| 测试 | **154**（145 离线 + 9 实时网络） |
+| 代码量 | ~16,600 行（src 11000 + tests 2600 + web 3000） |
+| 测试 | **217**（196 离线 + 9 实时网络 + 12 agent mock） |
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
 | pytest | ✅ 145 passed / 9 flaky live |
 | 数据源 | 2（efinance 主 + tencent 备） |
-| CLI 子命令 | 4 子应用 / 18 子命令 |
+| CLI 子命令 | 5 子应用 / 21 子命令 |
 | 业务规则 | 7 |
 | 数据库表 | 8 + 推送去重 1 |
-| Web 端点 | 14 REST + 2 WebSocket |
+| Web 端点 | 15 REST + 3 WebSocket |
 | 推送渠道 | Server酱³（微信） |
+| AI 工具 | 11 个 function-calling tools |
+| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi |
 
 ## 当前里程碑
 

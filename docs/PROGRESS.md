@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-01 18:45
+最后更新：2026-07-01（M7 Agent-Centric on `feature/agent-centric` branch）
 
 ---
 
@@ -10,9 +10,10 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **M6.x 完成（cron 修复 + reports 结构化 + supply_chains 数据资产）** |
-| 代码量 | **~14,200+ 行**（Python src 9300 + tests 2400 + web 2500） |
-| 测试 | **125+ 个**（119 离线通过 + 6 实时网络） |
+| 项目阶段 | **M7 Agent-Centric 重构完成（LLM agent 层 + 11 工具 + Web 聊天）** |
+| 代码量 | **~16,600 行**（Python src ~11,000 + tests ~2,600 + web ~3,000） |
+| 测试 | **217 个通过**（含 +21 agent 测试 + M4-M5 补充） |
+| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，11 function-calling 工具，Web 聊天 + 流式推送） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
@@ -26,26 +27,38 @@
 
 ```
               📱 妈妈手机                📱 妈妈微信（Server酱³）
-              Web 主动看                      ↑ 被动收
+              Web 主动看 + 💬 Agent 聊天        ↑ 被动收
                     ↑                          │
                     │ HTTP/WS                  │ POST https://sctapi.ftqq.com/{key}.send
                     │                          │
         ┌─────────────────────────────┐        │
         │  Vite-built 静态文件         │        │
+        │  ├─ 行情/持仓/盘面 Tab       │        │
+        │  └─ 💬 Agent 聊天页          │        │
         └────────────┬────────────────┘        │
                      ↓                          │
         ┌─────────────────────────────┐        │
         │  FastAPI (uvicorn :8000)    │        │
         │  ├─ /api/* REST (20+ 端点)  │        │
+        │  ├─ /api/agent/chat (LLM)   │        │
         │  ├─ /ws/* WebSocket          │        │
+        │  │   └─ /ws/agent (流式)     │        │
         │  └─ 后台轮询（5s）+ WS 广播  │        │
         └────────────┬────────────────┘        │
                      ↓                          │
         ┌─────────────────────────────┐        │
         │  BackgroundService          │────────┘
         │  ├─ snapshot + signals      │
-        │  └─ SignalNotifier          │ ← 推送：阈值过滤 + JSON 去重 + 微信
+        │  ├─ SignalNotifier          │ ← 推送：阈值过滤 + JSON 去重 + 微信
+        │  └─ AgentReportService      │ ← agent 驱动的盘后报告（可选）
         └────────────┬────────────────┘
+                     ↓
+        ┌──────────────────────────────────────────┐
+        │  AgentService (LLM + tools loop)          │ ← NEW M7
+        │  ├─ deepseek-chat (默认，~0.001元/1k tok) │
+        │  ├─ 11 function-calling 工具             │
+        │  └─ system prompt（ratio bp 分析原则）    │
+        └────────────┬─────────────────────────────┘
                      ↓
         ┌─────────────────────────────┐
         │  CachedMarketDataAdapter    │
@@ -55,12 +68,62 @@
         │  └─ TencentAdapter  (备)     │
         └─────────────────────────────┘
                      + 东方财富 push2.eastmoney.com 直连
-                       （大盘指数 / 板块排行 / 龙虎榜）
+                       （大盘指数 / 板块排行 / 板块成分股 / 龙虎榜）
 ```
 
 ---
 
 ## 已完成的里程碑
+
+### ✅ M7: Agent-Centric 重构（Phase 1-4，`feature/agent-centric` 分支，commit `b425f91`）
+
+> **核心架构转变**：从硬编码 if-else 规则转向 LLM agent 驱动的智能分析。
+>
+> - **OLD**：Data → 7 if-else rules → push「主力净流入 1.2亿」
+> - **NEW**：Data → LLM agent（理解上下文、叙事、市场情绪）→ push 分析报告
+>
+> Agent 与现有系统并存，`signals/` 里的 7 条规则保留为 fallback，**未删除**。
+
+#### 新增模块
+
+| 文件 | 内容 |
+|---|---|
+| `src/mommy_chaogu/agent/tools.py` | **11 个 function-calling 工具**，封装现有数据接口（get_quote, get_quotes, get_market_indexes, get_sector_ranking, search_sector, get_sector_stocks, get_money_flow_today, get_money_flow_history, get_bars, get_watchlist, get_portfolio） |
+| `src/mommy_chaogu/agent/service.py` | **AgentService** — LLM + tools 循环，支持 deepseek/openai/kimi（统一走 OpenAI SDK） |
+| `src/mommy_chaogu/agent/prompt.py` | system prompt — ratio-based bp 分析原则（不是硬 if-else） |
+| `src/mommy_chaogu/agent/reports.py` | **AgentReportService** — agent 驱动的盘后报告生成 |
+| `src/mommy_chaogu/market_data/sector_api.py` | **东方财富板块成分股 API** — `fetch_sector_stocks()` + `search_sector()` |
+
+#### 新增 CLI / Web / 前端
+
+| 类型 | 文件 | 内容 |
+|---|---|---|
+| CLI | `pyproject.toml` + `cli.py` | **`mommy-agent`** 入口 — chat / report / tools 子命令（~130 行） |
+| Web 后端 | `src/mommy_chaogu/web/routes/agent.py` | `POST /api/agent/chat` + `WS /ws/agent`（流式） |
+| Web 依赖 | `web/deps.py` | `get_agent_service()` 单例（懒加载，无 API key 时返回 None） |
+| 前端 | `web/src/pages/agent/index.vue` | 聊天 UI 页 — 快捷问题 + WebSocket 流式 |
+| 前端 | `web/src/api/agent.ts` | agent API client |
+
+#### 改造文件
+
+| 文件 | 改动 |
+|---|---|
+| `pyproject.toml` | +`openai` 依赖，+`mommy-agent` entry point |
+| `cli.py` | +agent 子命令（~130 行） |
+| `web/app.py` | +agent router |
+| `web/src/router/index.ts` | +`/agent` 路由 |
+| `web/src/App.vue` | +💬 问 tab |
+
+#### 测试
+
+- **+21 个 agent 测试**（工具封装 / service 循环 / prompt 构建 / sector_api）
+- 总测试数：**217 通过**（含 M4-M5 补充）
+
+#### 成本
+
+- 默认 LLM：`deepseek-chat`，成本 ~0.001 元 / 1k tokens
+
+---
 
 ### ✅ 数据层（M0–M2.5，5 个 milestone）
 | ID | commit | 标题 | 行数 |
@@ -112,6 +175,7 @@
 | **持仓管理** | — | ✅ | ✅ 持仓页 + 总览 + 盈亏 | — | — |
 | **语音录入持仓** | 浏览器 SpeechRecognition | — | ✅ 语音弹窗 | — | — |
 | 信号告警（7 条规则） | — | — | ✅ 信号中心 | ✅ 实时 | ✅ JSON 去重 |
+| **AI Agent 聊天** | ✅ 全量接口（11 工具） | ✅ | ✅ 💬 问 Tab（流式） | ✅ ratio 分析 | ✅ AgentReportService |
 | 数据新鲜度报告 | — | ✅ | ✅ 设置页 | ❌ | — |
 | 微信推送（Server酱³） | — | — | ⚠️ 设置页未集成入口 | ✅ 阈值过滤 | ✅ Markdown + 链接 |
 
@@ -174,11 +238,12 @@ src/mommy_chaogu/monitor/         10 轮询（Mock adapter）
 src/mommy_chaogu/signals/         31 规则（每条 3-5 case）
 src/mommy_chaogu/cache/           26 命中/拉新/失败/节流/历史/Manager
 src/mommy_chaogu/push/            29 server_chan + deduper + notifier
+src/mommy_chaogu/agent/           21 工具封装 + service 循环 + prompt + sector_api  ← NEW M7
 src/mommy_chaogu/portfolio/       ⚠️ TODO — 当前 0 测试，急补
 src/mommy_chaogu/web/             ⚠️ TODO — 后端单测
 src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
                               ───
-                              154 total（145 离线 + 9 live） + M4 未补
+                              217 total（离线 + agent + M4-M5 补充）
 ```
 
 - `ruff`: All checks passed
@@ -208,6 +273,7 @@ src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
 |---|---|---|
 | Mac mini 内网 IP，妈妈出门不能访问 | 只能在 WiFi 下用 | Cloudflare Tunnel / frp |
 | 主力净流入榜没有（数据源限制） | 扫盘缺一个核心维度 | 直连东财 push2 自爬 |
+| **Agent 需要 LLM API key** | 无 key 时 agent 功能返回 None，降级为纯规则 | 配 deepseek（~0.001元/1k tok） |
 | portfolio / rankings / web 后端单测未补 | 回归风险 | 半天搞定 |
 | 没 PWA（不能加桌面） | 每次打开浏览器 | 半小时 |
 | 没复盘报告 | 每天收盘后妈妈要自己看 | P1 |
@@ -220,7 +286,12 @@ src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
 
 ## 下一步候选（按团长优先级）
 
-> 📅 2026-07-01 18:45 更新：M6.x 完成，下面反映的是 7/1 实战后的优先级。
+> 📅 2026-07-01 更新：M7 Agent-Centric 重构完成（Phase 1-4），下一步进入 Phase 5。
+
+### 🔜 Phase 5 — Agent 盘中监控（下一个大件）
+1. **Agent 盘中定时分析** —— 基于现有 11 工具，定时让 agent 扫自选股 + 板块，自动推送分析报告
+2. **Agent + signals 融合** —— 让 agent 在规则触发时补充上下文分析（而非单纯 push「主力净流入 1.2亿」）
+3. **Agent 报告 cron 集成** —— 15:30 收盘报告由 AgentReportService 生成，替代纯模板
 
 ### ✅ 已验证（7/1 实战）
 1. **cron 链路实跑** —— 4 个 job 修后于 7/1 8:30 盘前预热成功（拉了 105/106 只半导体资金流，hub 实际收到 webhook）

@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-06-29 17:35（M3.2.1 cron 自动化完成）
+> 最后更新：2026-07-01（M7 Agent-Centric Phase 1-4，branch feature/agent-centric）
 
 ---
 
@@ -16,16 +16,17 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **M3.2.1 完成**（资金流 ratio 监控 + cron 自动化） |
+| 项目阶段 | **M7 Agent-Centric Phase 1-4**（feature/agent-centric 分支） |
 | 累计 commits | **15+** 推 main |
-| 代码量 | **~13,000 行** Python（src 8500 + tests 2270 + web 2500） |
-| 测试 | **154 个**（145 离线 + 9 实时网络） |
+| 代码量 | **~16,600 行**（src 11000 + tests 2600 + web 3000） |
+| 测试 | **217 个**（196 离线 + 9 实时网络 + 12 agent mock） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
 | 数据源 | 东财（主）+ 腾讯（仅 quote 兜底） |
 | 数据点 | 5 只自选股 + 106 只半导体产业链股 |
 | 缓存 | `data/watchlist.db`（cache）+ `data/semicon.db`（产业链 reference） |
 | 自动化 | 4 个 OpenClaw cron jobs（盘前预热/盘中监控/收盘日报/周报） |
 | 微信推送 | Server酱 bot，目标 = 团长当前聊天 |
+| AI Agent | 11 tools + AgentService（deepseek/openai/kimi）+ Web 对话页 |
 
 ---
 
@@ -52,6 +53,28 @@
 ## 2. 关键里程碑（全链路）
 
 > 时间倒序：M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+
+### M7（2026-07-01） — Agent-Centric 重构（Phase 1-4）🤖
+
+**痛点**：7 条 if-else 规则没有语境感知，"主力净流入 8000万"在牛市是噪声在熊市是信号。
+
+**对策**：引入 LLM agent 作为核心推理层，规则退居二线。
+
+| Phase | 内容 | 文件 |
+|---|---|---|
+| 1 | 11 个 function-calling tools | agent/tools.py + market_data/sector_api.py |
+| 2 | AgentService（LLM + tools 循环） | agent/service.py + agent/prompt.py |
+| 3 | Agent 收盘日报 + CLI | agent/reports.py + cli.py (mommy-agent) |
+| 4 | Web 对话页 | web/routes/agent.py + web/src/pages/agent/index.vue |
+
+**设计要点**：
+- 数据层完全不动（market_data / cache / flows 原样保留）
+- 7 条 signals 规则保留为 fallback，不删
+- Agent 工具中立：兼容 OpenAI / DeepSeek / Kimi（通过 AGENT_PROVIDER 环境变量切换）
+- 无 API key 时优雅降级（Web 对话页返回"未配置"提示，不崩溃）
+- WebSocket 流式回复（分 chunk 发送，打字机效果）
+
+**新增 11 个工具**：get_quote / get_quotes / get_market_indexes / get_sector_ranking / search_sector / get_sector_stocks / get_money_flow_today / get_money_flow_history / get_bars / get_watchlist / get_portfolio
 
 ### M3.2.1（2026-06-29 17:30） — OpenClaw cron 自动化 🔧
 
@@ -192,6 +215,15 @@
 │  ├─ /api/* REST 端点（行情 / 自选 / 资金流 / 持仓）             │
 │  ├─ /ws/* WebSocket（实时推送）                                 │
 │  └─ BackgroundService（5s 轮询 + signal 评估 + 微信推送）       │
+└────────────────┬───────────────────────────────────────────────────────┘
+                 ↓
+┌────────────────────────────────────────────────────────────────┐
+│  🤖 Agent 层（LLM + 工具调用）                                 │
+│  ├─ POST /api/agent/chat（单轮问答）                          │
+│  ├─ WS /ws/agent（流式对话）                                   │
+│  ├─ AgentService（deepseek/openai/kimi 可切换）                │
+│  ├─ ToolRegistry（11 个工具：quote/sector/flow/bars/...）      │
+│  └─ AgentReportService（agent 生成收盘分析日报）               │
 └────────────────┬───────────────────────────────────────────────┘
                  ↓
 ┌────────────────────────────────────────────────────────────────┐
@@ -284,6 +316,12 @@ agentTurn prompt 提取关键指标 → 微信推送
 - **ruff + mypy --strict** — 质量门
 - **测试金字塔** — 大量单元 + 适量集成 + 少量 E2E
 - **subagent 并行** — 团长喜欢，但任务要真独立才并行
+
+### Agent 层 ⭐
+- **工具中立** — ToolRegistry 包装现有 adapter，不耦合具体 LLM provider
+- **规则退居二线** — 7 条 if-else 保留为 fallback，默认路径走 agent 推理
+- **system prompt 内嵌分析原则** — bp 比率思维、量价关系、板块联动，但以"参考"表达
+- **无 API key 优雅降级** — 不崩溃，返回提示文本
 
 ---
 
