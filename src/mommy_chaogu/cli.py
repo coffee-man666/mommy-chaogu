@@ -1395,6 +1395,91 @@ def cmd_agent_tools(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent_scan(args: argparse.Namespace) -> int:
+    """单次 agent 扫描。"""
+    from mommy_chaogu.agent.monitor import AgentMonitor
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+
+    notifier = _build_notifier(args)
+
+    monitor = AgentMonitor(
+        agent=agent,
+        adapter=ctx.adapter,  # type: ignore[attr-defined]
+        watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
+        notifier=notifier,
+    )
+
+    print("🔍 Agent 盘中扫描...")
+    print("─" * 60)
+    monitor.scan_once()
+    # scan_once 内部已打印
+    return 0
+
+
+def cmd_agent_monitor(args: argparse.Namespace) -> int:
+    """持续 agent 监控。"""
+    from mommy_chaogu.agent.monitor import AgentMonitor
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+
+    notifier = _build_notifier(args)
+
+    monitor = AgentMonitor(
+        agent=agent,
+        adapter=ctx.adapter,  # type: ignore[attr-defined]
+        watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
+        notifier=notifier,
+        interval_seconds=args.interval,
+    )
+
+    print(f"🤖 Agent 监控启动（每 {args.interval:.0f}s 扫描一次）")
+    if notifier:
+        print("   📱 微信推送已启用")
+    if args.max_seconds:
+        print(f"   ⏰ 最大运行 {args.max_seconds:.0f}s ({args.max_seconds / 3600:.1f}h)")
+    print("   Ctrl+C 退出")
+    print("=" * 60)
+
+    monitor.run(max_seconds=args.max_seconds)
+    return 0
+
+
+def _build_notifier(args: argparse.Namespace) -> object:
+    """从 args + 环境变量构造 SignalNotifier（无 key 返回 None）。"""
+    import os
+
+    key = os.environ.get("SERVER_CHAN_KEY", "")
+    if not key or not getattr(args, "push", False):
+        return None
+
+    from pathlib import Path
+
+    from mommy_chaogu.push import JsonFileDeduper, ServerChanPusher, SignalNotifier
+    from mommy_chaogu.signals import SignalSeverity
+
+    push_db = Path("data/pushed.json")
+    pusher = ServerChanPusher(send_key=key)
+    deduper = JsonFileDeduper(push_db)
+    return SignalNotifier(
+        pusher=pusher,
+        deduper=deduper,
+        severity_threshold=SignalSeverity.WARNING,
+    )
+
+
 def build_agent_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-agent",
@@ -1425,6 +1510,20 @@ def build_agent_parser() -> argparse.ArgumentParser:
 
     # tools
     sub.add_parser("tools", help="列出所有可用工具").set_defaults(func=cmd_agent_tools)
+
+    # scan
+    p_scan = sub.add_parser("scan", help="单次 agent 盘中扫描")
+    p_scan.add_argument("--push", action="store_true", help="推送到微信")
+    p_scan.set_defaults(func=cmd_agent_scan)
+
+    # monitor
+    p_mon = sub.add_parser("monitor", help="持续 agent 监控（每 N 秒扫描一次）")
+    p_mon.add_argument("--interval", type=float, default=180.0,
+                       help="扫描间隔秒 (默认 180)")
+    p_mon.add_argument("--max-seconds", type=float, default=None,
+                       help="最大运行秒（如 19800 = 5.5h 一个交易日）")
+    p_mon.add_argument("--push", action="store_true", help="推送到微信")
+    p_mon.set_defaults(func=cmd_agent_monitor)
 
     return p
 
