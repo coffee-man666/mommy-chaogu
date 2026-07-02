@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Mypy type check
+        run: uv run mypy --strict src
+
+      - name: Pytest (offline)
+        run: uv run pytest -m "not network" -v --tb=short
+
+      - name: Show summary
+        if: always()
+        run: |
+          echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Python: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- OS: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Date: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  build:
+    name: Build check
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Sync dependencies
+        run: uv sync --extra dev
+      - name: Verify CLI commands
+        run: |
+          uv run mommy-watchlist --help
+          uv run mommy-monitor --help
+          uv run mommy-cache --help
+          uv run mommy-earnings --help
+          uv run mommy-flows --help
+          uv run mommy-semicon --help
+          uv run mommy-report --help
