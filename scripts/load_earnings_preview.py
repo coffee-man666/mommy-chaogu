@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 
 DB_PATH = Path("data/earnings_preview.db").resolve()
@@ -299,7 +298,7 @@ def print_summary(conn: sqlite3.Connection) -> None:
         (REPORT_PERIOD,),
     )
     for row in cursor.fetchall():
-        code, name, sector, sub, gt, drv, hl = row
+        code, name, sector, sub, gt, drv, _hl = row
         watch = " ⭐" if code == "603662" else ""
         print(f"  {gt:>14}  {code} {name:　<6} {sector}/{sub} | {drv}{watch}")
 
@@ -338,29 +337,34 @@ def main() -> None:
         conn.close()
     else:
         print("[DRY-RUN 模式] 不写库，仅预览：\n")
-        # 模拟一个连接器打印
-        class DummyConn:
-            def cursor(self): return self
-            def execute(self, *a, **k): pass
-            def commit(self): pass
-            def close(self): pass
-            def fetchone(self): return (len(DATA),)
-            def fetchall(self):
-                # 返回 v_sector_summary 风格的假数据
-                from collections import defaultdict
-                agg = defaultdict(list)
-                for row in DATA:
-                    sector = row[2]
-                    agg[sector].append((row[4], row[5]))
-                return [
-                    (s, len(v), sum((a+b)/2 for a,b in v)/len(v),
-                     max(b for _,b in v), min(a for a,_ in v),
-                     sum(1 for a,b in v if b >= 200),
-                     sum(1 for a,b in v if 50 <= b < 200),
-                     sum(1 for a,b in v if b < 0))
-                    for s, v in sorted(agg.items(), key=lambda x: -sum((a+b)/2 for a,b in x[1])/len(x[1]))
-                ]
-        load_data(DummyConn(), dry_run=True)
+        # 直接打印 DATA，不走 DB
+        from collections import defaultdict
+
+        agg: dict[str, list[tuple[float, float]]] = defaultdict(list)
+        for row in DATA:
+            agg[row[2]].append((row[4], row[5]))  # (low, high)
+
+        print(f"{'板块':　<14} {'家数':>4} {'平均增速':>10} {'最高':>10} {'+200%':>5} {'+50~+200':>8} {'下滑':>4}")
+        print("-" * 70)
+        for sector, vals in sorted(
+            agg.items(),
+            key=lambda x: -sum((a + b) / 2 for a, b in x[1]) / len(x[1]),
+        ):
+            n = len(vals)
+            avg = sum((a + b) / 2 for a, b in vals) / n
+            mx = max(b for _, b in vals)
+            explosive = sum(1 for a, b in vals if b >= 200)
+            high = sum(1 for a, b in vals if 50 <= b < 200)
+            decline = sum(1 for a, b in vals if b < 0)
+            print(f"{sector:　<14} {n:>4} {avg:>+9.1f}% {mx:>+9.1f}% {explosive:>5} {high:>8} {decline:>4}")
+
+        print()
+        print("=== 全部记录预览 ===")
+        for row in DATA:
+            code, name, sector, sub, _low, _high, text, drv, _hl = row
+            watch = " ⭐" if code == "603662" else ""
+            print(f"  [{text:>14}] {code} {name:　<6} {sector}/{sub} | {drv}{watch}")
+        print(f"\n总计: {len(DATA)} 家公司")
 
 
 if __name__ == "__main__":
