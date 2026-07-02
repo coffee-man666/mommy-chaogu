@@ -16,7 +16,7 @@
 - ✅ **M4** — 持仓 + 语音录入 + 资金流图表 + 盘面扫描
 - ✅ **M5** — 半导体产业链参考库 + 资金流 ratio 监控 + 收盘日报
 - ✅ **M5.3** — OpenClaw cron 4 jobs 自动化（盘前/盘中/收盘/周报）
-- ✅ **M7** — Agent-Centric 重构（LLM agent + 工具调用 + Web 对话页）
+- ✅ **M7** — Agent-Centric 重构（LLM agent + 工具调用 + Web 对话页 + 盘中扫描监控）
 - ⏳ **M6** — 详情页驾驶舱 / 复盘报告 / CI
 
 **新接触项目**？看 [`docs/PROJECT-LOG.md`](docs/PROJECT-LOG.md) — 一站式总览。详见 [`docs/PROGRESS.md`](docs/PROGRESS.md)
@@ -66,7 +66,9 @@ mommy-chaogu/
 │   │   ├── tools.py             # 11 个 function-calling tools
 │   │   ├── service.py           # AgentService（deepseek/openai/kimi）
 │   │   ├── prompt.py            # system prompt
-│   │   └── reports.py           # agent 收盘日报
+│   │   ├── reports.py           # agent 收盘日报
+│   │   ├── monitor.py           # AgentMonitor 盘中扫描监控
+│   │   └── scan_prompt.py       # scan 专用 prompt（JSON response mode）
 │   └── cli.py           # argparse 入口
 ├── web/                 # Vite + Vue 3 前端（H5 / 手机友好）
 ├── tests/               # 154 测试（145 离线 + 9 实时网络）
@@ -113,6 +115,9 @@ export DEEPSEEK_API_KEY="sk-xxx"     # 或 OPENAI_API_KEY / MOONSHOT_API_KEY
 uv run mommy-agent chat              # 交互式对话
 uv run mommy-agent report --board BK1106 --board-name "创新药"  # 板块分析日报
 uv run mommy-agent tools             # 列出所有工具
+uv run mommy-agent scan              # 单次扫描自选股
+uv run mommy-agent monitor --interval 180 --max-seconds 19800  # 盘中持续监控（5.5h）
+uv run mommy-agent monitor --push    # + 微信推送
 
 # 开发
 uv run pytest                      # 跑测试（154）
@@ -136,7 +141,7 @@ mommy-chaogu
 └── mommy-web          # Web 服务（手机 UI + WS 推送）
     └── --port / --poll-interval / --server-chan-key / --web-base-url
 └── mommy-agent        # AI 行情助手
-    ├── chat / report / tools
+    ├── chat / report / tools / scan / monitor
     └── --provider deepseek|openai|kimi
 ```
 
@@ -199,7 +204,7 @@ uv run mommy-web --port 8765
 | 指标 | 值 |
 |---|---|
 | 代码量 | ~16,600 行（src 11000 + tests 2600 + web 3000） |
-| 测试 | **217**（196 离线 + 9 实时网络 + 12 agent mock） |
+| 测试 | **234**（含 +38 agent 测试：13 tools + 8 service + 17 monitor） |
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
 | pytest | ✅ 145 passed / 9 flaky live |
@@ -214,11 +219,11 @@ uv run mommy-web --port 8765
 
 ## 当前里程碑
 
-**M3.1 完成（2026-06-27 22:35）**。
-- M3.0 Web UI（Vite + Vue 3 + FastAPI + WS）：妈妈手机访问 `http://192.168.10.84:8765/` 可用
-- M3.1 Server酱 推送：信号触发主动推妈妈微信（等团长拿到 SendKey 实测）
+**M7 Agent-Centric 重构完成（Phase 1-5，2026-07-02，commit `d002ee5`）**。
+- Phase 1-4：LLM agent 层（11 工具 + AgentService）+ Web 对话页（流式推送）
+- Phase 5：Agent 盘中扫描监控（低频 LLM 扫描循环，~0.05 元/天，有告警才推送）
 
-下一步：**后端 web 单测 + 复盘报告 + CI 配置**。
+下一步：**README 开源重写 / GitHub Actions CI / pytest -m live 标记**。
 
 ## License
 

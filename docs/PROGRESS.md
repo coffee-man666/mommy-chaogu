@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-01（M7 Agent-Centric on `feature/agent-centric` branch）
+最后更新：2026-07-02（M7 Phase 5 完成 — Agent 盘中扫描监控，commit `d002ee5`）
 
 ---
 
@@ -10,9 +10,9 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **M7 Agent-Centric 重构完成（LLM agent 层 + 11 工具 + Web 聊天）** |
+| 项目阶段 | **M7 Agent-Centric 重构完成（LLM agent 层 + 11 工具 + Web 聊天 + 盘中扫描监控）** |
 | 代码量 | **~16,600 行**（Python src ~11,000 + tests ~2,600 + web ~3,000） |
-| 测试 | **217 个通过**（含 +21 agent 测试 + M4-M5 补充） |
+| 测试 | **234 个通过**（含 +38 agent 测试 + M4-M5 补充） |
 | **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，11 function-calling 工具，Web 聊天 + 流式推送） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
@@ -75,7 +75,7 @@
 
 ## 已完成的里程碑
 
-### ✅ M7: Agent-Centric 重构（Phase 1-4，`feature/agent-centric` 分支，commit `b425f91`）
+### ✅ M7: Agent-Centric 重构（Phase 1-5，`feature/agent-centric` 分支，commit `d002ee5`）
 
 > **核心架构转变**：从硬编码 if-else 规则转向 LLM agent 驱动的智能分析。
 >
@@ -116,12 +116,49 @@
 
 #### 测试
 
-- **+21 个 agent 测试**（工具封装 / service 循环 / prompt 构建 / sector_api）
-- 总测试数：**217 通过**（含 M4-M5 补充）
+- **+38 个 agent 测试**（工具封装 / service 循环 / prompt / sector_api / monitor 扫描循环）
+- 总测试数：**234 通过**（含 M4-M5 补充）
 
 #### 成本
 
 - 默认 LLM：`deepseek-chat`，成本 ~0.001 元 / 1k tokens
+
+---
+
+### ✅ M7 Phase 5: Agent 盘中扫描监控（commit `d002ee5`）
+
+> **核心能力**：低频 LLM 扫描循环（3 min 默认），盘中自动分析自选股 + 板块异动，有告警才推送。
+
+#### 新增模块
+
+| 文件 | 内容 |
+|---|---|
+| `src/mommy_chaogu/agent/monitor.py` | **AgentMonitor** — `scan_once` / `run` / `run_async`，低频 LLM 扫描循环 |
+| `src/mommy_chaogu/agent/scan_prompt.py` | scan 专用 prompt（JSON response mode，强制结构化输出） |
+| `tests/test_agent/test_monitor.py` | **17 个测试** — scan_once / run / dedup / 无告警零成本 / 异步 |
+
+#### 改造文件
+
+| 文件 | 改动 |
+|---|---|
+| `cli.py` | +`scan` 和 `monitor` 子命令到 `mommy-agent` |
+
+#### 设计要点
+
+- **低频扫描（3 min 默认）**：收集自选股报价 + 资金流 → 一次性塞给 LLM（不让 LLM 自己调工具，省 token）
+- **JSON response mode**：强制 LLM 返回结构化 JSON（alerts 列表）
+- **复用 SignalNotifier 去重**：`code + "agent_scan" + date` — 一天只推一次
+- **无告警零成本**：LLM 返回空 alerts 时只打印 summary，不推送
+- **硬告警（涨停跌停）**：继续走 BackgroundService 的 7 条 if-else，AgentMonitor 不重复
+- **成本**：~0.05 元/天（80 scans × 600 tokens × 0.001 元/1k）
+
+#### CLI
+
+```bash
+uv run mommy-agent scan              # 单次扫描
+uv run mommy-agent monitor --interval 180 --max-seconds 19800  # 持续监控
+uv run mommy-agent monitor --push    # + 微信推送
+```
 
 ---
 
@@ -238,12 +275,12 @@ src/mommy_chaogu/monitor/         10 轮询（Mock adapter）
 src/mommy_chaogu/signals/         31 规则（每条 3-5 case）
 src/mommy_chaogu/cache/           26 命中/拉新/失败/节流/历史/Manager
 src/mommy_chaogu/push/            29 server_chan + deduper + notifier
-src/mommy_chaogu/agent/           21 工具封装 + service 循环 + prompt + sector_api  ← NEW M7
+src/mommy_chaogu/agent/           38 工具封装 + service 循环 + prompt + sector_api + monitor 扫描  ← NEW M7
 src/mommy_chaogu/portfolio/       ⚠️ TODO — 当前 0 测试，急补
 src/mommy_chaogu/web/             ⚠️ TODO — 后端单测
 src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
                               ───
-                              217 total（离线 + agent + M4-M5 补充）
+                              234 total（离线 + agent + M4-M5 补充）
 ```
 
 - `ruff`: All checks passed
@@ -286,12 +323,7 @@ src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
 
 ## 下一步候选（按团长优先级）
 
-> 📅 2026-07-01 更新：M7 Agent-Centric 重构完成（Phase 1-4），下一步进入 Phase 5。
-
-### 🔜 Phase 5 — Agent 盘中监控（下一个大件）
-1. **Agent 盘中定时分析** —— 基于现有 11 工具，定时让 agent 扫自选股 + 板块，自动推送分析报告
-2. **Agent + signals 融合** —— 让 agent 在规则触发时补充上下文分析（而非单纯 push「主力净流入 1.2亿」）
-3. **Agent 报告 cron 集成** —— 15:30 收盘报告由 AgentReportService 生成，替代纯模板
+> 📅 2026-07-02 更新：M7 Agent-Centric 重构全部完成（Phase 1-5），盘中扫描监控已上线。
 
 ### ✅ 已验证（7/1 实战）
 1. **cron 链路实跑** —— 4 个 job 修后于 7/1 8:30 盘前预热成功（拉了 105/106 只半导体资金流，hub 实际收到 webhook）

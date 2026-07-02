@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-07-01（M7 Agent-Centric Phase 1-4，branch feature/agent-centric）
+> 最后更新：2026-07-02（M7 Agent-Centric Phase 1-5，branch feature/agent-centric）
 
 ---
 
@@ -16,10 +16,10 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **M7 Agent-Centric Phase 1-4**（feature/agent-centric 分支） |
+| 项目阶段 | **M7 Agent-Centric Phase 1-5**（feature/agent-centric 分支） |
 | 累计 commits | **15+** 推 main |
 | 代码量 | **~16,600 行**（src 11000 + tests 2600 + web 3000） |
-| 测试 | **217 个**（196 离线 + 9 实时网络 + 12 agent mock） |
+| 测试 | **234 个**（含 +38 agent 测试：13 tools + 8 service + 17 monitor） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
 | 数据源 | 东财（主）+ 腾讯（仅 quote 兜底） |
 | 数据点 | 5 只自选股 + 106 只半导体产业链股 |
@@ -54,7 +54,7 @@
 
 > 时间倒序：M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
 
-### M7（2026-07-01） — Agent-Centric 重构（Phase 1-4）🤖
+### M7（2026-07-02） — Agent-Centric 重构（Phase 1-5）🤖
 
 **痛点**：7 条 if-else 规则没有语境感知，"主力净流入 8000万"在牛市是噪声在熊市是信号。
 
@@ -66,6 +66,7 @@
 | 2 | AgentService（LLM + tools 循环） | agent/service.py + agent/prompt.py |
 | 3 | Agent 收盘日报 + CLI | agent/reports.py + cli.py (mommy-agent) |
 | 4 | Web 对话页 | web/routes/agent.py + web/src/pages/agent/index.vue |
+| 5 | Agent 盘中扫描监控 | agent/monitor.py + agent/scan_prompt.py |
 
 **设计要点**：
 - 数据层完全不动（market_data / cache / flows 原样保留）
@@ -73,6 +74,10 @@
 - Agent 工具中立：兼容 OpenAI / DeepSeek / Kimi（通过 AGENT_PROVIDER 环境变量切换）
 - 无 API key 时优雅降级（Web 对话页返回"未配置"提示，不崩溃）
 - WebSocket 流式回复（分 chunk 发送，打字机效果）
+- AgentMonitor 低频扫描（3min）：先收集数据一次性塞给 LLM（不让 LLM 自己调工具，省 token）
+- JSON response mode：强制 LLM 返回结构化 JSON（alerts 列表）
+- 复用 SignalNotifier 去重：code + "agent_scan" + date 一天只推一次
+- 硬告警（涨停跌停）继续走 BackgroundService，AgentMonitor 不重复
 
 **新增 11 个工具**：get_quote / get_quotes / get_market_indexes / get_sector_ranking / search_sector / get_sector_stocks / get_money_flow_today / get_money_flow_history / get_bars / get_watchlist / get_portfolio
 
