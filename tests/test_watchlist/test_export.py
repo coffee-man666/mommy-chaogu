@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -40,10 +39,48 @@ def test_build_payload_schema_shape(store: WatchlistStore) -> None:
     assert meta["stats"]["groups"] == 2
     assert meta["stats"]["entries"] == 3
     assert meta["stats"]["codes"] == 2  # 600519 跨两组
-    assert "exported_at" in meta
     assert "db_path" in meta
-    # exported_at 是合法 ISO 8601
-    datetime.fromisoformat(meta["exported_at"])
+    # 不应包含日期字段（配置式快照，git log 负责时间记录）
+    assert "exported_at" not in meta
+
+
+def test_build_payload_no_date_fields(store: WatchlistStore) -> None:
+    """配置式快照：不包含任何日期字段。"""
+    _seed(store)
+    payload = store.build_export_payload()
+
+    # meta 无日期
+    assert "exported_at" not in payload["meta"]
+    # group 无 created_at
+    for g in payload["groups"]:
+        assert "created_at" not in g
+        # entries 无 created_at
+        for e in g["entries"]:
+            assert "created_at" not in e
+
+
+def test_build_payload_entry_keys(store: WatchlistStore) -> None:
+    """entry 只含 code/name/note 三个字段（配置式）。"""
+    _seed(store)
+    payload = store.build_export_payload()
+    bj = next(g for g in payload["groups"] if g["name"] == "白酒")
+    et = next(e for e in bj["entries"] if e["code"] == "600519")
+    assert set(et.keys()) == {"code", "name", "note"}
+
+
+def test_build_payload_group_keys(store: WatchlistStore) -> None:
+    """group 只含 name/description/entries 三个字段（配置式）。"""
+    _seed(store)
+    payload = store.build_export_payload()
+    g = payload["groups"][0]
+    assert set(g.keys()) == {"name", "description", "entries"}
+
+
+def test_build_payload_meta_keys(store: WatchlistStore) -> None:
+    """meta 只含 schema_version/db_path/stats。"""
+    _seed(store)
+    payload = store.build_export_payload()
+    assert set(payload["meta"].keys()) == {"schema_version", "db_path", "stats"}
 
 
 def test_build_payload_groups_sorted(store: WatchlistStore) -> None:
@@ -70,8 +107,6 @@ def test_build_payload_entry_fields(store: WatchlistStore) -> None:
     et = next(e for e in bj["entries"] if e["code"] == "600519")
     assert et["name"] == "贵州茅台" or et["name"] is None  # 可能已 backfill
     assert et["note"] == "妈妈长期持有"
-    assert "created_at" in et
-    datetime.fromisoformat(et["created_at"])
 
 
 def test_build_payload_empty_store(store: WatchlistStore) -> None:
