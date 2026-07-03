@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from decimal import Decimal
 from pathlib import Path
 from typing import NoReturn
 
@@ -178,6 +179,68 @@ def cmd_watchlist_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- alert 子命令（挂在 watchlist parser 下） ----------
+
+def cmd_alert_add(args: argparse.Namespace) -> int:
+    from mommy_chaogu.signals.custom_alerts import (
+        CustomAlertStore,
+        InvalidConditionError,
+    )
+
+    store = CustomAlertStore(Path(args.db))
+    name = args.name or args.code
+    try:
+        alert = store.add(
+            args.code,
+            name,
+            args.condition,
+            Decimal(args.threshold),
+        )
+    except InvalidConditionError as e:
+        print(f"❌ {e}")
+        return 1
+    print(
+        f"✅ 已添加告警 #{alert.id}: {alert.code} {alert.name} "
+        f"{alert.condition} {alert.threshold}"
+    )
+    return 0
+
+
+def cmd_alert_list(args: argparse.Namespace) -> int:
+    from mommy_chaogu.signals.custom_alerts import CustomAlertStore
+
+    store = CustomAlertStore(Path(args.db))
+    alerts = store.list_for_code(args.code) if args.code else store.list_all()
+    if not alerts:
+        print("（暂无自定义告警）")
+        return 0
+    print(f"{'ID':<5} {'代码':<8} {'名称':<10} {'条件':<20} {'阈值':<12} {'启用':<6}")
+    print("─" * 70)
+    for a in alerts:
+        print(
+            f"{a.id:<5} {a.code:<8} {a.name:<10} "
+            f"{a.condition:<20} {a.threshold:<12} {'✅' if a.enabled else '❌'}"
+        )
+    print(f"\n共 {len(alerts)} 条告警")
+    return 0
+
+
+def cmd_alert_remove(args: argparse.Namespace) -> int:
+    from mommy_chaogu.signals.custom_alerts import (
+        CustomAlertNotFoundError,
+        CustomAlertStore,
+    )
+
+    store = CustomAlertStore(Path(args.db))
+    try:
+        store.remove(args.alert_id)
+    except CustomAlertNotFoundError as e:
+        print(f"❌ {e}")
+        return 1
+    print(f"🗑️  已删除告警 #{args.alert_id}")
+    return 0
+
+
 def build_watchlist_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-watchlist",
@@ -224,10 +287,33 @@ def build_watchlist_parser() -> argparse.ArgumentParser:
     p_s = sub.add_parser("stats", help="汇总统计")
     p_s.set_defaults(func=cmd_watchlist_stats)
 
+    # ---- alert 子命令 ----
+    p_alert = sub.add_parser("alert", help="自定义价格/涨跌幅告警管理")
+    alert_sub = p_alert.add_subparsers(dest="alert_cmd", required=True)
+
+    # alert add
+    p_aa = alert_sub.add_parser("add", help="添加自定义告警")
+    p_aa.add_argument("code", help="股票代码（如 600519）")
+    p_aa.add_argument(
+        "--condition", "-c", required=True,
+        choices=["price_above", "price_below", "change_pct_above", "change_pct_below"],
+        help="触发条件",
+    )
+    p_aa.add_argument("--threshold", "-t", required=True, help="阈值（价格或百分比）")
+    p_aa.add_argument("--name", "-n", default=None, help="股票名称（默认用 code）")
+    p_aa.set_defaults(func=cmd_alert_add)
+
+    # alert list
+    p_al = alert_sub.add_parser("list", help="列出自定义告警")
+    p_al.add_argument("--code", "-c", default=None, help="按股票代码过滤")
+    p_al.set_defaults(func=cmd_alert_list)
+
+    # alert remove
+    p_ar = alert_sub.add_parser("remove", help="删除自定义告警")
+    p_ar.add_argument("alert_id", type=int, help="告警 ID")
+    p_ar.set_defaults(func=cmd_alert_remove)
+
     return p
-
-
-def main_watchlist() -> NoReturn:
     parser = build_watchlist_parser()
     args = parser.parse_args()
     rc = args.func(args)
@@ -1048,6 +1134,57 @@ def cmd_flows_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_flows_backtest(args: argparse.Namespace) -> int:
+    """回测 flow_in_spike 信号规则在历史缓存上的表现。"""
+    from mommy_chaogu.backtest import BacktestEngine
+
+    pool = _flows_resolve_pool(args)
+    codes = pool.codes()  # type: ignore[attr-defined]
+    if not codes:
+        print(f"❌ 池子 {pool.name} 没有股票，无法回测")  # type: ignore[attr-defined]
+        return 1
+
+    engine = BacktestEngine(Path(args.db))
+    try:
+        result = engine.run(
+            codes=codes,
+            start_date=args.start,
+            end_date=args.end,
+            hold_days=args.hold_days,
+        )
+    finally:
+        engine.close()
+
+    print(f"🔬 回测 · {pool.name} ({len(codes)} 只) · {args.start} ~ {args.end} · 持有{args.hold_days}天")  # type: ignore[attr-defined]
+    print("=" * 70)
+    if result.message:
+        print(f"⚠️  {result.message}")
+        return 0
+
+    print(f"  信号总数:   {result.total_signals}")
+    print(f"  盈利信号:   {result.winning_signals}")
+    print(f"  亏损信号:   {result.losing_signals}")
+    print(f"  胜率:       {result.win_rate:.1f}%")
+    print(f"  平均收益:   {result.avg_return_pct:+.2f}%")
+    print(f"  最大回撤:   {result.max_drawdown_pct:.2f}%")
+    print(f"  夏普比率:   {result.sharpe_ratio:.2f}")
+    print()
+
+    if args.detail and result.signals_detail:
+        print(f"{'代码':<8} {'名称':<10} {'日期':<12} {'主力净/亿':<12} {'ratio/bp':<10} {'收益%':<8}")
+        print("─" * 70)
+        for s in result.signals_detail[:50]:
+            main_yi = s["main_net"] / 1e8
+            ratio_bp = s["ratio"] * 10000
+            print(
+                f"{s['code']:<8} {s['name'][:10]:<10} {s['date']:<12} "
+                f"{main_yi:+.2f}        {ratio_bp:.1f}      {s['return_hold']:+.2f}"
+            )
+        if len(result.signals_detail) > 50:
+            print(f"  ... 共 {len(result.signals_detail)} 条信号（只显示前 50）")
+    return 0
+
+
 def build_flows_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-flows",
@@ -1128,6 +1265,14 @@ def build_flows_parser() -> argparse.ArgumentParser:
     p_rep.add_argument("--report-dir", default=str(DEFAULT_FLOWS_REPORT_DIR),
                        help=f"报告输出目录 (默认 {DEFAULT_FLOWS_REPORT_DIR})")
     p_rep.set_defaults(func=cmd_flows_report)
+
+    # backtest (回测信号表现)
+    p_bt = sub.add_parser("backtest", help="回测 flow_in_spike 信号在历史缓存上的表现")
+    p_bt.add_argument("--start", required=True, help="起始日期 YYYY-MM-DD")
+    p_bt.add_argument("--end", required=True, help="结束日期 YYYY-MM-DD")
+    p_bt.add_argument("--hold-days", type=int, default=3, help="持有交易日数 (默认 3)")
+    p_bt.add_argument("--detail", action="store_true", help="打印逐条信号明细")
+    p_bt.set_defaults(func=cmd_flows_backtest)
 
     return p
 
