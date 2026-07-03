@@ -1541,14 +1541,20 @@ def _build_agent_ctx(args: argparse.Namespace) -> object:
 
 def cmd_agent_chat(args: argparse.Namespace) -> int:
     """交互式对话。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
     from mommy_chaogu.agent.memory import ConversationMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
     from mommy_chaogu.agent.service import AgentService
 
     ctx = _build_agent_ctx(args)
+    episodic = EpisodicMemory(Path(args.db))
+    tracker = PredictionTracker(Path(args.db))
     agent = AgentService(
         ctx,  # type: ignore[arg-type]
         model=args.model,
         provider=args.provider,
+        episodic=episodic,
+        tracker=tracker,
     )
     memory = ConversationMemory(Path(args.db))
 
@@ -1736,6 +1742,127 @@ def _build_notifier(args: argparse.Namespace) -> object:
     )
 
 
+def cmd_agent_verify(args: argparse.Namespace) -> int:
+    """验证所有到期预测。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.verify_engine import verify_pending
+    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.market_data import (
+        EfinanceAdapter,
+        FallbackAdapter,
+        TencentAdapter,
+    )
+
+    db_path = Path(args.db)
+    tracker = PredictionTracker(db_path)
+    episodic = EpisodicMemory(db_path)
+
+    store = CacheStore(db_path)
+    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    adapter = CachedMarketDataAdapter(base, store)
+
+    print("🔍 验证到期预测...")
+    print("─" * 60)
+
+    results = verify_pending(
+        tracker=tracker,
+        episodic=episodic,
+        adapter=adapter,
+        cache_store=store,
+    )
+
+    print(f"验证 {results['total']} 条预测")
+    print(f"  ✅ hit: {results['hit']}")
+    print(f"  ❌ missed: {results['missed']}")
+    print(f"  ⚠️  data_unavailable: {results['data_unavailable']}")
+    print(f"  ⏰ expired: {results['expired']}")
+
+    if results["hit"] + results["missed"] > 0:
+        rate = results["hit"] / (results["hit"] + results["missed"]) * 100
+        print(f"\n命中率: {rate:.0f}%")
+
+    return 0
+
+
+def cmd_agent_predictions(args: argparse.Namespace) -> int:
+    """查看预测列表。"""
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    tracker = PredictionTracker(Path(args.db))
+    preds = tracker.all(limit=args.limit, status=args.status)
+
+    if not preds:
+        print("（暂无预测）")
+        return 0
+
+    print(f"{'状态':12s} {'代码':8s} {'名称':10s} {'预测':30s} {'得分':>4s}")
+    print("─" * 70)
+
+    for p in preds:
+        status = p["status"]
+        code = p["code"]
+        name = (p.get("name") or "")[:10]
+        pred_text = (p.get("prediction") or "")[:30]
+        score = p.get("accuracy_score")
+        score_str = f"{score:.1f}" if score is not None else "  -"
+        print(f"{status:12s} {code:8s} {name:10s} {pred_text:30s} {score_str:>4s}")
+
+    stats = tracker.stats()
+    print(f"\n总计: {stats['total']}  pending: {stats['pending']}  "
+          f"hit: {stats['hit']}  missed: {stats['missed']}  expired: {stats['expired']}")
+
+    return 0
+
+
+def cmd_agent_events(args: argparse.Namespace) -> int:
+    """查看情景记忆事件。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(Path(args.db))
+    events = episodic.recent(days=args.days, scope=args.scope, limit=args.limit)
+
+    if args.type:
+        events = [e for e in events if e.get("event_type") == args.type]
+
+    if not events:
+        print("（暂无事件）")
+        return 0
+
+    for e in events:
+        ts = e.get("timestamp", "")[:16]
+        etype = e.get("event_type", "")
+        summary = e.get("summary", "")
+        print(f"[{ts}] [{etype:16s}] {summary}")
+
+    return 0
+
+
+def cmd_agent_remember(args: argparse.Namespace) -> int:
+    """手动写入事件。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(Path(args.db))
+    summary = args.reason or f"{args.action or '记录'} {args.code}"
+
+    eid = episodic.write(
+        event_type=args.type,
+        scope=f"stock:{args.code}",
+        code=args.code,
+        name=args.name,
+        summary=summary,
+        data={
+            "action": args.action,
+            "price": args.price,
+            "shares": args.shares,
+        },
+        source="user",
+    )
+
+    print(f"✅ 已记录事件 #{eid}: {summary}")
+    return 0
+
+
 def build_agent_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-agent",
@@ -1783,6 +1910,35 @@ def build_agent_parser() -> argparse.ArgumentParser:
     )
     p_mon.add_argument("--push", action="store_true", help="推送到微信")
     p_mon.set_defaults(func=cmd_agent_monitor)
+
+    # verify — 验证到期预测
+    p_ver = sub.add_parser("verify", help="验证所有到期预测")
+    p_ver.set_defaults(func=cmd_agent_verify)
+
+    # predictions — 查看预测列表
+    p_pred = sub.add_parser("predictions", help="查看预测列表")
+    p_pred.add_argument("--status", default=None, help="按状态过滤 (pending/hit/missed/expired)")
+    p_pred.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
+    p_pred.set_defaults(func=cmd_agent_predictions)
+
+    # events — 查看情景记忆事件
+    p_ev = sub.add_parser("events", help="查看情景记忆事件")
+    p_ev.add_argument("--scope", default=None, help="按 scope 过滤 (如 stock:603662)")
+    p_ev.add_argument("--type", default=None, help="按事件类型过滤")
+    p_ev.add_argument("--days", type=int, default=7, help="最近 N 天 (默认 7)")
+    p_ev.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
+    p_ev.set_defaults(func=cmd_agent_events)
+
+    # remember — 手动写入事件
+    p_rem = sub.add_parser("remember", help="手动记录事件 (如买卖决策)")
+    p_rem.add_argument("--type", default="trade_decision", help="事件类型 (默认 trade_decision)")
+    p_rem.add_argument("--code", required=True, help="股票代码")
+    p_rem.add_argument("--name", default=None, help="股票名称")
+    p_rem.add_argument("--action", default=None, help="动作 (buy/sell/hold)")
+    p_rem.add_argument("--price", type=float, default=None, help="价格")
+    p_rem.add_argument("--shares", type=int, default=None, help="数量")
+    p_rem.add_argument("--reason", default=None, help="备注/原因")
+    p_rem.set_defaults(func=cmd_agent_remember)
 
     return p
 

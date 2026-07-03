@@ -75,6 +75,22 @@ def get_agent_memory() -> object:
 
 
 @lru_cache(maxsize=1)
+def get_episodic_memory() -> object:
+    """全局 EpisodicMemory 单例（情景记忆）。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    return EpisodicMemory(get_db_path())
+
+
+@lru_cache(maxsize=1)
+def get_prediction_tracker() -> object:
+    """全局 PredictionTracker 单例（预测追踪）。"""
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    return PredictionTracker(get_db_path())
+
+
+@lru_cache(maxsize=1)
 def get_agent_service() -> object:
     """全局 AgentService 单例（lazy init）。
 
@@ -95,4 +111,8 @@ def get_agent_service() -> object:
         portfolio_store=get_portfolio_store(),
         db_path=get_db_path(),
     )
-    return AgentService(ctx)
+    return AgentService(
+        ctx,
+        episodic=get_episodic_memory(),
+        tracker=get_prediction_tracker(),
+    )

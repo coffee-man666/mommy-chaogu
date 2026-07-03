@@ -18,8 +18,10 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from mommy_chaogu.agent.extractor import extract_from_conversation, store_extraction
 from mommy_chaogu.agent.memory import ConversationMemory
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
+from mommy_chaogu.agent.prompt_builder import build_system_prompt
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
 _log = logging.getLogger(__name__)
@@ -79,9 +81,14 @@ class AgentService:
         provider: str | None = None,
         api_key: str | None = None,
         max_tool_calls: int = 10,
+        episodic: Any | None = None,
+        tracker: Any | None = None,
     ) -> None:
         self._tools = ToolRegistry(ctx)
         self._max_tool_calls = max_tool_calls
+        self._episodic = episodic
+        self._tracker = tracker
+        self._ctx = ctx
 
         # 解析 provider 配置
         provider = provider or os.environ.get("AGENT_PROVIDER", "deepseek")
@@ -116,8 +123,18 @@ class AgentService:
 
         如果传入 *memory*，会先从中加载最近对话作为上下文，
         完成后将本轮 user / assistant 消息持久化到 memory。
+
+        如果配置了 *episodic* + *tracker*，会：
+        1. 用 build_system_prompt() 注入历史事件和判断回顾
+        2. 对话结束后提取结构化 observations + predictions
         """
-        system_prompt = system_override or SYSTEM_PROMPT
+        # 动态构建 system prompt（注入历史事件 + 判断回顾）
+        if self._episodic is not None or self._tracker is not None:
+            system_prompt = system_override or build_system_prompt(
+                episodic=self._episodic, tracker=self._tracker
+            )
+        else:
+            system_prompt = system_override or SYSTEM_PROMPT
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
         if memory is not None:
@@ -135,6 +152,22 @@ class AgentService:
         if memory is not None:
             memory.add("user", user_message)
             memory.add("assistant", resp.text)
+
+        # 后置 hook：事实抽取（失败不 block 主流程）
+        if self._episodic is not None and self._tracker is not None:
+            try:
+                extraction = extract_from_conversation(
+                    user_message, resp.text, self._client, self._model
+                )
+                if extraction is not None:
+                    store_extraction(
+                        extraction,
+                        self._episodic,
+                        self._tracker,
+                        adapter=self._ctx.adapter if self._ctx else None,
+                    )
+            except Exception as e:
+                _log.warning("extractor hook failed: %s", e)
 
         return resp
 
