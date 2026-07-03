@@ -64,3 +64,35 @@ def get_alerter() -> Alerter:
 def get_portfolio_store() -> PortfolioStore:
     """全局持仓存储。"""
     return PortfolioStore(get_db_path())
+
+
+@lru_cache(maxsize=1)
+def get_agent_memory() -> object:
+    """全局 ConversationMemory 单例（与主库共用 db 文件）。"""
+    from mommy_chaogu.agent.memory import ConversationMemory
+
+    return ConversationMemory(get_db_path())
+
+
+@lru_cache(maxsize=1)
+def get_agent_service() -> object:
+    """全局 AgentService 单例（lazy init）。
+
+    如果未配置 API key 则返回 None（路由层处理降级）。
+    """
+    import os
+
+    from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.agent.tools import ToolContext
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None  # type: ignore[return-value]
+
+    ctx = ToolContext(
+        adapter=get_adapter(),
+        watchlist_store=get_watchlist_store(),
+        portfolio_store=get_portfolio_store(),
+        db_path=get_db_path(),
+    )
+    return AgentService(ctx)

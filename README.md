@@ -2,14 +2,30 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-270%20passed-brightgreen.svg)](#测试)
+[![Tests](https://img.shields.io/badge/tests-300%2B-brightgreen.svg)](#测试)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type check: mypy strict](https://img.shields.io/badge/mypy--strict-0%20errors-blue.svg)](https://mypy-lang.org/)
+[![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 
 > 给妈妈用的 **A 股行情监控 + 投资陪伴** 工具。
-> 从「行情监控」切入，逐步扩展到「资金流 / 产业链 / 财报 / 推送 / 风险提示」。
+> 从「行情监控」切入，逐步扩展到「资金流 / 产业链 / 财报 / AI 分析 / 推送 / 风险提示」。
 
 妈妈不需要成为技术专家，妈妈的手机应该比基金经理的彭博终端更懂她 —— 这是这个项目的初衷。
+
+- ✅ **M0** — 行情数据层（实时报价 / K线 / 资金流 / 板块）
+- ✅ **M1** — 自选池 + 实时监控
+- ✅ **M1.5** — 7 条内置告警规则
+- ✅ **M2** — 时间戳驱动缓存
+- ✅ **M2.5** — 多数据源 fallback（东财 + 腾讯）
+- ✅ **M3.0** — Web UI（Vite + Vue 3 + FastAPI + WebSocket，妈妈手机可用）
+- ✅ **M3.1** — Server酱 微信推送（信号主动推妈妈微信）
+- ✅ **M4** — 持仓 + 语音录入 + 资金流图表 + 盘面扫描
+- ✅ **M5** — 半导体产业链参考库 + 资金流 ratio 监控 + 收盘日报
+- ✅ **M5.3** — OpenClaw cron 4 jobs 自动化（盘前/盘中/收盘/周报）
+- ✅ **M7** — Agent-Centric 重构（LLM agent + 工具调用 + Web 对话页 + 盘中扫描监控）
+- ✅ **M8** — Infra Upgrade（MCP Server + 统一配置 + 记忆 + 回测 + 基本面 + 新闻 + 组合分析 + CI + Docker）
+- ✅ **earnings** — 业绩前瞻 vs 实际 自动比对打分（H1 2026 实战）
+- ⏳ **M6** — 详情页驾驶舱 / 复盘报告 / 实战测试
 
 ---
 
@@ -25,7 +41,8 @@
 2. 多源 fallback（东财主 + 腾讯备）
 3. 信号告警 + 微信推送（妈妈不用主动打开）
 4. 财报窗口的预告 vs 实际比对系统
-5. 业绩弹性 / 板块轮动 / 配对交易的多维分析
+5. AI agent 智能分析（对话式 + 盘中扫描）
+6. 业绩弹性 / 板块轮动 / 配对交易的多维分析
 
 ---
 
@@ -37,12 +54,13 @@
 | **资金流** | 日内分时累计 + 历史日级 + 流通市值比率 (bp) |
 | **多源 fallback** | efinance → tencent → cached（无感降级）|
 | **自选股** | SQLite + SQLAlchemy 2.0，按主题分组（M:N 支持）|
-| **信号告警** | 7 条内置规则（price / flow / portfolio / ...）|
+| **信号告警** | 7 条内置规则 + ratio 规则 + 自定义告警|
 | **微信推送** | Server酱³，阈值过滤 + JSON 去重 |
 | **Web UI** | Vite + Vue 3 + FastAPI，手机访问 |
+| **AI Agent** | 18 个 function-calling 工具 + MCP Server + 盘中扫描 |
 | **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分 |
 | **OpenClaw cron** | 4 个自动化 jobs（盘前 / 盘中 / 收盘 / 周报）|
-| **质量门** | ruff + mypy --strict + 270 个测试 |
+| **质量门** | ruff + mypy --strict + 300+ 测试 + CI |
 
 ---
 
@@ -75,6 +93,23 @@ uv run mommy-earnings summary --period "H1 2026"
 # 6. 资金流扫描（板块维度）
 uv run mommy-flows pull --pool semicon --days 30
 uv run mommy-report render --chain humanoid_robot
+
+# 7. AI 行情助手（需要 LLM API key）
+export DEEPSEEK_API_KEY="sk-xxx"     # 或 OPENAI_API_KEY / MOONSHOT_API_KEY
+uv run mommy-agent chat              # 交互式对话
+uv run mommy-agent report --board BK1106 --board-name "创新药"  # 板块分析日报
+uv run mommy-agent tools             # 列出所有工具
+uv run mommy-agent scan              # 单次扫描自选股
+uv run mommy-agent monitor --interval 180 --max-seconds 19800  # 盘中持续监控（5.5h）
+uv run mommy-agent monitor --push    # + 微信推送
+
+# 8. MCP Server（任意 MCP client 可连接）
+uv run mommy-mcp                     # stdio 协议，Claude Desktop / Cursor 可直连
+
+# 9. 其他工具
+uv run mommy-chaogu config init      # 生成默认 config.toml
+uv run mommy-watchlist alert add 600519 --type price --op above --value 1700  # 自定义告警
+uv run mommy-flows backtest --rule flow_in_spike --days 30  # 回测指定规则
 ```
 
 ---
@@ -83,12 +118,11 @@ uv run mommy-report render --chain humanoid_robot
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  Web UI (Vite + Vue 3)                                     │
-│  ├─ 首页 (5 只自选 + 主力合计 + WebSocket)                 │
-│  ├─ 详情 (klinecharts K线 + 5档 + 资金流)                  │
-│  ├─ 板块扫描 (沪深 + 行业 + 概念)                          │
-│  ├─ 信号中心 (实时告警列表)                                │
-│  └─ 设置 (服务状态 + 缓存命中率 + 自选股 CRUD)             │
+│  📱 妈妈手机 / 👨 团长浏览器 / 🔌 MCP Client                │
+│  ├─ Web H5 (Vite + Vue 3)         ← 主动看                 │
+│  ├─ WebSocket 实时推送                                     │
+│  ├─ 微信 Server酱推送              ← 被动收                 │
+│  └─ MCP Client（Claude/Cursor）   ← stdio 协议             │
 └────────────────────┬───────────────────────────────────────┘
                      │ HTTP / WebSocket
                      ↓
@@ -102,12 +136,21 @@ uv run mommy-report render --chain humanoid_robot
    ┌─────────────────┼─────────────────┐
    ↓                 ↓                 ↓
 ┌────────┐    ┌────────────┐    ┌──────────┐
-│ Cache  │ →  │ Adapter    │ →  │ Data     │
+│ Cache  │    │ Adapter    │    │ Data     │
 │ Layer  │    │ Fallback   │    │ Sources  │
 │ SQLite │    │ (Protocol) │    │ • efin   │
 │ 5 表   │    │            │    │ • tencent│
-└────────┘    └────────────┘    │ • cninfo │
-                                 └──────────┘
+└────────┘    └────────────┘    └──────────┘
+                     │
+                     ↓
+┌────────────────────────────────────────────────────────────┐
+│  🤖 Agent 层（LLM + 工具调用）                              │
+│  ├─ AgentService（deepseek/openai/kimi 可切换）             │
+│  ├─ 18 个 function-calling 工具                             │
+│  ├─ MCP Server（stdio 协议）                                │
+│  ├─ ConversationMemory（SQLite 持久化）                     │
+│  └─ AgentMonitor（盘中 LLM 扫描）                           │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### 核心设计原则
@@ -124,33 +167,42 @@ uv run mommy-report render --chain humanoid_robot
 
 ### 数据层
 
-| 模块 | 行数 | 说明 |
-|---|---|---|
-| `market_data/` | ~1500 | efinance / tencent / fallback 三种 adapter |
-| `cache/` | ~900 | SQLite + 装饰器链 + 节流 + freshness |
-| `watchlist/` | ~600 | SQLite + SQLAlchemy 2.0，自选分组 |
+| 模块 | 说明 |
+|---|---|
+| `market_data/` | efinance / tencent / fallback 三种 adapter + 新闻/基本面/龙虎榜 API |
+| `cache/` | SQLite + 装饰器链 + 节流 + freshness |
+| `watchlist/` | SQLite + SQLAlchemy 2.0，自选分组 |
 
 ### 业务层
 
-| 模块 | 行数 | 说明 |
-|---|---|---|
-| `flows/` | ~1200 | 资金流 ratio 监控 + 板块扫描 + 收盘日报 |
-| `signals/` | ~700 | 7 条内置告警规则 + Alerter |
-| `earnings/` | ~1900 | 业绩前瞻 + actual vs predicted 自动打分 |
-| `semicon/` | ~400 | 半导体产业链种子库（106 只）|
+| 模块 | 说明 |
+|---|---|
+| `flows/` | 资金流 ratio 监控 + 板块扫描 + 收盘日报 |
+| `signals/` | 7 条内置告警规则 + Alerter + 自定义告警 |
+| `earnings/` | 业绩前瞻 + actual vs predicted 自动打分 |
+| `semicon/` | 半导体产业链种子库（106 只）|
+
+### AI 层
+
+| 模块 | 说明 |
+|---|---|
+| `agent/` | 18 个 function-calling 工具 + AgentService + MCP Server + 记忆 + 监控 |
+| `backtest/` | 回测引擎（信号规则历史回放） |
+| `portfolio/` | 持仓 + 组合分析（集中度/相关性/回撤/Sharpe） |
+| `config.py` | 统一 TOML 配置 |
 
 ### 服务层
 
-| 模块 | 行数 | 说明 |
-|---|---|---|
-| `monitor/` | ~500 | snapshot + 持续轮询 |
-| `web/` | ~1500 | FastAPI + 20 REST + 2 WebSocket |
-| `push/` | ~300 | Server酱 推送 + 去重 |
-| `report_render/` | ~600 | 报告 HTML 渲染 |
+| 模块 | 说明 |
+|---|---|
+| `monitor/` | snapshot + 持续轮询 |
+| `web/` | FastAPI + 20 REST + 3 WebSocket + agent 聊天页 |
+| `push/` | Server酱 推送 + 去重 |
+| `report_render/` | 报告 HTML 渲染 |
 
 ---
 
-## 🎯 财报窗口实战（新模块）
+## 🎯 财报窗口实战
 
 > 中报 / 季报窗口（7/15-8/31）是 A 股 alpha 的关键节点。这个项目内置了完整的实战流水线。
 
@@ -172,7 +224,7 @@ uv run mommy-report render --chain humanoid_robot
 4. 实际 vs 预测打分
    uv run mommy-earnings score --period "H1 2026"
    → data/earnings_actual.db
-   → 4 种 verdict: SUPER_BEAT / BEAT / MEET / MISS / DEEP_MISS
+   → 5 种 verdict: SUPER_BEAT / BEAT / MEET / MISS / DEEP_MISS
 
 5. 信号触发
    uv run mommy-earnings watch --days 7
@@ -188,18 +240,21 @@ uv run mommy-report render --chain humanoid_robot
 
 ---
 
-## 🛠️ CLI 速查（9 个子应用）
+## 🛠️ CLI 速查
 
 ```
 mommy-chaogu
-├── mommy-watchlist    # 自选股管理（按主题分组）
-├── mommy-monitor      # 实时监控（snapshot / 持续轮询）
-├── mommy-cache        # 缓存管理（命中率 / warmup / refresh）
+├── mommy-watchlist    # 自选股管理（add-group / add / list / stats / alert）
+├── mommy-monitor      # 实时监控（snapshot / run / signals / rules）
+├── mommy-cache        # 缓存管理（stats / warmup / refresh / clear）
 ├── mommy-report       # 报告渲染（HTML）
-├── mommy-flows        # 资金流拉新 + 板块扫描
+├── mommy-flows        # 资金流拉新 + 板块扫描 + 回测
 ├── mommy-semicon      # 半导体产业链查询
-├── mommy-earnings     # 财报前瞻 vs 实际 比对 ⭐ 新增
-└── mommy-web          # Web 服务（手机 UI + WS）
+├── mommy-earnings     # 财报前瞻 vs 实际 比对
+├── mommy-web          # Web 服务（手机 UI + WS 推送）
+├── mommy-agent        # AI 行情助手（chat / report / scan / monitor）
+├── mommy-mcp          # MCP Server（stdio 协议）
+└── mommy-chaogu       # 统一入口（config init）
 ```
 
 ---
@@ -212,12 +267,36 @@ uv run mommy-web --port 8765 --poll-interval 3
 
 手机浏览器访问 `http://<host>:8765/`。
 
-**4+ 个页面**：
+**6 个页面**：
 - **首页** — 自选股 + 主力合计 + 涨跌统计 + WebSocket 实时推送
 - **详情** — K 线（klinecharts）+ MA5/10/30/60 + 资金流 5 维图表
 - **板块扫描** — 沪深 + 行业 + 概念，30 秒轮询
 - **信号中心** — 触发历史（点跳详情页 K 线）
 - **设置** — 服务状态 + 缓存命中率 + 自选股 CRUD
+- **问** — AI 对话（问行情、问持仓、问板块分析，WebSocket 流式回复）
+
+## 🔌 MCP Server
+
+内置 MCP（Model Context Protocol）Server，任意 MCP client 可直接连接 mommy-chaogu 的 18 个工具。
+
+```bash
+# 启动 MCP Server（stdio 协议）
+uv run mommy-mcp
+```
+
+**Claude Desktop 配置示例**（`~/Library/Application Support/Claude/claude_desktop_config.json`）：
+```json
+{
+  "mcpServers": {
+    "mommy-chaogu": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/mommy-chaogu", "mommy-mcp"]
+    }
+  }
+}
+```
+
+连接后 Claude / Cursor 等 client 可直接调用：实时报价、K线、资金流、板块成分股、新闻、龙虎榜、基本面、组合分析等 18 个工具。
 
 ---
 
@@ -263,7 +342,7 @@ uv run mommy-web --port 8765
 
 ---
 
-## 📚 文档体系（7 份）
+## 📚 文档体系
 
 | 文档 | 用途 |
 |---|---|
@@ -288,7 +367,7 @@ uv sync --extra dev
 ### 跑测试
 
 ```bash
-# 离线测试（270 个，应该全过）
+# 离线测试（应该全过）
 uv run pytest -m "not network"
 
 # 网络测试（需要联网，标记 network）
@@ -299,6 +378,7 @@ uv run pytest
 
 # 单个模块
 uv run pytest tests/earnings/ -v
+uv run pytest tests/test_agent/ -v
 ```
 
 ### 代码质量门
@@ -307,33 +387,6 @@ uv run pytest tests/earnings/ -v
 uv run ruff check .             # lint
 uv run ruff format .            # format
 uv run mypy --strict src        # type check
-```
-
-### 项目结构
-
-```
-mommy-chaogu/
-├── src/mommy_chaogu/
-│   ├── market_data/      # 数据源适配层
-│   ├── cache/            # SQLite 缓存
-│   ├── watchlist/        # 自选股 ORM
-│   ├── monitor/          # 实时监控
-│   ├── signals/          # 告警规则
-│   ├── flows/            # 资金流
-│   ├── earnings/         # 财报比对 ⭐
-│   ├── semicon/          # 半导体产业链
-│   ├── web/              # FastAPI 后端
-│   ├── push/             # 微信推送
-│   ├── report_render/    # 报告 HTML
-│   └── cli.py            # CLI 入口
-├── web/                  # Vite + Vue 3 前端
-├── tests/                # 270 个测试
-├── docs/                 # 7 份文档
-├── scripts/              # loader 脚本
-├── data/                 # 运行时数据（不入库）
-├── supply_chains/        # 产业链数据资产
-├── reports/              # 实战产物
-└── pyproject.toml        # 项目配置
 ```
 
 ---
@@ -374,16 +427,20 @@ mommy-chaogu/
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~16,000 行（src 11,300 + tests 4,100 + web ~800 + scripts 600 + docs 1,000）|
-| 测试 | **270 passed**（247 离线 + 23 网络 marked）|
+| 代码量 | ~22,000+ 行（src 15,000 + tests 4,000 + web 3,000）|
+| 测试 | **300+ passed**（离线 + agent + earnings + infra）|
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
-| 数据源 | 3（efinance / tencent / cninfo）|
-| CLI 子应用 | 9 / 子命令 30+ |
-| 业务规则 | 7（signals）+ 4（earnings）|
-| 数据库表 | 13+ |
-| Web 端点 | 20+ REST + 2 WebSocket |
-| Push 渠道 | Server酱³（微信）|
+| CI | ✅ GitHub Actions（ruff + mypy + pytest） |
+| 数据源 | 3（efinance / tencent / cninfo）+ 东财新闻/基本面/龙虎榜直连 |
+| CLI 子应用 | 11 / 子命令 35+ |
+| 业务规则 | 7 signals + 4 flows ratio + 自定义告警 + earnings verdict |
+| 数据库表 | 15+（含 agent 记忆 + 推送去重 + earnings）|
+| Web 端点 | 20+ REST + 3 WebSocket |
+| 推送渠道 | Server酱³（微信） |
+| AI 工具 | **18** 个 function-calling tools |
+| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi |
+| MCP Server | ✅ stdio 协议，任意 MCP client 可连接 |
 
 ---
 

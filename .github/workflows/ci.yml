@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   pull_request:
     branches: [main]
 
@@ -67,3 +67,5 @@ jobs:
           uv run mommy-flows --help
           uv run mommy-semicon --help
           uv run mommy-report --help
+          uv run mommy-agent --help
+          uv run mommy-mcp --help

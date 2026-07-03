@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from decimal import Decimal
 from pathlib import Path
 from typing import NoReturn
 
@@ -177,6 +178,68 @@ def cmd_watchlist_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- alert 子命令（挂在 watchlist parser 下） ----------
+
+
+def cmd_alert_add(args: argparse.Namespace) -> int:
+    from mommy_chaogu.signals.custom_alerts import (
+        CustomAlertStore,
+        InvalidConditionError,
+    )
+
+    store = CustomAlertStore(Path(args.db))
+    name = args.name or args.code
+    try:
+        alert = store.add(
+            args.code,
+            name,
+            args.condition,
+            Decimal(args.threshold),
+        )
+    except InvalidConditionError as e:
+        print(f"❌ {e}")
+        return 1
+    print(
+        f"✅ 已添加告警 #{alert.id}: {alert.code} {alert.name} {alert.condition} {alert.threshold}"
+    )
+    return 0
+
+
+def cmd_alert_list(args: argparse.Namespace) -> int:
+    from mommy_chaogu.signals.custom_alerts import CustomAlertStore
+
+    store = CustomAlertStore(Path(args.db))
+    alerts = store.list_for_code(args.code) if args.code else store.list_all()
+    if not alerts:
+        print("（暂无自定义告警）")
+        return 0
+    print(f"{'ID':<5} {'代码':<8} {'名称':<10} {'条件':<20} {'阈值':<12} {'启用':<6}")
+    print("─" * 70)
+    for a in alerts:
+        print(
+            f"{a.id:<5} {a.code:<8} {a.name:<10} "
+            f"{a.condition:<20} {a.threshold:<12} {'✅' if a.enabled else '❌'}"
+        )
+    print(f"\n共 {len(alerts)} 条告警")
+    return 0
+
+
+def cmd_alert_remove(args: argparse.Namespace) -> int:
+    from mommy_chaogu.signals.custom_alerts import (
+        CustomAlertNotFoundError,
+        CustomAlertStore,
+    )
+
+    store = CustomAlertStore(Path(args.db))
+    try:
+        store.remove(args.alert_id)
+    except CustomAlertNotFoundError as e:
+        print(f"❌ {e}")
+        return 1
+    print(f"🗑️  已删除告警 #{args.alert_id}")
+    return 0
+
+
 def build_watchlist_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-watchlist",
@@ -224,6 +287,34 @@ def build_watchlist_parser() -> argparse.ArgumentParser:
     # stats
     p_s = sub.add_parser("stats", help="汇总统计")
     p_s.set_defaults(func=cmd_watchlist_stats)
+
+    # ---- alert 子命令 ----
+    p_alert = sub.add_parser("alert", help="自定义价格/涨跌幅告警管理")
+    alert_sub = p_alert.add_subparsers(dest="alert_cmd", required=True)
+
+    # alert add
+    p_aa = alert_sub.add_parser("add", help="添加自定义告警")
+    p_aa.add_argument("code", help="股票代码（如 600519）")
+    p_aa.add_argument(
+        "--condition",
+        "-c",
+        required=True,
+        choices=["price_above", "price_below", "change_pct_above", "change_pct_below"],
+        help="触发条件",
+    )
+    p_aa.add_argument("--threshold", "-t", required=True, help="阈值（价格或百分比）")
+    p_aa.add_argument("--name", "-n", default=None, help="股票名称（默认用 code）")
+    p_aa.set_defaults(func=cmd_alert_add)
+
+    # alert list
+    p_al = alert_sub.add_parser("list", help="列出自定义告警")
+    p_al.add_argument("--code", "-c", default=None, help="按股票代码过滤")
+    p_al.set_defaults(func=cmd_alert_list)
+
+    # alert remove
+    p_ar = alert_sub.add_parser("remove", help="删除自定义告警")
+    p_ar.add_argument("alert_id", type=int, help="告警 ID")
+    p_ar.set_defaults(func=cmd_alert_remove)
 
     return p
 
@@ -455,6 +546,12 @@ def main() -> int:
     )
     sub.add_parser("report", help="报告 HTML 渲染（单日 / 索引 / 预览）").set_defaults(
         func=lambda _: _dispatch_subcommand(build_report_parser(), "mommy-report")
+    )
+    sub.add_parser("agent", help="AI 行情助手（对话 / 日报）").set_defaults(
+        func=lambda _: _dispatch_subcommand(build_agent_parser(), "mommy-agent")
+    )
+    sub.add_parser("config", help="配置文件管理（生成模板）").set_defaults(
+        func=lambda _: _dispatch_subcommand(build_config_mgmt_parser(), "mommy-config")
     )
 
     args = p.parse_args()
@@ -1116,6 +1213,61 @@ def cmd_flows_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_flows_backtest(args: argparse.Namespace) -> int:
+    """回测 flow_in_spike 信号规则在历史缓存上的表现。"""
+    from mommy_chaogu.backtest import BacktestEngine
+
+    pool = _flows_resolve_pool(args)
+    codes = pool.codes()  # type: ignore[attr-defined]
+    if not codes:
+        print(f"❌ 池子 {pool.name} 没有股票，无法回测")  # type: ignore[attr-defined]
+        return 1
+
+    engine = BacktestEngine(Path(args.db))
+    try:
+        result = engine.run(
+            codes=codes,
+            start_date=args.start,
+            end_date=args.end,
+            hold_days=args.hold_days,
+        )
+    finally:
+        engine.close()
+
+    print(
+        f"🔬 回测 · {pool.name} ({len(codes)} 只) · {args.start} ~ {args.end} · 持有{args.hold_days}天"
+    )  # type: ignore[attr-defined]
+    print("=" * 70)
+    if result.message:
+        print(f"⚠️  {result.message}")
+        return 0
+
+    print(f"  信号总数:   {result.total_signals}")
+    print(f"  盈利信号:   {result.winning_signals}")
+    print(f"  亏损信号:   {result.losing_signals}")
+    print(f"  胜率:       {result.win_rate:.1f}%")
+    print(f"  平均收益:   {result.avg_return_pct:+.2f}%")
+    print(f"  最大回撤:   {result.max_drawdown_pct:.2f}%")
+    print(f"  夏普比率:   {result.sharpe_ratio:.2f}")
+    print()
+
+    if args.detail and result.signals_detail:
+        print(
+            f"{'代码':<8} {'名称':<10} {'日期':<12} {'主力净/亿':<12} {'ratio/bp':<10} {'收益%':<8}"
+        )
+        print("─" * 70)
+        for s in result.signals_detail[:50]:
+            main_yi = s["main_net"] / 1e8
+            ratio_bp = s["ratio"] * 10000
+            print(
+                f"{s['code']:<8} {s['name'][:10]:<10} {s['date']:<12} "
+                f"{main_yi:+.2f}        {ratio_bp:.1f}      {s['return_hold']:+.2f}"
+            )
+        if len(result.signals_detail) > 50:
+            print(f"  ... 共 {len(result.signals_detail)} 条信号（只显示前 50）")
+    return 0
+
+
 def build_flows_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-flows",
@@ -1214,6 +1366,14 @@ def build_flows_parser() -> argparse.ArgumentParser:
         help=f"报告输出目录 (默认 {DEFAULT_FLOWS_REPORT_DIR})",
     )
     p_rep.set_defaults(func=cmd_flows_report)
+
+    # backtest (回测信号表现)
+    p_bt = sub.add_parser("backtest", help="回测 flow_in_spike 信号在历史缓存上的表现")
+    p_bt.add_argument("--start", required=True, help="起始日期 YYYY-MM-DD")
+    p_bt.add_argument("--end", required=True, help="结束日期 YYYY-MM-DD")
+    p_bt.add_argument("--hold-days", type=int, default=3, help="持有交易日数 (默认 3)")
+    p_bt.add_argument("--detail", action="store_true", help="打印逐条信号明细")
+    p_bt.set_defaults(func=cmd_flows_backtest)
 
     return p
 
@@ -1348,6 +1508,325 @@ def main_report() -> NoReturn:
     args = parser.parse_args()
     rc = args.func(args)
     sys.exit(rc)
+
+
+# ============================================================
+# agent 子命令
+# ============================================================
+
+
+def _build_agent_ctx(args: argparse.Namespace) -> object:
+    """构造 AgentService 的 ToolContext。"""
+    from mommy_chaogu.agent.tools import ToolContext
+    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.portfolio.store import PortfolioStore
+    from mommy_chaogu.watchlist.store import WatchlistStore
+
+    db_path = Path(args.db)
+    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    store = CacheStore(db_path)
+    adapter = CachedMarketDataAdapter(base, store)
+
+    watchlist_store = WatchlistStore(db_path)
+    portfolio_store = PortfolioStore(db_path)
+
+    return ToolContext(
+        adapter=adapter,
+        watchlist_store=watchlist_store,
+        portfolio_store=portfolio_store,
+        db_path=db_path,
+    )
+
+
+def cmd_agent_chat(args: argparse.Namespace) -> int:
+    """交互式对话。"""
+    from mommy_chaogu.agent.memory import ConversationMemory
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+    memory = ConversationMemory(Path(args.db))
+
+    print("=" * 60)
+    print("  💬 妈妈行情助手（输入 quit/exit 退出）")
+    print("=" * 60)
+    print()
+
+    while True:
+        try:
+            user_input = input("🧑 ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n再见！")
+            break
+
+        if not user_input:
+            continue
+        if user_input.lower() in ("quit", "exit", "q"):
+            print("再见！")
+            break
+
+        print()
+        try:
+            resp = agent.chat(user_input, memory=memory)
+            print(f"🤖 {resp.text}")
+            if resp.tool_calls:
+                tools_str = ", ".join(tc.name for tc in resp.tool_calls)
+                print(f"\n   [使用了工具: {tools_str}]")
+        except Exception as e:
+            print(f"❌ 出错了: {e}")
+        print()
+
+    return 0
+
+
+def cmd_agent_report(args: argparse.Namespace) -> int:
+    """生成收盘日报。"""
+    from mommy_chaogu.agent.reports import AgentReportService
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+    report_svc = AgentReportService(agent)
+
+    print(f"📊 生成收盘日报 ({args.board or args.pool})...")
+    print("─" * 60)
+
+    text = report_svc.generate_daily_report(
+        pool_name=args.pool,
+        board_code=args.board,
+        board_name=args.board_name,
+    )
+
+    print(text)
+
+    # 可选保存到文件
+    if args.output:
+        out = Path(args.output)
+        out.write_text(text, encoding="utf-8")
+        print(f"\n✅ 已保存到 {out}")
+
+    # 可选推送到微信
+    if args.push:
+        try:
+            key = os.environ.get("SERVER_CHAN_KEY", "")
+            if not key:
+                print("⚠️  未设置 SERVER_CHAN_KEY 环境变量，跳过推送")
+            else:
+                title = f"📊 收盘日报 {args.pool or args.board}"
+                import requests as req
+
+                r = req.post(
+                    f"https://sctapi.ftqq.com/{key}.send",
+                    data={"title": title, "desp": text},
+                    timeout=10,
+                )
+                if r.json().get("code") == 0:
+                    print("✅ 已推送到微信")
+                else:
+                    print(f"❌ 推送失败: {r.json()}")
+        except Exception as e:
+            print(f"❌ 推送出错: {e}")
+
+    return 0
+
+
+def cmd_agent_tools(_args: argparse.Namespace) -> int:
+    """列出所有可用工具。"""
+    from mommy_chaogu.agent.tools import ToolRegistry
+
+    print("🔧 Agent 可用工具")
+    print("=" * 70)
+    for name in ToolRegistry.tool_names():
+        print(f"  • {name}")
+    print(f"\n共 {len(ToolRegistry.tool_names())} 个工具")
+    return 0
+
+
+def cmd_agent_scan(args: argparse.Namespace) -> int:
+    """单次 agent 扫描。"""
+    from mommy_chaogu.agent.monitor import AgentMonitor
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+
+    notifier = _build_notifier(args)
+
+    monitor = AgentMonitor(
+        agent=agent,
+        adapter=ctx.adapter,  # type: ignore[attr-defined]
+        watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
+        notifier=notifier,
+    )
+
+    print("🔍 Agent 盘中扫描...")
+    print("─" * 60)
+    monitor.scan_once()
+    # scan_once 内部已打印
+    return 0
+
+
+def cmd_agent_monitor(args: argparse.Namespace) -> int:
+    """持续 agent 监控。"""
+    from mommy_chaogu.agent.monitor import AgentMonitor
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(
+        ctx,  # type: ignore[arg-type]
+        model=args.model,
+        provider=args.provider,
+    )
+
+    notifier = _build_notifier(args)
+
+    monitor = AgentMonitor(
+        agent=agent,
+        adapter=ctx.adapter,  # type: ignore[attr-defined]
+        watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
+        notifier=notifier,
+        interval_seconds=args.interval,
+    )
+
+    print(f"🤖 Agent 监控启动（每 {args.interval:.0f}s 扫描一次）")
+    if notifier:
+        print("   📱 微信推送已启用")
+    if args.max_seconds:
+        print(f"   ⏰ 最大运行 {args.max_seconds:.0f}s ({args.max_seconds / 3600:.1f}h)")
+    print("   Ctrl+C 退出")
+    print("=" * 60)
+
+    monitor.run(max_seconds=args.max_seconds)
+    return 0
+
+
+def _build_notifier(args: argparse.Namespace) -> object:
+    """从 args + 环境变量构造 SignalNotifier（无 key 返回 None）。"""
+    import os
+
+    key = os.environ.get("SERVER_CHAN_KEY", "")
+    if not key or not getattr(args, "push", False):
+        return None
+
+    from pathlib import Path
+
+    from mommy_chaogu.push import JsonFileDeduper, ServerChanPusher, SignalNotifier
+    from mommy_chaogu.signals import SignalSeverity
+
+    push_db = Path("data/pushed.json")
+    pusher = ServerChanPusher(send_key=key)
+    deduper = JsonFileDeduper(push_db)
+    return SignalNotifier(
+        pusher=pusher,
+        deduper=deduper,
+        severity_threshold=SignalSeverity.WARNING,
+    )
+
+
+def build_agent_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="mommy-agent",
+        description="妈妈炒股 - AI 行情助手（对话 / 日报）",
+    )
+    p.add_argument(
+        "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
+    )
+    p.add_argument("--model", default=None, help="LLM 模型名（默认按 provider）")
+    p.add_argument(
+        "--provider",
+        default=None,
+        help="LLM provider: deepseek / openai / kimi（默认读 $AGENT_PROVIDER）",
+    )
+
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    # chat
+    sub.add_parser("chat", help="交互式对话").set_defaults(func=cmd_agent_chat)
+
+    # report
+    p_r = sub.add_parser("report", help="生成收盘分析日报")
+    p_r.add_argument(
+        "--pool", default="semicon", help="flows 池名 (semicon/watchlist，默认 semicon)"
+    )
+    p_r.add_argument("--board", default=None, help="东财板块代码（如 BK1106 创新药），优先于 pool")
+    p_r.add_argument("--board-name", default=None, help="板块中文名（用于报告标题）")
+    p_r.add_argument("--output", "-o", default=None, help="保存到文件")
+    p_r.add_argument("--push", action="store_true", help="推送到微信")
+    p_r.set_defaults(func=cmd_agent_report)
+
+    # tools
+    sub.add_parser("tools", help="列出所有可用工具").set_defaults(func=cmd_agent_tools)
+
+    # scan
+    p_scan = sub.add_parser("scan", help="单次 agent 盘中扫描")
+    p_scan.add_argument("--push", action="store_true", help="推送到微信")
+    p_scan.set_defaults(func=cmd_agent_scan)
+
+    # monitor
+    p_mon = sub.add_parser("monitor", help="持续 agent 监控（每 N 秒扫描一次）")
+    p_mon.add_argument("--interval", type=float, default=180.0, help="扫描间隔秒 (默认 180)")
+    p_mon.add_argument(
+        "--max-seconds", type=float, default=None, help="最大运行秒（如 19800 = 5.5h 一个交易日）"
+    )
+    p_mon.add_argument("--push", action="store_true", help="推送到微信")
+    p_mon.set_defaults(func=cmd_agent_monitor)
+
+    return p
+
+
+def main_agent() -> NoReturn:
+    parser = build_agent_parser()
+    args = parser.parse_args()
+    rc = args.func(args)
+    sys.exit(rc)
+
+
+# ============================================================
+# config 子命令（配置文件管理）
+# ============================================================
+
+
+def cmd_config_init(args: argparse.Namespace) -> int:
+    """生成配置模板文件。"""
+    from mommy_chaogu.config import create_default_config
+
+    output = Path(args.output)
+    if output.exists() and not args.force:
+        print(f"⚠️  配置文件已存在: {output}（用 --force 覆盖）")
+        return 1
+    p = create_default_config(output)
+    print(f"✅ 已生成配置模板: {p}")
+    print("   编辑后填入你的 key，或用环境变量覆盖：")
+    print("     DEEPSEEK_API_KEY  /  SERVER_CHAN_KEY  /  AGENT_PROVIDER")
+    return 0
+
+
+def build_config_mgmt_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="mommy-config",
+        description="妈妈炒股 - 配置文件管理",
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    p_init = sub.add_parser("init", help="生成 config.toml 模板")
+    p_init.add_argument("--output", "-o", default="config.toml", help="输出路径 (默认 config.toml)")
+    p_init.add_argument("--force", action="store_true", help="覆盖已有文件")
+    p_init.set_defaults(func=cmd_config_init)
+
+    return p
 
 
 if __name__ == "__main__":

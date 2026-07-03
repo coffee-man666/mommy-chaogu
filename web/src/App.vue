@@ -14,6 +14,10 @@ import { RouterView, RouterLink } from 'vue-router'
         <span class="tab-icon">💰</span>
         <span>持仓</span>
       </RouterLink>
+      <RouterLink to="/agent" class="tab-item">
+        <span class="tab-icon">💬</span>
+        <span>问</span>
+      </RouterLink>
       <RouterLink to="/signals" class="tab-item">
         <span class="tab-icon">🔔</span>
         <span>信号</span>

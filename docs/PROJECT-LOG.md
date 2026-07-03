@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-06-29 17:35（M3.2.1 cron 自动化完成）
+> 最后更新：2026-07-03（M8 Infra Upgrade P0-P3，branch `feature/infra-upgrade`）
 
 ---
 
@@ -16,16 +16,17 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **M3.2.1 完成**（资金流 ratio 监控 + cron 自动化） |
-| 累计 commits | **15+** 推 main |
-| 代码量 | **~13,000 行** Python（src 8500 + tests 2270 + web 2500） |
-| 测试 | **154 个**（145 离线 + 9 实时网络） |
-| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
+| 项目阶段 | **M8 Infra Upgrade（P0-P3）**（`feature/infra-upgrade` 分支） |
+| 累计 commits | **18+** 推 main |
+| 代码量 | **~20,000+ 行**（src 13500 + tests 3100 + web 3000） |
+| 测试 | **287 个**（含 +53 infra-upgrade 测试） |
+| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅**（GitHub Actions） |
 | 数据源 | 东财（主）+ 腾讯（仅 quote 兜底） |
 | 数据点 | 5 只自选股 + 106 只半导体产业链股 |
 | 缓存 | `data/watchlist.db`（cache）+ `data/semicon.db`（产业链 reference） |
 | 自动化 | 4 个 OpenClaw cron jobs（盘前预热/盘中监控/收盘日报/周报） |
 | 微信推送 | Server酱 bot，目标 = 团长当前聊天 |
+| AI Agent | **18 tools** + AgentService + **MCP Server** + **ConversationMemory** |
 
 ---
 
@@ -51,7 +52,66 @@
 
 ## 2. 关键里程碑（全链路）
 
-> 时间倒序：M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+> 时间倒序：M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+
+### M8（2026-07-03） — Infra Upgrade（P0-P3）🔧
+
+**痛点**：基础设施短板 — 没有统一配置、没有 CI、agent 无持久记忆、缺新闻/基本面/龙虎榜数据、无回测能力、无组合分析。
+
+**对策**：一次性补齐 — MCP 协议支持、统一 TOML 配置、SQLite 记忆层、回测引擎、基本面/新闻/龙虎榜 API、组合分析、自定义告警、Docker 部署、CI。
+
+| 层 | 内容 | 文件 |
+|---|---|---|
+| 数据源 | 新闻 / 公告 / 龙虎榜 API | `market_data/news_api.py` |
+| 数据源 | 基本面（PE/PB/PS/ROE/利润率/行业） | `market_data/fundamentals_api.py` |
+| Agent | **MCP Server**（stdio 协议，任意 MCP client 可连接） | `agent/mcp_server.py` |
+| Agent | **ConversationMemory**（SQLite 跨 session 持久化） | `agent/memory.py` |
+| 配置 | **统一 TOML 配置**（AppConfig + AgentConfig/PushConfig/CacheConfig/MonitorConfig） | `config.py` |
+| 组合 | **PortfolioAnalyzer**（板块集中度 / 相关性矩阵 / 最大回撤 / Sharpe ratio） | `portfolio/analysis.py` |
+| 信号 | **CustomAlertStore**（用户自定义价格/涨跌幅告警） | `signals/custom_alerts.py` |
+| 回测 | **BacktestEngine**（回放信号规则到缓存历史数据） | `backtest/engine.py` |
+| CI | ruff + mypy + pytest | `.github/workflows/ci.yml` |
+| 部署 | Docker 容器化 | `Dockerfile` |
+
+**新增 7 个 Agent 工具（11 → 18）**：search_news / get_announcements / get_longhuban / get_fundamentals / backfill_history / manage_alert / get_portfolio_analysis
+
+**新增 CLI**：`mommy-mcp`（MCP Server）/ `mommy-watchlist alert`（自定义告警）/ `mommy-flows backtest`（回测）/ `mommy-chaogu config init`（配置初始化）
+
+**设计要点**：
+- MCP Server 走 stdio 协议，Claude Desktop / Cursor / 任意 MCP client 可直接连接
+- 统一配置替代散落的环境变量，`config init` 生成模板
+- ConversationMemory 让 agent 跨 session 记住对话上下文
+- BacktestEngine 复用缓存历史数据，不重复拉接口
+- CI 三道门：ruff lint → mypy strict → pytest
+
+**测试 +53**：news_api / fundamentals_api / mcp_server / memory / config / analysis / custom_alerts / backtest
+
+### M7（2026-07-02） — Agent-Centric 重构（Phase 1-5）🤖
+
+**痛点**：7 条 if-else 规则没有语境感知，"主力净流入 8000万"在牛市是噪声在熊市是信号。
+
+**对策**：引入 LLM agent 作为核心推理层，规则退居二线。
+
+| Phase | 内容 | 文件 |
+|---|---|---|
+| 1 | 11 个 function-calling tools | agent/tools.py + market_data/sector_api.py |
+| 2 | AgentService（LLM + tools 循环） | agent/service.py + agent/prompt.py |
+| 3 | Agent 收盘日报 + CLI | agent/reports.py + cli.py (mommy-agent) |
+| 4 | Web 对话页 | web/routes/agent.py + web/src/pages/agent/index.vue |
+| 5 | Agent 盘中扫描监控 | agent/monitor.py + agent/scan_prompt.py |
+
+**设计要点**：
+- 数据层完全不动（market_data / cache / flows 原样保留）
+- 7 条 signals 规则保留为 fallback，不删
+- Agent 工具中立：兼容 OpenAI / DeepSeek / Kimi（通过 AGENT_PROVIDER 环境变量切换）
+- 无 API key 时优雅降级（Web 对话页返回"未配置"提示，不崩溃）
+- WebSocket 流式回复（分 chunk 发送，打字机效果）
+- AgentMonitor 低频扫描（3min）：先收集数据一次性塞给 LLM（不让 LLM 自己调工具，省 token）
+- JSON response mode：强制 LLM 返回结构化 JSON（alerts 列表）
+- 复用 SignalNotifier 去重：code + "agent_scan" + date 一天只推一次
+- 硬告警（涨停跌停）继续走 BackgroundService，AgentMonitor 不重复
+
+**新增 11 个工具**：get_quote / get_quotes / get_market_indexes / get_sector_ranking / search_sector / get_sector_stocks / get_money_flow_today / get_money_flow_history / get_bars / get_watchlist / get_portfolio
 
 ### M3.2.1（2026-06-29 17:30） — OpenClaw cron 自动化 🔧
 
@@ -179,29 +239,44 @@
 │  ├─ 15:30 收盘日报 → 推微信                                     │
 │  └─ 周六 10:00 周报汇总 → 推微信                                │
 └────────────────┬───────────────────────────────────────────────┘
-                 ↓ agentTurn prompt
+                 ↓
 ┌────────────────────────────────────────────────────────────────┐
-│  📱 妈妈手机 / 👨 团长浏览器                                   │
+│  📱 妈妈手机 / 👨 团长浏览器 / 🔌 MCP Client                    │
 │  ├─ Web H5 (Vite + Vue 3)         ← 主动看                     │
 │  ├─ WebSocket 实时推送                                           │
-│  └─ 微信 Server酱推送              ← 被动收（每日 1-2 条）        │
+│  ├─ 微信 Server酱推送              ← 被动收（每日 1-2 条）        │
+│  └─ MCP Client（Claude/Cursor）   ← NEW M8 stdio 协议           │
 └────────────────┬───────────────────────────────────────────────┘
                  ↓
 ┌────────────────────────────────────────────────────────────────┐
-│  FastAPI（uvicorn :8000）                                      │
+│  FastAPI（uvicorn :8000） + MCP Server（stdio）               │
 │  ├─ /api/* REST 端点（行情 / 自选 / 资金流 / 持仓）             │
 │  ├─ /ws/* WebSocket（实时推送）                                 │
 │  └─ BackgroundService（5s 轮询 + signal 评估 + 微信推送）       │
 └────────────────┬───────────────────────────────────────────────┘
                  ↓
 ┌────────────────────────────────────────────────────────────────┐
+│  🤖 Agent 层（LLM + 工具调用）                                 │
+│  ├─ POST /api/agent/chat（单轮问答）                          │
+│  ├─ WS /ws/agent（流式对话）                                   │
+│  ├─ MCP Server（stdio 协议）              ← NEW M8             │
+│  ├─ AgentService（deepseek/openai/kimi 可切换）                │
+│  ├─ ConversationMemory（SQLite 持久化）   ← NEW M8             │
+│  ├─ ToolRegistry（18 个工具）              ← M8 扩展           │
+│  └─ AgentReportService（agent 生成收盘分析日报）               │
+└────────────────┬───────────────────────────────────────────────┘
+                 ↓
+┌────────────────────────────────────────────────────────────────┐
 │  mommy-chaogu 核心模块                                         │
-│  ├─ market_data：Quote/Bar/MoneyFlow 数据类                    │
+│  ├─ market_data：Quote/Bar/MoneyFlow/新闻/基本面/龙虎榜       │
 │  ├─ monitor：snapshot + signals                                │
 │  ├─ flows：ratio 信号 + 持续监控 + 收盘日报 ⭐                 │
 │  ├─ semicon：106 只产业链 reference                            │
-│  ├─ watchlist：5 只自选股 ORM                                  │
-│  ├─ signals：7 条内置告警规则                                  │
+│  ├─ watchlist：自选股 ORM + 自定义告警                         │
+│  ├─ signals：7 条内置告警规则 + CustomAlertStore     ← NEW M8 │
+│  ├─ portfolio：持仓 + 组合分析（集中度/相关性/回撤/Sharpe）    │
+│  ├─ backtest：BacktestEngine（信号规则历史回放）     ← NEW M8 │
+│  ├─ config：统一 TOML 配置（AppConfig）                ← NEW M8 │
 │  ├─ cache：5 张缓存表 + 装饰器                                 │
 │  └─ web：FastAPI + WebSocket                                   │
 └────────────────┬───────────────────────────────────────────────┘
@@ -284,6 +359,12 @@ agentTurn prompt 提取关键指标 → 微信推送
 - **ruff + mypy --strict** — 质量门
 - **测试金字塔** — 大量单元 + 适量集成 + 少量 E2E
 - **subagent 并行** — 团长喜欢，但任务要真独立才并行
+
+### Agent 层 ⭐
+- **工具中立** — ToolRegistry 包装现有 adapter，不耦合具体 LLM provider
+- **规则退居二线** — 7 条 if-else 保留为 fallback，默认路径走 agent 推理
+- **system prompt 内嵌分析原则** — bp 比率思维、量价关系、板块联动，但以"参考"表达
+- **无 API key 优雅降级** — 不崩溃，返回提示文本
 
 ---
 
