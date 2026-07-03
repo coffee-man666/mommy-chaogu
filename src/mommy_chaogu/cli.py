@@ -1979,6 +1979,62 @@ def cmd_agent_knowledge(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent_search(args: argparse.Namespace) -> int:
+    """语义搜索相似历史事件。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.agent.vector_search import VectorSearch
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(ctx, model=args.model, provider=args.provider)  # type: ignore[arg-type]
+    episodic = EpisodicMemory(Path(args.db))
+
+    vs = VectorSearch(
+        episodic,
+        agent._client,  # type: ignore[attr-defined]
+        model="text-embedding-3-small",
+    )
+
+    if args.embed:
+        print("🔢 为事件生成 embedding...")
+        results = vs.embed_pending(batch_size=50)
+        print(f"  已生成: {results['embedded']}")
+        print(f"  失败: {results['failed']}")
+        print(f"  跳过: {results['skipped']}")
+        stats = vs.stats()
+        print(f"  覆盖率: {stats['coverage']:.0%} ({stats['embedded']}/{stats['total_events']})")
+        return 0
+
+    if not args.query:
+        print("请提供搜索关键词（--query）或用 --embed 生成 embedding")
+        return 1
+
+    print(f"🔍 搜索相似事件: '{args.query}'")
+    print("─" * 60)
+
+    results = vs.search_similar(
+        args.query,
+        scope=args.scope,
+        top_k=args.limit,
+        days_back=args.days,
+    )
+
+    if not results:
+        print("（无结果，可能需要先运行 --embed 生成向量）")
+        return 0
+
+    for r in results:
+        ts = r.get("timestamp", "")[:16]
+        summary = r.get("summary", "")
+        dist = r.get("distance", 0)
+        similarity = max(0, 1 - dist)
+        print(f"[{ts}] 相似度 {similarity:.0%}")
+        print(f"  {summary}")
+        print()
+
+    return 0
+
+
 def build_agent_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-agent",
@@ -2073,6 +2129,15 @@ def build_agent_parser() -> argparse.ArgumentParser:
     p_kn.add_argument("--search", default=None, help="关键词搜索")
     p_kn.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
     p_kn.set_defaults(func=cmd_agent_knowledge)
+
+    # search — 语义搜索相似历史事件
+    p_se = sub.add_parser("search", help="语义搜索相似历史事件")
+    p_se.add_argument("query", nargs="?", default=None, help="搜索文本")
+    p_se.add_argument("--scope", default=None, help="按 scope 过滤")
+    p_se.add_argument("--days", type=int, default=90, help="回溯天数 (默认 90)")
+    p_se.add_argument("--limit", type=int, default=5, help="返回条数 (默认 5)")
+    p_se.add_argument("--embed", action="store_true", help="为事件生成 embedding")
+    p_se.set_defaults(func=cmd_agent_search)
 
     return p
 
