@@ -285,6 +285,10 @@ class WatchlistStore:
         等时间字段——这些会在每次 export 时变化，污染 diff，
         且 git log 本身已经记录了何时被提交。
 
+        **不要**添加任何运行时变量字段（如 timestamp、随机 id）。
+        添加前先问：这个字段是否会在每次 export 时不变？
+        如果会变，diff 会被污染，文件也不该入仓。
+
         Args:
             output_path: 输出文件路径，默认 ``<db_path_parent>/watchlist.json``
             indent: JSON 缩进空格数
