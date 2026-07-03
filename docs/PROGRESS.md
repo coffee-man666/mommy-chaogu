@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-03（main + agent-centric 合并 — earnings + M8 Infra Upgrade 全部整合）
+最后更新：2026-07-03（memory-system-v1 — 自进化记忆系统 Phase 1-5 完成）
 
 ---
 
@@ -10,19 +10,20 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **main + agent-centric 合并完成（earnings 业绩比对 + M8 Infra Upgrade + AI Agent 全线整合）** |
-| 代码量 | **~22,000+ 行**（Python src ~15,000 + tests ~4,000 + web ~3,000） |
-| 测试 | **300+ 个通过**（离线 + agent + earnings + infra） |
+| 项目阶段 | **自进化记忆系统 Phase 1-5 完成（情景记忆 + 预测验证 + 市场脉络 + 语义知识 + 向量检索）** |
+| 代码量 | **~25,000+ 行**（Python src ~17,000 + tests ~5,000 + web ~3,000） |
+| 测试 | **482 个通过**（离线 + agent + earnings + infra + memory-system） |
 | **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
+| **自进化记忆** | **✅ 5 层记忆系统**（工作/情景/预测验证/语义知识/向量检索，**8 个 CLI 子命令**） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
 | **业绩前瞻数据** | **earnings_preview.db（41 家公司中信证券 H1 2026）+ 13 主题 group** |
 | **实战手册** | **docs/EARNINGS-HANDBOOK.md（407 行，12 章节实战手册）** |
 | **earnings_actual 模块** | **src/mommy_chaogu/earnings/（7 个文件 / 1263 行）+ 51 测试** |
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
-| 文档 | DESIGN / PROJECT-LOG / LEDGER / **PROGRESS** / **KLINE-SPEC** / DISCUSSION-NOTES / **EARNINGS-HANDBOOK** **7 份齐** |
+| 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / **MEMORY-SYSTEM-PLAN** / **BRANCH-MERGE-ANALYSIS** **9 份齐** |
 | 自动化 | **4 个 OpenClaw cron jobs**（盘前/盘中/收盘/周报） |
-| **实战验证** | ✅ 柯力 603662 H1 2026 +188~+217% 业绩前瞻入库 + 反转初期识别 |
+| **实战验证** | ✅ 记忆系统 5 条链路端到端验证通过（验证降级 / 置信度校准 / 向量检索 / prompt 注入 / CLI） |
 
 ---
 
@@ -75,6 +76,88 @@
                      + 东方财富 push2.eastmoney.com 直连
                        （大盘指数 / 板块排行 / 板块成分股 / 龙虎榜）
 ```
+
+---
+
+### ✅ Memory System v1: 自进化记忆系统 Phase 1-5（`memory-system-v1` 分支）
+
+> **核心能力**：让 agent 从「每次从零开始」变成「越用越懂」——记住过去、验证判断、沉淀经验、找相似事件。
+>
+> 设计文档：`docs/MEMORY-SYSTEM-PLAN.md`（四层记忆架构 + 预测验证闭环 + 数据缺失降级策略）
+
+#### Phase 1 — 情景记忆 + 预测追踪 + 降级验证
+
+| 文件 | 内容 |
+|---|---|
+| `agent/episodic_memory.py` | 结构化事件存储（episodic_events 表，4 种事件类型 + data_coverage 追踪） |
+| `agent/prediction_tracker.py` | 预测生命周期（predictions 表，pending → hit/missed/expired/unverifiable） |
+| `agent/verify_engine.py` | 降级验证引擎（报价优先 → 资金流可选 → 不伪造结果，评分 1.0/0.7/0.3/0.0） |
+| `agent/extractor.py` | 对话后 LLM 事实抽取（JSON response mode，失败不 block 主流程） |
+| `agent/prompt_builder.py` | 动态 system prompt（注入知识 + 事件 + 判断回顾） |
+
+#### Phase 3 — 市场脉络生成
+
+| 文件 | 内容 |
+|---|---|
+| `agent/narrative.py` | 市场脉络叙述（30 天主线 + 转折点 + 因果链 + 变化检测 + 时段对比） |
+
+#### Phase 4 — 语义记忆 + 知识提炼
+
+| 文件 | 内容 |
+|---|---|
+| `agent/semantic_memory.py` | 语义知识库（semantic_knowledge 表，4 种知识 + supersede + 置信度校准） |
+| `agent/consolidator.py` | LLM 离线知识提炼（板块叙事 / 市场状态 / 规律归纳 + 命中率校准 confidence） |
+
+#### Phase 5 — 向量检索
+
+| 文件 | 内容 |
+|---|---|
+| `agent/vector_search.py` | 语义搜索（sqlite-vec + embedding API，"找相似历史事件"） |
+
+#### 8 个 CLI 子命令
+
+```
+mommy-agent verify          # 验证到期预测
+mommy-agent predictions     # 查看预测 + 命中率
+mommy-agent events          # 查看情景记忆
+mommy-agent remember        # 手动记录事件
+mommy-agent narrative       # 市场脉络叙述
+mommy-agent consolidate     # 知识提炼
+mommy-agent knowledge       # 查看知识库
+mommy-agent search          # 语义搜索相似事件
+```
+
+#### 新增表（5 张，同一份 data/watchlist.db）
+
+| 表 | 用途 |
+|---|---|
+| `episodic_events` | 情景记忆（结构化事件流） |
+| `predictions` | 预测追踪（pending → hit/missed/expired） |
+| `semantic_knowledge` | 语义知识（active / superseded + hit_count/miss_count） |
+| `episodic_embeddings` | embedding 元数据 |
+| `episodic_vec` | sqlite-vec 虚拟表（float[1536]） |
+
+#### 测试（+121 个）
+
+| 测试文件 | 数量 | 覆盖 |
+|---|---|---|
+| test_episodic.py | 16 | CRUD / query / prefix-scope / persistence |
+| test_prediction_tracker.py | 20 | CRUD / status / attempts / stats |
+| test_verify_engine.py | 23 | scoring / quote / target / degraded / expired / batch |
+| test_prompt_builder.py | 7 | empty / events / predictions / full |
+| test_extractor.py | 8 | extraction / store / entry_price / data_coverage |
+| test_narrative.py | 7 | generate / detect_changes / compare / failure |
+| test_semantic.py | 21 | CRUD / upsert-supersede / recalibrate / persistence |
+| test_consolidator.py | 9 | sector_theses / market_regime / patterns / failure |
+| test_vector_search.py | 10 | pack/unpack / store / embed / search / stats |
+
+#### 实战验证
+
+- ✅ 验证降级策略：hit / missed / data_unavailable → expired 全路径
+- ✅ 置信度校准：0.8 → 命中率 30% → 0.55 → 命中率 70% → 0.62
+- ✅ 向量检索：embed_pending 100% 覆盖，search_similar 正确返回相似事件
+- ✅ prompt 注入：知识 + 事件 + 判断回顾 三部分正确注入
+- ✅ 向后兼容：无 episodic/tracker 时 AgentService 行为不变
 
 ---
 

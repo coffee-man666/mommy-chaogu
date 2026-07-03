@@ -58,6 +58,7 @@
 | **微信推送** | Server酱³，阈值过滤 + JSON 去重 |
 | **Web UI** | Vite + Vue 3 + FastAPI，手机访问 |
 | **AI Agent** | 18 个 function-calling 工具 + MCP Server + 盘中扫描 |
+| **自进化记忆** | 情景记忆 + 预测验证闭环 + 语义知识 + 向量检索 |
 | **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分 |
 | **OpenClaw cron** | 4 个自动化 jobs（盘前 / 盘中 / 收盘 / 周报）|
 | **质量门** | ruff + mypy --strict + 300+ 测试 + CI |
@@ -252,7 +253,7 @@ mommy-chaogu
 ├── mommy-semicon      # 半导体产业链查询
 ├── mommy-earnings     # 财报前瞻 vs 实际 比对
 ├── mommy-web          # Web 服务（手机 UI + WS 推送）
-├── mommy-agent        # AI 行情助手（chat / report / scan / monitor）
+├── mommy-agent        # AI 行情助手（chat / report / scan / monitor / verify / predictions / events / remember / narrative / consolidate / knowledge / search）
 ├── mommy-mcp          # MCP Server（stdio 协议）
 └── mommy-chaogu       # 统一入口（config init）
 ```
@@ -351,6 +352,7 @@ uv run mommy-web --port 8765
 | [`docs/DESIGN.md`](docs/DESIGN.md) | 架构 + 5 份 ADR |
 | [`docs/LEDGER.md`](docs/LEDGER.md) | commit 级别时间线 |
 | **[`docs/EARNINGS-HANDBOOK.md`](docs/EARNINGS-HANDBOOK.md)** | 🆕 2026 中报窗口实战手册 |
+| **[`docs/MEMORY-SYSTEM-PLAN.md`](docs/MEMORY-SYSTEM-PLAN.md)** | 🆕 自进化记忆系统设计（四层架构 + 预测验证闭环）|
 | [`docs/KLINE-SPEC.md`](docs/KLINE-SPEC.md) | K 线组件规范 |
 | [`docs/DISCUSSION-NOTES.md`](docs/DISCUSSION-NOTES.md) | 历史决策上下文 |
 
@@ -427,18 +429,19 @@ uv run mypy --strict src        # type check
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~22,000+ 行（src 15,000 + tests 4,000 + web 3,000）|
-| 测试 | **300+ passed**（离线 + agent + earnings + infra）|
+| 代码量 | ~25,000+ 行（src 17,000 + tests 5,000 + web 3,000）|
+| 测试 | **482 passed**（离线 + agent + earnings + infra + memory-system）|
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
 | CI | ✅ GitHub Actions（ruff + mypy + pytest） |
 | 数据源 | 3（efinance / tencent / cninfo）+ 东财新闻/基本面/龙虎榜直连 |
-| CLI 子应用 | 11 / 子命令 35+ |
+| CLI 子应用 | 11 / 子命令 40+（含 8 个记忆系统子命令） |
 | 业务规则 | 7 signals + 4 flows ratio + 自定义告警 + earnings verdict |
-| 数据库表 | 15+（含 agent 记忆 + 推送去重 + earnings）|
+| 数据库表 | 20+（含 5 张记忆系统表 + 推送去重 + earnings） |
 | Web 端点 | 20+ REST + 3 WebSocket |
 | 推送渠道 | Server酱³（微信） |
 | AI 工具 | **18** 个 function-calling tools |
+| 记忆系统 | **5 层**（情景/预测验证/语义知识/向量检索/工作记忆） |
 | LLM Provider | DeepSeek（默认）/ OpenAI / Kimi |
 | MCP Server | ✅ stdio 协议，任意 MCP client 可连接 |
 

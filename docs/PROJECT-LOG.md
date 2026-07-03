@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-07-03（M8 Infra Upgrade P0-P3，branch `feature/infra-upgrade`）
+> 最后更新：2026-07-03（memory-system-v1 Phase 1-5，branch `memory-system-v1`）
 
 ---
 
@@ -16,10 +16,10 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **M8 Infra Upgrade（P0-P3）**（`feature/infra-upgrade` 分支） |
-| 累计 commits | **18+** 推 main |
-| 代码量 | **~20,000+ 行**（src 13500 + tests 3100 + web 3000） |
-| 测试 | **287 个**（含 +53 infra-upgrade 测试） |
+| 项目阶段 | **自进化记忆系统 Phase 1-5 完成**（`memory-system-v1` 分支） |
+| 累计 commits | **25+** |
+| 代码量 | **~25,000+ 行**（src 17000 + tests 5000 + web 3000） |
+| 测试 | **482 个**（含 +121 memory-system 测试） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅**（GitHub Actions） |
 | 数据源 | 东财（主）+ 腾讯（仅 quote 兜底） |
 | 数据点 | 5 只自选股 + 106 只半导体产业链股 |
@@ -52,7 +52,31 @@
 
 ## 2. 关键里程碑（全链路）
 
-> 时间倒序：M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+> 时间倒序：Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+
+### Memory System v1（2026-07-03） — 自进化记忆系统 Phase 1-5 🧠
+
+**痛点**：agent 每次对话都从零开始——不记得上次说了什么、不验证判断是否正确、不沉淀经验。
+
+**对策**：四层记忆架构（CoALA 框架）+ 预测验证闭环，数据缺失场景下不误判。
+
+| Phase | 层 | 内容 | 文件 |
+|---|---|---|---|
+| 1 | 情景记忆 | 结构化事件流（4 种事件 + data_coverage） | `agent/episodic_memory.py` |
+| 1 | 预测验证 | pending→hit/missed/expired 状态机 + 降级验证引擎 | `agent/prediction_tracker.py` + `verify_engine.py` |
+| 1 | 事实抽取 | 对话后 LLM structured output 提取 | `agent/extractor.py` |
+| 3 | 市场脉络 | 30 天主线叙述 + 转折点 + 变化检测 | `agent/narrative.py` |
+| 4 | 语义知识 | 4 种知识 + supersede + 命中率校准 confidence | `agent/semantic_memory.py` + `consolidator.py` |
+| 5 | 向量检索 | sqlite-vec + embedding，"找相似历史事件" | `agent/vector_search.py` |
+
+**设计要点**：
+- 验证降级策略：报价优先（三重保险）→ 资金流可选 → 数据不可用不误判
+- 知识 confidence = 0.5×原始 + 0.5×命中率，越用越准
+- 动态 system prompt 注入知识 + 事件 + 判断回顾
+- 向后兼容：无 episodic/tracker 时 AgentService 行为不变
+- 8 个 CLI 子命令：verify / predictions / events / remember / narrative / consolidate / knowledge / search
+
+**测试 +121**：482 total（361 原有 + 121 memory-system）
 
 ### M8（2026-07-03） — Infra Upgrade（P0-P3）🔧
 
