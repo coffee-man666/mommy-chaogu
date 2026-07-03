@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
+from mommy_chaogu.market_data.news_api import get_announcements, get_longhuban, search_news
 from mommy_chaogu.market_data.rankings import fetch_indexes, fetch_sector_ranking
 from mommy_chaogu.market_data.sector_api import fetch_sector_stocks, search_sector
 from mommy_chaogu.market_data.types import BarInterval, Quote
@@ -246,6 +247,59 @@ _TOOL_DEFINITIONS: list[ToolDef] = [
         description="获取用户持仓明细（含成本、盈亏）。需要先有行情数据来计算盈亏。",
         parameters={"type": "object", "properties": {}},
     ),
+    ToolDef(
+        name="search_news",
+        description="搜索财经新闻。返回标题、来源、日期、摘要。用于了解板块/个股的最新消息和政策。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "keyword": {
+                    "type": "string",
+                    "description": "搜索关键字，如 '创新药 政策'、'半导体 限制'、'茅台'",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 10",
+                    "default": 10,
+                },
+            },
+            "required": ["keyword"],
+        },
+    ),
+    ToolDef(
+        name="get_announcements",
+        description="获取个股最新公告列表（董事会决议、财报、增减持等）。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "股票代码"},
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 10",
+                    "default": 10,
+                },
+            },
+            "required": ["code"],
+        },
+    ),
+    ToolDef(
+        name="get_longhuban",
+        description="获取龙虎榜数据（游资/机构买卖明细）。可看哪些股票被大资金关注。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "日期 YYYY-MM-DD，默认今天",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 20",
+                    "default": 20,
+                },
+            },
+        },
+    ),
 ]
 
 
@@ -436,6 +490,27 @@ def _handle_get_portfolio(ctx: ToolContext, _args: dict[str, Any]) -> str:
     })
 
 
+def _handle_search_news(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    keyword = args["keyword"]
+    limit = args.get("limit", 10)
+    items = search_news(keyword, limit=limit)
+    return _json(items)
+
+
+def _handle_get_announcements(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    code = args["code"]
+    limit = args.get("limit", 10)
+    items = get_announcements(code, limit=limit)
+    return _json(items)
+
+
+def _handle_get_longhuban(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    date = args.get("date")
+    limit = args.get("limit", 20)
+    items = get_longhuban(date=date, limit=limit)
+    return _json(items)
+
+
 # ---------- 注册表 ----------
 
 
@@ -451,6 +526,9 @@ _HANDLERS: dict[str, ToolHandler] = {
     "get_bars": _handle_get_bars,
     "get_watchlist": _handle_get_watchlist,
     "get_portfolio": _handle_get_portfolio,
+    "search_news": _handle_search_news,
+    "get_announcements": _handle_get_announcements,
+    "get_longhuban": _handle_get_longhuban,
 }
 
 _TOOL_MAP: dict[str, ToolDef] = {td.name: td for td in _TOOL_DEFINITIONS}
