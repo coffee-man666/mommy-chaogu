@@ -9,15 +9,30 @@ API 设计原则：
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, joinedload, sessionmaker
 
 from mommy_chaogu.watchlist.models import Group, StockEntry, WatchlistBase
+
+#: JSON 导出 schema 版本。破坏性变更时 +1。
+EXPORT_SCHEMA_VERSION = "1.0"
+
+
+def _iso(dt: datetime | None) -> str | None:
+    """datetime → ISO 8601 字符串（保留时区，秒精度）。None 透传。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.isoformat()
 
 
 class WatchlistError(Exception):
@@ -244,4 +259,92 @@ class WatchlistStore:
             "groups": n_groups,
             "entries": n_entries,
             "codes": n_distinct,
+        }
+
+    # ---------- Export ----------
+
+    def export_to_json(
+        self,
+        output_path: Path | None = None,
+        *,
+        indent: int = 2,
+        ensure_ascii: bool = False,
+    ) -> Path:
+        """导出全部自选股到 JSON 文件。
+
+        Schema（稳定，向后兼容）：
+
+            {
+              "meta": {
+                "schema_version": "1.0",
+                "exported_at": "2026-07-04T04:50:00+00:00",
+                "db_path": "/abs/path/to/watchlist.db",
+                "stats": {"groups": N, "entries": N, "codes": N}
+              },
+              "groups": [
+                {
+                  "name": "...",
+                  "description": "...",
+                  "created_at": "ISO 8601",
+                  "entries": [
+                    {"code": "...", "name": "...", "note": "...", "created_at": "..."}
+                  ]
+                }
+              ]
+            }
+
+        Args:
+            output_path: 输出文件路径，默认 ``<db_path_parent>/watchlist.json``
+            indent: JSON 缩进空格数
+            ensure_ascii: 是否转义非 ASCII 字符（默认 False 保留中文）
+
+        Returns:
+            实际写入的绝对路径。
+
+        Raises:
+            OSError: 文件写入失败
+        """
+        if output_path is None:
+            output_path = self.db_path.parent / "watchlist.json"
+        output_path = output_path.resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        payload: dict[str, Any] = self.build_export_payload()
+        text = json.dumps(payload, indent=indent, ensure_ascii=ensure_ascii)
+        output_path.write_text(text, encoding="utf-8")
+        return output_path
+
+    def build_export_payload(self) -> dict[str, Any]:
+        """构造导出 payload（不写盘）。供测试 / 多目的地使用。"""
+        stats = self.stats()
+        grouped = self.list_entries_by_group()
+        groups_payload: list[dict[str, Any]] = []
+        for group_name, entries in grouped.items():
+            # group description/created_at 从 group 表直接查，避免依赖 entries 非空
+            g_obj = self.get_group(group_name)
+            assert g_obj is not None  # grouped 里的 group 必然存在
+            groups_payload.append(
+                {
+                    "name": group_name,
+                    "description": g_obj.description,
+                    "created_at": _iso(g_obj.created_at),
+                    "entries": [
+                        {
+                            "code": e.code,
+                            "name": e.name,
+                            "note": e.note,
+                            "created_at": _iso(e.created_at),
+                        }
+                        for e in entries
+                    ],
+                }
+            )
+        return {
+            "meta": {
+                "schema_version": EXPORT_SCHEMA_VERSION,
+                "exported_at": _iso(datetime.now(UTC)),
+                "db_path": str(self.db_path.resolve()),
+                "stats": stats,
+            },
+            "groups": groups_payload,
         }

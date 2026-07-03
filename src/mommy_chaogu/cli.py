@@ -177,6 +177,19 @@ def cmd_watchlist_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_watchlist_export(args: argparse.Namespace) -> int:
+    s = _store(args)
+    output = Path(args.output) if args.output else None
+    path = s.export_to_json(
+        output,
+        indent=args.indent,
+        ensure_ascii=args.ensure_ascii,
+    )
+    st = s.stats()
+    print(f"已导出 {st['groups']} 组 / {st['entries']} 条 → {path}")
+    return 0
+
+
 def build_watchlist_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-watchlist",
@@ -224,6 +237,22 @@ def build_watchlist_parser() -> argparse.ArgumentParser:
     # stats
     p_s = sub.add_parser("stats", help="汇总统计")
     p_s.set_defaults(func=cmd_watchlist_stats)
+
+    # export
+    p_e = sub.add_parser("export", help="导出自选股到 JSON 文件")
+    p_e.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="输出路径（默认 <db 所在目录>/watchlist.json）",
+    )
+    p_e.add_argument("--indent", type=int, default=2, help="JSON 缩进（默认 2）")
+    p_e.add_argument(
+        "--ensure-ascii",
+        action="store_true",
+        help="转义非 ASCII（默认不转义，保留中文）",
+    )
+    p_e.set_defaults(func=cmd_watchlist_export)
 
     return p
 
