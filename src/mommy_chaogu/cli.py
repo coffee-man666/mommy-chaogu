@@ -1549,12 +1549,16 @@ def cmd_agent_chat(args: argparse.Namespace) -> int:
     ctx = _build_agent_ctx(args)
     episodic = EpisodicMemory(Path(args.db))
     tracker = PredictionTracker(Path(args.db))
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    semantic = SemanticMemory(Path(args.db))
     agent = AgentService(
         ctx,  # type: ignore[arg-type]
         model=args.model,
         provider=args.provider,
         episodic=episodic,
         tracker=tracker,
+        semantic=semantic,
     )
     memory = ConversationMemory(Path(args.db))
 
@@ -1863,6 +1867,118 @@ def cmd_agent_remember(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent_narrative(args: argparse.Namespace) -> int:
+    """生成市场脉络叙述。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.narrative import MarketNarrative
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(ctx, model=args.model, provider=args.provider)  # type: ignore[arg-type]
+    episodic = EpisodicMemory(Path(args.db))
+
+    nar = MarketNarrative(episodic, agent._client, agent._model)  # type: ignore[attr-defined]
+
+    if args.changes:
+        print("🔍 检测最近变化...")
+        print("─" * 60)
+        text = nar.detect_changes(scope=args.scope or "market")
+    else:
+        print(f"📖 生成过去 {args.days} 天的 {args.scope or 'market'} 脉络...")
+        print("─" * 60)
+        text = nar.generate_narrative(scope=args.scope or "market", days=args.days)
+
+    print(text)
+
+    if args.push:
+        try:
+            import os
+
+            key = os.environ.get("SERVER_CHAN_KEY", "")
+            if not key:
+                print("\n⚠️  未设置 SERVER_CHAN_KEY，跳过推送")
+            else:
+                from mommy_chaogu.push import ServerChanPusher
+
+                pusher = ServerChanPusher(send_key=key)
+                pusher.push(f"📖 市场脉络 {args.days}天", text)
+                print("\n📱 已推送到微信")
+        except Exception as e:
+            print(f"\n⚠️  推送失败: {e}")
+
+    return 0
+
+
+def cmd_agent_consolidate(args: argparse.Namespace) -> int:
+    """从情景记忆提炼语义知识。"""
+    from mommy_chaogu.agent.consolidator import MemoryConsolidator
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(ctx, model=args.model, provider=args.provider)  # type: ignore[arg-type]
+
+    db_path = Path(args.db)
+    episodic = EpisodicMemory(db_path)
+    semantic = SemanticMemory(db_path)
+    tracker = PredictionTracker(db_path)
+
+    cons = MemoryConsolidator(
+        episodic=episodic,
+        semantic=semantic,
+        tracker=tracker,
+        client=agent._client,  # type: ignore[attr-defined]
+        model=agent._model,  # type: ignore[attr-defined]
+    )
+
+    print("🧠 提炼语义知识...")
+    print("─" * 60)
+
+    results = cons.consolidate_all()
+
+    print(f"板块叙事: {results['sector_theses']} 条")
+    print(f"市场状态: {results['market_regime']} 条")
+    print(f"规律归纳: {results['patterns']} 条")
+
+    return 0
+
+
+def cmd_agent_knowledge(args: argparse.Namespace) -> int:
+    """查看语义知识库。"""
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    semantic = SemanticMemory(Path(args.db))
+
+    if args.search:
+        results = semantic.search(args.search, top_k=args.limit)
+        print(f"搜索 '{args.search}' → {len(results)} 条结果")
+    else:
+        results = semantic.get_active(limit=args.limit)
+        print(f"活跃知识 {len(results)} 条")
+
+    print("─" * 60)
+
+    for entry in results:
+        ktype = entry.get("knowledge_type", "")
+        scope = entry.get("scope", "")
+        content = entry.get("content", "")
+        confidence = entry.get("confidence", 0)
+        hits = entry.get("hit_count", 0)
+        misses = entry.get("miss_count", 0)
+
+        print(f"\n[{ktype:16s}] {scope}")
+        print(f"  {content}")
+        hm = f"  置信度 {confidence:.0%}" if confidence else ""
+        if hits or misses:
+            hm += f"  | ✅{hits} ❌{misses}"
+        if hm:
+            print(hm)
+
+    return 0
+
+
 def build_agent_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-agent",
@@ -1939,6 +2055,24 @@ def build_agent_parser() -> argparse.ArgumentParser:
     p_rem.add_argument("--shares", type=int, default=None, help="数量")
     p_rem.add_argument("--reason", default=None, help="备注/原因")
     p_rem.set_defaults(func=cmd_agent_remember)
+
+    # narrative — 市场脉络生成
+    p_nar = sub.add_parser("narrative", help="生成市场脉络叙述")
+    p_nar.add_argument("--days", type=int, default=30, help="回溯天数 (默认 30)")
+    p_nar.add_argument("--scope", default=None, help="范围 (如 market / sector:创新药 / stock:603662)")
+    p_nar.add_argument("--changes", action="store_true", help="只检测最近变化")
+    p_nar.add_argument("--push", action="store_true", help="推送到微信")
+    p_nar.set_defaults(func=cmd_agent_narrative)
+
+    # consolidate — 知识提炼
+    p_con = sub.add_parser("consolidate", help="从情景记忆提炼语义知识")
+    p_con.set_defaults(func=cmd_agent_consolidate)
+
+    # knowledge — 查看知识库
+    p_kn = sub.add_parser("knowledge", help="查看语义知识库")
+    p_kn.add_argument("--search", default=None, help="关键词搜索")
+    p_kn.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
+    p_kn.set_defaults(func=cmd_agent_knowledge)
 
     return p
 

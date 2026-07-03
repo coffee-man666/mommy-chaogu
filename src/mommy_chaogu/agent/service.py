@@ -83,11 +83,13 @@ class AgentService:
         max_tool_calls: int = 10,
         episodic: Any | None = None,
         tracker: Any | None = None,
+        semantic: Any | None = None,
     ) -> None:
         self._tools = ToolRegistry(ctx)
         self._max_tool_calls = max_tool_calls
         self._episodic = episodic
         self._tracker = tracker
+        self._semantic = semantic
         self._ctx = ctx
 
         # 解析 provider 配置
@@ -128,10 +130,10 @@ class AgentService:
         1. 用 build_system_prompt() 注入历史事件和判断回顾
         2. 对话结束后提取结构化 observations + predictions
         """
-        # 动态构建 system prompt（注入历史事件 + 判断回顾）
+        # 动态构建 system prompt（注入历史事件 + 判断回顾 + 知识）
         if self._episodic is not None or self._tracker is not None:
             system_prompt = system_override or build_system_prompt(
-                episodic=self._episodic, tracker=self._tracker
+                episodic=self._episodic, tracker=self._tracker, semantic=self._semantic
             )
         else:
             system_prompt = system_override or SYSTEM_PROMPT

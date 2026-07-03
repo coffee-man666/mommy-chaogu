@@ -91,6 +91,14 @@ def get_prediction_tracker() -> object:
 
 
 @lru_cache(maxsize=1)
+def get_semantic_memory() -> object:
+    """全局 SemanticMemory 单例（语义知识库）。"""
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    return SemanticMemory(get_db_path())
+
+
+@lru_cache(maxsize=1)
 def get_agent_service() -> object:
     """全局 AgentService 单例（lazy init）。
 
@@ -115,4 +123,5 @@ def get_agent_service() -> object:
         ctx,
         episodic=get_episodic_memory(),
         tracker=get_prediction_tracker(),
+        semantic=get_semantic_memory(),
     )
