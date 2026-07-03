@@ -13,7 +13,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from mommy_chaogu.web.deps import get_agent_service
+from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
 
 _log = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class ChatResponse(BaseModel):
 async def chat(
     req: ChatRequest,
     agent: Annotated[Any, Depends(get_agent_service)],
+    memory: Annotated[Any, Depends(get_agent_memory)],
 ) -> ChatResponse:
     """单轮问答。
 
@@ -57,7 +58,9 @@ async def chat(
     resp = await asyncio.to_thread(
         agent.chat,
         req.message,
-        req.history,
+        None,  # history 不单独传，由 memory 提供上下文
+        None,  # system_override
+        memory,
     )
 
     return ChatResponse(
@@ -84,9 +87,10 @@ async def agent_ws(
     await websocket.accept()
 
     # lazy import 避免 app 启动时拉 OpenAI
-    from mommy_chaogu.web.deps import get_agent_service
+    from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
 
     agent = get_agent_service()
+    memory = get_agent_memory()
 
     try:
         while True:
@@ -114,12 +118,12 @@ async def agent_ws(
                 continue
 
             # 同步调用 agent → to_thread
-            history = msg.get("history")
+            # memory 提供持久化对话上下文
 
             # 先发一个 "thinking" 状态
             await websocket.send_json({"type": "thinking"})
 
-            resp = await asyncio.to_thread(agent.chat, user_message, history)
+            resp = await asyncio.to_thread(agent.chat, user_message, None, None, memory)
 
             # 分段发送（模拟流式效果，每 ~50 字一段）
             text = resp.text

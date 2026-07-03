@@ -18,7 +18,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from mommy_chaogu.cache.store import CacheStore
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
+from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
+from mommy_chaogu.market_data.news_api import get_announcements, get_longhuban, search_news
 from mommy_chaogu.market_data.rankings import fetch_indexes, fetch_sector_ranking
 from mommy_chaogu.market_data.sector_api import fetch_sector_stocks, search_sector
 from mommy_chaogu.market_data.types import BarInterval, Quote
@@ -246,6 +249,144 @@ _TOOL_DEFINITIONS: list[ToolDef] = [
         description="获取用户持仓明细（含成本、盈亏）。需要先有行情数据来计算盈亏。",
         parameters={"type": "object", "properties": {}},
     ),
+    ToolDef(
+        name="search_news",
+        description="搜索财经新闻。返回标题、来源、日期、摘要。用于了解板块/个股的最新消息和政策。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "keyword": {
+                    "type": "string",
+                    "description": "搜索关键字，如 '创新药 政策'、'半导体 限制'、'茅台'",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 10",
+                    "default": 10,
+                },
+            },
+            "required": ["keyword"],
+        },
+    ),
+    ToolDef(
+        name="get_announcements",
+        description="获取个股最新公告列表（董事会决议、财报、增减持等）。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "股票代码"},
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 10",
+                    "default": 10,
+                },
+            },
+            "required": ["code"],
+        },
+    ),
+    ToolDef(
+        name="get_longhuban",
+        description="获取龙虎榜数据（游资/机构买卖明细）。可看哪些股票被大资金关注。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "日期 YYYY-MM-DD，默认今天",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 20",
+                    "default": 20,
+                },
+            },
+        },
+    ),
+    ToolDef(
+        name="get_fundamentals",
+        description="获取个股基本面指标（PE/PB/PS/ROE/毛利率/净利率/市值/所属行业），用于评估股票质地。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "股票代码，如 '600519'（贵州茅台）",
+                }
+            },
+            "required": ["code"],
+        },
+    ),
+    ToolDef(
+        name="get_portfolio_analysis",
+        description="分析持仓的行业集中度、相关性矩阵、风险指标（最大回撤/波动率/夏普比率）",
+        parameters={
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "分析窗口天数，默认 30",
+                    "default": 30,
+                }
+            },
+        },
+    ),
+    ToolDef(
+        name="backfill_history",
+        description="批量回填指定股票的历史 K 线和资金流数据到本地缓存，便于离线分析。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "股票代码"},
+                "days": {
+                    "type": "integer",
+                    "description": "回填天数，默认 30",
+                    "default": 30,
+                },
+            },
+            "required": ["code"],
+        },
+    ),
+    ToolDef(
+        name="manage_alert",
+        description="设置或查看自定义价格告警（如'600519跌破1600提醒'）。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "list", "remove"],
+                    "description": "操作类型：add 添加 / list 列出 / remove 删除",
+                },
+                "code": {
+                    "type": "string",
+                    "description": "股票代码（action=list 时可选）",
+                },
+                "condition": {
+                    "type": "string",
+                    "enum": [
+                        "price_above",
+                        "price_below",
+                        "change_pct_above",
+                        "change_pct_below",
+                    ],
+                    "description": "触发条件（add 时必填）",
+                },
+                "threshold": {
+                    "type": "number",
+                    "description": "阈值（add 时必填，price_above/below 为价格，change_pct_* 为百分比）",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "股票名称（add 时可选，默认用 code）",
+                },
+                "alert_id": {
+                    "type": "integer",
+                    "description": "告警 ID（remove 时必填）",
+                },
+            },
+            "required": ["action"],
+        },
+    ),
 ]
 
 
@@ -436,6 +577,143 @@ def _handle_get_portfolio(ctx: ToolContext, _args: dict[str, Any]) -> str:
     })
 
 
+def _handle_search_news(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    keyword = args["keyword"]
+    limit = args.get("limit", 10)
+    items = search_news(keyword, limit=limit)
+    return _json(items)
+
+
+def _handle_get_announcements(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    code = args["code"]
+    limit = args.get("limit", 10)
+    items = get_announcements(code, limit=limit)
+    return _json(items)
+
+
+def _handle_get_longhuban(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    date = args.get("date")
+    limit = args.get("limit", 20)
+    items = get_longhuban(date=date, limit=limit)
+    return _json(items)
+
+
+def _handle_get_fundamentals(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    code = args["code"]
+    result = get_fundamentals(code)
+    return _json(result)
+
+
+def _handle_backfill_history(ctx: ToolContext, args: dict[str, Any]) -> str:
+    if ctx.db_path is None:
+        return _json({"error": "db_path 未配置，无法回填"})
+    code = args["code"]
+    days = args.get("days", 30)
+    store = CacheStore(ctx.db_path)
+    result = store.backfill_history(ctx.adapter, code, days=days)
+    return _json(result)
+
+
+def _handle_get_portfolio_analysis(ctx: ToolContext, args: dict[str, Any]) -> str:
+    if ctx.portfolio_store is None:
+        return _json({"error": "持仓未配置"})
+    days = args.get("days", 30)
+
+    from mommy_chaogu.cache.store import CacheStore
+    from mommy_chaogu.portfolio.analysis import PortfolioAnalyzer
+
+    cache_store: CacheStore | None = None
+    if ctx.db_path is not None:
+        cache_store = CacheStore(ctx.db_path)
+
+    analyzer = PortfolioAnalyzer(
+        store=ctx.portfolio_store,
+        adapter=ctx.adapter,
+        cache_store=cache_store,
+    )
+
+    risk = analyzer.risk_metrics(days=days)
+    sectors = analyzer.sector_concentration()
+    correlation = analyzer.correlation_matrix(days=days)
+
+    return _json({
+        "risk_metrics": risk,
+        "sector_concentration": sectors,
+        "correlation_matrix": correlation,
+        "days": days,
+    })
+
+
+def _handle_manage_alert(ctx: ToolContext, args: dict[str, Any]) -> str:
+    if ctx.db_path is None:
+        return _json({"error": "db_path 未配置，无法管理告警"})
+
+    from mommy_chaogu.signals.custom_alerts import (
+        CustomAlertNotFoundError,
+        CustomAlertStore,
+        InvalidConditionError,
+    )
+
+    store = CustomAlertStore(ctx.db_path)
+    action = args["action"]
+
+    if action == "add":
+        code = args.get("code")
+        if not code:
+            return _json({"error": "action=add 需要 code 参数"})
+        condition = args.get("condition")
+        if not condition:
+            return _json({"error": "action=add 需要 condition 参数"})
+        threshold_raw = args.get("threshold")
+        if threshold_raw is None:
+            return _json({"error": "action=add 需要 threshold 参数"})
+        name = args.get("name") or code
+        threshold = Decimal(str(threshold_raw))
+        try:
+            alert = store.add(code, name, condition, threshold)
+        except InvalidConditionError as e:
+            return _json({"error": str(e)})
+        return _json({
+            "id": alert.id,
+            "code": alert.code,
+            "name": alert.name,
+            "condition": alert.condition,
+            "threshold": float(alert.threshold),
+            "enabled": alert.enabled,
+            "message": f"已设置告警：{name} {condition} {threshold}",
+        })
+
+    elif action == "list":
+        code = args.get("code")
+        alerts = store.list_for_code(code) if code else store.list_all()
+        return _json({
+            "alerts": [
+                {
+                    "id": a.id,
+                    "code": a.code,
+                    "name": a.name,
+                    "condition": a.condition,
+                    "threshold": float(a.threshold),
+                    "enabled": a.enabled,
+                }
+                for a in alerts
+            ],
+            "count": len(alerts),
+        })
+
+    elif action == "remove":
+        alert_id = args.get("alert_id")
+        if alert_id is None:
+            return _json({"error": "action=remove 需要 alert_id 参数"})
+        try:
+            store.remove(int(alert_id))
+        except CustomAlertNotFoundError as e:
+            return _json({"error": str(e)})
+        return _json({"message": f"已删除告警 id={alert_id}"})
+
+    return _json({"error": f"未知 action: {action!r}"})
+
+
 # ---------- 注册表 ----------
 
 
@@ -451,6 +729,13 @@ _HANDLERS: dict[str, ToolHandler] = {
     "get_bars": _handle_get_bars,
     "get_watchlist": _handle_get_watchlist,
     "get_portfolio": _handle_get_portfolio,
+    "search_news": _handle_search_news,
+    "get_announcements": _handle_get_announcements,
+    "get_longhuban": _handle_get_longhuban,
+    "get_fundamentals": _handle_get_fundamentals,
+    "backfill_history": _handle_backfill_history,
+    "manage_alert": _handle_manage_alert,
+    "get_portfolio_analysis": _handle_get_portfolio_analysis,
 }
 
 _TOOL_MAP: dict[str, ToolDef] = {td.name: td for td in _TOOL_DEFINITIONS}

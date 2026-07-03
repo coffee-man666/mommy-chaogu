@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-02（M7 Phase 5 完成 — Agent 盘中扫描监控，commit `d002ee5`）
+最后更新：2026-07-03（M8 Infra Upgrade 完成 — P0-P3，branch `feature/infra-upgrade`，commits `cd1efea` `05a8a71` `f0dd602`）
 
 ---
 
@@ -10,10 +10,10 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **M7 Agent-Centric 重构完成（LLM agent 层 + 11 工具 + Web 聊天 + 盘中扫描监控）** |
-| 代码量 | **~16,600 行**（Python src ~11,000 + tests ~2,600 + web ~3,000） |
-| 测试 | **234 个通过**（含 +38 agent 测试 + M4-M5 补充） |
-| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，11 function-calling 工具，Web 聊天 + 流式推送） |
+| 项目阶段 | **M8 Infra Upgrade 完成（MCP Server + 统一配置 + 记忆 + 回测 + 基本面 + 新闻 + 组合分析）** |
+| 代码量 | **~20,000+ 行**（Python src ~13,500 + tests ~3,100 + web ~3,000） |
+| 测试 | **287 个通过**（含 +53 infra-upgrade 测试） |
+| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
@@ -54,9 +54,11 @@
         └────────────┬────────────────┘
                      ↓
         ┌──────────────────────────────────────────┐
-        │  AgentService (LLM + tools loop)          │ ← NEW M7
+        │  AgentService (LLM + tools loop)          │ ← M7
         │  ├─ deepseek-chat (默认，~0.001元/1k tok) │
-        │  ├─ 11 function-calling 工具             │
+        │  ├─ 18 function-calling 工具             │ ← M8 扩展（+7）
+        │  ├─ MCP Server (stdio protocol)           │ ← NEW M8
+        │  ├─ ConversationMemory (SQLite)           │ ← NEW M8
         │  └─ system prompt（ratio bp 分析原则）    │
         └────────────┬─────────────────────────────┘
                      ↓
@@ -74,6 +76,52 @@
 ---
 
 ## 已完成的里程碑
+
+### ✅ M8: Infra Upgrade（P0-P3，`feature/infra-upgrade` 分支，commits `cd1efea` `05a8a71` `f0dd602`）
+
+> **核心升级**：补齐基础设施短板 — 统一配置、MCP 协议支持、持久记忆、回测引擎、基本面/新闻/龙虎榜数据源、组合分析、自定义告警。
+>
+> Agent 工具从 11 → **18**，CLI 子命令 21 → **25+**，新增 `mommy-mcp` 独立入口。
+
+#### 新增模块
+
+| 文件 | 内容 |
+|---|---|
+| `src/mommy_chaogu/market_data/news_api.py` | **东方财富新闻/公告/龙虎榜 API** — `search_news()` / `get_announcements()` / `get_longhuban()` |
+| `src/mommy_chaogu/market_data/fundamentals_api.py` | **基本面数据 API** — `get_fundamentals()`（PE/PB/PS/ROE/利润率/行业） |
+| `src/mommy_chaogu/market_data/sector_api.py` | 板块成分股（M7 已建，M8 增强） |
+| `src/mommy_chaogu/agent/mcp_server.py` | **MCP Server**（stdio 协议，任意 MCP client 可连接） |
+| `src/mommy_chaogu/agent/memory.py` | **ConversationMemory**（SQLite 持久化，跨 session 记忆） |
+| `src/mommy_chaogu/config.py` | **统一 TOML 配置** — `AppConfig`（AgentConfig / PushConfig / CacheConfig / MonitorConfig） |
+| `src/mommy_chaogu/portfolio/analysis.py` | **PortfolioAnalyzer**（板块集中度 / 相关性矩阵 / 最大回撤 / Sharpe ratio） |
+| `src/mommy_chaogu/signals/custom_alerts.py` | **CustomAlertStore**（用户自定义价格/涨跌幅告警） |
+| `src/mommy_chaogu/backtest/engine.py` | **BacktestEngine**（回放信号规则到缓存历史数据） |
+| `.github/workflows/ci.yml` | **CI**（ruff + mypy + pytest） |
+| `Dockerfile` | **Docker 部署** |
+
+#### 新增 CLI
+
+| 命令 | 内容 |
+|---|---|
+| `mommy-mcp` | MCP Server 独立入口（stdio 协议） |
+| `mommy-watchlist alert` | 自定义告警管理（增删改查） |
+| `mommy-flows backtest` | 回测引擎（信号规则历史回放） |
+| `mommy-chaogu config init` | 生成默认 TOML 配置文件 |
+
+#### 新增 7 个 Agent 工具（11 → 18）
+
+`search_news` / `get_announcements` / `get_longhuban` / `get_fundamentals` / `backfill_history` / `manage_alert` / `get_portfolio_analysis`
+
+#### 完整 18 工具列表
+
+get_quote, get_quotes, get_market_indexes, get_sector_ranking, search_sector, get_sector_stocks, get_money_flow_today, get_money_flow_history, get_bars, get_watchlist, get_portfolio, **search_news, get_announcements, get_longhuban, get_fundamentals, backfill_history, manage_alert, get_portfolio_analysis**
+
+#### 测试
+
+- **+53 个测试**（news_api / fundamentals_api / mcp_server / memory / config / analysis / custom_alerts / backtest）
+- 总测试数：**287 通过**
+
+---
 
 ### ✅ M7: Agent-Centric 重构（Phase 1-5，`feature/agent-centric` 分支，commit `d002ee5`）
 
@@ -275,12 +323,12 @@ src/mommy_chaogu/monitor/         10 轮询（Mock adapter）
 src/mommy_chaogu/signals/         31 规则（每条 3-5 case）
 src/mommy_chaogu/cache/           26 命中/拉新/失败/节流/历史/Manager
 src/mommy_chaogu/push/            29 server_chan + deduper + notifier
-src/mommy_chaogu/agent/           38 工具封装 + service 循环 + prompt + sector_api + monitor 扫描  ← NEW M7
-src/mommy_chaogu/portfolio/       ⚠️ TODO — 当前 0 测试，急补
-src/mommy_chaogu/web/             ⚠️ TODO — 后端单测
-src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
+src/mommy_chaogu/agent/           38 + MCP/memory/scan 测试  ← M7+M8
+src/mommy_chaogu/portfolio/       analysis + store 测试     ← M8
+src/mommy_chaogu/backtest/        engine 单测               ← NEW M8
+src/mommy_chaogu/signals/         31 规则 + custom_alerts   ← M8 扩展
                               ───
-                              234 total（离线 + agent + M4-M5 补充）
+                              287 total（离线 + agent + infra-upgrade）
 ```
 
 - `ruff`: All checks passed
@@ -316,26 +364,38 @@ src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
 | 没复盘报告 | 每天收盘后妈妈要自己看 | P1 |
 | Server酱 免费版 5 条/天 | 严重信号 >5 时部分丢失 | 升级 VIP 或加钉钉/Telegram |
 | 9 个 efinance live 测试偶发挂 | 凌晨东财挂时挂 | `pytest -m live` 标记 |
-| 没 CI | 团长看不见我跑没跑测试 | 待加 GitHub Actions |
+| 没 CI | 团长看不见我跑没跑测试 | ✅ M8 已加 GitHub Actions |
 | 自选股 / 持仓还无法从详情页直接加 | 体验割裂 | 加「加自选」「加持仓」按钮 |
 
 ---
 
 ## 下一步候选（按团长优先级）
 
-> 📅 2026-07-02 更新：M7 Agent-Centric 重构全部完成（Phase 1-5），盘中扫描监控已上线。
+> 📅 2026-07-03 更新：M8 Infra Upgrade（P0-P3）全部完成，MCP Server / 统一配置 / 记忆 / 回测 / 基本面 / 新闻 / 组合分析已上线。
 
 ### ✅ 已验证（7/1 实战）
 1. **cron 链路实跑** —— 4 个 job 修后于 7/1 8:30 盘前预热成功（拉了 105/106 只半导体资金流，hub 实际收到 webhook）
 2. **mommy-hub 联动** —— web 端 三个产业链页面（机器人/半导体/材料）跑通，10+ 条实战报告入 hub SQLite
 3. **多板块扫描稳定** —— 妈妈单子 / 机器人 / 半导体 / 材料 / 光模块 / 证券 全部能跑（拉 + 分析 + 推送 hub）
 
+### ✅ M8 Infra Upgrade 已完成（P0-P3）
+- ✅ **GitHub Actions CI**（ruff + mypy + pytest）— `.github/workflows/ci.yml`
+- ✅ **MCP Server**（stdio 协议，`mommy-mcp` 独立入口）
+- ✅ **统一 TOML 配置**（`mommy-chaogu config init`）
+- ✅ **持久记忆**（ConversationMemory SQLite）
+- ✅ **回测引擎**（BacktestEngine，`mommy-flows backtest`）
+- ✅ **基本面 / 新闻 / 龙虎榜 API**
+- ✅ **组合分析**（PortfolioAnalyzer：集中度 / 相关性 / 回撤 / Sharpe）
+- ✅ **自定义告警**（CustomAlertStore，`mommy-watchlist alert`）
+- ✅ **Docker 部署**（`Dockerfile`）
+
 ### 🟧 P1 — 该做但没做
-1. **GitHub Actions CI**（ruff + mypy + pytest）—— 半小时
-2. **pytest -m live 标记** —— 区分离线/网络测试
-3. **CI 推 supply_chains JSON 验证** —— 确保供应链数据格式不破
-4. **多氟多/联特类「故事+量价背离」」监控规则** —— 避免追高被套
-5. **语音版报告集成** —— `say -v Tingting` + m4a 推送微信（7/1 已验证，可集成进 15:30 cron）
+1. **merge `feature/infra-upgrade` → main** —— 合并后更新 cron job 到新版本
+2. **实战测试** —— MCP client 连接验证 / backtest 真实数据回放 / config 在 cron 中的表现
+3. **README 开源重写** —— 当前进度文档同步后可重写 README
+4. **pytest -m live 标记** —— 区分离线/网络测试
+5. **多氟多/联特类「故事+量价背离」监控规则** —— 避免追高被套
+6. **语音版报告集成** —— `say -v Tingting` + m4a 推送微信
 
 ### 🟨 P2 — 体验升级
 6. **详情页 Tab 化改造**（场景 B — 持仓决策驾驶舱）
@@ -346,9 +406,8 @@ src/mommy_chaogu/market_data/rankings.py  ⚠️ TODO — 排行单测
 
 ### 🟦 P3 — 大件
 11. **微信小程序**（基于 web/src 复用，Taro 重新跑）—— 3-5 天
-12. **回测引擎**（验证信号规则历史表现）—— 1-2 周
-13. **多用户支持**（妈妈 + 丈母娘 + 团长）—— 2-3 天
-14. **内网穿透**（Cloudflare Tunnel，0 配置）—— 1 小时
+12. **多用户支持**（妈妈 + 丈母娘 + 团长）—— 2-3 天
+13. **内网穿透**（Cloudflare Tunnel，0 配置）—— 1 小时
 
 ---
 

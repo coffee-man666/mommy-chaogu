@@ -17,7 +17,8 @@
 - ✅ **M5** — 半导体产业链参考库 + 资金流 ratio 监控 + 收盘日报
 - ✅ **M5.3** — OpenClaw cron 4 jobs 自动化（盘前/盘中/收盘/周报）
 - ✅ **M7** — Agent-Centric 重构（LLM agent + 工具调用 + Web 对话页 + 盘中扫描监控）
-- ⏳ **M6** — 详情页驾驶舱 / 复盘报告 / CI
+- ✅ **M8** — Infra Upgrade（MCP Server + 统一配置 + 记忆 + 回测 + 基本面 + 新闻 + 组合分析 + CI + Docker）
+- ⏳ **M6** — 详情页驾驶舱 / 复盘报告 / merge to main / 实战测试
 
 **新接触项目**？看 [`docs/PROJECT-LOG.md`](docs/PROJECT-LOG.md) — 一站式总览。详见 [`docs/PROGRESS.md`](docs/PROGRESS.md)
 
@@ -55,23 +56,30 @@ mommy-chaogu/
 │   │   ├── adapter.py           # MarketDataAdapter Protocol
 │   │   ├── efinance_adapter.py  # 东方财富（主力）
 │   │   ├── tencent_adapter.py   # 腾讯财经（备力）
-│   │   └── fallback_adapter.py  # 多源 fallback 装饰器
+│   │   ├── fallback_adapter.py  # 多源 fallback 装饰器
+│   │   ├── news_api.py          # 新闻/公告/龙虎榜 API         ← NEW M8
+│   │   └── fundamentals_api.py  # 基本面（PE/PB/ROE/行业）       ← NEW M8
 │   ├── watchlist/       # 自选池（SQLite + SQLAlchemy 2.0）
 │   ├── monitor/         # 监控（snapshot / 持续轮询）
-│   ├── signals/         # 7 条告警规则 + Alerter
+│   ├── signals/         # 7 条告警规则 + Alerter + CustomAlertStore ← M8
 │   ├── cache/           # 装饰器链（5 张表 + 节流 + freshness）
 │   ├── web/             # FastAPI 后端（Web UI 服務）
 │   ├── push/            # Server酱 微信推送（Pusher/Deduper Protocol）
 │   ├── agent/            # LLM agent（工具调用 + 推理）
-│   │   ├── tools.py             # 11 个 function-calling tools
+│   │   ├── tools.py             # 18 个 function-calling tools
 │   │   ├── service.py           # AgentService（deepseek/openai/kimi）
 │   │   ├── prompt.py            # system prompt
 │   │   ├── reports.py           # agent 收盘日报
 │   │   ├── monitor.py           # AgentMonitor 盘中扫描监控
-│   │   └── scan_prompt.py       # scan 专用 prompt（JSON response mode）
+│   │   ├── scan_prompt.py       # scan 专用 prompt（JSON response mode）
+│   │   ├── mcp_server.py        # MCP Server（stdio 协议）       ← NEW M8
+│   │   └── memory.py            # ConversationMemory（SQLite）    ← NEW M8
+│   ├── portfolio/       # 持仓 + 组合分析（集中度/相关性/回撤）    ← M8 analysis
+│   ├── backtest/        # 回测引擎（信号规则历史回放）            ← NEW M8
+│   ├── config.py        # 统一 TOML 配置（AppConfig）             ← NEW M8
 │   └── cli.py           # argparse 入口
 ├── web/                 # Vite + Vue 3 前端（H5 / 手机友好）
-├── tests/               # 154 测试（145 离线 + 9 实时网络）
+├── tests/               # 287 测试（离线 + agent + infra-upgrade）
 ├── scripts/
 │   ├── smoke_market_data.py  # 行情冒烟
 │   ├── demo_signals.py       # 信号 mock 演示
@@ -119,8 +127,21 @@ uv run mommy-agent scan              # 单次扫描自选股
 uv run mommy-agent monitor --interval 180 --max-seconds 19800  # 盘中持续监控（5.5h）
 uv run mommy-agent monitor --push    # + 微信推送
 
+# MCP Server（任意 MCP client 可连接）
+uv run mommy-mcp                     # stdio 协议，Claude Desktop / Cursor 可直连
+
+# 统一配置
+uv run mommy-chaogu config init      # 生成默认 config.toml
+
+# 自定义告警
+uv run mommy-watchlist alert add 600519 --type price --op above --value 1700  # 价格上穿告警
+uv run mommy-watchlist alert list                                            # 查看所有告警
+
+# 回测（信号规则历史回放）
+uv run mommy-flows backtest --rule flow_in_spike --days 30  # 回测指定规则
+
 # 开发
-uv run pytest                      # 跑测试（154）
+uv run pytest                      # 跑测试（287）
 uv run ruff check .                # lint
 uv run mypy src                    # type check (--strict)
 ```
@@ -131,18 +152,24 @@ uv run mypy src                    # type check (--strict)
 mommy-chaogu
 ├── mommy-watchlist    # 自选股管理
 │   ├── add-group / remove-group / groups
-│   └── add / remove / list / stats
+│   ├── add / remove / list / stats
+│   └── alert add / list / remove           # 自定义告警 ← NEW M8
 ├── mommy-monitor      # 行情监控
 │   ├── snapshot / run / log
 │   └── signals / rules
 ├── mommy-cache        # 缓存管理
 │   ├── stats / warmup / refresh / clear
 │   └── snapshots / config
-└── mommy-web          # Web 服务（手机 UI + WS 推送）
-    └── --port / --poll-interval / --server-chan-key / --web-base-url
-└── mommy-agent        # AI 行情助手
-    ├── chat / report / tools / scan / monitor
-    └── --provider deepseek|openai|kimi
+├── mommy-web          # Web 服务（手机 UI + WS 推送）
+│   └── --port / --poll-interval / --server-chan-key / --web-base-url
+├── mommy-agent        # AI 行情助手
+│   ├── chat / report / tools / scan / monitor
+│   └── --provider deepseek|openai|kimi
+├── mommy-mcp          # MCP Server（stdio 协议）  ← NEW M8
+├── mommy-flows        # 资金流 + 回测
+│   └── backtest --rule / --days             # ← NEW M8
+└── mommy-chaogu
+    └── config init                          # ← NEW M8
 ```
 
 ## 📱 Web UI 使用（妈妈手机）
@@ -162,6 +189,29 @@ http://<mac-mini-ip>:8765/
 - **信号** — 触发历史（点跳详情页 K 线）
 - **设置** — 服务状态 + 缓存命中率 + 自选股 CRUD
 - **问** — AI 对话（问行情、问持仓、问板块分析，WebSocket 流式回复）
+
+## 🔌 MCP Server（M8 新增）
+
+内置 MCP（Model Context Protocol）Server，任意 MCP client 可直接连接 mommy-chaogu 的 18 个工具。
+
+```bash
+# 启动 MCP Server（stdio 协议）
+uv run mommy-mcp
+```
+
+**Claude Desktop 配置示例**（`~/Library/Application Support/Claude/claude_desktop_config.json`）：
+```json
+{
+  "mcpServers": {
+    "mommy-chaogu": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/mommy-chaogu", "mommy-mcp"]
+    }
+  }
+}
+```
+
+连接后 Claude / Cursor 等 client 可直接调用：实时报价、K线、资金流、板块成分股、新闻、龙虎榜、基本面、组合分析等 18 个工具。
 
 ## 🔔 Server酱 微信推送
 
@@ -203,27 +253,35 @@ uv run mommy-web --port 8765
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~16,600 行（src 11000 + tests 2600 + web 3000） |
-| 测试 | **234**（含 +38 agent 测试：13 tools + 8 service + 17 monitor） |
+| 代码量 | ~20,000+ 行（src 13500 + tests 3100 + web 3000） |
+| 测试 | **287**（含 +53 infra-upgrade 测试） |
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
-| pytest | ✅ 145 passed / 9 flaky live |
-| 数据源 | 2（efinance 主 + tencent 备） |
-| CLI 子命令 | 5 子应用 / 21 子命令 |
-| 业务规则 | 7 |
-| 数据库表 | 8 + 推送去重 1 |
+| CI | ✅ GitHub Actions（ruff + mypy + pytest） ← NEW M8 |
+| 数据源 | 2（efinance 主 + tencent 备）+ 东财新闻/基本面/龙虎榜直连 |
+| CLI 子命令 | 6 子应用 / 25+ 子命令（+ mommy-mcp / config / alert / backtest） |
+| 业务规则 | 7 + 自定义告警 |
+| 数据库表 | 8 + 推送去重 1 + agent 记忆 1 |
 | Web 端点 | 15 REST + 3 WebSocket |
 | 推送渠道 | Server酱³（微信） |
-| AI 工具 | 11 个 function-calling tools |
+| AI 工具 | **18** 个 function-calling tools |
 | LLM Provider | DeepSeek（默认）/ OpenAI / Kimi |
+| MCP Server | ✅ stdio 协议，任意 MCP client 可连接 ← NEW M8 |
 
 ## 当前里程碑
 
-**M7 Agent-Centric 重构完成（Phase 1-5，2026-07-02，commit `d002ee5`）**。
-- Phase 1-4：LLM agent 层（11 工具 + AgentService）+ Web 对话页（流式推送）
-- Phase 5：Agent 盘中扫描监控（低频 LLM 扫描循环，~0.05 元/天，有告警才推送）
+**M8 Infra Upgrade 完成（P0-P3，2026-07-03，branch `feature/infra-upgrade`）**。
+- MCP Server（stdio 协议，`mommy-mcp` 独立入口）
+- 统一 TOML 配置（`config.py` + `config init`）
+- ConversationMemory（SQLite 持久化，跨 session 记忆）
+- BacktestEngine（信号规则历史回放）
+- 基本面 / 新闻 / 龙虎榜 API（Agent 工具 11 → **18**）
+- PortfolioAnalyzer（板块集中度 / 相关性矩阵 / 最大回撤 / Sharpe ratio）
+- CustomAlertStore（自定义价格/涨跌幅告警）
+- GitHub Actions CI（ruff + mypy + pytest）
+- Dockerfile（容器化部署）
 
-下一步：**README 开源重写 / GitHub Actions CI / pytest -m live 标记**。
+下一步：**merge to main / 实战测试 / README 开源重写**。
 
 ## License
 
