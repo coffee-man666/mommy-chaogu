@@ -17,6 +17,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from mommy_chaogu.agent.memory import ConversationMemory
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
@@ -109,18 +110,33 @@ class AgentService:
         user_message: str,
         history: list[dict[str, str]] | None = None,
         system_override: str | None = None,
+        memory: ConversationMemory | None = None,
     ) -> AgentResponse:
-        """单轮对话（可带历史），返回最终文本 + 工具调用日志。"""
+        """单轮对话（可带历史），返回最终文本 + 工具调用日志。
+
+        如果传入 *memory*，会先从中加载最近对话作为上下文，
+        完成后将本轮 user / assistant 消息持久化到 memory。
+        """
         system_prompt = system_override or SYSTEM_PROMPT
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
-        if history:
+        if memory is not None:
+            # 用持久化记忆作为对话上下文
+            for h in memory.recent():
+                messages.append({"role": h["role"], "content": h["content"]})
+        elif history:
             for h in history:
                 messages.append({"role": h["role"], "content": h["content"]})
 
         messages.append({"role": "user", "content": user_message})
 
-        return self._run_loop(messages)
+        resp = self._run_loop(messages)
+
+        if memory is not None:
+            memory.add("user", user_message)
+            memory.add("assistant", resp.text)
+
+        return resp
 
     def chat_raw(
         self,

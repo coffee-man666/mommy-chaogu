@@ -5,4 +5,5 @@
 - service.py — AgentService（LLM + tools 循环）
 - prompt.py  — system prompt
 - reports.py — agent 驱动的收盘日报
+- memory.py  — ConversationMemory（对话记忆持久化）
 """

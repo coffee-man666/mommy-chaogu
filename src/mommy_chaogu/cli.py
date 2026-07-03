@@ -442,6 +442,9 @@ def main() -> int:
     sub.add_parser("agent", help="AI 行情助手（对话 / 日报）").set_defaults(
         func=lambda _: _dispatch_subcommand(build_agent_parser(), "mommy-agent")
     )
+    sub.add_parser("config", help="配置文件管理（生成模板）").set_defaults(
+        func=lambda _: _dispatch_subcommand(build_config_mgmt_parser(), "mommy-config")
+    )
 
     args = p.parse_args()
     rc = args.func(args)
@@ -1281,6 +1284,7 @@ def _build_agent_ctx(args: argparse.Namespace) -> object:
 
 def cmd_agent_chat(args: argparse.Namespace) -> int:
     """交互式对话。"""
+    from mommy_chaogu.agent.memory import ConversationMemory
     from mommy_chaogu.agent.service import AgentService
 
     ctx = _build_agent_ctx(args)
@@ -1289,13 +1293,13 @@ def cmd_agent_chat(args: argparse.Namespace) -> int:
         model=args.model,
         provider=args.provider,
     )
+    memory = ConversationMemory(Path(args.db))
 
     print("=" * 60)
     print("  💬 妈妈行情助手（输入 quit/exit 退出）")
     print("=" * 60)
     print()
 
-    history: list[dict[str, str]] = []
     while True:
         try:
             user_input = input("🧑 ").strip()
@@ -1311,7 +1315,7 @@ def cmd_agent_chat(args: argparse.Namespace) -> int:
 
         print()
         try:
-            resp = agent.chat(user_input, history=history)
+            resp = agent.chat(user_input, memory=memory)
             print(f"🤖 {resp.text}")
             if resp.tool_calls:
                 tools_str = ", ".join(tc.name for tc in resp.tool_calls)
@@ -1319,12 +1323,6 @@ def cmd_agent_chat(args: argparse.Namespace) -> int:
         except Exception as e:
             print(f"❌ 出错了: {e}")
         print()
-
-        history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": resp.text})
-        # 保留最近 10 轮
-        if len(history) > 20:
-            history = history[-20:]
 
     return 0
 
@@ -1533,6 +1531,43 @@ def main_agent() -> NoReturn:
     args = parser.parse_args()
     rc = args.func(args)
     sys.exit(rc)
+
+
+# ============================================================
+# config 子命令（配置文件管理）
+# ============================================================
+
+
+def cmd_config_init(args: argparse.Namespace) -> int:
+    """生成配置模板文件。"""
+    from mommy_chaogu.config import create_default_config
+
+    output = Path(args.output)
+    if output.exists() and not args.force:
+        print(f"⚠️  配置文件已存在: {output}（用 --force 覆盖）")
+        return 1
+    p = create_default_config(output)
+    print(f"✅ 已生成配置模板: {p}")
+    print("   编辑后填入你的 key，或用环境变量覆盖：")
+    print("     DEEPSEEK_API_KEY  /  SERVER_CHAN_KEY  /  AGENT_PROVIDER")
+    return 0
+
+
+def build_config_mgmt_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="mommy-config",
+        description="妈妈炒股 - 配置文件管理",
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    p_init = sub.add_parser("init", help="生成 config.toml 模板")
+    p_init.add_argument(
+        "--output", "-o", default="config.toml", help="输出路径 (默认 config.toml)"
+    )
+    p_init.add_argument("--force", action="store_true", help="覆盖已有文件")
+    p_init.set_defaults(func=cmd_config_init)
+
+    return p
 
 
 if __name__ == "__main__":

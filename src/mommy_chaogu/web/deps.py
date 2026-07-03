@@ -66,6 +66,14 @@ def get_portfolio_store() -> PortfolioStore:
 
 
 @lru_cache(maxsize=1)
+def get_agent_memory() -> object:
+    """全局 ConversationMemory 单例（与主库共用 db 文件）。"""
+    from mommy_chaogu.agent.memory import ConversationMemory
+
+    return ConversationMemory(get_db_path())
+
+
+@lru_cache(maxsize=1)
 def get_agent_service() -> object:
     """全局 AgentService 单例（lazy init）。
 

@@ -18,7 +18,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from mommy_chaogu.cache.store import CacheStore
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
+from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
 from mommy_chaogu.market_data.news_api import get_announcements, get_longhuban, search_news
 from mommy_chaogu.market_data.rankings import fetch_indexes, fetch_sector_ranking
 from mommy_chaogu.market_data.sector_api import fetch_sector_stocks, search_sector
@@ -300,6 +302,36 @@ _TOOL_DEFINITIONS: list[ToolDef] = [
             },
         },
     ),
+    ToolDef(
+        name="get_fundamentals",
+        description="获取个股基本面指标（PE/PB/PS/ROE/毛利率/净利率/市值/所属行业），用于评估股票质地。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "股票代码，如 '600519'（贵州茅台）",
+                }
+            },
+            "required": ["code"],
+        },
+    ),
+    ToolDef(
+        name="backfill_history",
+        description="批量回填指定股票的历史 K 线和资金流数据到本地缓存，便于离线分析。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "股票代码"},
+                "days": {
+                    "type": "integer",
+                    "description": "回填天数，默认 30",
+                    "default": 30,
+                },
+            },
+            "required": ["code"],
+        },
+    ),
 ]
 
 
@@ -511,6 +543,22 @@ def _handle_get_longhuban(_ctx: ToolContext, args: dict[str, Any]) -> str:
     return _json(items)
 
 
+def _handle_get_fundamentals(_ctx: ToolContext, args: dict[str, Any]) -> str:
+    code = args["code"]
+    result = get_fundamentals(code)
+    return _json(result)
+
+
+def _handle_backfill_history(ctx: ToolContext, args: dict[str, Any]) -> str:
+    if ctx.db_path is None:
+        return _json({"error": "db_path 未配置，无法回填"})
+    code = args["code"]
+    days = args.get("days", 30)
+    store = CacheStore(ctx.db_path)
+    result = store.backfill_history(ctx.adapter, code, days=days)
+    return _json(result)
+
+
 # ---------- 注册表 ----------
 
 
@@ -529,6 +577,8 @@ _HANDLERS: dict[str, ToolHandler] = {
     "search_news": _handle_search_news,
     "get_announcements": _handle_get_announcements,
     "get_longhuban": _handle_get_longhuban,
+    "get_fundamentals": _handle_get_fundamentals,
+    "backfill_history": _handle_backfill_history,
 }
 
 _TOOL_MAP: dict[str, ToolDef] = {td.name: td for td in _TOOL_DEFINITIONS}
