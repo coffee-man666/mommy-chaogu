@@ -28,6 +28,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import NoReturn
 
+# ---------- 默认路径 ----------
+from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 from mommy_chaogu.market_data import EfinanceAdapter
 from mommy_chaogu.monitor import Monitor
 from mommy_chaogu.semicon.store import Board, ChainPosition, Subcategory
@@ -39,15 +41,14 @@ from mommy_chaogu.watchlist.store import (
     StockEntryNotFoundError,
 )
 
-# ---------- 默认路径 ----------
-
-DEFAULT_DB_PATH = Path("data/watchlist.db")
+DEFAULT_DB_PATH = PORTFOLIO_DB  # 自选股 + 持仓
 DEFAULT_LOG_PATH = Path("data/monitor.log")
 DEFAULT_SIGNALS_LOG_PATH = Path("data/signals.log")
-DEFAULT_CACHE_DB_PATH = Path("data/watchlist.db")  # cache 与 watchlist 共用一份 db
-DEFAULT_SEMICON_DB_PATH = Path("data/semicon.db")  # 半导体产业链独立 db
-DEFAULT_FLOWS_SEMICON_DB_PATH = Path("data/semicon.db")  # flows 拉哪只从哪取
-DEFAULT_FLOWS_DB_PATH = Path("data/watchlist.db")  # 资金流缓存落到哪（复用 cache 表）
+DEFAULT_CACHE_DB_PATH = MARKET_DB  # 行情缓存
+DEFAULT_SEMICON_DB_PATH = REFERENCE_DB  # 半导体产业链
+DEFAULT_FLOWS_SEMICON_DB_PATH = REFERENCE_DB  # flows 拉哪只从哪取
+DEFAULT_FLOWS_DB_PATH = MARKET_DB  # 资金流缓存
+DEFAULT_AGENT_DB_PATH = AGENT_DB  # 记忆系统
 DEFAULT_FLOWS_MONITOR_LOG_PATH = Path("data/flows_monitor.log")  # monitor 信号日志
 DEFAULT_FLOWS_REPORT_DIR = Path("data/")  # 收盘日报输出目录
 
@@ -1516,26 +1517,31 @@ def main_report() -> NoReturn:
 
 
 def _build_agent_ctx(args: argparse.Namespace) -> object:
-    """构造 AgentService 的 ToolContext。"""
+    """构造 AgentService 的 ToolContext。
+
+    行情数据用 MARKET_DB，用户数据用 PORTFOLIO_DB。
+    """
     from mommy_chaogu.agent.tools import ToolContext
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
 
-    db_path = Path(args.db)
+    market_db = MARKET_DB
+    portfolio_db = PORTFOLIO_DB
+
     base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
-    store = CacheStore(db_path)
+    store = CacheStore(market_db)
     adapter = CachedMarketDataAdapter(base, store)
 
-    watchlist_store = WatchlistStore(db_path)
-    portfolio_store = PortfolioStore(db_path)
+    watchlist_store = WatchlistStore(portfolio_db)
+    portfolio_store = PortfolioStore(portfolio_db)
 
     return ToolContext(
         adapter=adapter,
         watchlist_store=watchlist_store,
         portfolio_store=portfolio_store,
-        db_path=db_path,
+        db_path=AGENT_DB,
     )
 
 
@@ -2041,7 +2047,7 @@ def build_agent_parser() -> argparse.ArgumentParser:
         description="妈妈炒股 - AI 行情助手（对话 / 日报）",
     )
     p.add_argument(
-        "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
+        "--db", default=str(DEFAULT_AGENT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_AGENT_DB_PATH})"
     )
     p.add_argument("--model", default=None, help="LLM 模型名（默认按 provider）")
     p.add_argument(

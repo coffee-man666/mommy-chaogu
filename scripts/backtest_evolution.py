@@ -15,18 +15,15 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-import sys
 import time
 from collections import defaultdict
-from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import requests
+
+from mommy_chaogu.db_paths import AGENT_DB
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s %(message)s")
 _log = logging.getLogger(__name__)
@@ -71,14 +68,16 @@ def fetch_tencent_daily(code: str, market: str) -> list[dict[str, Any]]:
 
         result = []
         for row in rows:
-            result.append({
-                "date": row[0],
-                "open": float(row[1]),
-                "close": float(row[2]),
-                "high": float(row[3]),
-                "low": float(row[4]),
-                "volume": float(row[5]) if len(row) > 5 else 0,
-            })
+            result.append(
+                {
+                    "date": row[0],
+                    "open": float(row[1]),
+                    "close": float(row[2]),
+                    "high": float(row[3]),
+                    "low": float(row[4]),
+                    "volume": float(row[5]) if len(row) > 5 else 0,
+                }
+            )
         return result
     except Exception as e:
         print(f"  ⚠️  腾讯 K线 {code} 失败: {e}")
@@ -225,43 +224,51 @@ def generate_predictions(
 
     # 规则 1：主力大幅流入 + 涨 → bullish
     if ratio_bp > 5 and price_change > 0:
-        preds.append({
-            "direction": "bullish",
-            "entry_price": close,
-            "rationale": f"主力 ratio {ratio_bp:+.1f}bp + 涨 {price_change:+.1f}%",
-            "strength": "normal",
-            "rule": "flow_in_price_up",
-        })
+        preds.append(
+            {
+                "direction": "bullish",
+                "entry_price": close,
+                "rationale": f"主力 ratio {ratio_bp:+.1f}bp + 涨 {price_change:+.1f}%",
+                "strength": "normal",
+                "rule": "flow_in_price_up",
+            }
+        )
 
     # 规则 2：主力大幅流出 + 跌 → bearish
     elif ratio_bp < -5 and price_change < 0:
-        preds.append({
-            "direction": "bearish",
-            "entry_price": close,
-            "rationale": f"主力 ratio {ratio_bp:+.1f}bp + 跌 {price_change:+.1f}%",
-            "strength": "normal",
-            "rule": "flow_out_price_down",
-        })
+        preds.append(
+            {
+                "direction": "bearish",
+                "entry_price": close,
+                "rationale": f"主力 ratio {ratio_bp:+.1f}bp + 跌 {price_change:+.1f}%",
+                "strength": "normal",
+                "rule": "flow_out_price_down",
+            }
+        )
 
     # 规则 3：极端流入（>10bp）
     if ratio_bp > 10:
-        preds.append({
-            "direction": "bullish",
-            "entry_price": close,
-            "rationale": f"极端流入 ratio {ratio_bp:+.1f}bp",
-            "strength": "strong",
-            "rule": "extreme_inflow",
-        })
+        preds.append(
+            {
+                "direction": "bullish",
+                "entry_price": close,
+                "rationale": f"极端流入 ratio {ratio_bp:+.1f}bp",
+                "strength": "strong",
+                "rule": "extreme_inflow",
+            }
+        )
 
     # 规则 4：极端流出（< -10bp）
     if ratio_bp < -10:
-        preds.append({
-            "direction": "bearish",
-            "entry_price": close,
-            "rationale": f"极端流出 ratio {ratio_bp:+.1f}bp",
-            "strength": "strong",
-            "rule": "extreme_outflow",
-        })
+        preds.append(
+            {
+                "direction": "bearish",
+                "entry_price": close,
+                "rationale": f"极端流出 ratio {ratio_bp:+.1f}bp",
+                "strength": "strong",
+                "rule": "extreme_outflow",
+            }
+        )
 
     return preds
 
@@ -308,7 +315,7 @@ def verify_prediction(
 # ============================================================
 
 
-def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
+def run_backtest(db_path: str = str(AGENT_DB)) -> None:
     db = Path(db_path)
     if db.exists():
         db.unlink()
@@ -316,8 +323,8 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
     # 延迟导入（确保用新 db）
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
     from mommy_chaogu.agent.prediction_tracker import PredictionTracker
-    from mommy_chaogu.agent.prompt_builder import build_system_prompt
     from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
+    from mommy_chaogu.agent.prompt_builder import build_system_prompt
     from mommy_chaogu.agent.semantic_memory import SemanticMemory
 
     episodic = EpisodicMemory(db)
@@ -353,10 +360,7 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
         stock.build()
         all_stocks[code] = stock
 
-        print(
-            f"  {code} {name:8s}  K线 {len(klines)} 天  "
-            f"资金流 {len(flows)} 天"
-        )
+        print(f"  {code} {name:8s}  K线 {len(klines)} 天  资金流 {len(flows)} 天")
 
         time.sleep(0.3)  # 避免太快被 ban
 
@@ -432,18 +436,20 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
                     rationale=pred["rationale"],
                 )
 
-                pred_records.append({
-                    "pid": pid,
-                    "event_id": event_id,
-                    "code": code,
-                    "name": name,
-                    "date": date,
-                    "direction": pred["direction"],
-                    "entry_price": pred["entry_price"],
-                    "strength": pred["strength"],
-                    "rule": pred["rule"],
-                    "rationale": pred["rationale"],
-                })
+                pred_records.append(
+                    {
+                        "pid": pid,
+                        "event_id": event_id,
+                        "code": code,
+                        "name": name,
+                        "date": date,
+                        "direction": pred["direction"],
+                        "entry_price": pred["entry_price"],
+                        "strength": pred["strength"],
+                        "rule": pred["rule"],
+                        "rationale": pred["rationale"],
+                    }
+                )
 
     print(f"  生成 {len(pred_records)} 条预测（{len(backtest_dates)} 天 × 10 只股票）")
 
@@ -456,9 +462,7 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
         stock = all_stocks[rec["code"]]
         future_close = stock.get_future_close(rec["date"], 5)
 
-        status, score = verify_prediction(
-            rec["direction"], rec["entry_price"], future_close
-        )
+        status, score = verify_prediction(rec["direction"], rec["entry_price"], future_close)
 
         tracker.update_status(
             rec["pid"],
@@ -507,7 +511,7 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
     expired = stats["expired"]
     hit_rate = stats["hit_rate"]
 
-    print(f"\n📈 总体表现")
+    print("\n📈 总体表现")
     print(f"  总预测: {total}")
     print(f"  ✅ 命中: {hits}  ❌ 失误: {missed}  ⏰ 过期: {expired}")
     verifiable = hits + missed
@@ -522,20 +526,19 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
     bull_verifiable = sum(1 for p in bullish if p["status"] in ("hit", "missed"))
     bear_verifiable = sum(1 for p in bearish if p["status"] in ("hit", "missed"))
 
-    print(f"\n📊 分方向命中率")
+    print("\n📊 分方向命中率")
     print(
-        f"  Bullish: {bull_hits}/{bull_verifiable} "
-        f"({bull_hits / bull_verifiable:.0%})" if bull_verifiable else "  Bullish: 0 条可验证"
+        f"  Bullish: {bull_hits}/{bull_verifiable} ({bull_hits / bull_verifiable:.0%})"
+        if bull_verifiable
+        else "  Bullish: 0 条可验证"
     )
     print(
-        f"  Bearish: {bear_hits}/{bear_verifiable} "
-        f"({bear_hits / bear_verifiable:.0%})" if bear_verifiable else "  Bearish: 0 条可验证"
+        f"  Bearish: {bear_hits}/{bear_verifiable} ({bear_hits / bear_verifiable:.0%})"
+        if bear_verifiable
+        else "  Bearish: 0 条可验证"
     )
 
     # 分信号强度
-    normal_preds = [p for p in all_preds if any("normal" in str(r.get("rationale", "")) or "5bp" in str(r) for r in [p])]
-    strong_preds = [p for p in all_preds if "极端" in (p.get("rationale") or "")]
-
     # 用 pred_records 分强度
     strong_codes = {r["pid"] for r in pred_records if r["strength"] == "strong"}
     normal_codes = {r["pid"] for r in pred_records if r["strength"] == "normal"}
@@ -547,14 +550,18 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
     strong_verifiable = sum(1 for p in strong_all if p["status"] in ("hit", "missed"))
     normal_verifiable = sum(1 for p in normal_all if p["status"] in ("hit", "missed"))
 
-    print(f"\n📊 分信号强度")
+    print("\n📊 分信号强度")
     if normal_verifiable:
-        print(f"  普通信号 (5-10bp): {normal_hits}/{normal_verifiable} ({normal_hits / normal_verifiable:.0%})")
+        print(
+            f"  普通信号 (5-10bp): {normal_hits}/{normal_verifiable} ({normal_hits / normal_verifiable:.0%})"
+        )
     if strong_verifiable:
-        print(f"  强信号 (10bp+):    {strong_hits}/{strong_verifiable} ({strong_hits / strong_verifiable:.0%})")
+        print(
+            f"  强信号 (10bp+):    {strong_hits}/{strong_verifiable} ({strong_hits / strong_verifiable:.0%})"
+        )
 
     # 分个股
-    print(f"\n📊 分个股命中率")
+    print("\n📊 分个股命中率")
     by_code: dict[str, list] = defaultdict(list)
     for p in all_preds:
         by_code[f"{p['code']} {p.get('name', '')}"].append(p)
@@ -563,36 +570,50 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
         verifiable = [p for p in preds if p["status"] in ("hit", "missed")]
         hits = sum(1 for p in verifiable if p["status"] == "hit")
         rate = hits / len(verifiable) if verifiable else 0
-        emoji = "🏆" if rate >= 0.7 and len(verifiable) >= 2 else "💀" if rate <= 0.3 and len(verifiable) >= 2 else "  "
+        emoji = (
+            "🏆"
+            if rate >= 0.7 and len(verifiable) >= 2
+            else "💀"
+            if rate <= 0.3 and len(verifiable) >= 2
+            else "  "
+        )
         if verifiable:
             print(f"  {emoji} {label:20s} {hits}/{len(verifiable)} ({rate:.0%})")
 
     # 最准 / 最差
-    verified = [p for p in all_preds if p["status"] in ("hit", "missed") and p.get("accuracy_score") is not None]
+    verified = [
+        p
+        for p in all_preds
+        if p["status"] in ("hit", "missed") and p.get("accuracy_score") is not None
+    ]
     verified.sort(key=lambda p: p["accuracy_score"], reverse=True)
 
-    print(f"\n🏆 最准的 3 条预测")
+    print("\n🏆 最准的 3 条预测")
     for p in verified[:3]:
         change = ""
         if p.get("actual_price") and p.get("entry_price"):
             ch = (p["actual_price"] - p["entry_price"]) / p["entry_price"] * 100
             change = f" ({ch:+.1f}%)"
-        print(f"  ✅ {p['code']} {p.get('name', ''):8s} {p['direction']:8s} score={p['accuracy_score']:.1f}{change}")
+        print(
+            f"  ✅ {p['code']} {p.get('name', ''):8s} {p['direction']:8s} score={p['accuracy_score']:.1f}{change}"
+        )
         print(f"      {p.get('prediction', '')[:50]}")
 
-    print(f"\n💀 最差的 3 条预测")
+    print("\n💀 最差的 3 条预测")
     for p in verified[-3:]:
         change = ""
         if p.get("actual_price") and p.get("entry_price"):
             ch = (p["actual_price"] - p["entry_price"]) / p["entry_price"] * 100
             change = f" ({ch:+.1f}%)"
-        print(f"  ❌ {p['code']} {p.get('name', ''):8s} {p['direction']:8s} score={p['accuracy_score']:.1f}{change}")
+        print(
+            f"  ❌ {p['code']} {p.get('name', ''):8s} {p['direction']:8s} score={p['accuracy_score']:.1f}{change}"
+        )
         print(f"      {p.get('prediction', '')[:50]}")
 
     # ============================================================
     # Step 5: 知识提炼
     # ============================================================
-    print(f"\n🧠 知识提炼\n")
+    print("\n🧠 知识提炼\n")
 
     # 规律 1：方向命中率
     patterns: list[str] = []
@@ -671,7 +692,7 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
         knowledge_type="market_regime",
         scope="market",
         content=f"2026年6月市场：总命中率 {hit_rate:.0%}，"
-                f"{'多头占优' if bull_verifiable and bull_hits / bull_verifiable > 0.5 else '空头或震荡占优'}",
+        f"{'多头占优' if bull_verifiable and bull_hits / bull_verifiable > 0.5 else '空头或震荡占优'}",
         confidence=0.6,
     )
 
@@ -680,10 +701,12 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
     # ============================================================
     # Step 6: 进化后的 prompt
     # ============================================================
-    print(f"\n📝 进化后的 system prompt 片段\n")
+    print("\n📝 进化后的 system prompt 片段\n")
 
     prompt = build_system_prompt(episodic=episodic, tracker=tracker, semantic=semantic)
-    print(f"  原始: {len(SYSTEM_PROMPT)} 字 → 进化后: {len(prompt)} 字 (+{len(prompt) - len(SYSTEM_PROMPT)})")
+    print(
+        f"  原始: {len(SYSTEM_PROMPT)} 字 → 进化后: {len(prompt)} 字 (+{len(prompt) - len(SYSTEM_PROMPT)})"
+    )
 
     # 只显示注入部分
     if "## 已有认知" in prompt:
@@ -697,13 +720,13 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
     if "## 最近判断回顾" in prompt:
         start = prompt.find("## 最近判断回顾")
         print()
-        print(prompt[start:start + 400].strip())
+        print(prompt[start : start + 400].strip())
 
     # ============================================================
     # 总结
     # ============================================================
     print(f"\n{'=' * 70}")
-    print(f"  ✅ 回测进化测试完成")
+    print("  ✅ 回测进化测试完成")
     print(f"  {total} 条预测 → {hits} 命中 → 命中率 {hit_rate:.0%}")
     print(f"  {len(semantic.get_active())} 条知识提炼")
     print(f"  prompt 从 {len(SYSTEM_PROMPT)} 字进化到 {len(prompt)} 字")
@@ -711,5 +734,5 @@ def run_backtest(db_path: str = "/tmp/backtest_evolution.db") -> None:
 
 
 if __name__ == "__main__":
-    db = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--db" else "/tmp/backtest_evolution.db"
+    db = str(AGENT_DB)
     run_backtest(db)

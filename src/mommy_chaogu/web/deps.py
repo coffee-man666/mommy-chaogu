@@ -4,6 +4,11 @@
 - Adapter / Store / Alerter / Cache 全部 lazy-init 单例
 - 测试时用 app.dependency_overrides 替换
 - 不在 import 时拉网络（fail-fast 但不起连接）
+
+数据库分库（见 db_paths.py）：
+- market.db — 行情缓存
+- portfolio.db — 自选股 + 持仓
+- agent.db — 记忆系统
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
 from mommy_chaogu.market_data import (
     EfinanceAdapter,
     FallbackAdapter,
@@ -24,9 +30,28 @@ from mommy_chaogu.watchlist import WatchlistStore
 
 
 @lru_cache(maxsize=1)
+def get_market_db() -> Path:
+    """行情数据库路径。"""
+    return MARKET_DB
+
+
+@lru_cache(maxsize=1)
+def get_portfolio_db() -> Path:
+    """用户数据库路径（自选股 + 持仓）。"""
+    return PORTFOLIO_DB
+
+
+@lru_cache(maxsize=1)
+def get_agent_db() -> Path:
+    """记忆系统数据库路径。"""
+    return AGENT_DB
+
+
+# 向后兼容：旧代码引用 get_db_path() 的地方
+@lru_cache(maxsize=1)
 def get_db_path() -> Path:
-    """全局 DB 路径（默认 data/watchlist.db）。"""
-    return Path("data/watchlist.db")
+    """全局 DB 路径（向后兼容，指向 portfolio.db）。"""
+    return PORTFOLIO_DB
 
 
 @lru_cache(maxsize=1)
@@ -39,7 +64,7 @@ def get_adapter() -> MarketDataAdapter:
     """
     adapter = CachedMarketDataAdapter(
         FallbackAdapter([EfinanceAdapter(), TencentAdapter()]),
-        CacheStore(get_db_path()),
+        CacheStore(get_market_db()),
     )
     return adapter
 
@@ -47,14 +72,12 @@ def get_adapter() -> MarketDataAdapter:
 @lru_cache(maxsize=1)
 def get_watchlist_store() -> WatchlistStore:
     """全局自选池存储。"""
-    return WatchlistStore(get_db_path())
+    return WatchlistStore(get_portfolio_db())
 
 
 @lru_cache(maxsize=1)
 def get_alerter() -> Alerter:
     """全局告警器。"""
-    from pathlib import Path
-
     log_path = Path("data/signals.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     return Alerter.default(log_path=log_path)
@@ -63,15 +86,18 @@ def get_alerter() -> Alerter:
 @lru_cache(maxsize=1)
 def get_portfolio_store() -> PortfolioStore:
     """全局持仓存储。"""
-    return PortfolioStore(get_db_path())
+    return PortfolioStore(get_portfolio_db())
+
+
+# ---------- 记忆系统 ----------
 
 
 @lru_cache(maxsize=1)
 def get_agent_memory() -> object:
-    """全局 ConversationMemory 单例（与主库共用 db 文件）。"""
+    """全局 ConversationMemory 单例。"""
     from mommy_chaogu.agent.memory import ConversationMemory
 
-    return ConversationMemory(get_db_path())
+    return ConversationMemory(get_agent_db())
 
 
 @lru_cache(maxsize=1)
@@ -79,7 +105,7 @@ def get_episodic_memory() -> object:
     """全局 EpisodicMemory 单例（情景记忆）。"""
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
-    return EpisodicMemory(get_db_path())
+    return EpisodicMemory(get_agent_db())
 
 
 @lru_cache(maxsize=1)
@@ -87,7 +113,7 @@ def get_prediction_tracker() -> object:
     """全局 PredictionTracker 单例（预测追踪）。"""
     from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 
-    return PredictionTracker(get_db_path())
+    return PredictionTracker(get_agent_db())
 
 
 @lru_cache(maxsize=1)
@@ -95,7 +121,7 @@ def get_semantic_memory() -> object:
     """全局 SemanticMemory 单例（语义知识库）。"""
     from mommy_chaogu.agent.semantic_memory import SemanticMemory
 
-    return SemanticMemory(get_db_path())
+    return SemanticMemory(get_agent_db())
 
 
 @lru_cache(maxsize=1)
@@ -117,7 +143,7 @@ def get_agent_service() -> object:
         adapter=get_adapter(),
         watchlist_store=get_watchlist_store(),
         portfolio_store=get_portfolio_store(),
-        db_path=get_db_path(),
+        db_path=get_agent_db(),
     )
     return AgentService(
         ctx,

@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
+from mommy_chaogu.db_paths import REFERENCE_DB
 from mommy_chaogu.earnings import (
     EarningsService,
     EarningsStore,
@@ -141,13 +142,13 @@ def build_earnings_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--db",
-        default="data/earnings_actual.db",
-        help="earnings_actual 数据库路径 (default: data/earnings_actual.db)",
+        default=str(REFERENCE_DB),
+        help=f"earnings_actual 数据库路径 (default: {REFERENCE_DB})",
     )
     p.add_argument(
         "--preview-db",
-        default="data/earnings_preview.db",
-        help="earnings_preview 数据库路径 (default: data/earnings_preview.db)",
+        default=str(REFERENCE_DB),
+        help=f"earnings_preview 数据库路径 (default: {REFERENCE_DB})",
     )
     p.add_argument(
         "--adapter",
