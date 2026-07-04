@@ -115,7 +115,31 @@ uv run mommy-flows backtest --rule flow_in_spike --days 30  # 回测指定规则
 
 ---
 
-## 🏗️ 架构
+## 📂 数据库布局
+
+项目使用 4 个按职责分离的 SQLite 数据库：
+
+| 数据库 | 用途 |
+|---|---|
+| `data/market.db` | 行情缓存 + 历史 K 线 + 资金流 |
+| `data/portfolio.db` | 自选股 + 持仓 + 告警 |
+| `data/agent.db` | 记忆系统（对话 + 事件 + 预测 + 知识 + 向量） |
+| `data/reference.db` | 半导体产业链 + 业绩数据 |
+
+路径可通过环境变量覆盖（`MOMMY_MARKET_DB` / `MOMMY_PORTFOLIO_DB` 等），定义在 `src/mommy_chaogu/db_paths.py`。
+
+### ⚠️ 从旧版本升级
+
+如果项目中有旧版 `data/watchlist.db`（所有表混在一个文件里），运行迁移脚本：
+
+```bash
+uv run python scripts/migrate_db_layout.py --check   # 先检查
+uv run python scripts/migrate_db_layout.py            # 执行迁移
+```
+
+迁移后旧文件会重命名为 `.bak`，数据自动分配到新的 4 个数据库。
+
+---
 
 ```
 ┌────────────────────────────────────────────────────────────┐

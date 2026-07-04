@@ -1,0 +1,66 @@
+# AGENTS.md
+
+> 给 AI agent（和人类开发者）的项目指南。开始工作前先读这份。
+
+## 快速上手
+
+```bash
+uv sync --extra dev      # 安装依赖
+uv run pytest -m "not network"   # 跑测试（482 个）
+uv run ruff check .      # lint
+uv run mypy --strict src # type check
+```
+
+## 数据库布局（2026-07-03 重组）
+
+**⚠️ 如果你是从旧版本升级，请先跑迁移脚本：**
+
+```bash
+uv run python scripts/migrate_db_layout.py --check   # 先检查
+uv run python scripts/migrate_db_layout.py            # 执行迁移
+```
+
+迁移会把旧 `data/watchlist.db`（所有表混在一起）拆分到 4 个按职责分离的数据库：
+
+| 数据库 | 用途 | 关键表 |
+|---|---|---|
+| `data/market.db` | 行情数据（缓存 + 历史 K 线 + 资金流） | quote_cache, bar_cache, klines, flows |
+| `data/portfolio.db` | 用户数据（自选股 + 持仓 + 告警） | groups, stock_entries, positions |
+| `data/agent.db` | 记忆系统（对话 + 事件 + 预测 + 知识 + 向量） | agent_memory, episodic_events, predictions, semantic_knowledge |
+| `data/reference.db` | 参考库（半导体产业链 + 业绩） | semicon_stocks, earnings_* |
+
+路径可通过环境变量覆盖：`MOMMY_MARKET_DB` / `MOMMY_PORTFOLIO_DB` / `MOMMY_AGENT_DB` / `MOMMY_REFERENCE_DB`
+
+定义在 `src/mommy_chaogu/db_paths.py`。
+
+## 项目结构
+
+```
+src/mommy_chaogu/
+├── market_data/     # 数据源适配层（efinance + tencent + fallback）
+├── cache/           # SQLite 缓存（5 张表 + 节流 + freshness）
+├── watchlist/       # 自选股（SQLite + SQLAlchemy 2.0）
+├── monitor/         # 实时监控
+├── signals/         # 7 条内置告警规则 + 自定义告警
+├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
+├── earnings/        # 业绩前瞻 vs 实际 比对
+├── agent/           # LLM agent（18 工具 + MCP + 记忆系统 5 层）
+├── portfolio/       # 持仓 + 组合分析
+├── backtest/        # 回测引擎
+├── semicon/         # 半导体产业链参考库
+├── web/             # FastAPI + WebSocket
+├── push/            # Server酱微信推送
+├── db_paths.py      # 统一数据库路径管理
+└── cli.py           # argparse 入口（11 个子命令）
+```
+
+## 开发规范
+
+- **Python 3.12+**，用 `uv` 管理依赖
+- **ruff format + ruff check** — 代码风格
+- **mypy --strict** — 类型检查
+- **Conventional Commits** — `feat / fix / docs / refactor / chore`
+- 数据金额一律 `Decimal`，不用 `float`
+- 数据源走 `MarketDataAdapter` Protocol，加新源只实现 Protocol
+- 拉新失败保留旧数据（数据库是唯一真相源）
+- 新增模块在 `db_paths.py` 里定义数据库路径，不要硬编码
