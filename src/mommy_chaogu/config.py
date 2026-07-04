@@ -1,15 +1,18 @@
-"""集中式配置：dataclasses + TOML + 环境变量覆盖。
+"""集中式配置：dataclasses + TOML + .env + 环境变量覆盖。
 
 设计原则：
 - config.toml 提供基础值（可 git 提交不含密钥的版本）
-- 环境变量优先级更高（密钥类配置走 env，不落盘）
+- ``.env`` 文件持久化密钥（gitignore 排除，不入仓）
+- 环境变量优先级最高（CI / Docker / cron 场景）
 - load_config(path=None) 读默认路径 config.toml，文件不存在则返回全默认值
-- create_default_config(path) 写一份模板到指定路径
 
-支持的环境变量覆盖：
-    DEEPSEEK_API_KEY → agent.api_key
-    SERVER_CHAN_KEY  → push.server_chan_key
-    AGENT_PROVIDER   → agent.provider
+支持的 .env / 环境变量：
+    DEEPSEEK_API_KEY  → agent.api_key（provider=deepseek 时）
+    OPENAI_API_KEY    → agent.api_key（provider=openai 时）
+    MOONSHOT_API_KEY  → agent.api_key（provider=kimi 时）
+    ZAI_API_KEY       → agent.api_key（provider=zai 时）
+    SERVER_CHAN_KEY   → push.server_chan_key
+    AGENT_PROVIDER    → agent.provider
 """
 
 from __future__ import annotations
@@ -20,7 +23,17 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 DEFAULT_CONFIG_PATH = Path("config.toml")
+
+# provider → 对应的环境变量名
+_PROVIDER_ENV_KEYS: dict[str, str] = {
+    "deepseek": "DEEPSEEK_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "kimi": "MOONSHOT_API_KEY",
+    "zai": "ZAI_API_KEY",
+}
 
 
 @dataclass
@@ -86,28 +99,43 @@ def _build_section(dataclass_type: type, raw: dict[str, Any]) -> object:
 
 
 def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
-    """环境变量覆盖（优先级最高）。"""
-    env_key = os.environ.get("DEEPSEEK_API_KEY")
+    """环境变量覆盖（优先级最高）。
+
+    根据 provider 自动选择对应的 env var 读 key：
+    deepseek → DEEPSEEK_API_KEY, openai → OPENAI_API_KEY,
+    kimi → MOONSHOT_API_KEY, zai → ZAI_API_KEY。
+    """
+    env_provider = os.environ.get("AGENT_PROVIDER")
+    if env_provider:
+        cfg.agent.provider = env_provider
+
+    # 根据当前 provider 取对应 key
+    env_key = _PROVIDER_ENV_KEYS.get(cfg.agent.provider, "")
     if env_key:
-        cfg.agent.api_key = env_key
+        val = os.environ.get(env_key, "")
+        if val:
+            cfg.agent.api_key = val
 
     env_sck = os.environ.get("SERVER_CHAN_KEY")
     if env_sck:
         cfg.push.server_chan_key = env_sck
 
-    env_provider = os.environ.get("AGENT_PROVIDER")
-    if env_provider:
-        cfg.agent.provider = env_provider
-
     return cfg
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
-    """读取 config.toml 并叠加环境变量覆盖。
+    """读取 .env + config.toml 并叠加环境变量覆盖。
+
+    加载顺序（后者覆盖前者）：
+    1. ``.env`` 文件（项目根目录，持久化密钥，不入仓）
+    2. ``config.toml``（基础配置）
+    3. 环境变量（CI / Docker / cron 场景，优先级最高）
 
     - path 为 None 时使用默认路径 config.toml
     - 文件不存在不报错，返回全默认值 + 环境变量
     """
+    load_dotenv()  # 从 .env 加载，但不覆盖已有的 env var
+
     config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
     data = _load_toml(config_path)
 
@@ -129,21 +157,27 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 # TOML 模板（create_default_config 写出）
 _CONFIG_TEMPLATE = """\
 # mommy-chaogu 配置文件
-# 环境变量优先级更高（密钥建议走 env，不要写在这里）：
-#   DEEPSEEK_API_KEY → agent.api_key
-#   SERVER_CHAN_KEY  → push.server_chan_key
-#   AGENT_PROVIDER   → agent.provider
+# 密钥配置有两种方式（优先级从高到低）：
+#   1. 环境变量（CI / Docker / cron）
+#   2. .env 文件（项目根目录，持久化，已 gitignore）
+# 根据 provider 自动读取对应的 key：
+#   DEEPSEEK_API_KEY  (provider=deepseek)
+#   OPENAI_API_KEY    (provider=openai)
+#   MOONSHOT_API_KEY  (provider=kimi)
+#   ZAI_API_KEY       (provider=zai)
+#   SERVER_CHAN_KEY   → push.server_chan_key
+#   AGENT_PROVIDER    → agent.provider
 
 db_path = "data/watchlist.db"
 
 [agent]
-provider = "deepseek"          # deepseek / openai / kimi
+provider = "deepseek"          # deepseek / openai / kimi / zai
 model = "deepseek-chat"        # 留空则用 provider 默认模型
-api_key = ""                   # 建议用环境变量 DEEPSEEK_API_KEY
+api_key = ""                   # 建议用 .env 或环境变量
 max_tool_calls = 10
 
 [push]
-server_chan_key = ""           # 建议用环境变量 SERVER_CHAN_KEY
+server_chan_key = ""           # 建议用 .env 或环境变量
 web_base_url = ""              # 推送消息里 K 线链接的前缀
 
 [cache]

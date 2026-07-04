@@ -96,7 +96,10 @@ uv run mommy-flows pull --pool semicon --days 30
 uv run mommy-report render --chain humanoid_robot
 
 # 7. AI 行情助手（需要 LLM API key）
-export DEEPSEEK_API_KEY="sk-xxx"     # 或 OPENAI_API_KEY / MOONSHOT_API_KEY
+#    方式一：.env 文件持久化（推荐）
+cp .env.example .env       # 然后编辑 .env 填入 key
+#    方式二：环境变量（适合 cron / Docker）
+export ZAI_API_KEY="xxx"   # 或 DEEPSEEK_API_KEY / OPENAI_API_KEY / MOONSHOT_API_KEY
 uv run mommy-agent chat              # 交互式对话
 uv run mommy-agent report --board BK1106 --board-name "创新药"  # 板块分析日报
 uv run mommy-agent tools             # 列出所有工具

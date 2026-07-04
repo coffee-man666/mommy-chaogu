@@ -6,10 +6,32 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（482 个）
+uv run pytest -m "not network"   # 跑测试（518 个）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
+
+## 密钥配置
+
+LLM API key 和推送 key 通过 `.env` 文件持久化（不入仓）：
+
+```bash
+cp .env.example .env       # 复制模板
+# 编辑 .env，填入需要的 key
+```
+
+支持的 key（根据 `config.toml` 里的 `agent.provider` 自动读取对应的）：
+
+| Provider | 环境变量 | 说明 |
+|---|---|---|
+| deepseek（默认） | `DEEPSEEK_API_KEY` | DeepSeek API |
+| openai | `OPENAI_API_KEY` | OpenAI / 兼容接口 |
+| kimi | `MOONSHOT_API_KEY` | Moonshot / Kimi |
+| zai | `ZAI_API_KEY` | z.ai / GLM-4.7 |
+| — | `SERVER_CHAN_KEY` | Server酱微信推送 |
+| — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
+
+优先级：shell 环境变量 > `.env` 文件 > `config.toml`。
 
 ## 数据库布局（2026-07-03 重组）
 

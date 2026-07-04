@@ -43,6 +43,11 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "default_model": "moonshot-v1-8k",
         "env_key": "MOONSHOT_API_KEY",
     },
+    "zai": {
+        "base_url": "https://api.z.ai/api/coding/paas/v4",
+        "default_model": "glm-4.7",
+        "env_key": "ZAI_API_KEY",
+    },
 }
 
 

@@ -4,7 +4,7 @@
 >
 > 跟 DESIGN 互补：DESIGN 讲「为什么这样设计」，LEDGER 讲「具体怎么走到这一步」。
 
-最后更新：2026-07-04（Agent 原生回测 trial_1 完成，memory-system-v1 分支）
+最后更新：2026-07-04（.env 持久化配置 + zai provider 接入，memory-system-v1 分支）
 
 ---
 
@@ -40,7 +40,8 @@
 | **BT-1** | **2026-07-04** | **30 天真实数据回测（154 条预测，53% 命中率）** | **`4649e5e`** | **✅** |
 | **DB-1** | **2026-07-04** | **数据库分库重组（market/portfolio/agent/reference）** | **`79f7adc`** | **✅** |
 | **LLM-BT** | **2026-07-04** | **LLM 回测框架 + Token Tracker + zai provider** | **`e6edf43` / `863acf8`** | **✅** |
-| **Agent-BT** | **2026-07-04** | **Agent 原生回测 trial_1（25 条预测，47% 命中率，bullish 88%）** | **本次提交** | **✅** |
+| **Agent-BT** | **2026-07-04** | **Agent 原生回测 trial_1（25 条预测，47% 命中率，bullish 88%）** | **`73ea5ba`** | **✅** |
+| **CFG-1** | **2026-07-04** | **.env 持久化配置 + AgentService 加 zai provider** | **本次提交** | **✅** |
 
 ---
 
@@ -1326,3 +1327,51 @@ uv run python scripts/backtest_llm.py --provider zai --model glm-4.7
 | `scripts/prepare_agent_backtest.py` | Agent 原生回测数据准备脚本（通用基础设施） |
 | `docs/BACKTEST-REPORT.md` §3.4 | Agent 原生 trial_1 完整结果 |
 | `docs/BACKTEST-REPORT.md` §3.5 | Agent 原生回测模式文档（概念 / 优劣 / 复现步骤） |
+
+---
+
+## CFG-1 — .env 持久化配置 + AgentService 加 zai provider
+
+**日期**：2026-07-04
+**Commit**：本次提交
+
+### 目标
+
+所有 LLM provider 的 API key 只能通过 shell `export` 设置，没有持久化方式，
+不利于部署和 cron 场景。同时 `AgentService`（生产环境）不支持 zai provider。
+
+### 产出
+
+| 文件 | 改动 |
+|---|---|
+| `pyproject.toml` | 新增 `python-dotenv>=1.0` 依赖 |
+| `src/mommy_chaogu/config.py` | `load_config()` 加 `load_dotenv()`；`_apply_env_overrides()` 按 provider 自动选对应 key；TOML 模板更新 |
+| `src/mommy_chaogu/agent/service.py` | `SUPPORTED_PROVIDERS` 加 zai（base_url / default_model / env_key） |
+| `.env.example` | 密钥配置模板（4 provider key + Server酱 + provider 切换） |
+| `tests/test_config.py` | 更新 env override 测试适配多 provider key |
+| `AGENTS.md` | 新增密钥配置章节 |
+| `README.md` | 快速上手更新为 `.env` 方式 |
+
+### 配置优先级
+
+```
+shell 环境变量  >  .env 文件  >  config.toml  >  代码默认值
+```
+
+### 使用方式
+
+```bash
+# 方式一：.env 文件（推荐，持久化）
+cp .env.example .env
+# 编辑 .env：
+#   ZAI_API_KEY=xxx
+#   AGENT_PROVIDER=zai
+
+# 方式二：环境变量（CI / Docker / cron）
+export ZAI_API_KEY=xxx
+export AGENT_PROVIDER=zai
+```
+
+### 验证
+
+- 518 tests passed，ruff ✅，mypy strict ✅

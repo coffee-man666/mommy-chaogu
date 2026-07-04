@@ -95,10 +95,11 @@ server_chan_key = "toml_sck"
 
 def test_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """没有 TOML 文件时，环境变量也能生效。"""
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "only_env")
+    # provider=kimi → 读 MOONSHOT_API_KEY
+    monkeypatch.setenv("MOONSHOT_API_KEY", "kimi_env_key")
     monkeypatch.setenv("AGENT_PROVIDER", "kimi")
     cfg = load_config(tmp_path / "missing.toml")
-    assert cfg.agent.api_key == "only_env"
+    assert cfg.agent.api_key == "kimi_env_key"
     assert cfg.agent.provider == "kimi"
 
 
