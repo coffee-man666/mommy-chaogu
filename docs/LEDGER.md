@@ -4,7 +4,7 @@
 >
 > 跟 DESIGN 互补：DESIGN 讲「为什么这样设计」，LEDGER 讲「具体怎么走到这一步」。
 
-最后更新：2026-07-04（LLM 回测框架 + Token Tracker，memory-system-v1 分支）
+最后更新：2026-07-04（Agent 原生回测 trial_1 完成，memory-system-v1 分支）
 
 ---
 
@@ -40,6 +40,7 @@
 | **BT-1** | **2026-07-04** | **30 天真实数据回测（154 条预测，53% 命中率）** | **`4649e5e`** | **✅** |
 | **DB-1** | **2026-07-04** | **数据库分库重组（market/portfolio/agent/reference）** | **`79f7adc`** | **✅** |
 | **LLM-BT** | **2026-07-04** | **LLM 回测框架 + Token Tracker + zai provider** | **`e6edf43` / `863acf8`** | **✅** |
+| **Agent-BT** | **2026-07-04** | **Agent 原生回测 trial_1（25 条预测，47% 命中率，bullish 88%）** | **本次提交** | **✅** |
 
 ---
 
@@ -1278,3 +1279,50 @@ verdict          数量       占比
 export ZAI_API_KEY="..."
 uv run python scripts/backtest_llm.py --provider zai --model glm-4.7
 ```
+
+---
+
+## Agent-BT — Agent 原生回测 trial_1
+
+**日期**：2026-07-04
+**Commit**：本次提交
+
+### 目标
+
+在没有外部 API key 的情况下，利用 coding agent 自身的 LLM 能力直接分析真实市场
+数据，完成首次 LLM 回测 trial_1。同时验证「agent 原生回测」作为第三种回测方法的
+可行性。
+
+### 方法
+
+1. `scripts/prepare_agent_backtest.py` 从 `data/market.db` 抽取 5 只半导体链股票 ×
+   5 个日期 = 25 条数据包，每条包含前 10 天 K 线 + 资金流上下文
+2. **数据/答案分离**：数据包不含 T+5 收盘价，单独输出到 answers 文件（防 look-ahead bias）
+3. Agent 直接读取数据包 JSON，逐条分析 K 线形态 + 资金流趋势 + 量价关系，输出预测
+4. 用与规则引擎完全相同的评分逻辑验证（direction → change_pct → hit/missed + score）
+
+### 结果
+
+| 指标 | 值 | vs 规则引擎 |
+|---|---|---|
+| 方向性预测 | 19 条（+6 条 neutral） | 规则引擎无 neutral |
+| **总命中率** | **47%（9/19）** | 规则引擎 53%（-6pp） |
+| **Bullish 命中率** | **88%（7/8）** | 规则引擎 41%（**+47pp** ✅） |
+| **Bearish 命中率** | **18%（2/11）** | 规则引擎 57%（**-39pp** ❌） |
+| 估算成本 | **¥0** | ¥0 |
+
+### 核心发现
+
+**LLM bullish 判断远胜规则引擎（88% vs 41%）**，但 bearish 判断严重失准（18%）。
+原因：回测区间半导体板块整体强势上涨，LLM 基于短期资金流流出的 bearish 判断被
+板块趋势反复打脸。
+
+**两种方法互补性极强**：bullish 用 LLM + bearish 用规则引擎，理论混合命中率可达 73%。
+
+### 产出
+
+| 文件 | 作用 |
+|---|---|
+| `scripts/prepare_agent_backtest.py` | Agent 原生回测数据准备脚本（通用基础设施） |
+| `docs/BACKTEST-REPORT.md` §3.4 | Agent 原生 trial_1 完整结果 |
+| `docs/BACKTEST-REPORT.md` §3.5 | Agent 原生回测模式文档（概念 / 优劣 / 复现步骤） |

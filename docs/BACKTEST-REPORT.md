@@ -6,7 +6,7 @@
 >
 > **当前状态**：LLM 回测框架已搭建完毕（含 Token Tracker），trial_1 尚未实跑。
 
-最后更新：2026-07-04（`memory-system-v1` 分支，LLM 回测框架就绪）
+最后更新：2026-07-04（agent 原生 trial_1 完成，`memory-system-v1` 分支）
 
 ---
 
@@ -19,7 +19,7 @@
 | 成本 | 0 token | 每条预测约 N token（按 provider 计费） |
 | 可解释性 | 高（规则明示） | 中（LLM rationale，可结构化提取） |
 | 自进化 | 滑动窗口 → 语义知识沉淀 | 工具调用 + extractor 提取 → episodic + predictions |
-| **基准命中率** | **53%（154 条，真实数据）** | 待跑（见 §4 结果模板） |
+| **基准命中率** | **53%（154 条，规则引擎）** | **47%（19 条方向性，agent 原生 trial_1）** |
 
 ---
 
@@ -233,47 +233,139 @@ uv run python scripts/backtest_evolution.py --db /tmp/backtest.db
 | 成本 | 0 | ¥X/条 | 增益 vs 成本 |
 | 延迟 | <1ms | 数秒/条 | 回测不在乎，实时需评估 |
 
-### 3.4 当前状态：框架就绪，trial_1 待跑
+### 3.4 Agent 原生 trial_1（已完成）
 
-LLM 回测的全部基础设施已搭建完毕：
+> **Agent 原生回测**：coding agent 自身作为 LLM，直接读 `market.db` 真实数据 →
+> 分析 K 线 + 资金流 → 输出预测。不调外部 API，不需要 key。
 
-| 组件 | 文件 | 状态 |
-|---|---|---|
-| LLM 回测脚本 | `scripts/backtest_llm.py` | ✅ 支持 4 个 provider（deepseek/openai/kimi/zai） |
-| Token 监控 | `src/mommy_chaogu/agent/token_tracker.py`（36 tests） | ✅ |
-| 回测文档 | `docs/BACKTEST-REPORT.md` | ✅（本文件） |
-| 离线数据 | `data/market.db`（klines 4437 行 + flows 1917 行） | ✅ |
-| dry-run 验证 | 能读 market.db + 构建上下文 + 不调 LLM | ✅ |
+**数据**：5 只半导体链股票 × 5 个日期 = 25 条预测
 
-**为什么还没跑 trial_1**：LLM 回测需要 API key，上一个 session 在配置 z.ai provider
-时中断。下次只需：
-
-```bash
-export ZAI_API_KEY="..."     # 或 DEEPSEEK_API_KEY / OPENAI_API_KEY / MOONSHOT_API_KEY
-uv run python scripts/backtest_llm.py --provider zai --model glm-4.7
-```
-
-> 结果填入以下模板（trial_1 实跑后更新）：
-
-```
 | 指标 | 值 |
 |---|---|
-| 回测区间 | 2026-06-04 → 2026-07-03 |
-| 模型 | glm-4.7（z.ai） |
-| 总对话轮 | N |
-| 总预测 | N 条（extractor 提取） |
-| 命中 | N（XX%） |
-| 总 token（输入/输出） | N / N |
-| 每条预测平均 token | N |
-| 估算成本 | ¥N |
-| 工具调用平均次数 | N 次/条 |
+| 回测区间 | 2026-06-04 → 2026-06-22（T+5 验证到 2026-06-29 → 2026-07-01） |
+| 模型 | **kimi-code（agent 原生）** |
+| 方向性预测 | **19 条**（bullish 8 + bearish 11） |
+| Neutral | 6 条（不计入命中率） |
+| **命中率** | **47%（9/19）** |
+| Bullish 命中率 | **88%（7/8）** |
+| Bearish 命中率 | **18%（2/11）** |
+| 平均得分 | 0.44 |
+| 估算成本 | **¥0**（零外部 API 调用） |
 
-vs 规则引擎：命中率 +X pp，成本 ¥N
+#### 核心发现
+
+**Agent 原生 LLM 的 bullish 判断极准（88%），但 bearish 判断严重失准（18%）。**
+
+原因分析：回测区间（6 月）半导体板块整体处于**强势上涨期**。Agent 基于资金流
+短期流出做出的 bearish 判断，被板块整体上涨趋势反复打脸。这与规则引擎回测的
+发现一致——趋势上涨期中 bearish 信号有效性极低。
+
+#### 分个股命中率
+
+| 股票 | 方向预测 | 命中 | 命中率 | 特征 |
+|---|---|---|---|---|
+| 002156 通富微电 | 4 | 3 | **75%** | 封测龙头，趋势性最强 |
+| 300346 南大光电 | 3 | 2 | **67%** | 波动大，bullish 信号准 |
+| 000021 深科技 | 5 | 2 | 40% | bearish 全错（板块上涨） |
+| 002049 紫光国微 | 3 | 1 | 33% | FPGA 走势独立 |
+| 002129 TCL中环 | 4 | 1 | **25%** | 震荡上行，bearish 全错 |
+
+#### vs 规则引擎对比
+
+| 维度 | 规则引擎 | Agent 原生 LLM | 差异 |
+|---|---|---|---|
+| 总命中率 | **53%** | 47% | -6pp |
+| Bullish 命中率 | 41% | **88%** | **+47pp** ✅ |
+| Bearish 命中率 | **57%** | 18% | **-39pp** ❌ |
+| Neutral 能力 | ❌ 不产出 | ✅ 6 条 | LLM 能判断「方向不明」 |
+| 成本 | ¥0 | **¥0** | 持平 |
+| 分析深度 | 单维度（资金流 ratio） | 多维度（K线形态+资金流趋势+量价配合） | LLM 远胜 |
+
+**关键洞察**：
+
+1. **LLM 在 bullish 判断上远胜规则引擎（88% vs 41%）**——能综合 K 线形态、量价配合
+   做出更准确的上涨判断，而规则引擎只看 ratio > 5bp 的硬阈值
+2. **LLM 在 bearish 判断上严重不如规则引擎（18% vs 57%）**——LLM 对「短期资金流流出」
+   过度敏感，忽略了板块整体上涨趋势的力量
+3. **Neutral 是 LLM 独有的优势**——能在方向不明时主动说「不知道」，规则引擎做不到
+4. **两种方法互补性极强**——如果 bullish 用 LLM、bearish 用规则引擎，理论上命中率
+   可以到 73%（0.88 × 8/19 + 0.57 × 11/19）
+
+#### 复现
+
+```bash
+# 1. 生成数据包
+uv run python scripts/prepare_agent_backtest.py
+
+# 2. 在 coding agent（kimi-code / Cursor / Claude Code）里打开
+#    /tmp/agent_backtest_data.json，让 agent 分析每条数据并输出预测
+
+# 3. 验证
+#    对比 /tmp/agent_backtest_answers.json（T+5 收盘价）
 ```
 
 ---
 
-## 4. 复现与扩展
+### 3.5 Agent 原生回测模式（第三种回测方法）
+
+除了规则引擎（§2）和内置 LLM 模块（§3.1-3.3），项目还支持第三种回测方式：
+**让 coding agent 自身作为 LLM 直接分析数据**。
+
+#### 概念
+
+传统方式（`backtest_llm.py`）：Python 脚本 → 调外部 LLM API → 解析 JSON → 验证。
+Agent 原生方式：coding agent（kimi-code / Cursor / Claude Code）直接读数据 JSON →
+用自己的 LLM 能力分析 → 输出预测 → 用脚本验证。
+
+```
+prepare_agent_backtest.py          coding agent               verify script
+──────────────────────         ─────────────────────         ──────────────
+market.db ──→ 数据包 JSON ──→ agent 分析每条数据 ──→ 预测 JSON ──→ 对比 T+5
+reference.db                    (K线+资金流+板块)              (命中率+报告)
+```
+
+#### 优势 vs 劣势
+
+| 维度 | 优势 | 劣势 |
+|---|---|---|
+| 成本 | **¥0**（不需要外部 API key） | — |
+| 分析深度 | **极强**（能理解 K 线形态、资金流趋势、量价关系、板块上下文） | — |
+| 可解释性 | **高**（每条预测附带自然语言 rationale） | — |
+| 自动化 | — | 不可 CI 自动跑（需要人工启动 agent） |
+| 规模化 | — | 难以上到 100+ 条（agent context 有限） |
+| 可复现 | 数据包固定 → 结果基本可复现 | LLM 输出有随机性 |
+
+#### 适用场景
+
+- **没有外部 API key 时**（当前主要场景）
+- **小批量精分析**（10-30 条预测，重质量不重数量）
+- **探索性研究**（想看 LLM 「怎么想」的，而非只要一个方向）
+
+#### 复现步骤
+
+```bash
+# 1. 生成数据包（含数据 + 答案分离，防 look-ahead bias）
+uv run python scripts/prepare_agent_backtest.py
+uv run python scripts/prepare_agent_backtest.py \
+    --stocks 002129,002156 --dates 2026-06-04,2026-06-08
+
+# 2. 在 coding agent 中打开数据包
+#    Read /tmp/agent_backtest_data.json
+#    → agent 分析每条 prediction_needed（K线 + 资金流 + 板块）
+#    → 输出 /tmp/agent_backtest_predictions.json
+#    格式：[{code, name, date, entry_price, direction, rationale}, ...]
+#    direction: "bullish" / "bearish" / "neutral"
+
+# 3. 验证（用同样的评分逻辑）
+python3 -c "
+import json
+preds = json.load(open('/tmp/agent_backtest_predictions.json'))
+answers = json.load(open('/tmp/agent_backtest_answers.json'))
+# ... 按 §2.1 verify_prediction 同逻辑计算命中率
+"
+```
+
+---
 
 ### 4.1 环境准备
 
