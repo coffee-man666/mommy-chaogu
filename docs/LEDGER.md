@@ -4,7 +4,7 @@
 >
 > 跟 DESIGN 互补：DESIGN 讲「为什么这样设计」，LEDGER 讲「具体怎么走到这一步」。
 
-最后更新：2026-07-03（memory-system-v1 Phase 1-5，自进化记忆系统完成）
+最后更新：2026-07-04（LLM 回测框架 + Token Tracker，memory-system-v1 分支）
 
 ---
 
@@ -39,6 +39,7 @@
 | **Mem-Docs** | **2026-07-03** | **文档更新（PROGRESS/PROJECT-LOG/LEDGER/README）** | **`8dbba16`** | **✅** |
 | **BT-1** | **2026-07-04** | **30 天真实数据回测（154 条预测，53% 命中率）** | **`4649e5e`** | **✅** |
 | **DB-1** | **2026-07-04** | **数据库分库重组（market/portfolio/agent/reference）** | **`79f7adc`** | **✅** |
+| **LLM-BT** | **2026-07-04** | **LLM 回测框架 + Token Tracker + zai provider** | **`e6edf43` / `863acf8`** | **✅** |
 
 ---
 
@@ -1211,3 +1212,69 @@ verdict          数量       占比
 3. **业绩预告日 70% 跳空**——T+1 9:30-9:35 行动窗口稍纵即逝
 4. **多主题篮子 > 单一自选股**——团长要的「主题篮子」模型落地
 5. **数据 → 策略 → 实战**——3 步走，每步都有 commit + 测试 + 文档
+
+---
+
+## LLM-BT — LLM 回测框架 + Token Tracker
+
+**日期**：2026-07-04
+**Commit**：`e6edf43` — `feat: LLM backtest framework + token tracker + backtest report`
+**Commit**：`863acf8` — `feat(backtest): add zai/glm-4.7 provider for LLM backtest`
+**代码量**：~800 行（token_tracker 300 + backtest_llm 600 + 测试 300）
+
+### 目标
+
+规则引擎回测只看资金流两个维度。LLM 回测用完整 agent 工具链对同样数据做更立体的
+判断，衡量「LLM + 多数据源」相对于纯规则的增益，以及 token 成本是否值得。
+
+团长特别要求：跑 LLM 回测之前先搭一个可以观测 LLM Token 使用量的系统。
+
+### 产出
+
+| 文件 | 作用 | 行数 |
+|---|---|---|
+| `src/mommy_chaogu/agent/token_tracker.py` | Token 用量追踪（per-provider / per-model 统计 + 成本估算） | ~300 |
+| `tests/test_agent/test_token_tracker.py` | 36 个单测 | ~300 |
+| `scripts/backtest_llm.py` | LLM 驱动回测脚本（离线读 market.db，4 provider 支持） | ~600 |
+| `docs/BACKTEST-REPORT.md` | 回测报告（方法学 + 规则引擎结果 + LLM 框架状态） | ~320 |
+
+### Token Tracker 设计
+
+- **`TokenUsage` dataclass** — 累计 prompt/completion/total tokens + 估算成本
+- **`TokenTracker`** — 按 provider + model 维度聚合，支持 session 级和全局统计
+- **定价表** — 内置 6 个模型（deepseek-chat / deepseek-coder / gpt-4o / gpt-4o-mini /
+  moonshot-v1-8k / glm-4.7）的每百万 token 单价（¥/M input, ¥/M output）
+- **持久化** — 写入 `data/agent.db` 的 `token_usage` 表
+
+### LLM 回测脚本设计
+
+- **离线**：从 `data/market.db` 读 klines + flows，不联网
+- **滑动窗口**：每个交易日 × 每只股票，取前 N 天数据拼成上下文喂 LLM
+- **JSON 输出**：LLM 返回 `{direction, rationale}` 结构化预测
+- **T+N 验证**：同规则引擎 `verify_prediction()`，对比入场价 vs T+5 收盘
+- **4 provider**：deepseek / openai / kimi（moonshot）/ zai（z.ai / glm-4.7）
+- **dry-run 模式**：不调 LLM，只打印上下文，验证数据管线
+
+### 关键决策
+
+1. **离线读 market.db 而非实时拉取** — 保证可复现，不受网络波动影响
+2. **z.ai 可作为 LLM provider** — kimi-code 自身就是 LLM，可直接调 z.ai 接口，
+   不需要外部 API key
+3. **Token Tracker 独立于回测** — 也能用于生产环境的 AgentService token 监控
+
+### 验证
+
+- 36 token tracker 单测全过
+- dry-run 验证通过（能读 market.db 真实数据、构建上下文）
+- 518 passed（482 + 36 token tracker），ruff ✅，mypy ✅
+- 注意：5 月 K 线存在但资金流数据从 6/4 开始，LLM 回测有效窗口约 15 个交易日
+
+### 当前状态
+
+框架全部就绪，**trial_1 尚未实跑**。上一个 session 在配置 zai provider 时中断。
+下次只需：
+
+```bash
+export ZAI_API_KEY="..."
+uv run python scripts/backtest_llm.py --provider zai --model glm-4.7
+```

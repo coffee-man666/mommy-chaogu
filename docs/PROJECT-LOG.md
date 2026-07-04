@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-07-04（30 天回测 + 数据库重组，branch `memory-system-v1`）
+> 最后更新：2026-07-04（LLM 回测框架 + Token Tracker，branch `memory-system-v1`）
 
 ---
 
@@ -16,17 +16,18 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **记忆系统 Phase 1-5 + 30 天回测 + 数据库分库重组**（`memory-system-v1` 分支） |
-| 累计 commits | **30+** |
-| 代码量 | **~27,000+ 行**（src 17500 + tests 5000 + scripts 1500 + web 3000） |
-| 测试 | **482 个**（含 +121 memory-system 测试） |
+| 项目阶段 | **LLM 回测框架 + Token Tracker**（`memory-system-v1` 分支） |
+| 累计 commits | **32+** |
+| 代码量 | **~36,000+ 行**（src 23,000 + tests 9,000 + web 4,000） |
+| 测试 | **518 个**（含 +121 memory-system + 36 token tracker 测试） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅**（GitHub Actions） |
 | 数据源 | 东财（主）+ 腾讯（仅 quote 兜底） |
 | 数据点 | 5 只自选股 + 106 只半导体产业链股 |
-| 缓存 | `data/watchlist.db`（cache）+ `data/semicon.db`（产业链 reference） |
+| 缓存 | `data/market.db`（行情缓存 + 回测数据）+ `data/reference.db`（产业链 reference） |
 | 自动化 | 4 个 OpenClaw cron jobs（盘前预热/盘中监控/收盘日报/周报） |
 | 微信推送 | Server酱 bot，目标 = 团长当前聊天 |
-| AI Agent | **18 tools** + AgentService + **MCP Server** + **ConversationMemory** |
+| AI Agent | **18 tools** + AgentService + **MCP Server** + **自进化记忆 5 层** |
+| **LLM Provider** | **DeepSeek / OpenAI / Kimi / z.ai（glm-4.7）** |
 
 ---
 
@@ -52,7 +53,28 @@
 
 ## 2. 关键里程碑（全链路）
 
-> 时间倒序：Backtest+DB → Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+> 时间倒序：LLM-BT → Backtest+DB → Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+
+### LLM Backtest Framework（2026-07-04） — Token Tracker + LLM 回测脚本 + 回测报告 🤖📊
+
+**痛点**：规则引擎回测只看资金流两个维度。需要用 LLM agent 的完整工具链做更立体的
+判断，衡量「LLM + 多数据源」的增益和 token 成本。团长要求先搭 token 监控系统。
+
+**交付**：
+
+| 组件 | 文件 | 测试 |
+|---|---|---|
+| Token Tracker | `src/mommy_chaogu/agent/token_tracker.py` | 36 tests |
+| LLM 回测脚本 | `scripts/backtest_llm.py`（4 provider：deepseek/openai/kimi/zai） | dry-run 验证 |
+| 回测报告 | `docs/BACKTEST-REPORT.md`（规则引擎结果 + LLM 方法学 + 模板） | — |
+
+**Token Tracker**：按 provider + model 聚合 token 用量，内置 6 个模型定价表，
+支持 session 级和全局成本估算，持久化到 `data/agent.db`。
+
+**LLM 回测**：离线读 `data/market.db` 真实数据 → 滑动窗口喂 LLM → T+5 验证 →
+统计命中率 + token 消耗 + 成本。支持 z.ai / glm-4.7 作为 provider。
+
+**当前状态**：框架全部就绪，**trial_1 待跑**（上次 session 在配置 zai provider 时中断）。
 
 ### Backtest + DB Refactor（2026-07-04） — 30 天真实数据回测 + 数据库分库 📊🔧
 

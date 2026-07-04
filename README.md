@@ -377,6 +377,7 @@ uv run mommy-web --port 8765
 | [`docs/LEDGER.md`](docs/LEDGER.md) | commit 级别时间线 |
 | **[`docs/EARNINGS-HANDBOOK.md`](docs/EARNINGS-HANDBOOK.md)** | 🆕 2026 中报窗口实战手册 |
 | **[`docs/MEMORY-SYSTEM-PLAN.md`](docs/MEMORY-SYSTEM-PLAN.md)** | 🆕 自进化记忆系统设计（四层架构 + 预测验证闭环）|
+| **[`docs/BACKTEST-REPORT.md`](docs/BACKTEST-REPORT.md)** | 🆕 回测报告（规则引擎 + LLM agent 方法学与结果）|
 | [`docs/KLINE-SPEC.md`](docs/KLINE-SPEC.md) | K 线组件规范 |
 | [`docs/DISCUSSION-NOTES.md`](docs/DISCUSSION-NOTES.md) | 历史决策上下文 |
 
@@ -453,8 +454,8 @@ uv run mypy --strict src        # type check
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~27,000+ 行（src 17,500 + tests 5,000 + scripts 1,500 + web 3,000）|
-| 测试 | **482 passed**（离线 + agent + earnings + infra + memory-system）|
+| 代码量 | ~36,000+ 行（src 23,000 + tests 9,000 + web 4,000）|
+| 测试 | **518 passed**（离线 + agent + earnings + infra + memory-system + token-tracker）|
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
 | CI | ✅ GitHub Actions（ruff + mypy + pytest） |
@@ -467,7 +468,9 @@ uv run mypy --strict src        # type check
 | 推送渠道 | Server酱³（微信） |
 | AI 工具 | **18** 个 function-calling tools |
 | 记忆系统 | **5 层**（情景/预测验证/语义知识/向量检索/工作记忆） |
-| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi |
+| Token Tracker | ✅ 按 provider/model 聚合 token 用量 + 成本估算 |
+| 回测 | ✅ 规则引擎（154 条预测，53% 命中率）+ LLM 回测框架（trial_1 待跑）|
+| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi / z.ai（glm-4.7）|
 | MCP Server | ✅ stdio 协议，任意 MCP client 可连接 |
 
 ---

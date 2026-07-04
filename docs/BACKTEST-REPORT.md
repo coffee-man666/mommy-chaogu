@@ -2,9 +2,11 @@
 
 > mommy-chaogu 预测系统两种回测模式的**方法学 + 结果**。
 > 1. **规则引擎回测**（已完成，`scripts/backtest_evolution.py`）
-> 2. **LLM agent 回测**（基于 `AgentService` 工具循环 + 事实抽取，支持 token 用量统计）
+> 2. **LLM agent 回测**（框架就绪，`scripts/backtest_llm.py`，支持 token 用量统计 + 4 provider）
+>
+> **当前状态**：LLM 回测框架已搭建完毕（含 Token Tracker），trial_1 尚未实跑。
 
-最后更新：2026-07-04（`memory-system-v1` 分支）
+最后更新：2026-07-04（`memory-system-v1` 分支，LLM 回测框架就绪）
 
 ---
 
@@ -12,7 +14,7 @@
 
 | 维度 | 规则引擎回测 | LLM agent 回测 |
 |---|---|---|
-| 决策来源 | 4 条硬编码资金流信号规则 | LLM（deepseek/openai/kimi）+ 18 工具调用 |
+| 决策来源 | 4 条硬编码资金流信号规则 | LLM（deepseek/openai/kimi/zai）+ 18 工具调用 |
 | 数据需求 | 仅资金流 ratio + 日 K 线 | 全量行情 + K 线 + 资金流 + 公告 + 新闻 |
 | 成本 | 0 token | 每条预测约 N token（按 provider 计费） |
 | 可解释性 | 高（规则明示） | 中（LLM rationale，可结构化提取） |
@@ -231,15 +233,33 @@ uv run python scripts/backtest_evolution.py --db /tmp/backtest.db
 | 成本 | 0 | ¥X/条 | 增益 vs 成本 |
 | 延迟 | <1ms | 数秒/条 | 回测不在乎，实时需评估 |
 
-### 3.4 结果（待填充）
+### 3.4 当前状态：框架就绪，trial_1 待跑
 
-> 本节在 LLM 回测首次实跑后填入实际数字。模板如下：
+LLM 回测的全部基础设施已搭建完毕：
+
+| 组件 | 文件 | 状态 |
+|---|---|---|
+| LLM 回测脚本 | `scripts/backtest_llm.py` | ✅ 支持 4 个 provider（deepseek/openai/kimi/zai） |
+| Token 监控 | `src/mommy_chaogu/agent/token_tracker.py`（36 tests） | ✅ |
+| 回测文档 | `docs/BACKTEST-REPORT.md` | ✅（本文件） |
+| 离线数据 | `data/market.db`（klines 4437 行 + flows 1917 行） | ✅ |
+| dry-run 验证 | 能读 market.db + 构建上下文 + 不调 LLM | ✅ |
+
+**为什么还没跑 trial_1**：LLM 回测需要 API key，上一个 session 在配置 z.ai provider
+时中断。下次只需：
+
+```bash
+export ZAI_API_KEY="..."     # 或 DEEPSEEK_API_KEY / OPENAI_API_KEY / MOONSHOT_API_KEY
+uv run python scripts/backtest_llm.py --provider zai --model glm-4.7
+```
+
+> 结果填入以下模板（trial_1 实跑后更新）：
 
 ```
 | 指标 | 值 |
 |---|---|
 | 回测区间 | 2026-06-04 → 2026-07-03 |
-| 模型 | deepseek-chat |
+| 模型 | glm-4.7（z.ai） |
 | 总对话轮 | N |
 | 总预测 | N 条（extractor 提取） |
 | 命中 | N（XX%） |
@@ -263,11 +283,12 @@ uv sync --extra dev
 # 确保数据库已迁移到分库布局
 uv run python scripts/migrate_db_layout.py --check
 
-# LLM 回测需要 API key（三选一）
+# LLM 回测需要 API key（四选一）
 export DEEPSEEK_API_KEY=...
 export OPENAI_API_KEY=...
 export MOONSHOT_API_KEY=...
-export AGENT_PROVIDER=deepseek  # 默认
+export ZAI_API_KEY=...
+export AGENT_PROVIDER=deepseek  # 默认；可选 openai / kimi / zai
 ```
 
 ### 4.2 跑规则引擎回测
@@ -282,8 +303,17 @@ uv run python scripts/backtest_evolution.py
 ### 4.3 跑 LLM 回测
 
 ```bash
-# 待 LLM 回测脚本合入后补充
-# uv run python scripts/backtest_llm.py --provider deepseek --model deepseek-chat
+# DeepSeek（默认）
+uv run python scripts/backtest_llm.py --provider deepseek --model deepseek-chat
+
+# z.ai / GLM-4.7
+uv run python scripts/backtest_llm.py --provider zai --model glm-4.7
+
+# OpenAI
+uv run python scripts/backtest_llm.py --provider openai --model gpt-4o-mini
+
+# 先 dry-run 看上下文（不需要 API key）
+uv run python scripts/backtest_llm.py --dry-run
 ```
 
 ### 4.4 查看回测产物

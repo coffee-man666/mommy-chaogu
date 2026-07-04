@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-04（memory-system-v1 — 记忆系统 Phase 1-5 + 30 天回测 + 数据库重组）
+最后更新：2026-07-04（memory-system-v1 — 记忆系统 + 回测 + 数据库重组 + LLM 回测框架）
 
 ---
 
@@ -10,20 +10,21 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **记忆系统 Phase 1-5 完成 + 30 天真实数据回测验证 + 数据库分库重组** |
-| 代码量 | **~27,000+ 行**（Python src ~17,500 + tests ~5,000 + scripts ~1,500 + web ~3,000） |
-| 测试 | **482 个通过**（离线 + agent + earnings + infra + memory-system） |
-| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
+| 项目阶段 | **记忆系统 Phase 1-5 + 30 天真实数据回测 + 数据库分库 + LLM 回测框架** |
+| 代码量 | **~36,000+ 行**（Python src ~23,000 + tests ~9,000 + web ~4,000） |
+| 测试 | **518 个通过**（含 +36 token tracker 测试） |
+| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi/zai，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
 | **自进化记忆** | **✅ 5 层记忆系统**（工作/情景/预测验证/语义知识/向量检索，**8 个 CLI 子命令**） |
 | **30 天回测** | **✅ 154 条预测验证（真实数据），命中率 53%，提炼 10 条知识** |
+| **LLM 回测** | **✅ 框架就绪**（4 provider + Token Tracker + dry-run 验证通过），trial_1 待跑 |
 | **数据库** | **✅ 分库重组**（market/portfolio/agent/reference 4 库，含迁移脚本） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
 | **回测数据** | **market.db: 106 只 × 42 天 K 线(4437 行) + 92 只 × 21 天资金流(1917 行)** |
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅** |
-| 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / MEMORY-SYSTEM-PLAN / BRANCH-MERGE-ANALYSIS / **AGENTS.md** **10 份齐** |
+| 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / MEMORY-SYSTEM-PLAN / BRANCH-MERGE-ANALYSIS / BACKTEST-REPORT / **AGENTS.md** **11 份齐** |
 | 自动化 | **4 个 OpenClaw cron jobs**（盘前/盘中/收盘/周报） |
-| **实战验证** | ✅ 记忆系统闭环 + 30 天回测 + 数据库迁移验证通过 |
+| **实战验证** | ✅ 记忆系统闭环 + 30 天回测 + 数据库迁移 + LLM 回测框架 dry-run |
 
 ---
 
@@ -516,7 +517,20 @@ src/mommy_chaogu/signals/         31 规则 + custom_alerts   ← M8 扩展
 
 ## 下一步候选（按团长优先级）
 
-> 📅 2026-07-03 更新：main + agent-centric 合并完成。earnings 业绩比对 + M8 Infra Upgrade（MCP Server / 统一配置 / 记忆 / 回测 / 基本面 / 新闻 / 组合分析）全部上线。
+> 📅 2026-07-04 更新：记忆系统 Phase 1-5 + 30 天真实数据回测 + 数据库分库 + LLM 回测框架全部完成。LLM 回测 trial_1 待跑（需 API key）。
+
+### 🔥 最高优先 — LLM 回测 trial_1
+1. **跑 LLM 回测** —— `export ZAI_API_KEY=... && uv run python scripts/backtest_llm.py --provider zai`，填充 `docs/BACKTEST-REPORT.md` §3.4 结果模板
+
+### ✅ 7/4 LLM 回测框架
+- ✅ **Token Tracker**（`token_tracker.py`，36 tests，6 模型定价表）
+- ✅ **LLM 回测脚本**（`backtest_llm.py`，4 provider：deepseek/openai/kimi/zai）
+- ✅ **回测报告文档**（`docs/BACKTEST-REPORT.md`，规则引擎 + LLM 方法学）
+- ✅ **dry-run 验证**（能读 market.db 真实数据 + 构建上下文）
+
+### ✅ 7/4 回测 + 数据库重组
+- ✅ **30 天真实数据回测** —— 154 条预测，53% 命中率，提炼 10 条知识
+- ✅ **数据库分库** —— market / portfolio / agent / reference 4 库 + 迁移脚本 + AGENTS.md
 
 ### ✅ 7/1 实战验证
 1. **cron 链路实跑** —— 4 个 job 修后于 7/1 8:30 盘前预热成功（拉了 105/106 只半导体资金流，hub 实际收到 webhook）
