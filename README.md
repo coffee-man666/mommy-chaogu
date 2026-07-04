@@ -453,7 +453,7 @@ uv run mypy --strict src        # type check
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~25,000+ 行（src 17,000 + tests 5,000 + web 3,000）|
+| 代码量 | ~27,000+ 行（src 17,500 + tests 5,000 + scripts 1,500 + web 3,000）|
 | 测试 | **482 passed**（离线 + agent + earnings + infra + memory-system）|
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
@@ -461,7 +461,8 @@ uv run mypy --strict src        # type check
 | 数据源 | 3（efinance / tencent / cninfo）+ 东财新闻/基本面/龙虎榜直连 |
 | CLI 子应用 | 11 / 子命令 40+（含 8 个记忆系统子命令） |
 | 业务规则 | 7 signals + 4 flows ratio + 自定义告警 + earnings verdict |
-| 数据库表 | 20+（含 5 张记忆系统表 + 推送去重 + earnings） |
+| 数据库 | **4 库**（market / portfolio / agent / reference，环境变量可覆盖）|
+| 数据库表 | 20+（含 5 张记忆系统表 + 回测数据 + earnings） |
 | Web 端点 | 20+ REST + 3 WebSocket |
 | 推送渠道 | Server酱³（微信） |
 | AI 工具 | **18** 个 function-calling tools |

@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-03（memory-system-v1 — 自进化记忆系统 Phase 1-5 完成）
+最后更新：2026-07-04（memory-system-v1 — 记忆系统 Phase 1-5 + 30 天回测 + 数据库重组）
 
 ---
 
@@ -10,20 +10,20 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **自进化记忆系统 Phase 1-5 完成（情景记忆 + 预测验证 + 市场脉络 + 语义知识 + 向量检索）** |
-| 代码量 | **~25,000+ 行**（Python src ~17,000 + tests ~5,000 + web ~3,000） |
+| 项目阶段 | **记忆系统 Phase 1-5 完成 + 30 天真实数据回测验证 + 数据库分库重组** |
+| 代码量 | **~27,000+ 行**（Python src ~17,500 + tests ~5,000 + scripts ~1,500 + web ~3,000） |
 | 测试 | **482 个通过**（离线 + agent + earnings + infra + memory-system） |
 | **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
 | **自进化记忆** | **✅ 5 层记忆系统**（工作/情景/预测验证/语义知识/向量检索，**8 个 CLI 子命令**） |
+| **30 天回测** | **✅ 154 条预测验证（真实数据），命中率 53%，提炼 10 条知识** |
+| **数据库** | **✅ 分库重组**（market/portfolio/agent/reference 4 库，含迁移脚本） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
-| **业绩前瞻数据** | **earnings_preview.db（41 家公司中信证券 H1 2026）+ 13 主题 group** |
-| **实战手册** | **docs/EARNINGS-HANDBOOK.md（407 行，12 章节实战手册）** |
-| **earnings_actual 模块** | **src/mommy_chaogu/earnings/（7 个文件 / 1263 行）+ 51 测试** |
+| **回测数据** | **market.db: 106 只 × 42 天 K 线(4437 行) + 92 只 × 21 天资金流(1917 行)** |
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
-| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
-| 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / **MEMORY-SYSTEM-PLAN** / **BRANCH-MERGE-ANALYSIS** **9 份齐** |
+| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅** |
+| 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / MEMORY-SYSTEM-PLAN / BRANCH-MERGE-ANALYSIS / **AGENTS.md** **10 份齐** |
 | 自动化 | **4 个 OpenClaw cron jobs**（盘前/盘中/收盘/周报） |
-| **实战验证** | ✅ 记忆系统 5 条链路端到端验证通过（验证降级 / 置信度校准 / 向量检索 / prompt 注入 / CLI） |
+| **实战验证** | ✅ 记忆系统闭环 + 30 天回测 + 数据库迁移验证通过 |
 
 ---
 
@@ -76,6 +76,57 @@
                      + 东方财富 push2.eastmoney.com 直连
                        （大盘指数 / 板块排行 / 板块成分股 / 龙虎榜）
 ```
+
+---
+
+### ✅ 30 天回测验证 + 数据库重组（`memory-system-v1` 分支，2026-07-04）
+
+#### 30 天真实数据回测
+
+用 10 只股票 × 24 天真实行情数据（腾讯日 K 线 + 东财资金流）跑完整闭环：
+
+| 指标 | 值 |
+|---|---|
+| 数据源 | 腾讯日 K 线（10 只 × 24 天）+ 东财资金流（10 只 × 21 天）+ 东财公告（44 条） |
+| 总预测 | 154 条（规则引擎自动生成，4 条信号规则） |
+| 命中 | 82（53%） |
+| 提炼知识 | 10 条（含个股命中率 + 市场规律） |
+| Prompt 进化 | 612 字 → 2185 字 |
+
+**关键发现**：
+- 看跌比看涨准（57% vs 41%）——趋势延续性强
+- 极端信号更可信（10bp+ 59% vs 5-10bp 50%）
+- 个股差异巨大：比亚迪 84% vs 柯力传感 18%
+- 脚本：`scripts/backtest_evolution.py`
+
+#### 半导体链 106 只数据采集
+
+| 数据 | 成功 | 总行数 | 存储 |
+|---|---|---|---|
+| K 线 | 106/106 | 4437 行（5/6 → 7/3） | data/market.db |
+| 资金流 | 92/106 | 1917 行（6/4 → 7/3） | data/market.db |
+| 股票列表 | 106 | — | data/reference.db |
+
+14 只资金流不可用（模拟芯片类：圣邦/思瑞浦/纳芯微等，东财接口不覆盖）。
+
+#### 数据库分库重组
+
+从 1 个 `watchlist.db`（所有表混在一起）→ 4 个按职责分离的数据库：
+
+| 数据库 | 用途 | 关键表 |
+|---|---|---|
+| `data/market.db` | 行情数据 | quote_cache, bar_cache, klines, flows |
+| `data/portfolio.db` | 用户数据 | groups, stock_entries, positions |
+| `data/agent.db` | 记忆系统 | agent_memory, episodic_events, predictions, semantic_knowledge |
+| `data/reference.db` | 参考库 | semicon_stocks, earnings_* |
+
+新增文件：
+- `src/mommy_chaogu/db_paths.py` — 统一路径管理（环境变量可覆盖）
+- `scripts/migrate_db_layout.py` — 自动迁移脚本（ATTACH + INSERT）
+- `scripts/fetch_semicon_data.py` — 批量抓取半导体链数据
+- `AGENTS.md` — agent / 开发者项目指南
+
+向后兼容：环境变量覆盖、`--db` 参数、测试用 tmp_path 不受影响。
 
 ---
 

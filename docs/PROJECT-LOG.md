@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-07-03（memory-system-v1 Phase 1-5，branch `memory-system-v1`）
+> 最后更新：2026-07-04（30 天回测 + 数据库重组，branch `memory-system-v1`）
 
 ---
 
@@ -16,9 +16,9 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **自进化记忆系统 Phase 1-5 完成**（`memory-system-v1` 分支） |
-| 累计 commits | **25+** |
-| 代码量 | **~25,000+ 行**（src 17000 + tests 5000 + web 3000） |
+| 项目阶段 | **记忆系统 Phase 1-5 + 30 天回测 + 数据库分库重组**（`memory-system-v1` 分支） |
+| 累计 commits | **30+** |
+| 代码量 | **~27,000+ 行**（src 17500 + tests 5000 + scripts 1500 + web 3000） |
 | 测试 | **482 个**（含 +121 memory-system 测试） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅**（GitHub Actions） |
 | 数据源 | 东财（主）+ 腾讯（仅 quote 兜底） |
@@ -52,7 +52,36 @@
 
 ## 2. 关键里程碑（全链路）
 
-> 时间倒序：Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+> 时间倒序：Backtest+DB → Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+
+### Backtest + DB Refactor（2026-07-04） — 30 天真实数据回测 + 数据库分库 📊🔧
+
+**痛点**：记忆系统做了但没用真实数据验证过；数据库 watchlist.db 是垃圾桶（所有表混一起）。
+
+**对策 A — 30 天回测验证**：用真实行情跑 154 条预测 → 验证 → 提炼闭环。
+
+**对策 B — 数据库分库**：watchlist.db 拆成 4 个按职责分离的库。
+
+| 层 | 内容 | 文件 |
+|---|---|---|
+| 回测脚本 | 154 条预测（10 只 × 19 天）→ 53% 命中率 → 10 条知识提炼 | `scripts/backtest_evolution.py` |
+| 数据采集 | 106 只半导体 × 42 天 K 线(4437 行) + 92 只 × 21 天资金流(1917 行) | `scripts/fetch_semicon_data.py` |
+| 数据库路径 | 统一路径管理 + 环境变量覆盖 | `src/mommy_chaogu/db_paths.py` |
+| 迁移脚本 | 旧 watchlist.db → 4 个新库（ATTACH + INSERT） | `scripts/migrate_db_layout.py` |
+| 项目指南 | agent + 开发者必读（含迁移提示） | `AGENTS.md` |
+
+**回测关键发现**：
+- 看跌比看涨准（57% vs 41%）— 趋势延续性强
+- 极端信号 >10bp 更可信（59% vs 50%）
+- 个股差异巨大：比亚迪 84% vs 柯力传感 18%
+
+**数据库布局**：
+| 库 | 用途 |
+|---|---|
+| market.db | 行情缓存 + 历史 K 线 + 资金流 |
+| portfolio.db | 自选股 + 持仓 |
+| agent.db | 记忆系统 5 张表 |
+| reference.db | 半导体产业链 + 业绩 |
 
 ### Memory System v1（2026-07-03） — 自进化记忆系统 Phase 1-5 🧠
 
