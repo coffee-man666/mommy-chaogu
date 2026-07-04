@@ -62,6 +62,7 @@ _PRICING_CNY_PER_MTOKEN: dict[str, tuple[float, float]] = {
     "gpt-4o-mini": (1.0, 4.0),
     "gpt-4o": (18.0, 70.0),
     "moonshot-v1-8k": (12.0, 12.0),
+    "glm-4.7": (2.0, 2.0),
 }
 
 
@@ -319,6 +320,10 @@ def run(args: argparse.Namespace) -> int:
         base_url = "https://api.moonshot.cn/v1"
         default_model = "moonshot-v1-8k"
         env_key = "MOONSHOT_API_KEY"
+    elif provider == "zai":
+        base_url = "https://api.z.ai/api/coding/paas/v4"
+        default_model = "glm-4.7"
+        env_key = "ZAI_API_KEY"
     else:
         base_url = None
         default_model = "deepseek-chat"
