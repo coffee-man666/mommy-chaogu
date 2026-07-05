@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（698 个）
+uv run pytest -m "not network"   # 跑测试（709 个）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -66,7 +66,7 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（18 工具 + MCP + 记忆系统 5 层）
+├── agent/            # LLM agent（21 工具 + MCP + 记忆系统 5 层 + MemoryPipeline 统一管道）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库

@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-05（memory-system-v1 — 记忆系统闭环 + 回测改进 + 4 Sprint 评估修复）
+最后更新：2026-07-05（memory-system-v1 — MemoryPipeline 统一管道 + 全入口记忆激活 + 回测记忆闭环）
 
 ---
 
@@ -12,9 +12,9 @@
 |---|---|
 | 项目阶段 | **记忆系统 Phase 1-5 闭环 + 回测改进 + 数据库分库 + 多模型 LLM 回测** |
 | 代码量 | **~36,000+ 行**（Python src ~23,000 + tests ~9,000 + web ~4,000） |
-| 测试 | **698 个通过**（含记忆系统闭环 + 回测改进 + TTL/去重 + walk-forward/regime 测试） |
+| 测试 | **709 个通过**（含 MemoryPipeline + 记忆系统全入口激活 + 回测改进 + TTL/去重 + walk-forward/regime） |
 | **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi/zai，**21 function-calling 工具**（含记忆查询），Web 聊天 + 流式推送 + **MCP Server**） |
-| **自进化记忆** | **✅ 5 层记忆系统闭环**（工作/情景/预测验证/语义知识/向量检索，traceability 链通，验证 cron，report/monitor 写 episodic，insight_summary 注入 prompt） |
+| **自进化记忆** | **✅ MemoryPipeline 全入口激活**（聊天/回测/报告/监控 全部读写记忆，cron 自动验证+提炼，`--memory-db` 回测可见进化曲线） |
 | **30 天回测** | **✅ 154 条预测验证，命中率 53%（含 buy-and-hold 基准 + Wilson CI + 二项检验）** |
 | **LLM 回测** | **✅ 5 模型横向对比完成**（glm-4.7/5/5-turbo/5.1/5.2，70 条 × 5 = 350 条预测，最佳 glm-5 50% 命中率）|
 | **数据库** | **✅ 分库重组**（market/portfolio/agent/reference 4 库，含迁移脚本） |
@@ -23,7 +23,7 @@
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅** |
 | 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / MEMORY-SYSTEM-PLAN / BRANCH-MERGE-ANALYSIS / BACKTEST-REPORT / **AGENTS.md** **11 份齐** |
-| 自动化 | **4 个 OpenClaw cron jobs**（盘前/盘中/收盘/周报） |
+| 自动化 | **6 个 cron jobs**（盘前/盘中/收盘/周报 + `cron_verify.sh` 每日验证 + `cron_consolidate.sh` 周度提炼） |
 | **实战验证** | ✅ 记忆系统闭环 + 30 天回测 + 数据库迁移 + 5 模型 LLM 回测对比 |
 
 ---

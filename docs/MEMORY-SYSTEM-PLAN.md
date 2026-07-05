@@ -2,7 +2,7 @@
 
 > 让 agent 从「每次从零开始」变成「越用越懂」的投研智能体——记住过去、讲出脉络、验证判断、沉淀经验。
 >
-> 状态：设计稿 v2（合并版，2026-07-03）
+> 状态：**已实现**（2026-07-05，MemoryPipeline 全入口激活，代码与设计对齐）
 >
 > 前置依赖：`docs/BRANCH-MERGE-ANALYSIS.md`（merge 完成）、`src/mommy_chaogu/agent/memory.py`（现有朴素记忆）
 
@@ -822,3 +822,48 @@ mommy-agent events --type signal_event
 | 隐私（妈妈持仓信息） | 本地 SQLite，不上传，不推送 |
 
 **回退策略**：每个 Phase 独立。EpisodicMemory / PredictionTracker / SemanticMemory 都是 optional 的——传 None 时 AgentService 行为完全不变（向后兼容）。
+
+---
+
+## 16. MemoryPipeline 统一管道（2026-07-05 实现）
+
+### 架构
+
+`MemoryPipeline`（`src/mommy_chaogu/agent/memory_pipeline.py`）是记忆系统的统一入口，封装了所有记忆操作：
+
+```
+MemoryPipeline
+  ├── build_prompt(query)         → 构建注入了记忆的 system prompt
+  ├── record_analysis(msg, resp)  → 调 extractor 提取 + 存储到 episodic + predictions
+  ├── verify_predictions(adapter) → 验证到期预测 + 回填 traceability
+  ├── consolidate()               → 提炼语义知识 + 生成 insight_summary
+  └── stats()                     → 返回记忆系统状态快照
+```
+
+### 全入口激活矩阵
+
+| 分析入口 | 读取记忆 | 写入记忆 | 提炼知识 | 机制 |
+|---|---|---|---|---|
+| Web/CLI 聊天 | ✅ build_prompt | ✅ record_analysis | ✅ cron_consolidate | AgentService.chat() → MemoryPipeline |
+| LLM 回测 (`--memory-db`) | ✅ build_prompt | ✅ episodic.write + source_event_id | ✅ 每5天 consolidate | backtest_llm.py → MemoryPipeline |
+| 收盘报告 | ✅ build_prompt | ✅ analysis_record | ✅ cron_consolidate | AgentReportService._build_prompt() |
+| 监控告警 | ✅ build_prompt | ✅ signal_event | ✅ cron_consolidate | AgentMonitor._ask_agent() |
+| 验证 | — | ✅ 验证事件 + 回填 prediction_id | — | verify_engine.verify_pending() |
+| 知识提炼 | ✅ 读 episodic + predictions | ✅ semantic + insight | ✅ 本身 | consolidator.consolidate_all() |
+| 叙事 | ✅ 读 episodic | — | — | MarketNarrative（只读工具） |
+
+### Cron 自动化
+
+| 脚本 | 时间 | 功能 |
+|---|---|---|
+| `scripts/cron_verify.sh` | 每天 16:00 周一~五 | 验证到期预测 |
+| `scripts/cron_consolidate.sh` | 每周五 18:00 | 验证 + 提炼知识 + 生成 insight |
+
+### 回测中的记忆进化
+
+`backtest_llm.py --memory-db data/memory.db` 启用后：
+- **预测前**：注入已有认知 + 近期事件 + 判断回顾 + 相似历史事件
+- **预测后**：写 episodic event + 创建带 source_event_id 的 prediction（100% traceability）
+- **每 3 天**：离线验证到期预测，写验证事件
+- **每 5 天**：提炼语义知识，更新 insight_summary
+- **报告输出**：记忆系统进化统计（events / predictions / knowledge / insight 条数 + traceability 覆盖率）
