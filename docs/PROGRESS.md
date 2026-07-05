@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-04（memory-system-v1 — 记忆系统 + 回测 + 数据库重组 + 多模型 LLM 回测）
+最后更新：2026-07-05（memory-system-v1 — 记忆系统闭环 + 回测改进 + 4 Sprint 评估修复）
 
 ---
 
@@ -10,12 +10,12 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **记忆系统 Phase 1-5 + 30 天回测 + 数据库分库 + 多模型 LLM 回测** |
+| 项目阶段 | **记忆系统 Phase 1-5 闭环 + 回测改进 + 数据库分库 + 多模型 LLM 回测** |
 | 代码量 | **~36,000+ 行**（Python src ~23,000 + tests ~9,000 + web ~4,000） |
-| 测试 | **518 个通过**（含 +36 token tracker 测试） |
-| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi/zai，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
-| **自进化记忆** | **✅ 5 层记忆系统**（工作/情景/预测验证/语义知识/向量检索，**8 个 CLI 子命令**） |
-| **30 天回测** | **✅ 154 条预测验证（真实数据），命中率 53%，提炼 10 条知识** |
+| 测试 | **698 个通过**（含记忆系统闭环 + 回测改进 + TTL/去重 + walk-forward/regime 测试） |
+| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi/zai，**21 function-calling 工具**（含记忆查询），Web 聊天 + 流式推送 + **MCP Server**） |
+| **自进化记忆** | **✅ 5 层记忆系统闭环**（工作/情景/预测验证/语义知识/向量检索，traceability 链通，验证 cron，report/monitor 写 episodic，insight_summary 注入 prompt） |
+| **30 天回测** | **✅ 154 条预测验证，命中率 53%（含 buy-and-hold 基准 + Wilson CI + 二项检验）** |
 | **LLM 回测** | **✅ 5 模型横向对比完成**（glm-4.7/5/5-turbo/5.1/5.2，70 条 × 5 = 350 条预测，最佳 glm-5 50% 命中率）|
 | **数据库** | **✅ 分库重组**（market/portfolio/agent/reference 4 库，含迁移脚本） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |

@@ -277,3 +277,43 @@ Sprint 4                                    ████████████
 ```
 
 **最短路径**：如果用 swarm 并行跑，Sprint 1-3 理论上可以在 ~5 小时内完成（不含 Sprint 4 的数据依赖）。Sprint 1 的 5 个快速修复是最值得先做的——低工作量、高价值、全部独立。
+
+---
+
+## 五、执行结果（2026-07-05）
+
+**全部 4 个 Sprint 完成。** 用 AgentSwarm 并行执行，每个 Sprint 内任务分组并行。
+
+### 完成统计
+
+| Sprint | 任务 | 新增测试 | Commit |
+|---|---|---|---|
+| Sprint 1 | A1+A2 / B1+B2 / B3 | +31 | `37b92d4` |
+| Sprint 2 | A3+A4 / B4 / B5 | +49 | `a19dc3f` |
+| Sprint 3 | A5 / B6 / B7 / B8 | +42 | `68aaa19` |
+| Sprint 4 | A6+B9 / A7 / B10 | +58 | `4424628` |
+| **合计** | **17 个改进** | **+180** | 518→698 |
+
+### 闭环状态（修复后）
+
+```
+修复后的闭环：
+  chat → extractor → episodic ✅ → prompt_builder ✅
+  reports/monitor → episodic ✅（B6 修复）
+  verify cron → predictions ✅（B3 修复，16:00 自动验证）
+  consolidate → semantic ✅ → insight_summary ✅ → prompt_builder ✅（B7 修复）
+  vector_search → agent tools ✅（B4 修复）
+  vector_search → prompt_builder ✅（B8 修复）
+  traceability 链 ✅（B1 修复：event↔prediction 完整链接）
+  TTL/清理/去重 ✅（B10 修复）
+```
+
+### 回测系统改进
+
+- ✅ buy-and-hold 基准（A1）
+- ✅ Wilson CI + 二项检验（A2）
+- ✅ 统一评分模块 backtest/scoring.py（A3）
+- ✅ 交易成本模型 backtest/costs.py（A4）
+- ✅ 组合层面分析 backtest/portfolio.py（A5）
+- ✅ Walk-forward 过拟合检测 backtest/walk_forward.py（A6）
+- ✅ 市场环境分组分析 backtest/regime_analysis.py（A7）
