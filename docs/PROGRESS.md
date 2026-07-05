@@ -177,6 +177,7 @@ mommy-agent narrative       # 市场脉络叙述
 mommy-agent consolidate     # 知识提炼
 mommy-agent knowledge       # 查看知识库
 mommy-agent search          # 语义搜索相似事件
+mommy-agent cleanup         # 清理过期记忆（TTL + 去重）
 ```
 
 #### 新增表（5 张，同一份 data/watchlist.db）

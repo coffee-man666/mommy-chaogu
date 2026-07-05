@@ -223,3 +223,174 @@ class TestEpisodicPersistence:
         assert event["summary"] == "persisted"
         assert event["data"] == {"sh_index": 3200}
         assert event["tags"] == ["bullish"]
+
+
+class TestEpisodicContentHash:
+    def test_write_with_content_hash(self, episodic: EpisodicMemory) -> None:
+        """write 支持 content_hash 参数并存入。"""
+        eid = episodic.write(
+            "analysis_record",
+            "stock:600519",
+            "茅台突破",
+            {"price": 1680},
+            content_hash="abc123",
+        )
+        event = episodic.get_by_id(eid)
+        assert event is not None
+        assert event["content_hash"] == "abc123"
+
+    def test_write_without_content_hash(self, episodic: EpisodicMemory) -> None:
+        """不传 content_hash 时存为 None。"""
+        eid = episodic.write("market_snapshot", "market", "a", {})
+        event = episodic.get_by_id(eid)
+        assert event is not None
+        assert event["content_hash"] is None
+
+    def test_exists_by_hash(self, episodic: EpisodicMemory) -> None:
+        """exists_by_hash 检查同 scope + content_hash 是否存在。"""
+        episodic.write(
+            "analysis_record",
+            "stock:600519",
+            "茅台突破",
+            {},
+            content_hash="hash_a",
+        )
+        assert episodic.exists_by_hash("stock:600519", "hash_a") is True
+        assert episodic.exists_by_hash("stock:600519", "hash_b") is False
+        # 不同 scope 同 hash 不算重复
+        assert episodic.exists_by_hash("stock:000001", "hash_a") is False
+
+    def test_content_hash_migration_from_old_db(self, tmp_path: Path) -> None:
+        """旧库（无 content_hash 列）打开后自动迁移添加列。"""
+        db = tmp_path / "old.db"
+        # 模拟旧 schema
+        from sqlalchemy import create_engine, text
+
+        engine = create_engine(f"sqlite:///{db}", future=True)
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE episodic_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    trade_date TEXT,
+                    event_type TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    code TEXT,
+                    name TEXT,
+                    data TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    tags TEXT DEFAULT '[]',
+                    data_coverage TEXT DEFAULT '{}',
+                    source TEXT DEFAULT 'agent',
+                    confidence REAL DEFAULT 0.5,
+                    prediction_id INTEGER,
+                    created_at TEXT NOT NULL
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO episodic_events
+                    (timestamp, event_type, scope, data, summary, created_at)
+                VALUES ('2026-01-01', 'market_snapshot', 'market', '{}', 'old', '2026-01-01')
+            """))
+        engine.dispose()
+
+        # 重新打开应自动迁移
+        em = EpisodicMemory(db)
+        events = em.query()
+        assert len(events) == 1
+        assert events[0]["content_hash"] is None
+        # 迁移后能正常写入带 content_hash 的新事件
+        eid = em.write("market_snapshot", "market", "new", {}, content_hash="h1")
+        assert em.get_by_id(eid)["content_hash"] == "h1"
+
+
+class TestEpisodicCleanupOld:
+    def test_cleanup_old_signal_events(self, episodic: EpisodicMemory) -> None:
+        """signal_event 超过 days 天被清理。"""
+        from datetime import UTC, datetime, timedelta
+
+        old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+        # 手动写入一条 100 天前的 signal_event
+        from sqlalchemy import text
+
+        with episodic.engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO episodic_events
+                    (timestamp, event_type, scope, data, summary, created_at)
+                VALUES (:ts, 'signal_event', 'market', '{}', 'old signal', :ts)
+            """), {"ts": old_ts})
+
+        deleted = episodic.cleanup_old(days=90)
+        assert deleted == 1
+        assert episodic.query() == []
+
+    def test_cleanup_preserves_recent(self, episodic: EpisodicMemory) -> None:
+        """近期事件不被清理。"""
+        episodic.write("signal_event", "market", "recent", {})
+        deleted = episodic.cleanup_old(days=90)
+        assert deleted == 0
+        assert len(episodic.query()) == 1
+
+    def test_cleanup_preserves_long_retain_types(self, episodic: EpisodicMemory) -> None:
+        """analysis_record / market_snapshot 保留更久（180 天）。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+        # 100 天前的 analysis_record 不应被 90 天 cleanup 删除
+        with episodic.engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO episodic_events
+                    (timestamp, event_type, scope, data, summary, created_at)
+                VALUES (:ts, 'analysis_record', 'market', '{}', 'old analysis', :ts)
+            """), {"ts": old_ts})
+            conn.execute(text("""
+                INSERT INTO episodic_events
+                    (timestamp, event_type, scope, data, summary, created_at)
+                VALUES (:ts, 'market_snapshot', 'market', '{}', 'old snapshot', :ts)
+            """), {"ts": old_ts})
+
+        deleted = episodic.cleanup_old(days=90)
+        assert deleted == 0
+        assert len(episodic.query()) == 2
+
+    def test_cleanup_removes_long_retain_after_180d(self, episodic: EpisodicMemory) -> None:
+        """analysis_record 超过 180 天被清理。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        old_ts = (datetime.now(UTC) - timedelta(days=200)).isoformat()
+        with episodic.engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO episodic_events
+                    (timestamp, event_type, scope, data, summary, created_at)
+                VALUES (:ts, 'analysis_record', 'market', '{}', 'very old', :ts)
+            """), {"ts": old_ts})
+
+        deleted = episodic.cleanup_old(days=90)
+        assert deleted == 1
+        assert episodic.query() == []
+
+    def test_cleanup_empty_db(self, episodic: EpisodicMemory) -> None:
+        """空库 cleanup 返回 0。"""
+        assert episodic.cleanup_old(days=90) == 0
+
+    def test_cleanup_returns_count(self, episodic: EpisodicMemory) -> None:
+        """cleanup 返回删除的条数。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+        with episodic.engine.begin() as conn:
+            for i in range(3):
+                conn.execute(text("""
+                    INSERT INTO episodic_events
+                        (timestamp, event_type, scope, data, summary, created_at)
+                    VALUES (:ts, 'signal_event', 'market', '{}', :s, :ts)
+                """), {"ts": old_ts, "s": f"old-{i}"})
+
+        deleted = episodic.cleanup_old(days=90)
+        assert deleted == 3

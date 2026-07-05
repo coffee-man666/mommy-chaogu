@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS episodic_events (
     source TEXT DEFAULT 'agent',
     confidence REAL DEFAULT 0.5,
     prediction_id INTEGER,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    content_hash TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_episodic_scope
@@ -47,6 +48,25 @@ CREATE INDEX IF NOT EXISTS ix_episodic_ts
 CREATE INDEX IF NOT EXISTS ix_episodic_code_date
     ON episodic_events(code, trade_date);
 """
+
+# ALTER TABLE 兼容旧库：content_hash 列可能不存在。
+_MIGRATION_SQL = """
+ALTER TABLE episodic_events ADD COLUMN content_hash TEXT
+"""
+
+_CONTENT_HASH_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS ix_episodic_content_hash
+    ON episodic_events(scope, content_hash)
+"""
+
+
+def _ensure_content_hash_column(conn: Any) -> None:
+    """旧库迁移：若 content_hash 列不存在则 ALTER TABLE 添加，并建索引。"""
+    rows = conn.execute(text("PRAGMA table_info(episodic_events)")).all()
+    cols = {row[1] for row in rows}
+    if "content_hash" not in cols:
+        conn.execute(text(_MIGRATION_SQL.strip()))
+    conn.execute(text(_CONTENT_HASH_INDEX_SQL.strip()))
 
 
 def _utcnow() -> datetime:
@@ -81,6 +101,7 @@ class EpisodicMemory:
                 stmt = stmt.strip()
                 if stmt:
                     conn.execute(text(stmt))
+            _ensure_content_hash_column(conn)
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
 
     @contextmanager
@@ -109,11 +130,14 @@ class EpisodicMemory:
         confidence: float = 0.5,
         trade_date: str | None = None,
         prediction_id: int | None = None,
+        content_hash: str | None = None,
     ) -> int:
         """写入一条结构化事件，返回自增 id。
 
         *data* / *tags* / *data_coverage* 以 JSON 字符串形式存储，
         *timestamp* 与 *created_at* 设为当前 UTC 时间（ISO8601）。
+        *content_hash* 可选，用于内容去重（同 scope + content_hash 已存在
+        时由调用方负责跳过）。
         """
         now_iso = _utcnow().isoformat()
         with self.session() as s:
@@ -123,13 +147,13 @@ class EpisodicMemory:
                         timestamp, trade_date, event_type, scope,
                         code, name, data, summary,
                         tags, data_coverage, source, confidence,
-                        prediction_id, created_at
+                        prediction_id, created_at, content_hash
                     )
                     VALUES (
                         :timestamp, :trade_date, :event_type, :scope,
                         :code, :name, :data, :summary,
                         :tags, :data_coverage, :source, :confidence,
-                        :prediction_id, :created_at
+                        :prediction_id, :created_at, :content_hash
                     )
                 """),
                 {
@@ -147,6 +171,7 @@ class EpisodicMemory:
                     "confidence": confidence,
                     "prediction_id": prediction_id,
                     "created_at": now_iso,
+                    "content_hash": content_hash,
                 },
             )
             return result.lastrowid or 0
@@ -169,15 +194,28 @@ class EpisodicMemory:
             "confidence": row[12],
             "prediction_id": row[13],
             "created_at": row[14],
+            "content_hash": row[15] if len(row) > 15 else None,
         }
 
     def _query_select_sql(self) -> str:
         return """
             SELECT id, timestamp, trade_date, event_type, scope,
                    code, name, data, summary, tags, data_coverage,
-                   source, confidence, prediction_id, created_at
+                   source, confidence, prediction_id, created_at, content_hash
             FROM episodic_events
         """
+
+    def exists_by_hash(self, scope: str, content_hash: str) -> bool:
+        """同 scope + content_hash 的事件是否已存在（用于去重）。"""
+        with self.session() as s:
+            row = s.execute(
+                text(
+                    "SELECT 1 FROM episodic_events"
+                    " WHERE scope = :scope AND content_hash = :content_hash LIMIT 1"
+                ),
+                {"scope": scope, "content_hash": content_hash},
+            ).first()
+            return row is not None
 
     def query(
         self,
@@ -274,6 +312,45 @@ class EpisodicMemory:
                 text("UPDATE episodic_events SET prediction_id = :pid WHERE id = :id"),
                 {"pid": prediction_id, "id": event_id},
             )
+
+    def cleanup_old(self, days: int = 90) -> int:
+        """删除 *days* 天前的事件，返回删除条数。
+
+        分两层 TTL：
+        - ``analysis_record`` / ``market_snapshot`` 保留更久（180 天），
+          因为它们有长期复盘价值；
+        - 其余类型（如 ``signal_event`` / ``trade_decision``）按 *days*
+          天清理（默认 90 天）。
+        """
+        long_retain_types = ("analysis_record", "market_snapshot")
+        long_days = max(days, 180)
+        short_cutoff = (_utcnow() - timedelta(days=days)).isoformat()
+        long_cutoff = (_utcnow() - timedelta(days=long_days)).isoformat()
+
+        placeholders = ",".join([f":t{i}" for i in range(len(long_retain_types))])
+        params: dict[str, Any] = {
+            "short_cutoff": short_cutoff,
+            "long_cutoff": long_cutoff,
+        }
+        for i, t in enumerate(long_retain_types):
+            params[f"t{i}"] = t
+
+        with self.session() as s:
+            result = s.execute(
+                text(f"""
+                    DELETE FROM episodic_events
+                    WHERE (
+                        timestamp < :short_cutoff
+                        AND event_type NOT IN ({placeholders})
+                    )
+                    OR (
+                        timestamp < :long_cutoff
+                        AND event_type IN ({placeholders})
+                    )
+                """),
+                params,
+            )
+            return result.rowcount or 0
 
     def summary(self) -> dict[str, Any]:
         """返回统计摘要：总条数、按 event_type / scope 分组计数、时间跨度。"""

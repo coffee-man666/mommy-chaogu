@@ -2048,6 +2048,42 @@ def cmd_agent_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent_cleanup(args: argparse.Namespace) -> int:
+    """清理过期记忆：TTL 删除 + 去重保留。
+
+    - episodic_events: signal_event 等 90 天清理，analysis_record /
+      market_snapshot 保留 180 天
+    - predictions: 已验证/过期的 90 天清理（pending 不删）
+    - semantic_knowledge: 非 active 且 180 天未更新的清理
+    """
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    db_path = Path(args.db)
+    episodic = EpisodicMemory(db_path)
+    tracker = PredictionTracker(db_path)
+    semantic = SemanticMemory(db_path)
+
+    days = args.days
+    print("🧹 清理过期记忆...")
+    print("─" * 60)
+
+    n_episodic = episodic.cleanup_old(days=days)
+    print(f"episodic_events: 删除 {n_episodic} 条（>{days}d 的短时事件 / >180d 的长期事件）")
+
+    n_preds = tracker.cleanup_old(days=days)
+    print(f"predictions:     删除 {n_preds} 条（>{days}d 的 hit/missed/expired，pending 保留）")
+
+    sem_days = args.semantic_days
+    n_sem = semantic.cleanup_inactive(days=sem_days)
+    print(f"semantic_knowledge: 删除 {n_sem} 条（>{sem_days}d 未更新的非 active 知识）")
+
+    total = n_episodic + n_preds + n_sem
+    print(f"\n共清理 {total} 条")
+    return 0
+
+
 def build_agent_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-agent",
@@ -2155,6 +2191,20 @@ def build_agent_parser() -> argparse.ArgumentParser:
     p_se.add_argument("--limit", type=int, default=5, help="返回条数 (默认 5)")
     p_se.add_argument("--embed", action="store_true", help="为事件生成 embedding")
     p_se.set_defaults(func=cmd_agent_search)
+
+    # cleanup — 清理过期记忆（TTL + 去重保留）
+    p_cl = sub.add_parser("cleanup", help="清理过期记忆（TTL 删除 + 去重）")
+    p_cl.add_argument(
+        "--days", type=int, default=90, help="episodic/predictions 清理阈值天数 (默认 90)"
+    )
+    p_cl.add_argument(
+        "--semantic-days",
+        type=int,
+        default=180,
+        dest="semantic_days",
+        help="semantic_knowledge 清理阈值天数 (默认 180)",
+    )
+    p_cl.set_defaults(func=cmd_agent_cleanup)
 
     return p
 

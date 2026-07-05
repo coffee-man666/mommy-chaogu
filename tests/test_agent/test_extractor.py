@@ -485,3 +485,158 @@ class TestDataCoverageInference:
             code="603662",
         )
         assert cov["quote"] is True
+
+
+class TestDeduplication:
+    def test_duplicate_observation_skipped(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """同 scope + 相同 summary 的 observation 第二次写入被跳过。"""
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "summary": "底部反转信号",
+                    "data": {"price": 80.0},
+                    "confidence": 0.8,
+                }
+            ],
+            "predictions": [],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+        store_extraction(extraction, episodic, tracker)  # 重复
+
+        events = episodic.query()
+        assert len(events) == 1  # 第二次被去重
+
+    def test_different_scope_same_summary_both_written(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """不同 scope 下相同 summary 不算重复，都写入。"""
+        extraction1 = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "summary": "底部反转信号",
+                    "data": {},
+                }
+            ],
+            "predictions": [],
+        }
+        extraction2 = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:600519",
+                    "code": "600519",
+                    "summary": "底部反转信号",
+                    "data": {},
+                }
+            ],
+            "predictions": [],
+        }
+
+        store_extraction(extraction1, episodic, tracker)
+        store_extraction(extraction2, episodic, tracker)
+
+        assert len(episodic.query()) == 2
+
+    def test_different_summary_same_scope_both_written(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """同 scope 但不同 summary 不算重复，都写入。"""
+        store_extraction(
+            {
+                "observations": [
+                    {
+                        "event_type": "analysis_record",
+                        "scope": "stock:603662",
+                        "code": "603662",
+                        "summary": "底部反转",
+                        "data": {},
+                    }
+                ],
+                "predictions": [],
+            },
+            episodic,
+            tracker,
+        )
+        store_extraction(
+            {
+                "observations": [
+                    {
+                        "event_type": "analysis_record",
+                        "scope": "stock:603662",
+                        "code": "603662",
+                        "summary": "放量突破",
+                        "data": {},
+                    }
+                ],
+                "predictions": [],
+            },
+            episodic,
+            tracker,
+        )
+
+        assert len(episodic.query()) == 2
+
+    def test_content_hash_stored(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """去重写入的事件带 content_hash。"""
+        store_extraction(
+            {
+                "observations": [
+                    {
+                        "event_type": "analysis_record",
+                        "scope": "stock:603662",
+                        "code": "603662",
+                        "summary": "底部反转信号",
+                        "data": {},
+                    }
+                ],
+                "predictions": [],
+            },
+            episodic,
+            tracker,
+        )
+
+        events = episodic.query()
+        assert len(events) == 1
+        assert events[0]["content_hash"] is not None
+        assert len(events[0]["content_hash"]) == 32  # md5 hex
+
+    def test_dedup_does_not_block_predictions(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """observation 去重后，prediction 仍然正常写入（去重只针对事件）。"""
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "summary": "底部反转",
+                    "data": {},
+                }
+            ],
+            "predictions": [
+                {
+                    "code": "603662",
+                    "prediction": "看涨",
+                    "direction": "bullish",
+                    "timeframe": "5d",
+                }
+            ],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+        store_extraction(extraction, episodic, tracker)
+
+        assert len(episodic.query()) == 1
+        assert len(tracker.all()) == 2  # prediction 不去重

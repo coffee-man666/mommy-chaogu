@@ -179,6 +179,87 @@ class TestSemanticSearch:
         assert rows[0]["content"] == "Volume Spike Pattern"
 
 
+class TestSemanticSearchHybrid:
+    """search_hybrid：降级（关键词）模式 + 向量模式。"""
+
+    def test_hybrid_keyword_returns_relevance_score(self, semantic: SemanticMemory) -> None:
+        """降级模式下结果带 relevance_score 字段，格式正确。"""
+        semantic.upsert("sector_thesis", "sector:半导体", "半导体库存周期见底，价格拐点")
+        semantic.upsert("market_regime", "market", "震荡市格局")
+
+        # 未调用 attach_vector_search → 走降级关键词模式
+        rows = semantic.search_hybrid("半导体 库存")
+        assert len(rows) >= 1
+        for row in rows:
+            assert "relevance_score" in row
+            assert isinstance(row["relevance_score"], float)
+            assert 0.0 <= row["relevance_score"] <= 1.0
+
+    def test_hybrid_keyword_ranks_by_relevance(self, semantic: SemanticMemory) -> None:
+        """多关键词匹配：命中更多关键词的条目 relevance_score 更高、排前。"""
+        semantic.upsert(
+            "sector_thesis",
+            "sector:半导体",
+            "半导体库存周期见底，需求超预期",  # 命中两个词
+        )
+        semantic.upsert(
+            "sector_thesis",
+            "sector:创新药",
+            "创新药库存充足",  # 只命中一个词
+        )
+        rows = semantic.search_hybrid("半导体 库存")
+        assert len(rows) == 2
+        # 半导体那条命中两个词，应该排第一且分数更高
+        assert rows[0]["scope"] == "sector:半导体"
+        assert rows[0]["relevance_score"] > rows[1]["relevance_score"]
+
+    def test_hybrid_keyword_no_match(self, semantic: SemanticMemory) -> None:
+        """无关键词命中返回空。"""
+        semantic.upsert("market_regime", "market", "震荡市")
+        assert semantic.search_hybrid("完全不相关的词") == []
+
+    def test_hybrid_empty_db(self, semantic: SemanticMemory) -> None:
+        """空库返回空列表。"""
+        assert semantic.search_hybrid("任意") == []
+
+    def test_hybrid_respects_limit(self, semantic: SemanticMemory) -> None:
+        """limit 参数截断结果数。"""
+        for i in range(5):
+            semantic.upsert("sector_thesis", f"sector:s{i}", f"半导体行情-{i}", confidence=0.8)
+        rows = semantic.search_hybrid("半导体", limit=2)
+        assert len(rows) <= 2
+
+    def test_hybrid_results_sorted_desc(self, semantic: SemanticMemory) -> None:
+        """结果按 relevance_score 降序。"""
+        semantic.upsert("a", "s1", "半导体 半导体 半导体")  # 高频
+        semantic.upsert("b", "s2", "半导体")  # 单次
+        rows = semantic.search_hybrid("半导体")
+        scores = [r["relevance_score"] for r in rows]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_hybrid_with_fake_vector_client_degrades(self, semantic: SemanticMemory) -> None:
+        """注入不可用的 embedding client（attach 返回 False）→ 降级关键词搜索。"""
+        semantic.upsert("sector_thesis", "sector:半导体", "半导体库存见底")
+
+        class _BrokenClient:
+            def __init__(self) -> None:
+                class _Embeddings:
+                    @staticmethod
+                    def create(**kwargs):  # type: ignore[no-untyped-def]
+                        raise RuntimeError("no API")
+
+                self.embeddings = _Embeddings()
+
+        ok = semantic.attach_vector_search(_BrokenClient())  # type: ignore[arg-type]
+        # sqlite-vec 可能可用，但 embedding 生成会失败 → 向量召回返回空，
+        # search_hybrid 应降级到关键词搜索并返回结果
+        rows = semantic.search_hybrid("半导体")
+        if not ok:
+            # 确实降级
+            assert len(rows) == 1
+            assert "relevance_score" in rows[0]
+
+
 class TestSemanticSupersede:
     def test_supersede_sets_status(self, semantic: SemanticMemory) -> None:
         """supersede 将状态置为 superseded。"""
@@ -260,6 +341,80 @@ class TestSemanticPersistence:
         assert entry["content"] == "茅台长期受益于消费升级"
         assert entry["confidence"] == 0.85
         assert entry["source_event_ids"] == [10, 20]
+
+
+class TestSemanticCleanupInactive:
+    def test_cleanup_removes_old_superseded(self, semantic: SemanticMemory) -> None:
+        """非 active 且超过 days 天未更新的被清理。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        old_id = semantic.upsert("sector_thesis", "sector:半导体", "v1")
+        semantic.upsert("sector_thesis", "sector:半导体", "v2")  # supersede v1
+        # 把 v1 的 updated_at 改到 200 天前
+        old_ts = (datetime.now(UTC) - timedelta(days=200)).isoformat()
+        with semantic.engine.begin() as conn:
+            conn.execute(
+                text("UPDATE semantic_knowledge SET updated_at = :ts WHERE id = :id"),
+                {"ts": old_ts, "id": old_id},
+            )
+
+        deleted = semantic.cleanup_inactive(days=180)
+        assert deleted == 1
+        assert semantic.get_by_id(old_id) is None
+
+    def test_cleanup_preserves_active(self, semantic: SemanticMemory) -> None:
+        """active 条目无论多旧都不被清理。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        eid = semantic.upsert("market_regime", "market", "active thesis")
+        old_ts = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+        with semantic.engine.begin() as conn:
+            conn.execute(
+                text("UPDATE semantic_knowledge SET updated_at = :ts WHERE id = :id"),
+                {"ts": old_ts, "id": eid},
+            )
+
+        deleted = semantic.cleanup_inactive(days=180)
+        assert deleted == 0
+        assert semantic.get_by_id(eid) is not None
+
+    def test_cleanup_preserves_recent_superseded(self, semantic: SemanticMemory) -> None:
+        """近期 supersede 的不被清理。"""
+        old_id = semantic.upsert("sector_thesis", "sector:半导体", "v1")
+        semantic.upsert("sector_thesis", "sector:半导体", "v2")
+        deleted = semantic.cleanup_inactive(days=180)
+        assert deleted == 0
+        assert semantic.get_by_id(old_id) is not None
+
+    def test_cleanup_empty_db(self, semantic: SemanticMemory) -> None:
+        """空库 cleanup 返回 0。"""
+        assert semantic.cleanup_inactive(days=180) == 0
+
+    def test_cleanup_returns_count(self, semantic: SemanticMemory) -> None:
+        """cleanup 返回删除条数。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        old_ts = (datetime.now(UTC) - timedelta(days=200)).isoformat()
+        ids = []
+        for i in range(3):
+            old_id = semantic.upsert("sector_thesis", f"sector:s{i}", "v1")
+            semantic.upsert("sector_thesis", f"sector:s{i}", "v2")
+            ids.append(old_id)
+        with semantic.engine.begin() as conn:
+            for eid in ids:
+                conn.execute(
+                    text("UPDATE semantic_knowledge SET updated_at = :ts WHERE id = :id"),
+                    {"ts": old_ts, "id": eid},
+                )
+
+        deleted = semantic.cleanup_inactive(days=180)
+        assert deleted == 3
 
 
 class TestInsightSummary:

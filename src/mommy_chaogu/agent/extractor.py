@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -212,6 +213,11 @@ def extract_from_conversation(
         return None
 
 
+def _summary_hash(summary: str) -> str:
+    """计算 summary 的 md5 hash，用于去重。"""
+    return hashlib.md5(summary.encode("utf-8")).hexdigest()
+
+
 def store_extraction(
     extraction: dict[str, Any],
     episodic: EpisodicMemory,
@@ -219,6 +225,9 @@ def store_extraction(
     adapter: MarketDataAdapter | None = None,
 ) -> None:
     """将提取结果写入 episodic_events 和 predictions。
+
+    写入 observation 前会计算 summary 的 md5 hash，并检查同 scope +
+    content_hash 是否已存在——存在则跳过（避免重复对话产生重复事件）。
 
     Args:
         extraction: extract_from_conversation 的返回值
@@ -233,23 +242,32 @@ def store_extraction(
             code = obs.get("code")
             name = obs.get("name")
             data = obs.get("data", {})
+            scope = obs.get("scope", "market")
+            summary = obs.get("summary", "")
             coverage = _correct_data_coverage(
                 obs.get("data_coverage"),
                 data,
                 adapter,
                 code,
             )
+            # 去重：同 scope + content_hash 已存在则跳过
+            content_hash = _summary_hash(summary)
+            if episodic.exists_by_hash(scope, content_hash):
+                _log.debug("extract: skip duplicate observation (scope=%s)", scope)
+                continue
+
             event_id = episodic.write(
                 event_type=obs.get("event_type", "analysis_record"),
-                scope=obs.get("scope", "market"),
+                scope=scope,
                 code=code,
                 name=name,
-                summary=obs.get("summary", ""),
+                summary=summary,
                 data=data,
                 tags=obs.get("tags"),
                 data_coverage=coverage,
                 source="agent",
                 confidence=obs.get("confidence", 0.5),
+                content_hash=content_hash,
             )
             if code:
                 event_ids_by_code[code] = event_id

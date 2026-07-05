@@ -395,9 +395,127 @@ class TestPredictionStats:
         assert s["hit_rate"] == 1.0
 
 
+class TestPredictionCleanupOld:
+    def test_cleanup_removes_old_verified(self, tracker: PredictionTracker) -> None:
+        """已验证的旧预测被清理。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        pid = tracker.create(
+            code="600519",
+            name="贵州茅台",
+            prediction="看涨",
+            direction="up",
+            timeframe="1d",
+        )
+        tracker.update_status(pid, status="hit", actual_price=1800.0)
+        # 把 created_at / verified_at 改到 100 天前
+        old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+        with tracker.engine.begin() as conn:
+            conn.execute(
+                text("UPDATE predictions SET created_at = :ts, verified_at = :ts WHERE id = :id"),
+                {"ts": old_ts, "id": pid},
+            )
+
+        deleted = tracker.cleanup_old(days=90)
+        assert deleted == 1
+        assert tracker.get_by_id(pid) is None
+
+    def test_cleanup_preserves_pending(self, tracker: PredictionTracker) -> None:
+        """pending 预测永远不被清理。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        pid = tracker.create(
+            code="600519",
+            name="贵州茅台",
+            prediction="看涨",
+            direction="up",
+            timeframe="1d",
+        )
+        old_ts = (datetime.now(UTC) - timedelta(days=200)).isoformat()
+        with tracker.engine.begin() as conn:
+            conn.execute(
+                text("UPDATE predictions SET created_at = :ts WHERE id = :id"),
+                {"ts": old_ts, "id": pid},
+            )
+
+        deleted = tracker.cleanup_old(days=90)
+        assert deleted == 0
+        assert tracker.get_by_id(pid) is not None
+
+    def test_cleanup_preserves_recent_verified(self, tracker: PredictionTracker) -> None:
+        """近期验证的预测不被清理。"""
+        pid = tracker.create(
+            code="600519",
+            name="贵州茅台",
+            prediction="看涨",
+            direction="up",
+            timeframe="1d",
+        )
+        tracker.update_status(pid, status="hit", actual_price=1800.0)
+        deleted = tracker.cleanup_old(days=90)
+        assert deleted == 0
+        assert tracker.get_by_id(pid) is not None
+
+    def test_cleanup_removes_expired(self, tracker: PredictionTracker) -> None:
+        """expired 状态的旧预测被清理。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        pid = tracker.create(
+            code="600519",
+            name="贵州茅台",
+            prediction="看涨",
+            direction="up",
+            timeframe="1d",
+        )
+        tracker.update_status(pid, status="expired")
+        old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+        with tracker.engine.begin() as conn:
+            conn.execute(
+                text("UPDATE predictions SET created_at = :ts WHERE id = :id"),
+                {"ts": old_ts, "id": pid},
+            )
+
+        deleted = tracker.cleanup_old(days=90)
+        assert deleted == 1
+
+    def test_cleanup_empty_db(self, tracker: PredictionTracker) -> None:
+        """空库 cleanup 返回 0。"""
+        assert tracker.cleanup_old(days=90) == 0
+
+    def test_cleanup_returns_count(self, tracker: PredictionTracker) -> None:
+        """cleanup 返回删除条数。"""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import text
+
+        old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+        for i in range(3):
+            pid = tracker.create(
+                code=f"60051{i}",
+                name="test",
+                prediction="看涨",
+                direction="up",
+                timeframe="1d",
+            )
+            tracker.update_status(pid, status="hit", actual_price=100.0)
+            with tracker.engine.begin() as conn:
+                conn.execute(
+                    text("UPDATE predictions SET created_at = :ts, verified_at = :ts WHERE id = :id"),
+                    {"ts": old_ts, "id": pid},
+                )
+
+        deleted = tracker.cleanup_old(days=90)
+        assert deleted == 3
+
+
 class TestTimeframeUnification:
     """timeframe 映射统一：prediction_tracker 和 verify_engine 用同一套天数。"""
-
     def test_timeframe_mapping_is_unified(self) -> None:
         """两个模块引用同一个 _TIMEFRAME_DAYS 常量。"""
         from mommy_chaogu.agent import prediction_tracker, verify_engine

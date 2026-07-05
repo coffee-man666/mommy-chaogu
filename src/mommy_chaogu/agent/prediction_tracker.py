@@ -321,6 +321,25 @@ class PredictionTracker:
                 ).all()
             return [_row_to_dict(r) for r in rows]
 
+    def cleanup_old(self, days: int = 90) -> int:
+        """删除 *days* 天前已验证/过期的预测，返回删除条数。
+
+        只删 ``status IN ('hit', 'missed', 'expired')`` 的；``pending``
+        永远不删（未验证的预测可能仍在等待数据）。判定时间用
+        ``created_at``（预测创建时间）。
+        """
+        cutoff = (_utcnow() - timedelta(days=days)).isoformat()
+        with self.session() as s:
+            result = s.execute(
+                text("""
+                    DELETE FROM predictions
+                    WHERE status IN ('hit', 'missed', 'expired')
+                      AND created_at < :cutoff
+                """),
+                {"cutoff": cutoff},
+            )
+            return result.rowcount or 0
+
     def stats(self) -> dict[str, Any]:
         """返回预测统计：总数、各状态计数与命中率。
 
