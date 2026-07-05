@@ -114,7 +114,7 @@ def registry(ctx: ToolContext) -> ToolRegistry:
 class TestToolDefinitions:
     def test_all_tools_have_definitions(self, registry: ToolRegistry) -> None:
         defs = registry.definitions()
-        assert len(defs) == 18
+        assert len(defs) == 21
         names = {d["function"]["name"] for d in defs}
         assert names == set(ToolRegistry.tool_names())
 
@@ -216,3 +216,187 @@ class TestUnknownTool:
         result = registry.call("nonexistent_tool", {})
         data = json.loads(result)
         assert "error" in data
+
+
+# ---------- 记忆查询工具测试 ----------
+
+
+class TestMemoryToolDefinitions:
+    def test_memory_tools_registered(self) -> None:
+        names = ToolRegistry.tool_names()
+        for expected in [
+            "search_similar_events",
+            "get_prediction_history",
+            "get_market_narrative",
+        ]:
+            assert expected in names
+
+    def test_memory_tool_definitions_valid(self, registry: ToolRegistry) -> None:
+        defs = {d["function"]["name"]: d for d in registry.definitions()}
+        for name in [
+            "search_similar_events",
+            "get_prediction_history",
+            "get_market_narrative",
+        ]:
+            assert name in defs
+            d = defs[name]
+            assert d["type"] == "function"
+            fn = d["function"]
+            assert fn["name"] == name
+            assert isinstance(fn["description"], str) and fn["description"]
+            assert isinstance(fn["parameters"], dict)
+
+
+class TestGetPredictionHistory:
+    def test_no_db_returns_error(self, registry: ToolRegistry) -> None:
+        result = registry.call("get_prediction_history", {})
+        data = json.loads(result)
+        assert "error" in data
+
+    def test_returns_prediction_list(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        from pathlib import Path
+
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        db = tmp_path / "agent.db"
+        tracker = PredictionTracker(Path(db))
+        tracker.create(
+            code="600519",
+            name="贵州茅台",
+            prediction="看涨至 1800",
+            direction="up",
+            timeframe="5d",
+        )
+        tracker.create(
+            code="000001",
+            name="平安银行",
+            prediction="看跌",
+            direction="down",
+            timeframe="5d",
+        )
+
+        ctx = ToolContext(adapter=MagicMock(), db_path=Path(db))
+        reg = ToolRegistry(ctx)
+        result = reg.call("get_prediction_history", {})
+        data = json.loads(result)
+        assert isinstance(data, list)
+        assert len(data) == 2
+        item = data[0]
+        for key in [
+            "id",
+            "code",
+            "name",
+            "prediction",
+            "direction",
+            "status",
+            "score",
+            "created_at",
+            "verified_at",
+        ]:
+            assert key in item
+        assert item["status"] == "pending"
+
+    def test_filter_by_code(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        from pathlib import Path
+
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        db = tmp_path / "agent.db"
+        tracker = PredictionTracker(Path(db))
+        tracker.create(
+            code="600519", name="贵州茅台", prediction="看涨", direction="up", timeframe="5d"
+        )
+        tracker.create(
+            code="000001", name="平安银行", prediction="看跌", direction="down", timeframe="5d"
+        )
+
+        ctx = ToolContext(adapter=MagicMock(), db_path=Path(db))
+        reg = ToolRegistry(ctx)
+        result = reg.call("get_prediction_history", {"code": "600519"})
+        data = json.loads(result)
+        assert len(data) == 1
+        assert data[0]["code"] == "600519"
+
+
+class TestSearchSimilarEvents:
+    def test_no_db_returns_error(self, registry: ToolRegistry) -> None:
+        result = registry.call("search_similar_events", {"query": "半导体暴跌"})
+        data = json.loads(result)
+        assert "error" in data
+
+    def test_degrades_without_embedding_client(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        from pathlib import Path
+
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+        db = tmp_path / "agent.db"
+        em = EpisodicMemory(Path(db))
+        em.write(
+            event_type="market_snapshot",
+            scope="market",
+            summary="半导体板块暴跌，主力大幅流出",
+            data={},
+        )
+        em.write(
+            event_type="market_snapshot",
+            scope="market",
+            summary="白酒板块上涨",
+            data={},
+        )
+
+        # client=None → 应该降级
+        ctx = ToolContext(adapter=MagicMock(), db_path=Path(db))
+        reg = ToolRegistry(ctx)
+        result = reg.call("search_similar_events", {"query": "半导体暴跌"})
+        data = json.loads(result)
+        assert isinstance(data, list)
+        # 降级模式每条带 degraded=True
+        assert all("degraded" in item and item["degraded"] is True for item in data)
+        # 关键词"半导体"应只匹配第一条
+        assert len(data) == 1
+        assert "半导体" in data[0]["summary"]
+
+    def test_degraded_returns_recent_when_no_keyword_match(  # type: ignore[no-untyped-def]
+        self, tmp_path
+    ) -> None:
+        from pathlib import Path
+
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+        db = tmp_path / "agent.db"
+        em = EpisodicMemory(Path(db))
+        em.write(event_type="market_snapshot", scope="market", summary="市场平稳", data={})
+
+        ctx = ToolContext(adapter=MagicMock(), db_path=Path(db))
+        reg = ToolRegistry(ctx)
+        result = reg.call("search_similar_events", {"query": "某某不存在关键词"})
+        data = json.loads(result)
+        # 关键词不匹配 → 返回空列表（仍是降级模式但无结果）
+        assert isinstance(data, list)
+
+
+class TestGetMarketNarrative:
+    def test_no_db_returns_error(self, registry: ToolRegistry) -> None:
+        result = registry.call("get_market_narrative", {})
+        data = json.loads(result)
+        assert "error" in data
+
+    def test_degrades_without_llm(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        from pathlib import Path
+
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+        db = tmp_path / "agent.db"
+        em = EpisodicMemory(Path(db))
+        em.write(event_type="market_snapshot", scope="market", summary="沪指收涨 1.2%", data={})
+
+        # client=None → 应该降级为事件列表
+        ctx = ToolContext(adapter=MagicMock(), db_path=Path(db))
+        reg = ToolRegistry(ctx)
+        result = reg.call("get_market_narrative", {"days": 7})
+        data = json.loads(result)
+        assert data["degraded"] is True
+        assert data["days"] == 7
+        assert isinstance(data["events"], list)
+        assert len(data["events"]) >= 1
+        assert "summary" in data["events"][0]

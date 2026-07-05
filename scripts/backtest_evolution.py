@@ -24,6 +24,7 @@ from typing import Any
 import requests
 from backtest_stats import compute_buyhold_baseline, format_hit_rate
 
+from mommy_chaogu.backtest.scoring import score_direction
 from mommy_chaogu.db_paths import AGENT_DB
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s %(message)s")
@@ -284,31 +285,16 @@ def verify_prediction(
     entry_price: float,
     actual_price: float | None,
 ) -> tuple[str, float]:
-    """验证单条预测。返回 (status, score)。"""
+    """验证单条预测。返回 (status, score)。
+
+    评分委托给统一模块 ``mommy_chaogu.backtest.scoring.score_direction``，
+    保证与 ``backtest_llm.py`` 等 4 条回测路径口径一致。
+    """
     if actual_price is None:
         return ("expired", 0.0)
 
     change = (actual_price - entry_price) / entry_price * 100
-
-    if direction == "bullish":
-        if change > 2:
-            return ("hit", 1.0 if change > 5 else 0.7)
-        elif change > 0:
-            return ("hit", 0.7)
-        elif change > -2:
-            return ("missed", 0.3)
-        else:
-            return ("missed", 0.0)
-
-    # bearish
-    if change < -2:
-        return ("hit", 1.0 if change < -5 else 0.7)
-    elif change < 0:
-        return ("hit", 0.7)
-    elif change < 2:
-        return ("missed", 0.3)
-    else:
-        return ("missed", 0.0)
+    return score_direction(direction, change)
 
 
 # ============================================================

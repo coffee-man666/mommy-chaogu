@@ -19,6 +19,84 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+# token 截断限制。优先用 tiktoken 精确按 token 计数；
+# tiktoken 不可用时降级为更大的字符限制（user 8000 / assistant 16000 chars）。
+try:
+    import tiktoken as _tiktoken
+
+    _ENCODER = _tiktoken.get_encoding("cl100k_base")
+    _HAS_TIKTOKEN = True
+except Exception:  # pragma: no cover - tiktoken 不在依赖里，正常环境走这条分支
+    _ENCODER = None
+    _HAS_TIKTOKEN = False
+
+_USER_LIMIT = 2000 if _HAS_TIKTOKEN else 8000
+_ASSISTANT_LIMIT = 4000 if _HAS_TIKTOKEN else 16000
+
+# data_coverage 各字段 → data dict 中对应的判据 key。
+# 任一 key 在 data 中存在且非空，即认为该数据实际被使用。
+_COVERAGE_FIELD_KEYS: dict[str, tuple[str, ...]] = {
+    "quote": ("price", "change_pct", "quote", "last_price", "now"),
+    "flow_today": ("flow_today", "flow", "net_flow"),
+    "flow_5d": ("flow_5d", "flow_5day"),
+    "news": ("news", "news_list"),
+}
+
+
+def _truncate_to_tokens(text: str, max_tokens: int) -> str:
+    """按 token（或字符）上限截断文本，保留前 *max_tokens* 单位内容。
+
+    tiktoken 可用时用 ``cl100k_base`` 精确按 token 切；不可用则按字符切
+    （调用方传入更大的字符级限制作为降级）。
+    """
+    if _ENCODER is not None:
+        tokens = _ENCODER.encode(text)
+        if len(tokens) <= max_tokens:
+            return text
+        return _ENCODER.decode(tokens[:max_tokens])
+    if len(text) <= max_tokens:
+        return text
+    return text[:max_tokens]
+
+
+def _correct_data_coverage(
+    reported: dict[str, bool] | None,
+    data: dict[str, Any] | None,
+    adapter: MarketDataAdapter | None,
+    code: str | None,
+) -> dict[str, bool]:
+    """根据 data dict 实际内容和 adapter 推断，修正 LLM 自报的 data_coverage。
+
+    诚实记录原则：
+    - data 里有对应数据 → 标 true（即便 LLM 漏报）
+    - LLM 报 true 但 data 里没有 → 改 false
+    - adapter 能拿到 quote → quote 强制 true
+    """
+    data = data or {}
+    coverage: dict[str, bool] = dict(reported or {})
+
+    for field, keys in _COVERAGE_FIELD_KEYS.items():
+        present = any(_has_value(data, k) for k in keys)
+        if present:
+            coverage[field] = True
+        elif coverage.get(field) is True:
+            coverage[field] = False
+
+    if adapter is not None and code:
+        try:
+            quote = adapter.get_quote(code)
+            if quote is not None and getattr(quote, "price", None):
+                coverage["quote"] = True
+        except Exception:
+            pass  # 拿不到报价不影响 coverage 推断
+
+    return coverage
+
+
+def _has_value(data: dict[str, Any], key: str) -> bool:
+    """data[key] 存在且非 None/空。"""
+    return key in data and data[key] not in (None, "", [], {})
+
 
 _EXTRACTION_PROMPT = """\
 从以下对话中提取结构化投资信息。
@@ -87,8 +165,8 @@ def extract_from_conversation(
         {"observations": [...], "predictions": [...]} 或 None（提取失败/无内容）
     """
     prompt = _EXTRACTION_PROMPT.format(
-        user_msg=user_message[:500],
-        assistant_msg=assistant_response[:1000],
+        user_msg=_truncate_to_tokens(user_message, _USER_LIMIT),
+        assistant_msg=_truncate_to_tokens(assistant_response, _ASSISTANT_LIMIT),
     )
 
     try:
@@ -154,15 +232,22 @@ def store_extraction(
         try:
             code = obs.get("code")
             name = obs.get("name")
+            data = obs.get("data", {})
+            coverage = _correct_data_coverage(
+                obs.get("data_coverage"),
+                data,
+                adapter,
+                code,
+            )
             event_id = episodic.write(
                 event_type=obs.get("event_type", "analysis_record"),
                 scope=obs.get("scope", "market"),
                 code=code,
                 name=name,
                 summary=obs.get("summary", ""),
-                data=obs.get("data", {}),
+                data=data,
                 tags=obs.get("tags"),
-                data_coverage=obs.get("data_coverage"),
+                data_coverage=coverage,
                 source="agent",
                 confidence=obs.get("confidence", 0.5),
             )

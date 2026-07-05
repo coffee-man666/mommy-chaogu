@@ -33,6 +33,7 @@ from typing import Any
 
 from backtest_stats import compute_buyhold_baseline, format_hit_rate
 
+from mommy_chaogu.backtest.scoring import score_direction
 from mommy_chaogu.db_paths import MARKET_DB
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s %(message)s")
@@ -268,28 +269,11 @@ def parse_prediction(raw: str) -> dict[str, Any] | None:
 
 
 def verify(direction: str, entry: float, actual: float | None) -> tuple[str, float]:
+    """验证单条预测。评分委托给统一模块 ``score_direction``。"""
     if actual is None:
         return ("expired", 0.0)
     change = (actual - entry) / entry * 100
-    if direction == "neutral":
-        # 中性：涨跌幅在 ±2% 内算 hit
-        return ("hit", 1.0) if abs(change) <= 2 else ("missed", 0.0)
-    if direction == "bullish":
-        if change > 2:
-            return ("hit", 1.0 if change > 5 else 0.7)
-        if change > 0:
-            return ("hit", 0.7)
-        if change > -2:
-            return ("missed", 0.3)
-        return ("missed", 0.0)
-    # bearish
-    if change < -2:
-        return ("hit", 1.0 if change < -5 else 0.7)
-    if change < 0:
-        return ("hit", 0.7)
-    if change < 2:
-        return ("missed", 0.3)
-    return ("missed", 0.0)
+    return score_direction(direction, change)
 
 
 # ============================================================

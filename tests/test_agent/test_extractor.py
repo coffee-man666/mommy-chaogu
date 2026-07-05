@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from mommy_chaogu.agent.episodic_memory import EpisodicMemory
-from mommy_chaogu.agent.extractor import extract_from_conversation, store_extraction
+from mommy_chaogu.agent.extractor import (
+    _correct_data_coverage,
+    _truncate_to_tokens,
+    extract_from_conversation,
+    store_extraction,
+)
 from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 
 
@@ -324,3 +329,159 @@ class TestStoreExtraction:
         by_code = {p["code"]: p for p in preds}
         assert by_code["603662"]["source_event_id"] == events_603662[0]["id"]
         assert by_code["600519"]["source_event_id"] == events_600519[0]["id"]
+
+
+class TestNoTruncation:
+    def test_long_user_message_not_truncated(self) -> None:
+        """长用户消息完整传入 prompt（不再 500 字符截断）。"""
+        client = make_mock_llm(EMPTY_RESPONSE)
+        # 600 字符，超过旧的 500 字符截断线
+        long_msg = "柯力传感" * 200  # 800 字符
+        extract_from_conversation(long_msg, "短回复", client, "test-model")
+
+        call_kwargs = client.chat.completions.create.call_args.kwargs
+        prompt = call_kwargs["messages"][1]["content"]
+        assert long_msg in prompt, "长用户消息应完整保留在 prompt 中"
+
+    def test_long_assistant_response_not_truncated(self) -> None:
+        """长 agent 回复完整传入 prompt（不再 1000 字符截断）。"""
+        client = make_mock_llm(EMPTY_RESPONSE)
+        # 1200 字符，超过旧的 1000 字符截断线
+        long_resp = "底部反转" * 400  # 1600 字符
+        extract_from_conversation("短问题", long_resp, client, "test-model")
+
+        call_kwargs = client.chat.completions.create.call_args.kwargs
+        prompt = call_kwargs["messages"][1]["content"]
+        assert long_resp in prompt, "长 agent 回复应完整保留在 prompt 中"
+
+
+class TestTruncateToTokens:
+    def test_short_text_unchanged(self) -> None:
+        assert _truncate_to_tokens("短文本", 1000) == "短文本"
+
+    def test_long_text_truncated(self) -> None:
+        text = "a" * 5000
+        out = _truncate_to_tokens(text, 100)
+        assert len(out) <= 5000
+        # 截断后比原文短
+        assert len(out) < len(text)
+
+    def test_exact_limit_returns_full(self) -> None:
+        text = "abc"
+        assert _truncate_to_tokens(text, 10000) == text
+
+
+class TestDataCoverageInference:
+    def test_llm_overreport_corrected_to_false(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """LLM 报 flow_today=true 但 data 里没有 flow 数据 → 改 false。"""
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "summary": "底部反转",
+                    "data": {"price": 80.0},  # 只有 quote，没有 flow
+                    "data_coverage": {
+                        "quote": True,
+                        "flow_today": True,  # LLM 虚报
+                        "flow_5d": False,
+                        "news": False,
+                    },
+                    "confidence": 0.8,
+                }
+            ],
+            "predictions": [],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+
+        events = episodic.query()
+        assert len(events) == 1
+        cov = events[0]["data_coverage"]
+        assert cov["quote"] is True  # data 有 price → 保留 true
+        assert cov["flow_today"] is False  # LLM 虚报 → 改 false
+
+    def test_adapter_infers_quote_true(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """adapter 能拿到 quote → data_coverage.quote 强制 true（即便 data 没有 price）。"""
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "summary": "底部反转",
+                    "data": {},  # data 空但 adapter 有报价
+                    "data_coverage": {"quote": False, "flow_today": False},
+                    "confidence": 0.8,
+                }
+            ],
+            "predictions": [],
+        }
+
+        adapter = MagicMock()
+        quote = MagicMock()
+        quote.price = 80.0
+        quote.change_pct = 3.5
+        adapter.get_quote.return_value = quote
+
+        store_extraction(extraction, episodic, tracker, adapter=adapter)
+
+        events = episodic.query()
+        assert len(events) == 1
+        assert events[0]["data_coverage"]["quote"] is True
+
+    def test_data_has_flow_marks_true(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """data 里有 flow_today → 即便 LLM 漏报也标 true。"""
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "summary": "资金流入",
+                    "data": {"flow_today": 1.79e8},
+                    "data_coverage": {"flow_today": False},  # LLM 漏报
+                    "confidence": 0.8,
+                }
+            ],
+            "predictions": [],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+
+        events = episodic.query()
+        assert len(events) == 1
+        assert events[0]["data_coverage"]["flow_today"] is True
+
+    def test_correct_data_coverage_unit(self) -> None:
+        """直接测 _correct_data_coverage 纯函数。"""
+        # LLM 虚报 flow_5d，但 data 没有 → false
+        cov = _correct_data_coverage(
+            {"quote": True, "flow_5d": True},
+            {"price": 80.0},
+            adapter=None,
+            code="603662",
+        )
+        assert cov["quote"] is True
+        assert cov["flow_5d"] is False
+
+    def test_correct_data_coverage_adapter_quote(self) -> None:
+        """adapter 能拿到 quote → quote true。"""
+        adapter = MagicMock()
+        quote = MagicMock()
+        quote.price = 90.0
+        adapter.get_quote.return_value = quote
+        cov = _correct_data_coverage(
+            {"quote": False},
+            {},
+            adapter=adapter,
+            code="603662",
+        )
+        assert cov["quote"] is True
