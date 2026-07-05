@@ -91,7 +91,7 @@ class TestPredictionCRUD:
         row = tracker.get_by_id(pid)
         assert row is not None
         verify_after = datetime.fromisoformat(row["verify_after"])
-        # 5d → +3 天，应在 before 之后
+        # 5d → +5 天，应在 before 之后
         assert verify_after > before
 
 
@@ -161,7 +161,7 @@ class TestPredictionGetPending:
         future = (datetime.now() + timedelta(days=100)).isoformat()
         pending = tracker.get_pending(future)
         assert len(pending) == 2
-        # 1d (+1天) 应排在 20d (+15天) 之前
+        # 1d (+1天) 应排在 20d (+20天) 之前
         assert pending[0]["code"] == "000858"
         assert pending[1]["code"] == "600519"
 
@@ -393,3 +393,74 @@ class TestPredictionStats:
         assert s["expired"] == 1
         assert s["unverifiable"] == 1
         assert s["hit_rate"] == 1.0
+
+
+class TestTimeframeUnification:
+    """timeframe 映射统一：prediction_tracker 和 verify_engine 用同一套天数。"""
+
+    def test_timeframe_mapping_is_unified(self) -> None:
+        """两个模块引用同一个 _TIMEFRAME_DAYS 常量。"""
+        from mommy_chaogu.agent import prediction_tracker, verify_engine
+
+        assert (
+            prediction_tracker._TIMEFRAME_DAYS
+            is verify_engine._TIMEFRAME_DAYS
+        )
+
+    def test_timeframe_mapping_values(self) -> None:
+        """统一映射为日历天。"""
+        from mommy_chaogu.agent.prediction_tracker import _TIMEFRAME_DAYS
+
+        assert _TIMEFRAME_DAYS["1d"] == 1
+        assert _TIMEFRAME_DAYS["3d"] == 3
+        assert _TIMEFRAME_DAYS["5d"] == 5
+        assert _TIMEFRAME_DAYS["10d"] == 10
+        assert _TIMEFRAME_DAYS["20d"] == 20
+        assert _TIMEFRAME_DAYS["60d"] == 60
+
+    def test_verify_after_and_is_expired_use_same_days(self) -> None:
+        """verify_after 和 _is_expired 用同一天数，5d 预测 +5 天可验证且到期。"""
+        from datetime import UTC, datetime, timedelta
+
+        from mommy_chaogu.agent.prediction_tracker import _compute_verify_after
+        from mommy_chaogu.agent.verify_engine import _is_expired
+
+        # 模拟 created_at = now，timeframe="5d"
+        now = datetime.now(UTC)
+        # _compute_verify_after 用真实 _utcnow()，所以取现在附近的时间
+        verify_after_iso = _compute_verify_after("5d")
+        verify_after = datetime.fromisoformat(verify_after_iso)
+
+        # verify_after 应在 now+5d 附近（允许 1 分钟误差）
+        assert abs((verify_after - now - timedelta(days=5)).total_seconds()) < 60
+
+        # 用同一个 created_at，+5天后应正好到期
+        created_at = now.isoformat()
+        # +4 天：未到期
+        assert _is_expired(created_at, "5d", now=now + timedelta(days=4)) is False
+        # +5 天 +1 秒：已到期
+        assert (
+            _is_expired(created_at, "5d", now=now + timedelta(days=5, seconds=1))
+            is True
+        )
+
+    def test_compute_verify_after_5d_is_5_days(
+        self, tracker: PredictionTracker
+    ) -> None:
+        """create("5d") 的 verify_after 距 created_at 正好 5 天。"""
+        before = datetime.now(UTC)
+        pid = tracker.create(
+            code="600519",
+            name="贵州茅台",
+            prediction="看涨",
+            direction="up",
+            timeframe="5d",
+        )
+        row = tracker.get_by_id(pid)
+        assert row is not None
+        verify_after = datetime.fromisoformat(row["verify_after"])
+        created_at = datetime.fromisoformat(row["created_at"])
+        # 间隔应为 5 天（允许几秒误差）
+        delta = verify_after - created_at
+        assert timedelta(days=5) <= delta <= timedelta(days=5, seconds=30)
+        assert verify_after > before

@@ -713,12 +713,28 @@ mommy-agent events --type signal_event
 
 ### 12.5 Cron 集成
 
-| 时间 | 任务 | 说明 |
-|---|---|---|
-| 15:30 周一~五 | `mommy-agent snapshot` | 拉大盘数据写 market_snapshot |
-| 16:00 周一~五 | `mommy-agent verify` | 验证到期预测（收盘后 1h） |
-| 周日 10:00 | `mommy-agent consolidate --all` | 知识提炼 + 置信度校准 |
-| 周日 10:00 | `mommy-agent review` | 生成周报 + 经验摘要 + 脉络叙述 |
+| 时间 | 任务 | 说明 | 状态 |
+|---|---|---|---|
+| 15:30 周一~五 | `mommy-agent snapshot` | 拉大盘数据写 market_snapshot | ⬜ 待实现 |
+| 16:00 周一~五 | `mommy-agent verify` | 验证到期预测（收盘后 1h） | ✅ 已实现（见下） |
+| 周日 10:00 | `mommy-agent consolidate --all` | 知识提炼 + 置信度校准 | ⬜ 待实现 |
+| 周日 10:00 | `mommy-agent review` | 生成周报 + 经验摘要 + 脉络叙述 | ⬜ 待实现 |
+
+#### 验证 cron（16:00 周一~五）
+
+已落地两种封装，任选其一：
+
+```bash
+# 方式 1：shell 脚本（轻量，调 mommy-agent CLI）
+0 16 * * 1-5 cd /path/to/project && /path/to/scripts/cron_verify.sh
+
+# 方式 2：Python 封装（可移植，Windows / 容器友好，复用 verify_pending 核心逻辑）
+0 16 * * 1-5 cd /path/to/project && uv run python scripts/cron_verify.py
+```
+
+- `scripts/cron_verify.sh` — 调 `uv run mommy-agent verify`，日志写 `data/cron_verify.log`
+- `scripts/cron_verify.py` — 直接 import `verify_pending`（不经 argparse），带 `--db` / `--log` 参数，日志同时输出 stdout 和文件
+- 两者都设置在 16:00（收盘后 1 小时）以避开 15:00–15:30 的数据空窗
 
 ---
 

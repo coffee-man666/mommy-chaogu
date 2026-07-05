@@ -215,3 +215,112 @@ class TestStoreExtraction:
         assert len(events) == 1
         assert events[0]["data_coverage"]["quote"] is True
         assert events[0]["data_coverage"]["flow_today"] is False
+
+    def test_prediction_links_to_source_event(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """同 code 的 observation → prediction 的 source_event_id 正确关联。"""
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "name": "柯力传感",
+                    "summary": "底部反转",
+                    "data": {"price": 80.0},
+                    "confidence": 0.8,
+                }
+            ],
+            "predictions": [
+                {
+                    "code": "603662",
+                    "name": "柯力传感",
+                    "prediction": "5日内看涨",
+                    "direction": "bullish",
+                    "timeframe": "5d",
+                }
+            ],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+
+        events = episodic.query(code="603662")
+        assert len(events) == 1
+        source_event_id = events[0]["id"]
+
+        preds = tracker.all()
+        assert len(preds) == 1
+        assert preds[0]["source_event_id"] == source_event_id
+
+    def test_prediction_no_source_event_when_no_observation(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """无对应 observation 时，prediction 的 source_event_id 为 None。"""
+        extraction = {
+            "observations": [],
+            "predictions": [
+                {
+                    "code": "603662",
+                    "prediction": "看涨",
+                    "direction": "bullish",
+                    "timeframe": "5d",
+                }
+            ],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+
+        preds = tracker.all()
+        assert len(preds) == 1
+        assert preds[0]["source_event_id"] is None
+
+    def test_multiple_codes_traceability(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """多 code 场景下，每条 prediction 关联到正确 code 的 observation。"""
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "summary": "底部反转",
+                    "data": {},
+                },
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:600519",
+                    "code": "600519",
+                    "summary": "回调",
+                    "data": {},
+                },
+            ],
+            "predictions": [
+                {
+                    "code": "603662",
+                    "prediction": "看涨",
+                    "direction": "bullish",
+                    "timeframe": "5d",
+                },
+                {
+                    "code": "600519",
+                    "prediction": "看跌",
+                    "direction": "bearish",
+                    "timeframe": "5d",
+                },
+            ],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+
+        events_603662 = episodic.query(code="603662")
+        events_600519 = episodic.query(code="600519")
+        assert len(events_603662) == 1
+        assert len(events_600519) == 1
+
+        preds = tracker.all()
+        assert len(preds) == 2
+        by_code = {p["code"]: p for p in preds}
+        assert by_code["603662"]["source_event_id"] == events_603662[0]["id"]
+        assert by_code["600519"]["source_event_id"] == events_600519[0]["id"]

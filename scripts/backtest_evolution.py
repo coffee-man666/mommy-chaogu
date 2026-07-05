@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from backtest_stats import compute_buyhold_baseline, format_hit_rate
 
 from mommy_chaogu.db_paths import AGENT_DB
 
@@ -515,10 +516,21 @@ def run_backtest(db_path: str = str(AGENT_DB)) -> None:
     print(f"  总预测: {total}")
     print(f"  ✅ 命中: {hits}  ❌ 失误: {missed}  ⏰ 过期: {expired}")
     verifiable = hits + missed
-    print(f"  命中率: {hit_rate:.0%}" + (f"（排除 {expired} 条过期）" if expired else ""))
+    print(
+        "  命中率: " + format_hit_rate(hits, verifiable)
+        + (f"（排除 {expired} 条过期）" if expired else "")
+    )
 
-    # 分方向
+    # 等权买入持有基准：同一组股票、同一时间窗口，多头持有的方向命中率
     all_preds = tracker.all(limit=200)
+    baseline = compute_buyhold_baseline(all_preds)
+    if baseline["total"]:
+        b_rate = baseline["rate"]
+        alpha = hit_rate - b_rate
+        alpha_sign = "+" if alpha >= 0 else ""
+        print(f"  📊 Buy-and-hold 基准: {b_rate:.0%}")
+        print(f"  Alpha (策略-基准): {alpha_sign}{alpha:.0%}")
+
     bullish = [p for p in all_preds if p["direction"] == "bullish"]
     bearish = [p for p in all_preds if p["direction"] == "bearish"]
     bull_hits = sum(1 for p in bullish if p["status"] == "hit")
@@ -527,16 +539,14 @@ def run_backtest(db_path: str = str(AGENT_DB)) -> None:
     bear_verifiable = sum(1 for p in bearish if p["status"] in ("hit", "missed"))
 
     print("\n📊 分方向命中率")
-    print(
-        f"  Bullish: {bull_hits}/{bull_verifiable} ({bull_hits / bull_verifiable:.0%})"
-        if bull_verifiable
-        else "  Bullish: 0 条可验证"
-    )
-    print(
-        f"  Bearish: {bear_hits}/{bear_verifiable} ({bear_hits / bear_verifiable:.0%})"
-        if bear_verifiable
-        else "  Bearish: 0 条可验证"
-    )
+    if bull_verifiable:
+        print(f"  Bullish: {format_hit_rate(bull_hits, bull_verifiable)}")
+    else:
+        print("  Bullish: 0 条可验证")
+    if bear_verifiable:
+        print(f"  Bearish: {format_hit_rate(bear_hits, bear_verifiable)}")
+    else:
+        print("  Bearish: 0 条可验证")
 
     # 分信号强度
     # 用 pred_records 分强度
@@ -552,13 +562,9 @@ def run_backtest(db_path: str = str(AGENT_DB)) -> None:
 
     print("\n📊 分信号强度")
     if normal_verifiable:
-        print(
-            f"  普通信号 (5-10bp): {normal_hits}/{normal_verifiable} ({normal_hits / normal_verifiable:.0%})"
-        )
+        print(f"  普通信号 (5-10bp): {format_hit_rate(normal_hits, normal_verifiable)}")
     if strong_verifiable:
-        print(
-            f"  强信号 (10bp+):    {strong_hits}/{strong_verifiable} ({strong_hits / strong_verifiable:.0%})"
-        )
+        print(f"  强信号 (10bp+):    {format_hit_rate(strong_hits, strong_verifiable)}")
 
     # 分个股
     print("\n📊 分个股命中率")
@@ -578,7 +584,7 @@ def run_backtest(db_path: str = str(AGENT_DB)) -> None:
             else "  "
         )
         if verifiable:
-            print(f"  {emoji} {label:20s} {hits}/{len(verifiable)} ({rate:.0%})")
+            print(f"  {emoji} {label:20s} {hits}/{len(verifiable)} {format_hit_rate(hits, len(verifiable))}")
 
     # 最准 / 最差
     verified = [

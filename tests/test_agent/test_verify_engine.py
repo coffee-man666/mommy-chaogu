@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 from mommy_chaogu.agent.verify_engine import (
     _score_direction,
     _score_target,
@@ -321,3 +322,54 @@ class TestVerifyPending:
         # 第二次：expired
         results = verify_pending(tracker, None, adapter, None, max_attempts=3)
         assert results["expired"] == 1
+
+    def test_verify_backfills_source_event_prediction_id(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """验证 hit/missed 后，源事件的 prediction_id 被回填。"""
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        episodic = EpisodicMemory(tmp_path / "episodic.db")
+        tracker = PredictionTracker(tmp_path / "test.db")
+
+        # 先写一条 observation，拿到 event_id
+        event_id = episodic.write(
+            event_type="analysis_record",
+            scope="stock:603662",
+            code="603662",
+            name="柯力传感",
+            summary="底部反转",
+            data={"price": 80.0},
+        )
+        # 源事件初始没有 prediction_id
+        assert episodic.get_by_id(event_id)["prediction_id"] is None
+
+        # 创建一条 prediction，关联源事件
+        pred_id = tracker.create(
+            code="603662",
+            name="柯力传感",
+            prediction="看涨",
+            direction="bullish",
+            timeframe="1d",
+            source_event_id=event_id,
+        )
+
+        # 让它立即可验证
+        import sqlite3
+
+        past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        conn = sqlite3.connect(str(tmp_path / "test.db"))
+        conn.execute("UPDATE predictions SET verify_after = ?", (past,))
+        conn.commit()
+        conn.close()
+
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(83.0, 3.75)  # bullish hit
+
+        results = verify_pending(tracker, episodic, adapter, None)
+        assert results["hit"] == 1
+
+        # 源事件的 prediction_id 应被回填
+        source_event = episodic.get_by_id(event_id)
+        assert source_event["prediction_id"] == pred_id

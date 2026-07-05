@@ -50,12 +50,17 @@ CREATE INDEX IF NOT EXISTS ix_pred_code ON predictions(code);
 CREATE INDEX IF NOT EXISTS ix_pred_verify_after ON predictions(verify_after);
 """
 
-# timeframe → 到期前推天数（用日历日粗略估算，跳过周末）。
+# timeframe → 到期前推天数（日历日）。
+#
+# 这是权威来源：verify_engine 也复用同一个映射，确保"5d" 预测的 verify_after
+# （到期可验证时间）与 _is_expired（过期时间）用的是同一天数。
 _TIMEFRAME_DAYS: dict[str, int] = {
     "1d": 1,
-    "5d": 3,
-    "20d": 15,
-    "60d": 45,
+    "3d": 3,
+    "5d": 5,
+    "10d": 10,
+    "20d": 20,
+    "60d": 60,
 }
 
 
@@ -66,10 +71,11 @@ def _utcnow() -> datetime:
 def _compute_verify_after(timeframe: str) -> str:
     """根据 timeframe 计算到期 ISO 时间字符串。
 
-    使用简单的日历日映射：``"1d" → +1 天``，``"5d" → +3 天``，
-    ``"20d" → +15 天``，``"60d" → +45 天``。未知 timeframe 默认 +1 天。
+    使用日历日映射（见 :data:`_TIMEFRAME_DAYS`）：
+    ``"1d" → +1 天``，``"5d" → +5 天``，``"20d" → +20 天``，``"60d" → +60 天``。
+    未知 timeframe 默认 +5 天（与 verify_engine 一致）。
     """
-    days = _TIMEFRAME_DAYS.get(timeframe, 1)
+    days = _TIMEFRAME_DAYS.get(timeframe, 5)
     return (_utcnow() + timedelta(days=days)).isoformat()
 
 

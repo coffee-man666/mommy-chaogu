@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from backtest_stats import compute_buyhold_baseline, format_hit_rate
+
 from mommy_chaogu.db_paths import MARKET_DB
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s %(message)s")
@@ -525,7 +527,21 @@ def run(args: argparse.Namespace) -> int:
     print("\n📈 命中率")
     print(f"  总预测: {len(predictions)}")
     print(f"  ✅ 命中: {len(hits)}  ❌ 失误: {len(judged) - len(hits)}  ⏰ 过期: {len(expired)}")
-    print(f"  命中率: {hit_rate:.0%}" + (f"（排除 {len(expired)} 条过期）" if expired else ""))
+    n_hits = len(hits)
+    n_verifiable = len(judged)
+    print(
+        "  命中率: " + format_hit_rate(n_hits, n_verifiable)
+        + (f"（排除 {len(expired)} 条过期）" if expired else "")
+    )
+
+    # 等权买入持有基准：同一组股票、同一时间窗口，多头持有的方向命中率
+    baseline = compute_buyhold_baseline(predictions)
+    if baseline["total"]:
+        b_rate = baseline["rate"]
+        alpha = hit_rate - b_rate
+        alpha_sign = "+" if alpha >= 0 else ""
+        print(f"  📊 Buy-and-hold 基准: {b_rate:.0%}")
+        print(f"  Alpha (策略-基准): {alpha_sign}{alpha:.0%}")
 
     # 分方向
     print("\n📊 分方向")
@@ -533,7 +549,7 @@ def run(args: argparse.Namespace) -> int:
         sub = [p for p in judged if p["direction"] == d]
         if sub:
             h = sum(1 for p in sub if p["status"] == "hit")
-            print(f"  {d:8s}: {h}/{len(sub)} ({h / len(sub):.0%})")
+            print(f"  {d:8s}: {h}/{len(sub)} {format_hit_rate(h, len(sub))}")
 
     # 置信度分组
     print("\n📊 分置信度")
@@ -545,7 +561,7 @@ def run(args: argparse.Namespace) -> int:
         sub = [p for p in judged if lo <= p["confidence"] < hi]
         if sub:
             h = sum(1 for p in sub if p["status"] == "hit")
-            print(f"  {label:14s}: {h}/{len(sub)} ({h / len(sub):.0%})")
+            print(f"  {label:14s}: {h}/{len(sub)} {format_hit_rate(h, len(sub))}")
 
     # token 用量
     print("\n💰 token 用量")
@@ -554,9 +570,15 @@ def run(args: argparse.Namespace) -> int:
         dist = ", ".join(f"{k}={v}" for k, v in sorted(usage.by_direction.items()))
         print(f"  方向分布: {dist}")
 
-    # 与规则引擎对比（如果有进化回测的 db）
-    print("\n🆚 对比参考（规则引擎 backtest_evolution.py 基线：53% 命中率）")
-    print(f"  LLM: {hit_rate:.0%}  vs  规则: 53%")
+    # 与买入持有基准对比
+    if baseline["total"]:
+        alpha = hit_rate - baseline["rate"]
+        alpha_sign = "+" if alpha >= 0 else ""
+        print("\n🆚 对比参考（同一时间窗口、同一股票池）")
+        print(
+            f"  LLM 策略: {hit_rate:.0%}  vs  Buy-and-hold 基准: {baseline['rate']:.0%}  "
+            f"→ Alpha {alpha_sign}{alpha:.0%}"
+        )
 
     # 样例
     print("\n📝 预测样例（前 5 条）")

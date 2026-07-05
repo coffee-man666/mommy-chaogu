@@ -263,6 +263,18 @@ class EpisodicMemory:
             row = s.execute(text(sql), {"event_id": event_id}).first()
             return self._row_to_dict(row) if row else None
 
+    def update_prediction_id(self, event_id: int, prediction_id: int) -> None:
+        """回填已存在事件的 ``prediction_id``（验证后建立 traceability 链）。
+
+        用于 :func:`~mommy_chaogu.agent.verify_engine.verify_pending` 在预测
+        hit/missed 后，把验证结果反向关联到产生该预测的源 observation 事件。
+        """
+        with self.session() as s:
+            s.execute(
+                text("UPDATE episodic_events SET prediction_id = :pid WHERE id = :id"),
+                {"pid": prediction_id, "id": event_id},
+            )
+
     def summary(self) -> dict[str, Any]:
         """返回统计摘要：总条数、按 event_type / scope 分组计数、时间跨度。"""
         with self.session() as s:

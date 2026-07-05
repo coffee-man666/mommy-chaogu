@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from mommy_chaogu.agent.prediction_tracker import _TIMEFRAME_DAYS
+
 _log = logging.getLogger(__name__)
 
 
@@ -32,15 +34,9 @@ class VerifyResult:
 
 
 # ---------- timeframe 解析 ----------
-
-_TIMEFRAME_DAYS: dict[str, int] = {
-    "1d": 1,
-    "3d": 3,
-    "5d": 5,
-    "10d": 10,
-    "20d": 20,
-    "60d": 60,
-}
+#
+# _TIMEFRAME_DAYS 从 prediction_tracker 导入（权威来源），
+# 保证 verify_after（可验证时间）与 _is_expired（过期时间）用同一天数。
 
 
 def _parse_timeframe_days(timeframe: str) -> int:
@@ -286,6 +282,18 @@ def verify_pending(
             data_coverage=data_coverage_verify,
         )
         results[result.status] += 1
+
+        # 回填源事件的 prediction_id（traceability）
+        source_event_id = pred.get("source_event_id")
+        if source_event_id is not None and episodic is not None:
+            try:
+                episodic.update_prediction_id(source_event_id, pred_id)
+            except Exception as e:
+                _log.warning(
+                    "verify: failed to backfill prediction_id on event #%s: %s",
+                    source_event_id,
+                    e,
+                )
 
         # 写回 episodic（验证结果也是一种事件）
         if episodic is not None:

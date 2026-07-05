@@ -148,7 +148,8 @@ def store_extraction(
         tracker: PredictionTracker
         adapter: MarketDataAdapter（可选，用于自动填 entry_price）
     """
-    # 写 observations
+    # 写 observations（按 code 记录 event_id，供 predictions 做 traceability 关联）
+    event_ids_by_code: dict[str, int] = {}
     for obs in extraction.get("observations", []):
         try:
             code = obs.get("code")
@@ -165,11 +166,13 @@ def store_extraction(
                 source="agent",
                 confidence=obs.get("confidence", 0.5),
             )
+            if code:
+                event_ids_by_code[code] = event_id
             _log.debug("extract: wrote observation #%d for %s", event_id, code)
         except Exception as e:
             _log.warning("extract: failed to write observation: %s", e)
 
-    # 写 predictions
+    # 写 predictions（关联同 code 的源 observation 事件）
     for pred in extraction.get("predictions", []):
         try:
             code = pred.get("code", "")
@@ -198,6 +201,7 @@ def store_extraction(
                 target_price=pred.get("target_price"),
                 entry_price=entry_price,
                 change_pct_at_creation=change_pct,
+                source_event_id=event_ids_by_code.get(code),
             )
             _log.debug("extract: wrote prediction for %s", code)
         except Exception as e:
