@@ -276,6 +276,81 @@ def verify(direction: str, entry: float, actual: float | None) -> tuple[str, flo
     return score_direction(direction, change)
 
 
+def _offline_verify(
+    predictions: list[dict[str, Any]],
+    series_by_code: dict[
+        str, tuple[list[dict[str, Any]], dict[str, dict[str, Any]], list[str]]
+    ],
+    current_date: str,
+    horizon: int,
+    tracker: Any,
+    episodic: Any | None = None,
+) -> int:
+    """离线验证已到期的预测，返回本次验证条数。
+
+    与实时 :func:`verify_pending` 不同，离线回测没有 adapter：直接从
+    ``series_by_code`` 的 K 线序列里读到期日的实际收盘价。只验证到期日
+    ``<= current_date`` 且尚未验证的预测，验证后写一条 ``prediction_verified``
+    episodic event 建立 traceability 链。
+    """
+    count = 0
+    for rec in predictions:
+        if rec.get("verified"):
+            continue
+        code = rec["code"]
+        if code not in series_by_code:
+            continue
+        klines, _flows, dates = series_by_code[code]
+        closes = {k["date"]: k["close"] for k in klines}
+        pred_date = rec["date"]
+        try:
+            idx = dates.index(pred_date)
+            future_idx = idx + horizon
+            actual_date = dates[future_idx] if future_idx < len(dates) else None
+        except (ValueError, IndexError):
+            actual_date = None
+        # 还没到期（到期日不在 K 线序列里，或晚于当前回测日）→ 跳过
+        if actual_date is None or actual_date > current_date:
+            continue
+        actual = closes.get(actual_date)
+        status, score = verify(rec["direction"], rec["entry"], actual)
+        tracker.update_status(
+            rec["pid"],
+            status=status,
+            actual_price=actual,
+            accuracy_score=score,
+        )
+        rec["status"] = status
+        rec["score"] = score
+        rec["actual"] = actual
+        rec["verified"] = True
+        count += 1
+        if episodic is not None:
+            episodic.write(
+                event_type="prediction_verified",
+                scope=f"stock:{code}",
+                code=code,
+                name=rec.get("name"),
+                summary=(
+                    f"{actual_date} 验证 {rec['direction']} → {status}"
+                    f" (score={score:.2f})"
+                ),
+                data={
+                    "status": status,
+                    "score": score,
+                    "actual_price": actual,
+                    "entry": rec["entry"],
+                    "direction": rec["direction"],
+                    "pred_date": pred_date,
+                    "actual_date": actual_date,
+                },
+                source="backtest_llm",
+                confidence=score,
+                trade_date=actual_date,
+            )
+    return count
+
+
 # ============================================================
 # 主流程
 # ============================================================
@@ -389,6 +464,41 @@ def run(args: argparse.Namespace) -> int:
         backtest_dates = backtest_dates[-args.max_dates :]
     print(f"\n  回测日 {len(backtest_dates)} 天：{backtest_dates[0]} → {backtest_dates[-1]}")
 
+    # 准备 PredictionTracker（独立 db，不污染 agent.db）
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    db_path = Path(args.db)
+    if db_path.exists():
+        db_path.unlink()
+    tracker = PredictionTracker(db_path)
+
+    # 记忆系统（可选）：--memory-db 指定路径时启用，--no-memory 强制禁用
+    pipeline_enabled = bool(args.memory_db) and not args.no_memory
+    episodic: Any = None
+    semantic: Any = None
+    pipeline: Any = None
+    memory_db: Path | None = None
+    if pipeline_enabled:
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+        from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
+        from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+        memory_db = Path(args.memory_db)
+        if memory_db.exists():
+            memory_db.unlink()
+        episodic = EpisodicMemory(memory_db)
+        semantic = SemanticMemory(memory_db)
+        # dry-run 不调用 pipeline 方法，避免在 client=None 时初始化失败；
+        # 非 dry-run 才构建完整 pipeline
+        if not args.dry_run:
+            pipeline = MemoryPipeline(
+                episodic=episodic,
+                tracker=tracker,
+                semantic=semantic,
+                client=client,
+                model=model,
+            )
+
     usage = TokenUsage()
     predictions: list[dict[str, Any]] = []
 
@@ -402,20 +512,15 @@ def run(args: argparse.Namespace) -> int:
         print("\n── dry-run 上下文样例 ──")
         print(f"股票 {code0}  基准日 {sample_date}")
         print(ctx or "(无)")
-        print("── end ──\n")
+        print("── end ──")
+        if pipeline_enabled:
+            print(f"\n  🧠 记忆系统已启用（memory_db={memory_db}）")
+        print()
         return 0
-
-    # 准备 PredictionTracker（独立 db，不污染 agent.db）
-    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
-
-    db_path = Path(args.db)
-    if db_path.exists():
-        db_path.unlink()
-    tracker = PredictionTracker(db_path)
 
     print("\n🔄 生成预测中...\n")
 
-    for date in backtest_dates:
+    for day_idx, date in enumerate(backtest_dates):
         for code, (klines, flows, dates) in series_by_code.items():
             if date not in dates:
                 continue
@@ -429,7 +534,12 @@ def run(args: argparse.Namespace) -> int:
             user_msg = _PREDICT_USER_TMPL.format(
                 code=code, name=names[code], date=date, close=close, n=args.days, table=ctx
             )
-            raw = ask_llm(client, model, _PREDICT_SYSTEM, user_msg, usage)
+            # 启用记忆时注入记忆系统构建的 system prompt
+            if pipeline is not None:
+                system_prompt = pipeline.build_prompt(query=f"{code} {names[code]}")
+            else:
+                system_prompt = _PREDICT_SYSTEM
+            raw = ask_llm(client, model, system_prompt, user_msg, usage)
             if raw is None:
                 continue
             pred = parse_prediction(raw)
@@ -439,6 +549,31 @@ def run(args: argparse.Namespace) -> int:
 
             usage.by_direction[pred["direction"]] = usage.by_direction.get(pred["direction"], 0) + 1
 
+            # 写 episodic event（不调 extractor 的 LLM，直接用预测结果）
+            # traceability：event_id → predictions.source_event_id
+            source_event_id: int | None = None
+            if episodic is not None:
+                source_event_id = episodic.write(
+                    event_type="analysis_record",
+                    scope=f"stock:{code}",
+                    code=code,
+                    name=names[code],
+                    summary=(
+                        f"{date} {pred['direction']} (conf={pred['confidence']:.2f}):"
+                        f" {pred['rationale'][:60]}"
+                    ),
+                    data={
+                        "direction": pred["direction"],
+                        "confidence": pred["confidence"],
+                        "entry_price": close,
+                        "date": date,
+                        "rationale": pred["rationale"],
+                    },
+                    source="backtest_llm",
+                    confidence=pred["confidence"],
+                    trade_date=date,
+                )
+
             pid = tracker.create(
                 code=code,
                 name=names[code],
@@ -447,6 +582,7 @@ def run(args: argparse.Namespace) -> int:
                 timeframe=f"{args.horizon}d",
                 entry_price=close,
                 rationale=pred["rationale"],
+                source_event_id=source_event_id,
             )
             predictions.append(
                 {
@@ -458,6 +594,7 @@ def run(args: argparse.Namespace) -> int:
                     "confidence": pred["confidence"],
                     "rationale": pred["rationale"],
                     "entry": close,
+                    "verified": False,
                 }
             )
 
@@ -466,6 +603,15 @@ def run(args: argparse.Namespace) -> int:
                     f"  {date} {code} {pred['direction']:7s} "
                     f"conf={pred['confidence']:.2f}  {pred['rationale'][:40]}"
                 )
+
+        # 记忆系统：周期性离线验证（每 3 天）+ 提炼（每 5 天）
+        if pipeline is not None:
+            if day_idx > 0 and day_idx % 3 == 0:
+                _offline_verify(
+                    predictions, series_by_code, date, args.horizon, tracker, episodic
+                )
+            if day_idx > 0 and day_idx % 5 == 0:
+                pipeline.consolidate()
 
         # 节流：每个回测日之间小睡，避免触发 provider 限流
         time.sleep(0.1)
@@ -478,6 +624,8 @@ def run(args: argparse.Namespace) -> int:
     print(f"\n✅ T+{args.horizon} 验证\n")
 
     for rec in predictions:
+        if rec.get("verified"):
+            continue
         klines, _flows, dates = series_by_code[rec["code"]]
         closes = {k["date"]: k["close"] for k in klines}
         try:
@@ -497,6 +645,11 @@ def run(args: argparse.Namespace) -> int:
         rec["status"] = status
         rec["score"] = score
         rec["actual"] = actual
+        rec["verified"] = True
+
+    # 记忆系统：最终提炼（把整轮回测的预测结果固化为语义知识）
+    if pipeline is not None:
+        pipeline.consolidate()
 
     # ============================================================
     # 报告
@@ -579,11 +732,56 @@ def run(args: argparse.Namespace) -> int:
         )
         print(f"      {p['rationale'][:60]}")
 
+    # 记忆系统进化报告
+    if pipeline is not None:
+        print("\n🧠 记忆系统进化")
+        try:
+            mem_stats = pipeline.stats()
+        except Exception as e:  # pragma: no cover - 防御 pipeline 实现差异
+            _log.warning("pipeline.stats() 失败: %s", e)
+            mem_stats = {}
+        epi_count = mem_stats.get("episodic_count", 0)
+        pred_stats = mem_stats.get("prediction_stats", {}) or {}
+        sem_count = mem_stats.get("semantic_count", 0)
+        insight_count = mem_stats.get("insight_count", 0)
+        print(f"  Episodic events: {epi_count} 条")
+        print(
+            f"  Predictions: {pred_stats.get('total', 0)} 条"
+            f" (hit {pred_stats.get('hit', 0)},"
+            f" missed {pred_stats.get('missed', 0)},"
+            f" expired {pred_stats.get('expired', 0)})"
+        )
+        print(f"  Semantic knowledge: {sem_count} 条")
+        print(f"  Insight summaries: {insight_count} 条")
+
+        # traceability：source_event_id 非空的比例
+        try:
+            with tracker.session() as s:
+                from sqlalchemy import text as _sa_text
+
+                total_p = s.execute(
+                    _sa_text("SELECT COUNT(*) FROM predictions")
+                ).scalar() or 0
+                linked = s.execute(
+                    _sa_text(
+                        "SELECT COUNT(*) FROM predictions WHERE source_event_id IS NOT NULL"
+                    )
+                ).scalar() or 0
+            if total_p:
+                print(
+                    f"  Traceability: {linked}/{total_p} 条预测关联了 episodic event"
+                    f" ({linked / total_p:.0%})"
+                )
+        except Exception as e:  # pragma: no cover
+            _log.warning("traceability 统计失败: %s", e)
+
     print(f"\n{'=' * 70}")
     print("  ✅ LLM 回测完成")
     print(f"  {len(predictions)} 条预测 → {len(hits)} 命中 → 命中率 {hit_rate:.0%}")
     print(usage.summary())
     print(f"  预测已写入 {db_path}")
+    if memory_db is not None:
+        print(f"  记忆系统已写入 {memory_db}")
     print("=" * 70)
     return 0
 
@@ -601,6 +799,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--provider", default=None, help="provider: deepseek/openai/kimi")
     p.add_argument("--dry-run", action="store_true", help="不调 LLM，只打印上下文样例")
     p.add_argument("--verbose", action="store_true", help="打印每条预测")
+    p.add_argument(
+        "--memory-db",
+        default="",
+        help="记忆系统 db 路径（设为路径时启用记忆系统，默认空=不启用）",
+    )
+    p.add_argument(
+        "--no-memory",
+        action="store_true",
+        help="强制禁用记忆系统（覆盖 --memory-db）",
+    )
     return p.parse_args(argv)
 
 
