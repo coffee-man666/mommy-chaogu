@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-04（memory-system-v1 — 记忆系统 + 回测 + 数据库重组 + LLM 回测框架）
+最后更新：2026-07-04（memory-system-v1 — 记忆系统 + 回测 + 数据库重组 + 多模型 LLM 回测）
 
 ---
 
@@ -10,13 +10,13 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **记忆系统 Phase 1-5 + 30 天真实数据回测 + 数据库分库 + LLM 回测框架** |
+| 项目阶段 | **记忆系统 Phase 1-5 + 30 天回测 + 数据库分库 + 多模型 LLM 回测** |
 | 代码量 | **~36,000+ 行**（Python src ~23,000 + tests ~9,000 + web ~4,000） |
 | 测试 | **518 个通过**（含 +36 token tracker 测试） |
 | **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi/zai，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
 | **自进化记忆** | **✅ 5 层记忆系统**（工作/情景/预测验证/语义知识/向量检索，**8 个 CLI 子命令**） |
 | **30 天回测** | **✅ 154 条预测验证（真实数据），命中率 53%，提炼 10 条知识** |
-| **LLM 回测** | **✅ 框架就绪**（4 provider + Token Tracker + dry-run 验证通过），trial_1 待跑 |
+| **LLM 回测** | **✅ 5 模型横向对比完成**（glm-4.7/5/5-turbo/5.1/5.2，70 条 × 5 = 350 条预测，最佳 glm-5 50% 命中率）|
 | **数据库** | **✅ 分库重组**（market/portfolio/agent/reference 4 库，含迁移脚本） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
 | **回测数据** | **market.db: 106 只 × 42 天 K 线(4437 行) + 92 只 × 21 天资金流(1917 行)** |
@@ -24,7 +24,7 @@
 | 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅** |
 | 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / MEMORY-SYSTEM-PLAN / BRANCH-MERGE-ANALYSIS / BACKTEST-REPORT / **AGENTS.md** **11 份齐** |
 | 自动化 | **4 个 OpenClaw cron jobs**（盘前/盘中/收盘/周报） |
-| **实战验证** | ✅ 记忆系统闭环 + 30 天回测 + 数据库迁移 + LLM 回测框架 dry-run |
+| **实战验证** | ✅ 记忆系统闭环 + 30 天回测 + 数据库迁移 + 5 模型 LLM 回测对比 |
 
 ---
 
@@ -517,16 +517,13 @@ src/mommy_chaogu/signals/         31 规则 + custom_alerts   ← M8 扩展
 
 ## 下一步候选（按团长优先级）
 
-> 📅 2026-07-04 更新：记忆系统 Phase 1-5 + 30 天真实数据回测 + 数据库分库 + LLM 回测框架全部完成。LLM 回测 trial_1 待跑（需 API key）。
+> 📅 2026-07-04 更新：5 模型横向对比回测完成（glm-4.7/5/5-turbo/5.1/5.2，70 条 × 5 = 350 条预测）。glm-5 最佳（50% 命中率，bullish 93%）。下一步可扩展到下跌区间验证 bearish 策略。
 
-### 🔥 最高优先 — LLM 回测 trial_1
-1. **跑 LLM 回测** —— `export ZAI_API_KEY=... && uv run python scripts/backtest_llm.py --provider zai`，填充 `docs/BACKTEST-REPORT.md` §3.4 结果模板
-
-### ✅ 7/4 LLM 回测框架
-- ✅ **Token Tracker**（`token_tracker.py`，36 tests，6 模型定价表）
-- ✅ **LLM 回测脚本**（`backtest_llm.py`，4 provider：deepseek/openai/kimi/zai）
-- ✅ **回测报告文档**（`docs/BACKTEST-REPORT.md`，规则引擎 + LLM 方法学）
-- ✅ **dry-run 验证**（能读 market.db 真实数据 + 构建上下文）
+### ✅ 7/4 多模型 LLM 回测（已完成）
+- ✅ **5 模型横向对比** —— glm-5 最佳（50% 命中率），glm-4.7 bullish 最准（96%）
+- ✅ **过程完整记录** —— 每条预测含 prompt/LLM 回复/方向/理由/token/命中状态
+- ✅ **Agent 原生 trial_1** —— 25 条预测，bullish 88%，零成本
+- ✅ **通用回测脚本** —— `run_model.py` 参数化，可复现
 
 ### ✅ 7/4 回测 + 数据库重组
 - ✅ **30 天真实数据回测** —— 154 条预测，53% 命中率，提炼 10 条知识

@@ -472,8 +472,9 @@ uv run mypy --strict src        # type check
 | AI 工具 | **18** 个 function-calling tools |
 | 记忆系统 | **5 层**（情景/预测验证/语义知识/向量检索/工作记忆） |
 | Token Tracker | ✅ 按 provider/model 聚合 token 用量 + 成本估算 |
-| 回测 | ✅ 规则引擎（154 条预测，53% 命中率）+ LLM 回测框架（trial_1 待跑）|
-| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi / z.ai（glm-4.7）|
+| 回测 | ✅ 规则引擎（154 条，53%）+ Agent 原生（25 条，47%）+ **5 模型横向对比**（350 条，glm-5 最佳 50%）|
+| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi / **z.ai（glm-4.7/5/5-turbo/5.1/5.2）**|
+| 密钥配置 | `.env` 文件持久化 + 环境变量（4 provider 自动识别）|
 | MCP Server | ✅ stdio 协议，任意 MCP client 可连接 |
 
 ---

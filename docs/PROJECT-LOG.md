@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-07-04（LLM 回测框架 + Token Tracker，branch `memory-system-v1`）
+> 最后更新：2026-07-04（多模型 LLM 回测对比，branch `memory-system-v1`）
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **LLM 回测框架 + Token Tracker**（`memory-system-v1` 分支） |
+| 项目阶段 | **多模型 LLM 回测对比**（`memory-system-v1` 分支） |
 | 累计 commits | **32+** |
 | 代码量 | **~36,000+ 行**（src 23,000 + tests 9,000 + web 4,000） |
 | 测试 | **518 个**（含 +121 memory-system + 36 token tracker 测试） |
@@ -53,7 +53,26 @@
 
 ## 2. 关键里程碑（全链路）
 
-> 时间倒序：LLM-BT → Backtest+DB → Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+> 时间倒序：LLM-CMP → LLM-BT → Backtest+DB → Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+
+### Multi-LLM Comparison（2026-07-04） — 5 模型横向对比回测 🤖📊
+
+**痛点**：trial_1 只跑了一个模型（agent 原生），需要验证不同 LLM 的预测表现差异，
+选出最适合本项目 agent 的模型。
+
+**交付**：用 z.ai API 串行跑 5 个 GLM 模型（glm-4.7/5/5-turbo/5.1/5.2），每个模型
+对同一批 70 条数据（10 只半导体股 × 7 个日期）做完整预测，记录全部过程。
+
+| 模型 | 总命中率 | Bullish | Bearish | Token | 成本¥ |
+|---|---|---|---|---|---|
+| **glm-5** | **50.0%** | 93% | **18%** | 104K | 0.21 |
+| glm-5.2 | 47.0% | 89% | 16% | 101K | 0.20 |
+| glm-4.7 | 45.9% | **96%** | 14% | 180K | 0.36 |
+| glm-5.1 | 44.1% | 92% | 14% | 107K | 0.21 |
+| glm-5-turbo | 43.9% | 92% | 17% | 103K | 0.21 |
+
+**关键发现**：所有模型 bullish 89-96% / bearish 13-18%（板块上涨期系统性偏差）。
+glm-5 综合最优，glm-4.7 最详尽但贵 1.7 倍。完整报告见 `docs/BACKTEST-REPORT.md` §3.6。
 
 ### LLM Backtest Framework（2026-07-04） — Token Tracker + LLM 回测脚本 + 回测报告 🤖📊
 
