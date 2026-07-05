@@ -118,10 +118,12 @@ class FallbackAdapter:
         return self._try_call("get_quote", code)
 
     def get_quotes(self, codes: list[str]):
-        return self._try_call("get_quotes", codes)
+        result = self._try_call("get_quotes", codes)
+        return result if result is not None else []
 
     def list_market_quotes(self):
-        return self._try_call("list_market_quotes")
+        result = self._try_call("list_market_quotes")
+        return result if result is not None else []
 
     def get_order_book(self, code: str):
         return self._try_call("get_order_book", code)

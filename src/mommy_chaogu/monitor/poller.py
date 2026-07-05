@@ -135,7 +135,7 @@ class Monitor:
 
         # 2. 拉全市场快照（稳定接口）
         try:
-            all_quotes = self.adapter.list_market_quotes()
+            all_quotes = self.adapter.list_market_quotes() or []
         except Exception as e:
             _log.error("list_market_quotes failed: %s", e)
             all_quotes = []
