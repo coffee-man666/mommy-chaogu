@@ -4,7 +4,7 @@
 >
 > 跟 DESIGN 互补：DESIGN 讲「为什么这样设计」，LEDGER 讲「具体怎么走到这一步」。
 
-最后更新：2026-07-04（.env 持久化配置 + zai provider 接入，memory-system-v1 分支）
+最后更新：2026-07-04（多模型横向对比回测 trial_2，memory-system-v1 分支）
 
 ---
 
@@ -41,7 +41,8 @@
 | **DB-1** | **2026-07-04** | **数据库分库重组（market/portfolio/agent/reference）** | **`79f7adc`** | **✅** |
 | **LLM-BT** | **2026-07-04** | **LLM 回测框架 + Token Tracker + zai provider** | **`e6edf43` / `863acf8`** | **✅** |
 | **Agent-BT** | **2026-07-04** | **Agent 原生回测 trial_1（25 条预测，47% 命中率，bullish 88%）** | **`73ea5ba`** | **✅** |
-| **CFG-1** | **2026-07-04** | **.env 持久化配置 + AgentService 加 zai provider** | **本次提交** | **✅** |
+| **CFG-1** | **2026-07-04** | **.env 持久化配置 + AgentService 加 zai provider** | **`643af95`** | **✅** |
+| **LLM-CMP** | **2026-07-04** | **5 模型横向对比回测 trial_2（70 条 × 5 模型）** | **本次提交** | **✅** |
 
 ---
 
@@ -1375,3 +1376,53 @@ export AGENT_PROVIDER=zai
 ### 验证
 
 - 518 tests passed，ruff ✅，mypy strict ✅
+
+---
+
+## LLM-CMP — 5 模型横向对比回测 trial_2
+
+**日期**：2026-07-04
+**Commit**：本次提交
+
+### 目标
+
+用 z.ai API 的 5 个 GLM 模型对同一批数据做预测回测，横向对比不同模型的命中率、
+分析风格和 token 消耗。完整记录每条预测的 prompt / LLM 回复 / 方向 / 理由。
+
+### 方法
+
+- **数据**：10 只半导体链股票 × 7 个日期 = 70 条预测
+- **模型**：glm-4.7 / glm-5 / glm-5-turbo / glm-5.1 / glm-5.2
+- **API**：z.ai OpenAI 兼容接口，temperature=0.3
+- **评分**：与规则引擎完全相同的 verify_prediction 逻辑
+- **过程记录**：每条预测完整记录 prompt_sent / llm_response / direction / rationale /
+  tokens / actual_change_pct / status / score
+
+### 结果
+
+| 模型 | **总命中率** | Bullish% | Bearish% | Token | 成本¥ |
+|---|---|---|---|---|---|
+| **glm-5** | **50.0%** | 93.1% | 17.9% | 104K | 0.21 |
+| glm-5.2 | 47.0% | 89.3% | 15.8% | 101K | 0.20 |
+| glm-4.7 | 45.9% | **95.8%** | 13.5% | 180K | 0.36 |
+| glm-5.1 | 44.1% | 92.3% | 14.3% | 107K | 0.21 |
+| glm-5-turbo | 43.9% | 91.7% | 16.7% | 103K | 0.21 |
+
+### 关键发现
+
+1. **所有模型 bullish 命中率 89-96%**，但 bearish 只有 13-18%——系统性偏差源于
+   回测期间半导体板块整体强势上涨
+2. **glm-5 总命中率最高（50%）**，bearish 也最准（17.9%）
+3. **glm-4.7 最详尽**（平均 1,379 token/条），bullish 最准（95.8%），但成本是其他
+   模型的 1.7 倍
+4. **glm-5-turbo 最精炼**（551 token/条），命中率略低但性价比最高
+5. **北方华创（002371）是唯一所有模型都 86% 命中的股票**——趋势性强
+
+### 产出
+
+| 文件 | 内容 |
+|---|---|
+| `/tmp/backtest_multi/run_model.py` | 通用回测脚本（参数化 model name） |
+| `/tmp/backtest_multi/results_{model}.json` × 5 | 每个模型的完整预测记录 |
+| `/tmp/backtest_multi/comparison_summary.json` | 横向对比汇总 |
+| `docs/BACKTEST-REPORT.md` §3.6 | 完整对比报告 |
