@@ -39,7 +39,7 @@ def test_build_payload_schema_shape(store: WatchlistStore) -> None:
     assert meta["stats"]["groups"] == 2
     assert meta["stats"]["entries"] == 3
     assert meta["stats"]["codes"] == 2  # 600519 跨两组
-    assert "db_path" in meta
+    assert "db_path" not in meta
     # 不应包含日期字段（配置式快照，git log 负责时间记录）
     assert "exported_at" not in meta
 
@@ -77,10 +77,10 @@ def test_build_payload_group_keys(store: WatchlistStore) -> None:
 
 
 def test_build_payload_meta_keys(store: WatchlistStore) -> None:
-    """meta 只含 schema_version/db_path/stats。"""
+    """meta 只含 schema_version/stats。"""
     _seed(store)
     payload = store.build_export_payload()
-    assert set(payload["meta"].keys()) == {"schema_version", "db_path", "stats"}
+    assert set(payload["meta"].keys()) == {"schema_version", "stats"}
 
 
 def test_build_payload_groups_sorted(store: WatchlistStore) -> None:
@@ -200,12 +200,6 @@ def test_export_is_atomic_via_overwrite(store: WatchlistStore, tmp_path: Path) -
     assert p1 == p2
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["meta"]["stats"]["groups"] == 2
-
-
-def test_export_db_path_in_meta_is_absolute(store: WatchlistStore, tmp_path: Path) -> None:
-    store.export_to_json(tmp_path / "w.json")
-    payload = json.loads((tmp_path / "w.json").read_text(encoding="utf-8"))
-    assert Path(payload["meta"]["db_path"]).is_absolute()
 
 
 # ---------- 端到端：与 stats 一致 ----------

@@ -267,7 +267,6 @@ class WatchlistStore:
             {
               "meta": {
                 "schema_version": "1.0",
-                "db_path": "/abs/path/to/watchlist.db",
                 "stats": {"groups": N, "entries": N, "codes": N}
               },
               "groups": [
@@ -339,7 +338,6 @@ class WatchlistStore:
         return {
             "meta": {
                 "schema_version": EXPORT_SCHEMA_VERSION,
-                "db_path": str(self.db_path.resolve()),
                 "stats": stats,
             },
             "groups": groups_payload,
