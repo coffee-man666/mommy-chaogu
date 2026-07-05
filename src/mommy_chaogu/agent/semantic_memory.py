@@ -40,6 +40,21 @@ CREATE INDEX IF NOT EXISTS ix_semantic_type
 
 CREATE INDEX IF NOT EXISTS ix_semantic_status
     ON semantic_knowledge(status);
+
+CREATE TABLE IF NOT EXISTS insight_summary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    key_observations TEXT DEFAULT '[]',
+    predictions_reviewed INTEGER DEFAULT 0,
+    hit_rate REAL,
+    confidence_adjustment REAL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_insight_period
+    ON insight_summary(period_end);
 """
 
 
@@ -354,3 +369,69 @@ class SemanticMemory:
             "by_type": by_type,
             "by_scope": by_scope,
         }
+
+    # ------------------------------------------------------------------
+    # insight_summary：周期复盘摘要（周度闭环用）
+    # ------------------------------------------------------------------
+
+    def save_insight(self, insight: dict[str, Any]) -> int:
+        """写入一条周期复盘摘要，返回新条目 id。
+
+        *insight* 字段：``period_start`` / ``period_end`` / ``summary``（必填），
+        ``key_observations`` (list[str]) / ``predictions_reviewed`` (int) /
+        ``hit_rate`` (float | None) / ``confidence_adjustment`` (float | None)。
+        """
+        now_iso = _utcnow().isoformat()
+        key_observations = insight.get("key_observations") or []
+        with self.session() as s:
+            result = s.execute(
+                text("""
+                    INSERT INTO insight_summary (
+                        period_start, period_end, summary, key_observations,
+                        predictions_reviewed, hit_rate, confidence_adjustment,
+                        created_at
+                    )
+                    VALUES (
+                        :period_start, :period_end, :summary, :key_observations,
+                        :predictions_reviewed, :hit_rate, :confidence_adjustment,
+                        :created_at
+                    )
+                """),
+                {
+                    "period_start": insight["period_start"],
+                    "period_end": insight["period_end"],
+                    "summary": insight["summary"],
+                    "key_observations": json.dumps(key_observations, ensure_ascii=False),
+                    "predictions_reviewed": insight.get("predictions_reviewed", 0),
+                    "hit_rate": insight.get("hit_rate"),
+                    "confidence_adjustment": insight.get("confidence_adjustment"),
+                    "created_at": now_iso,
+                },
+            )
+            return result.lastrowid or 0
+
+    def get_latest_insight(self) -> dict[str, Any] | None:
+        """取最近一条 insight_summary（按 created_at 倒序），无则返回 None。"""
+        with self.session() as s:
+            row = s.execute(
+                text("""
+                    SELECT id, period_start, period_end, summary, key_observations,
+                           predictions_reviewed, hit_rate, confidence_adjustment, created_at
+                    FROM insight_summary
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """)
+            ).first()
+            if row is None:
+                return None
+            return {
+                "id": row[0],
+                "period_start": row[1],
+                "period_end": row[2],
+                "summary": row[3],
+                "key_observations": json.loads(row[4] or "[]"),
+                "predictions_reviewed": row[5],
+                "hit_rate": row[6],
+                "confidence_adjustment": row[7],
+                "created_at": row[8],
+            }

@@ -89,12 +89,14 @@ class AgentService:
         episodic: Any | None = None,
         tracker: Any | None = None,
         semantic: Any | None = None,
+        vector_search: Any | None = None,
     ) -> None:
         self._tools = ToolRegistry(ctx)
         self._max_tool_calls = max_tool_calls
         self._episodic = episodic
         self._tracker = tracker
         self._semantic = semantic
+        self._vector_search = vector_search
         self._ctx = ctx
 
         # 解析 provider 配置
@@ -138,7 +140,11 @@ class AgentService:
         # 动态构建 system prompt（注入历史事件 + 判断回顾 + 知识）
         if self._episodic is not None or self._tracker is not None:
             system_prompt = system_override or build_system_prompt(
-                episodic=self._episodic, tracker=self._tracker, semantic=self._semantic
+                episodic=self._episodic,
+                tracker=self._tracker,
+                semantic=self._semantic,
+                query=user_message,
+                vector_search=self._vector_search,
             )
         else:
             system_prompt = system_override or SYSTEM_PROMPT

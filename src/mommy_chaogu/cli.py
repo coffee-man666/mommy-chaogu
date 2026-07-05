@@ -1604,6 +1604,7 @@ def cmd_agent_report(args: argparse.Namespace) -> int:
     """生成收盘日报。"""
     from mommy_chaogu.agent.reports import AgentReportService
     from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.db_paths import AGENT_DB
 
     ctx = _build_agent_ctx(args)
     agent = AgentService(
@@ -1611,7 +1612,7 @@ def cmd_agent_report(args: argparse.Namespace) -> int:
         model=args.model,
         provider=args.provider,
     )
-    report_svc = AgentReportService(agent)
+    report_svc = AgentReportService(agent, db_path=AGENT_DB)
 
     print(f"📊 生成收盘日报 ({args.board or args.pool})...")
     print("─" * 60)
@@ -1671,6 +1672,7 @@ def cmd_agent_scan(args: argparse.Namespace) -> int:
     """单次 agent 扫描。"""
     from mommy_chaogu.agent.monitor import AgentMonitor
     from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.db_paths import AGENT_DB
 
     ctx = _build_agent_ctx(args)
     agent = AgentService(
@@ -1686,6 +1688,7 @@ def cmd_agent_scan(args: argparse.Namespace) -> int:
         adapter=ctx.adapter,  # type: ignore[attr-defined]
         watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
         notifier=notifier,
+        db_path=AGENT_DB,
     )
 
     print("🔍 Agent 盘中扫描...")
@@ -1699,6 +1702,7 @@ def cmd_agent_monitor(args: argparse.Namespace) -> int:
     """持续 agent 监控。"""
     from mommy_chaogu.agent.monitor import AgentMonitor
     from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.db_paths import AGENT_DB
 
     ctx = _build_agent_ctx(args)
     agent = AgentService(
@@ -1715,6 +1719,7 @@ def cmd_agent_monitor(args: argparse.Namespace) -> int:
         watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
         notifier=notifier,
         interval_seconds=args.interval,
+        db_path=AGENT_DB,
     )
 
     print(f"🤖 Agent 监控启动（每 {args.interval:.0f}s 扫描一次）")
@@ -1819,8 +1824,10 @@ def cmd_agent_predictions(args: argparse.Namespace) -> int:
         print(f"{status:12s} {code:8s} {name:10s} {pred_text:30s} {score_str:>4s}")
 
     stats = tracker.stats()
-    print(f"\n总计: {stats['total']}  pending: {stats['pending']}  "
-          f"hit: {stats['hit']}  missed: {stats['missed']}  expired: {stats['expired']}")
+    print(
+        f"\n总计: {stats['total']}  pending: {stats['pending']}  "
+        f"hit: {stats['hit']}  missed: {stats['missed']}  expired: {stats['expired']}"
+    )
 
     return 0
 
@@ -2047,7 +2054,9 @@ def build_agent_parser() -> argparse.ArgumentParser:
         description="妈妈炒股 - AI 行情助手（对话 / 日报）",
     )
     p.add_argument(
-        "--db", default=str(DEFAULT_AGENT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_AGENT_DB_PATH})"
+        "--db",
+        default=str(DEFAULT_AGENT_DB_PATH),
+        help=f"数据库路径 (默认 {DEFAULT_AGENT_DB_PATH})",
     )
     p.add_argument("--model", default=None, help="LLM 模型名（默认按 provider）")
     p.add_argument(
@@ -2121,7 +2130,9 @@ def build_agent_parser() -> argparse.ArgumentParser:
     # narrative — 市场脉络生成
     p_nar = sub.add_parser("narrative", help="生成市场脉络叙述")
     p_nar.add_argument("--days", type=int, default=30, help="回溯天数 (默认 30)")
-    p_nar.add_argument("--scope", default=None, help="范围 (如 market / sector:创新药 / stock:603662)")
+    p_nar.add_argument(
+        "--scope", default=None, help="范围 (如 market / sector:创新药 / stock:603662)"
+    )
     p_nar.add_argument("--changes", action="store_true", help="只检测最近变化")
     p_nar.add_argument("--push", action="store_true", help="推送到微信")
     p_nar.set_defaults(func=cmd_agent_narrative)

@@ -260,3 +260,94 @@ class TestSemanticPersistence:
         assert entry["content"] == "茅台长期受益于消费升级"
         assert entry["confidence"] == 0.85
         assert entry["source_event_ids"] == [10, 20]
+
+
+class TestInsightSummary:
+    def test_save_insight_returns_id(self, semantic: SemanticMemory) -> None:
+        """save_insight 返回自增 id。"""
+        id1 = semantic.save_insight(
+            {
+                "period_start": "2026-06-23",
+                "period_end": "2026-06-29",
+                "summary": "本周复盘：3 条预测命中 2 条",
+            }
+        )
+        id2 = semantic.save_insight(
+            {
+                "period_start": "2026-06-30",
+                "period_end": "2026-07-06",
+                "summary": "本周复盘：5 条预测命中 1 条",
+            }
+        )
+        assert isinstance(id1, int)
+        assert id2 == id1 + 1
+
+    def test_get_latest_insight(self, semantic: SemanticMemory) -> None:
+        """get_latest_insight 返回最近写入的一条。"""
+        semantic.save_insight(
+            {
+                "period_start": "2026-06-23",
+                "period_end": "2026-06-29",
+                "summary": "第一周",
+            }
+        )
+        semantic.save_insight(
+            {
+                "period_start": "2026-06-30",
+                "period_end": "2026-07-06",
+                "summary": "第二周",
+                "key_observations": ["板块A走强", "板块B走弱"],
+                "predictions_reviewed": 4,
+                "hit_rate": 0.75,
+                "confidence_adjustment": 0.05,
+            }
+        )
+
+        latest = semantic.get_latest_insight()
+        assert latest is not None
+        assert latest["summary"] == "第二周"
+        assert latest["period_start"] == "2026-06-30"
+        assert latest["period_end"] == "2026-07-06"
+        assert latest["key_observations"] == ["板块A走强", "板块B走弱"]
+        assert latest["predictions_reviewed"] == 4
+        assert latest["hit_rate"] == 0.75
+        assert latest["confidence_adjustment"] == 0.05
+        assert latest["created_at"] is not None
+
+    def test_get_latest_insight_empty(self, semantic: SemanticMemory) -> None:
+        """空库 get_latest_insight 返回 None。"""
+        assert semantic.get_latest_insight() is None
+
+    def test_save_insight_minimal_fields(self, semantic: SemanticMemory) -> None:
+        """只传必填字段，其余取默认值。"""
+        eid = semantic.save_insight(
+            {
+                "period_start": "2026-06-23",
+                "period_end": "2026-06-29",
+                "summary": "简短复盘",
+            }
+        )
+        entry = semantic.get_latest_insight()
+        assert entry is not None
+        assert entry["id"] == eid
+        assert entry["key_observations"] == []
+        assert entry["predictions_reviewed"] == 0
+        assert entry["hit_rate"] is None
+        assert entry["confidence_adjustment"] is None
+
+    def test_save_insight_persists_across_reopen(self, tmp_path: Path) -> None:
+        """重新打开同一 db，insight_summary 数据还在。"""
+        db = tmp_path / "insight_persist.db"
+        sm1 = SemanticMemory(db)
+        sm1.save_insight(
+            {
+                "period_start": "2026-06-23",
+                "period_end": "2026-06-29",
+                "summary": "持久化测试",
+            }
+        )
+
+        sm2 = SemanticMemory(db)
+        latest = sm2.get_latest_insight()
+        assert latest is not None
+        assert latest["summary"] == "持久化测试"

@@ -204,3 +204,72 @@ class TestUpsertSupersede:
 
         all_entries = semantic.query(status=None)
         assert len(all_entries) == 2  # 旧的 superseded + 新的 active
+
+
+class TestInsightSummaryWritten:
+    def test_consolidate_writes_insight(
+        self,
+        episodic: EpisodicMemory,
+        semantic: SemanticMemory,
+        tracker: PredictionTracker,
+    ) -> None:
+        """consolidate_all 完成后写入一条 insight_summary。"""
+        for i in range(3):
+            episodic.write(
+                event_type="market_snapshot",
+                scope="market",
+                summary=f"上证 +{i}%",
+                data={},
+            )
+
+        client = make_mock_client("震荡上行")
+        cons = MemoryConsolidator(episodic, semantic, tracker, client, "test-model")
+        cons.consolidate_all()
+
+        insight = semantic.get_latest_insight()
+        assert insight is not None
+        assert insight["period_start"] is not None
+        assert insight["period_end"] is not None
+        assert insight["created_at"] is not None
+
+    def test_insight_includes_prediction_stats(
+        self,
+        episodic: EpisodicMemory,
+        semantic: SemanticMemory,
+        tracker: PredictionTracker,
+    ) -> None:
+        """有已验证预测时，insight 包含 predictions_reviewed 和 hit_rate。"""
+        for i in range(6):
+            pid = tracker.create(
+                code=f"00000{i}",
+                name=f"股票{i}",
+                prediction="看涨",
+                direction="bullish",
+                timeframe="5d",
+            )
+            tracker.update_status(pid, status="hit" if i < 4 else "missed", accuracy_score=0.8)
+
+        client = make_mock_client("规律")
+        cons = MemoryConsolidator(episodic, semantic, tracker, client, "test-model")
+        cons.consolidate_all()
+
+        insight = semantic.get_latest_insight()
+        assert insight is not None
+        assert insight["predictions_reviewed"] == 6
+        assert insight["hit_rate"] is not None
+        assert insight["hit_rate"] == pytest.approx(4 / 6)
+
+    def test_insight_written_on_empty_db(
+        self,
+        episodic: EpisodicMemory,
+        semantic: SemanticMemory,
+        tracker: PredictionTracker,
+    ) -> None:
+        """空库 consolidate 也会写入一条 insight（含默认值）。"""
+        client = make_mock_client()
+        cons = MemoryConsolidator(episodic, semantic, tracker, client, "test-model")
+        cons.consolidate_all()
+
+        insight = semantic.get_latest_insight()
+        assert insight is not None
+        assert insight["predictions_reviewed"] == 0

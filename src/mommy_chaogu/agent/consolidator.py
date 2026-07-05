@@ -131,6 +131,12 @@ class MemoryConsolidator:
         except Exception as e:
             _log.warning("recalibrate confidence failed: %s", e)
 
+        # 生成周期复盘摘要
+        try:
+            self._save_insight_summary()
+        except Exception as e:
+            _log.warning("save insight summary failed: %s", e)
+
         _log.info("consolidate_all: %s", results)
         return results
 
@@ -293,6 +299,53 @@ class MemoryConsolidator:
         if updates:
             self._semantic.recalibrate(updates)
             _log.info("recalibrated %d knowledge entries", len(updates))
+
+    def _save_insight_summary(self) -> int:
+        """汇总本次提炼结果，写入一条 insight_summary 周期复盘。
+
+        Returns:
+            写入的 insight_summary id，0 表示未写入
+        """
+        now = datetime.now(UTC)
+        period_end = now.strftime("%Y-%m-%d")
+        period_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        stats = self._tracker.stats()
+        predictions_reviewed = stats.get("hit", 0) + stats.get("missed", 0)
+        hit_rate = stats.get("hit_rate", 0.0)
+
+        # 收集本周新增的 active 知识，作为关键观察
+        knowledge = self._semantic.get_active(limit=10)
+        key_observations: list[str] = []
+        for k in knowledge:
+            scope = k.get("scope", "")
+            content = k.get("content", "")
+            ktype = k.get("knowledge_type", "")
+            key_observations.append(f"[{ktype}] {scope}：{content[:80]}")
+
+        summary_parts: list[str] = []
+        if predictions_reviewed > 0:
+            summary_parts.append(
+                f"本周复盘 {predictions_reviewed} 条预测，命中率 {hit_rate:.0%}。"
+            )
+        if knowledge:
+            summary_parts.append(f"沉淀 {len(knowledge)} 条知识。")
+        summary_text = " ".join(summary_parts) or "本周无足够数据生成复盘。"
+
+        # 置信度调整方向：命中率高于 0.5 上调，低于则下调
+        confidence_adjustment = (hit_rate - 0.5) * 0.2 if predictions_reviewed > 0 else 0.0
+
+        return self._semantic.save_insight(
+            {
+                "period_start": period_start,
+                "period_end": period_end,
+                "summary": summary_text,
+                "key_observations": key_observations,
+                "predictions_reviewed": predictions_reviewed,
+                "hit_rate": hit_rate if predictions_reviewed > 0 else None,
+                "confidence_adjustment": confidence_adjustment,
+            }
+        )
 
     def _llm_call(self, prompt: str, temperature: float = 0.3) -> str:
         """调用 LLM，返回文本。失败返回空字符串。"""

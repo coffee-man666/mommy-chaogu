@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -315,3 +316,103 @@ class TestPushAlerts:
         alerts = [AgentAlert("600519", "茅台", "warning", "test")]
         pushed = mon._push_alerts(alerts)
         assert pushed == []
+
+
+# ---------- episodic memory 集成测试 ----------
+
+
+class TestEpisodicMemory:
+    def test_signal_event_written_on_push(
+        self,
+        mock_agent: MagicMock,
+        mock_adapter: MagicMock,
+        mock_watchlist: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """告警推送时，episodic memory 写入 signal_event 事件。"""
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+        memory = EpisodicMemory(tmp_path / "test_monitor.db")
+        notifier = MagicMock()
+        notifier.notify_one.return_value = True
+
+        mon = AgentMonitor(
+            agent=mock_agent,  # type: ignore[arg-type]
+            adapter=mock_adapter,  # type: ignore[arg-type]
+            watchlist_store=mock_watchlist,  # type: ignore[arg-type]
+            notifier=notifier,  # type: ignore[arg-type]
+            db_path=memory.db_path,
+        )
+
+        stocks_by_code = {
+            "600519": {"price": 1680.0, "change_pct": 1.82, "main_net_wan": 5000.0},
+        }
+        alerts = [AgentAlert("600519", "贵州茅台", "warning", "主力大幅流入")]
+        pushed = mon._push_alerts(alerts, stocks_by_code=stocks_by_code)
+
+        assert "600519" in pushed
+        events = memory.query(event_type="signal_event")
+        assert len(events) == 1
+        ev = events[0]
+        assert ev["scope"] == "stock:600519"
+        assert ev["code"] == "600519"
+        assert ev["name"] == "贵州茅台"
+        assert ev["source"] == "agent_monitor"
+        assert "主力大幅流入" in ev["summary"]
+        # data 包含当前价格
+        assert ev["data"]["price"] == 1680.0
+        assert ev["data"]["change_pct"] == 1.82
+        assert ev["data"]["severity"] == "warning"
+
+    def test_no_db_path_skips_memory(self, monitor: AgentMonitor) -> None:
+        """db_path=None 时不写 memory，不报错。"""
+        # monitor fixture 默认无 db_path
+        assert monitor._memory is None
+        alerts = [AgentAlert("600519", "茅台", "warning", "test")]
+        pushed = monitor._push_alerts(alerts)
+        assert pushed == []  # 无 notifier 也不报错
+
+    def test_scan_once_writes_signal_events(
+        self,
+        mock_agent: MagicMock,
+        mock_adapter: MagicMock,
+        mock_watchlist: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """端到端：scan_once 产生告警 → episodic memory 有 signal_event。"""
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+        memory = EpisodicMemory(tmp_path / "test_scan.db")
+
+        # mock LLM 返回告警
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps(
+            {
+                "alerts": [
+                    {
+                        "code": "600519",
+                        "name": "贵州茅台",
+                        "severity": "warning",
+                        "message": "主力流入",
+                    },
+                ],
+                "summary": "1 只异动",
+            }
+        )
+        mock_agent._client.chat.completions.create.return_value = mock_response
+
+        mon = AgentMonitor(
+            agent=mock_agent,  # type: ignore[arg-type]
+            adapter=mock_adapter,  # type: ignore[arg-type]
+            watchlist_store=mock_watchlist,  # type: ignore[arg-type]
+            db_path=memory.db_path,
+        )
+
+        result = mon.scan_once()
+        assert len(result.alerts) == 1
+
+        events = memory.query(event_type="signal_event")
+        assert len(events) == 1
+        assert events[0]["scope"] == "stock:600519"
+        assert events[0]["data"]["price"] == 1680.0
