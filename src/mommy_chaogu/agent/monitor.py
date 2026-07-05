@@ -182,12 +182,23 @@ class AgentMonitor:
         )
 
     def _ask_agent(self, prompt: str) -> tuple[list[AgentAlert], str]:
-        """调 LLM，解析 JSON 返回。"""
+        """调 LLM，解析 JSON 返回。注入记忆上下文。"""
+        # 注入记忆（如果 agent 有 pipeline）
+        pipeline = getattr(self.agent, "_pipeline", None)
+        if pipeline is not None:
+            memory_prompt = pipeline.build_prompt(query="盘中异动扫描")
+            from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
+
+            memory_section = memory_prompt[len(SYSTEM_PROMPT) :] if memory_prompt.startswith(SYSTEM_PROMPT) else ""
+            system_content = "你是一个 A 股盘中异动扫描器。只返回 JSON。" + memory_section
+        else:
+            system_content = "你是一个 A 股盘中异动扫描器。只返回 JSON。"
+
         try:
             resp = self.agent._client.chat.completions.create(
                 model=self.agent._model,
                 messages=[
-                    {"role": "system", "content": "你是一个 A 股盘中异动扫描器。只返回 JSON。"},
+                    {"role": "system", "content": system_content},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,

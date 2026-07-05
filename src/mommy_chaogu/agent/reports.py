@@ -239,10 +239,23 @@ class AgentReportService:
             _log.exception("write analysis_record to episodic memory failed")
 
     def _build_prompt(self, data: dict[str, Any], title: str) -> str:
-        """构造给 agent 的数据 prompt。"""
+        """构造给 agent 的数据 prompt。注入记忆上下文（已有认知 + 近期事件）。"""
         import json
 
         from mommy_chaogu.agent.prompt import REPORT_PROMPT_TEMPLATE
 
         data_str = json.dumps(data, ensure_ascii=False, indent=2)
-        return REPORT_PROMPT_TEMPLATE.format(data=data_str)
+        base_prompt = REPORT_PROMPT_TEMPLATE.format(data=data_str)
+
+        # 注入记忆上下文（如果 agent 有 pipeline）
+        pipeline = getattr(self._agent, "_pipeline", None)
+        if pipeline is not None:
+            memory_prompt = pipeline.build_prompt(query=title)
+            # memory_prompt 是完整的 system prompt，我们取其中的记忆段落追加到报告 prompt
+            from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
+
+            memory_section = memory_prompt[len(SYSTEM_PROMPT) :] if memory_prompt.startswith(SYSTEM_PROMPT) else ""
+            if memory_section.strip():
+                base_prompt += f"\n\n--- 记忆上下文 ---{memory_section}"
+
+        return base_prompt
