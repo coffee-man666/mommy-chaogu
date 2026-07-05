@@ -384,6 +384,9 @@ def run(args: argparse.Namespace) -> int:
     trading_dates = sorted(all_dates)
     # 留最后 horizon 天做验证
     backtest_dates = trading_dates[: len(trading_dates) - args.horizon]
+    # --max-dates: 只取最后 N 个回测日（减少 LLM 调用量）
+    if args.max_dates > 0 and len(backtest_dates) > args.max_dates:
+        backtest_dates = backtest_dates[-args.max_dates :]
     print(f"\n  回测日 {len(backtest_dates)} 天：{backtest_dates[0]} → {backtest_dates[-1]}")
 
     usage = TokenUsage()
@@ -591,6 +594,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--db", default="data/llm_backtest.db", help="回测预测输出 db")
     p.add_argument("--stocks", default="", help="逗号分隔的股票代码（默认用内置池）")
     p.add_argument("--limit", type=int, default=0, help="限制股票数量（0=不限）")
+    p.add_argument("--max-dates", type=int, default=7, help="最多回测天数（取最后 N 天，默认 7）")
     p.add_argument("--days", type=int, default=10, help="上下文窗口天数（默认 10）")
     p.add_argument("--horizon", type=int, default=5, help="验证 horizon 天数（默认 5）")
     p.add_argument("--model", default="deepseek-chat", help="LLM 模型名")
