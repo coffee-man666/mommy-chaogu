@@ -19,6 +19,49 @@ from sqlalchemy.orm import sessionmaker
 
 from mommy_chaogu.cache.schema import SCHEMA_SQL
 from mommy_chaogu.cache.serializer import quote_from_dict, quote_to_dict
+from mommy_chaogu.market_data.adapter import MarketDataAdapter
+from mommy_chaogu.market_data.types import AdjustmentType, Bar, BarInterval, MoneyFlow
+
+
+def _bar_to_dict(bar: Bar) -> dict[str, Any]:
+    """Bar → JSON-safe dict（和 CachedMarketDataAdapter 读回格式一致）。"""
+    return {
+        "code": bar.code,
+        "name": bar.name,
+        "timestamp": bar.timestamp.isoformat(),
+        "interval": bar.interval.value,
+        "adjustment": bar.adjustment.value,
+        "open": str(bar.open),
+        "high": str(bar.high),
+        "low": str(bar.low),
+        "close": str(bar.close),
+        "volume": bar.volume,
+        "turnover": str(bar.turnover.amount),
+        "change_pct": str(bar.change_pct) if bar.change_pct is not None else None,
+        "turnover_rate": str(bar.turnover_rate) if bar.turnover_rate is not None else None,
+        "amplitude": str(bar.amplitude) if bar.amplitude is not None else None,
+    }
+
+
+def _money_flow_to_dict(f: MoneyFlow) -> dict[str, Any]:
+    """MoneyFlow → JSON-safe dict（和 CachedMarketDataAdapter 格式一致）。"""
+
+    def _money(m: object) -> dict[str, str]:
+        if isinstance(m, dict):
+            return {"amount": str(m["amount"]), "currency": m.get("currency", "CNY")}
+        return {"amount": str(m.amount), "currency": m.currency}  # type: ignore[attr-defined]
+
+    return {
+        "code": f.code,
+        "name": f.name,
+        "timestamp": f.timestamp.isoformat(),
+        "main_net": _money(f.main_net),
+        "small_net": _money(f.small_net),
+        "medium_net": _money(f.medium_net),
+        "large_net": _money(f.large_net),
+        "super_large_net": _money(f.super_large_net),
+        "main_net_ratio": str(f.main_net_ratio) if f.main_net_ratio is not None else None,
+    }
 
 
 def _utcnow() -> datetime:
@@ -273,6 +316,68 @@ class CacheStore:
                 """),
                 {"code": code, "date": trade_date, "json": flow_json, "fetched": _utcnow()},
             )
+
+    # ---------- Backfill ----------
+
+    def backfill_history(
+        self, adapter: MarketDataAdapter, code: str, days: int = 30
+    ) -> dict[str, Any]:
+        """批量回填历史 K 线 + 资金流到缓存。
+
+        从 adapter 拉取最近 *days* 天的日 K 线和历史资金流，逐条写入
+        bar_cache / money_flow_cache。单条失败不影响其余写入。
+
+        Returns:
+            {"code", "days", "bars_written", "flows_written", "errors"}
+        """
+        result: dict[str, Any] = {
+            "code": code,
+            "days": days,
+            "bars_written": 0,
+            "flows_written": 0,
+            "errors": [],
+        }
+
+        # ---- Bars ----
+        interval = BarInterval.D1
+        adjustment = AdjustmentType.FORWARD
+        interval_str = interval.value
+        adj_str = adjustment.value
+        try:
+            bars = adapter.get_bars(code, interval=interval, adjustment=adjustment, limit=days)
+        except Exception as e:
+            result["errors"].append(f"bars fetch: {e}")
+            bars = []
+
+        for bar in bars:
+            try:
+                trade_date = bar.timestamp.strftime("%Y-%m-%d")
+                self.set_bar(code, interval_str, adj_str, trade_date, _bar_to_dict(bar))
+                result["bars_written"] += 1
+            except Exception as e:
+                result["errors"].append(f"bar {bar.timestamp}: {e}")
+
+        # ---- Money flow ----
+        try:
+            flows = adapter.get_history_money_flow(code, days=days)
+        except Exception as e:
+            result["errors"].append(f"money_flow fetch: {e}")
+            flows = []
+
+        by_date: dict[str, list[MoneyFlow]] = {}
+        for f in flows:
+            trade_date = f.timestamp.strftime("%Y-%m-%d")
+            by_date.setdefault(trade_date, []).append(f)
+
+        for trade_date, day_flows in by_date.items():
+            try:
+                flow_dicts = [_money_flow_to_dict(f) for f in day_flows]
+                self.set_money_flow_history(code, trade_date, flow_dicts)
+                result["flows_written"] += 1
+            except Exception as e:
+                result["errors"].append(f"flow {trade_date}: {e}")
+
+        return result
 
     # ---------- Market snapshot cache (保留 N 份历史) ----------
 

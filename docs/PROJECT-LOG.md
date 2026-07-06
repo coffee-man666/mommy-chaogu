@@ -8,7 +8,7 @@
 > - **PROGRESS.md** — 讲「现在在哪儿」（当前架构 + 已完成 + 下一步）
 > - **本文件** — 上面三份的「快速入口 + 一站式 narrative」
 >
-> 最后更新：2026-06-29 17:35（M3.2.1 cron 自动化完成）
+> 最后更新：2026-07-04（多模型 LLM 回测对比，branch `memory-system-v1`）
 
 ---
 
@@ -16,16 +16,18 @@
 
 | 维度 | 数据 |
 |---|---|
-| 项目阶段 | **M3.2.1 完成**（资金流 ratio 监控 + cron 自动化） |
-| 累计 commits | **15+** 推 main |
-| 代码量 | **~13,000 行** Python（src 8500 + tests 2270 + web 2500） |
-| 测试 | **154 个**（145 离线 + 9 实时网络） |
-| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
+| 项目阶段 | **多模型 LLM 回测对比**（`memory-system-v1` 分支） |
+| 累计 commits | **32+** |
+| 代码量 | **~36,000+ 行**（src 23,000 + tests 9,000 + web 4,000） |
+| 测试 | **518 个**（含 +121 memory-system + 36 token tracker 测试） |
+| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅**（GitHub Actions） |
 | 数据源 | 东财（主）+ 腾讯（仅 quote 兜底） |
 | 数据点 | 5 只自选股 + 106 只半导体产业链股 |
-| 缓存 | `data/watchlist.db`（cache）+ `data/semicon.db`（产业链 reference） |
+| 缓存 | `data/market.db`（行情缓存 + 回测数据）+ `data/reference.db`（产业链 reference） |
 | 自动化 | 4 个 OpenClaw cron jobs（盘前预热/盘中监控/收盘日报/周报） |
 | 微信推送 | Server酱 bot，目标 = 团长当前聊天 |
+| AI Agent | **18 tools** + AgentService + **MCP Server** + **自进化记忆 5 层** |
+| **LLM Provider** | **DeepSeek / OpenAI / Kimi / z.ai（glm-4.7）** |
 
 ---
 
@@ -51,7 +53,159 @@
 
 ## 2. 关键里程碑（全链路）
 
-> 时间倒序：M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+> 时间倒序：LLM-CMP → LLM-BT → Backtest+DB → Memory-v1 → M8 → M7 → M3.2.1 → M3.2 → M3.1 → M3.0 → M2.5 → M2 → M1.5 → M1 → M0
+
+### Multi-LLM Comparison（2026-07-04） — 5 模型横向对比回测 🤖📊
+
+**痛点**：trial_1 只跑了一个模型（agent 原生），需要验证不同 LLM 的预测表现差异，
+选出最适合本项目 agent 的模型。
+
+**交付**：用 z.ai API 串行跑 5 个 GLM 模型（glm-4.7/5/5-turbo/5.1/5.2），每个模型
+对同一批 70 条数据（10 只半导体股 × 7 个日期）做完整预测，记录全部过程。
+
+| 模型 | 总命中率 | Bullish | Bearish | Token | 成本¥ |
+|---|---|---|---|---|---|
+| **glm-5** | **50.0%** | 93% | **18%** | 104K | 0.21 |
+| glm-5.2 | 47.0% | 89% | 16% | 101K | 0.20 |
+| glm-4.7 | 45.9% | **96%** | 14% | 180K | 0.36 |
+| glm-5.1 | 44.1% | 92% | 14% | 107K | 0.21 |
+| glm-5-turbo | 43.9% | 92% | 17% | 103K | 0.21 |
+
+**关键发现**：所有模型 bullish 89-96% / bearish 13-18%（板块上涨期系统性偏差）。
+glm-5 综合最优，glm-4.7 最详尽但贵 1.7 倍。完整报告见 `docs/BACKTEST-REPORT.md` §3.6。
+
+### LLM Backtest Framework（2026-07-04） — Token Tracker + LLM 回测脚本 + 回测报告 🤖📊
+
+**痛点**：规则引擎回测只看资金流两个维度。需要用 LLM agent 的完整工具链做更立体的
+判断，衡量「LLM + 多数据源」的增益和 token 成本。团长要求先搭 token 监控系统。
+
+**交付**：
+
+| 组件 | 文件 | 测试 |
+|---|---|---|
+| Token Tracker | `src/mommy_chaogu/agent/token_tracker.py` | 36 tests |
+| LLM 回测脚本 | `scripts/backtest_llm.py`（4 provider：deepseek/openai/kimi/zai） | dry-run 验证 |
+| 回测报告 | `docs/BACKTEST-REPORT.md`（规则引擎结果 + LLM 方法学 + 模板） | — |
+
+**Token Tracker**：按 provider + model 聚合 token 用量，内置 6 个模型定价表，
+支持 session 级和全局成本估算，持久化到 `data/agent.db`。
+
+**LLM 回测**：离线读 `data/market.db` 真实数据 → 滑动窗口喂 LLM → T+5 验证 →
+统计命中率 + token 消耗 + 成本。支持 z.ai / glm-4.7 作为 provider。
+
+**当前状态**：框架全部就绪，**trial_1 待跑**（上次 session 在配置 zai provider 时中断）。
+
+### Backtest + DB Refactor（2026-07-04） — 30 天真实数据回测 + 数据库分库 📊🔧
+
+**痛点**：记忆系统做了但没用真实数据验证过；数据库 watchlist.db 是垃圾桶（所有表混一起）。
+
+**对策 A — 30 天回测验证**：用真实行情跑 154 条预测 → 验证 → 提炼闭环。
+
+**对策 B — 数据库分库**：watchlist.db 拆成 4 个按职责分离的库。
+
+| 层 | 内容 | 文件 |
+|---|---|---|
+| 回测脚本 | 154 条预测（10 只 × 19 天）→ 53% 命中率 → 10 条知识提炼 | `scripts/backtest_evolution.py` |
+| 数据采集 | 106 只半导体 × 42 天 K 线(4437 行) + 92 只 × 21 天资金流(1917 行) | `scripts/fetch_semicon_data.py` |
+| 数据库路径 | 统一路径管理 + 环境变量覆盖 | `src/mommy_chaogu/db_paths.py` |
+| 迁移脚本 | 旧 watchlist.db → 4 个新库（ATTACH + INSERT） | `scripts/migrate_db_layout.py` |
+| 项目指南 | agent + 开发者必读（含迁移提示） | `AGENTS.md` |
+
+**回测关键发现**：
+- 看跌比看涨准（57% vs 41%）— 趋势延续性强
+- 极端信号 >10bp 更可信（59% vs 50%）
+- 个股差异巨大：比亚迪 84% vs 柯力传感 18%
+
+**数据库布局**：
+| 库 | 用途 |
+|---|---|
+| market.db | 行情缓存 + 历史 K 线 + 资金流 |
+| portfolio.db | 自选股 + 持仓 |
+| agent.db | 记忆系统 5 张表 |
+| reference.db | 半导体产业链 + 业绩 |
+
+### Memory System v1（2026-07-03） — 自进化记忆系统 Phase 1-5 🧠
+
+**痛点**：agent 每次对话都从零开始——不记得上次说了什么、不验证判断是否正确、不沉淀经验。
+
+**对策**：四层记忆架构（CoALA 框架）+ 预测验证闭环，数据缺失场景下不误判。
+
+| Phase | 层 | 内容 | 文件 |
+|---|---|---|---|
+| 1 | 情景记忆 | 结构化事件流（4 种事件 + data_coverage） | `agent/episodic_memory.py` |
+| 1 | 预测验证 | pending→hit/missed/expired 状态机 + 降级验证引擎 | `agent/prediction_tracker.py` + `verify_engine.py` |
+| 1 | 事实抽取 | 对话后 LLM structured output 提取 | `agent/extractor.py` |
+| 3 | 市场脉络 | 30 天主线叙述 + 转折点 + 变化检测 | `agent/narrative.py` |
+| 4 | 语义知识 | 4 种知识 + supersede + 命中率校准 confidence | `agent/semantic_memory.py` + `consolidator.py` |
+| 5 | 向量检索 | sqlite-vec + embedding，"找相似历史事件" | `agent/vector_search.py` |
+
+**设计要点**：
+- 验证降级策略：报价优先（三重保险）→ 资金流可选 → 数据不可用不误判
+- 知识 confidence = 0.5×原始 + 0.5×命中率，越用越准
+- 动态 system prompt 注入知识 + 事件 + 判断回顾
+- 向后兼容：无 episodic/tracker 时 AgentService 行为不变
+- 8 个 CLI 子命令：verify / predictions / events / remember / narrative / consolidate / knowledge / search
+
+**测试 +121**：482 total（361 原有 + 121 memory-system）
+
+### M8（2026-07-03） — Infra Upgrade（P0-P3）🔧
+
+**痛点**：基础设施短板 — 没有统一配置、没有 CI、agent 无持久记忆、缺新闻/基本面/龙虎榜数据、无回测能力、无组合分析。
+
+**对策**：一次性补齐 — MCP 协议支持、统一 TOML 配置、SQLite 记忆层、回测引擎、基本面/新闻/龙虎榜 API、组合分析、自定义告警、Docker 部署、CI。
+
+| 层 | 内容 | 文件 |
+|---|---|---|
+| 数据源 | 新闻 / 公告 / 龙虎榜 API | `market_data/news_api.py` |
+| 数据源 | 基本面（PE/PB/PS/ROE/利润率/行业） | `market_data/fundamentals_api.py` |
+| Agent | **MCP Server**（stdio 协议，任意 MCP client 可连接） | `agent/mcp_server.py` |
+| Agent | **ConversationMemory**（SQLite 跨 session 持久化） | `agent/memory.py` |
+| 配置 | **统一 TOML 配置**（AppConfig + AgentConfig/PushConfig/CacheConfig/MonitorConfig） | `config.py` |
+| 组合 | **PortfolioAnalyzer**（板块集中度 / 相关性矩阵 / 最大回撤 / Sharpe ratio） | `portfolio/analysis.py` |
+| 信号 | **CustomAlertStore**（用户自定义价格/涨跌幅告警） | `signals/custom_alerts.py` |
+| 回测 | **BacktestEngine**（回放信号规则到缓存历史数据） | `backtest/engine.py` |
+| CI | ruff + mypy + pytest | `.github/workflows/ci.yml` |
+| 部署 | Docker 容器化 | `Dockerfile` |
+
+**新增 7 个 Agent 工具（11 → 18）**：search_news / get_announcements / get_longhuban / get_fundamentals / backfill_history / manage_alert / get_portfolio_analysis
+
+**新增 CLI**：`mommy-mcp`（MCP Server）/ `mommy-watchlist alert`（自定义告警）/ `mommy-flows backtest`（回测）/ `mommy-chaogu config init`（配置初始化）
+
+**设计要点**：
+- MCP Server 走 stdio 协议，Claude Desktop / Cursor / 任意 MCP client 可直接连接
+- 统一配置替代散落的环境变量，`config init` 生成模板
+- ConversationMemory 让 agent 跨 session 记住对话上下文
+- BacktestEngine 复用缓存历史数据，不重复拉接口
+- CI 三道门：ruff lint → mypy strict → pytest
+
+**测试 +53**：news_api / fundamentals_api / mcp_server / memory / config / analysis / custom_alerts / backtest
+
+### M7（2026-07-02） — Agent-Centric 重构（Phase 1-5）🤖
+
+**痛点**：7 条 if-else 规则没有语境感知，"主力净流入 8000万"在牛市是噪声在熊市是信号。
+
+**对策**：引入 LLM agent 作为核心推理层，规则退居二线。
+
+| Phase | 内容 | 文件 |
+|---|---|---|
+| 1 | 11 个 function-calling tools | agent/tools.py + market_data/sector_api.py |
+| 2 | AgentService（LLM + tools 循环） | agent/service.py + agent/prompt.py |
+| 3 | Agent 收盘日报 + CLI | agent/reports.py + cli.py (mommy-agent) |
+| 4 | Web 对话页 | web/routes/agent.py + web/src/pages/agent/index.vue |
+| 5 | Agent 盘中扫描监控 | agent/monitor.py + agent/scan_prompt.py |
+
+**设计要点**：
+- 数据层完全不动（market_data / cache / flows 原样保留）
+- 7 条 signals 规则保留为 fallback，不删
+- Agent 工具中立：兼容 OpenAI / DeepSeek / Kimi（通过 AGENT_PROVIDER 环境变量切换）
+- 无 API key 时优雅降级（Web 对话页返回"未配置"提示，不崩溃）
+- WebSocket 流式回复（分 chunk 发送，打字机效果）
+- AgentMonitor 低频扫描（3min）：先收集数据一次性塞给 LLM（不让 LLM 自己调工具，省 token）
+- JSON response mode：强制 LLM 返回结构化 JSON（alerts 列表）
+- 复用 SignalNotifier 去重：code + "agent_scan" + date 一天只推一次
+- 硬告警（涨停跌停）继续走 BackgroundService，AgentMonitor 不重复
+
+**新增 11 个工具**：get_quote / get_quotes / get_market_indexes / get_sector_ranking / search_sector / get_sector_stocks / get_money_flow_today / get_money_flow_history / get_bars / get_watchlist / get_portfolio
 
 ### M3.2.1（2026-06-29 17:30） — OpenClaw cron 自动化 🔧
 
@@ -179,29 +333,44 @@
 │  ├─ 15:30 收盘日报 → 推微信                                     │
 │  └─ 周六 10:00 周报汇总 → 推微信                                │
 └────────────────┬───────────────────────────────────────────────┘
-                 ↓ agentTurn prompt
+                 ↓
 ┌────────────────────────────────────────────────────────────────┐
-│  📱 妈妈手机 / 👨 团长浏览器                                   │
+│  📱 妈妈手机 / 👨 团长浏览器 / 🔌 MCP Client                    │
 │  ├─ Web H5 (Vite + Vue 3)         ← 主动看                     │
 │  ├─ WebSocket 实时推送                                           │
-│  └─ 微信 Server酱推送              ← 被动收（每日 1-2 条）        │
+│  ├─ 微信 Server酱推送              ← 被动收（每日 1-2 条）        │
+│  └─ MCP Client（Claude/Cursor）   ← NEW M8 stdio 协议           │
 └────────────────┬───────────────────────────────────────────────┘
                  ↓
 ┌────────────────────────────────────────────────────────────────┐
-│  FastAPI（uvicorn :8000）                                      │
+│  FastAPI（uvicorn :8000） + MCP Server（stdio）               │
 │  ├─ /api/* REST 端点（行情 / 自选 / 资金流 / 持仓）             │
 │  ├─ /ws/* WebSocket（实时推送）                                 │
 │  └─ BackgroundService（5s 轮询 + signal 评估 + 微信推送）       │
 └────────────────┬───────────────────────────────────────────────┘
                  ↓
 ┌────────────────────────────────────────────────────────────────┐
+│  🤖 Agent 层（LLM + 工具调用）                                 │
+│  ├─ POST /api/agent/chat（单轮问答）                          │
+│  ├─ WS /ws/agent（流式对话）                                   │
+│  ├─ MCP Server（stdio 协议）              ← NEW M8             │
+│  ├─ AgentService（deepseek/openai/kimi 可切换）                │
+│  ├─ ConversationMemory（SQLite 持久化）   ← NEW M8             │
+│  ├─ ToolRegistry（18 个工具）              ← M8 扩展           │
+│  └─ AgentReportService（agent 生成收盘分析日报）               │
+└────────────────┬───────────────────────────────────────────────┘
+                 ↓
+┌────────────────────────────────────────────────────────────────┐
 │  mommy-chaogu 核心模块                                         │
-│  ├─ market_data：Quote/Bar/MoneyFlow 数据类                    │
+│  ├─ market_data：Quote/Bar/MoneyFlow/新闻/基本面/龙虎榜       │
 │  ├─ monitor：snapshot + signals                                │
 │  ├─ flows：ratio 信号 + 持续监控 + 收盘日报 ⭐                 │
 │  ├─ semicon：106 只产业链 reference                            │
-│  ├─ watchlist：5 只自选股 ORM                                  │
-│  ├─ signals：7 条内置告警规则                                  │
+│  ├─ watchlist：自选股 ORM + 自定义告警                         │
+│  ├─ signals：7 条内置告警规则 + CustomAlertStore     ← NEW M8 │
+│  ├─ portfolio：持仓 + 组合分析（集中度/相关性/回撤/Sharpe）    │
+│  ├─ backtest：BacktestEngine（信号规则历史回放）     ← NEW M8 │
+│  ├─ config：统一 TOML 配置（AppConfig）                ← NEW M8 │
 │  ├─ cache：5 张缓存表 + 装饰器                                 │
 │  └─ web：FastAPI + WebSocket                                   │
 └────────────────┬───────────────────────────────────────────────┘
@@ -284,6 +453,12 @@ agentTurn prompt 提取关键指标 → 微信推送
 - **ruff + mypy --strict** — 质量门
 - **测试金字塔** — 大量单元 + 适量集成 + 少量 E2E
 - **subagent 并行** — 团长喜欢，但任务要真独立才并行
+
+### Agent 层 ⭐
+- **工具中立** — ToolRegistry 包装现有 adapter，不耦合具体 LLM provider
+- **规则退居二线** — 7 条 if-else 保留为 fallback，默认路径走 agent 推理
+- **system prompt 内嵌分析原则** — bp 比率思维、量价关系、板块联动，但以"参考"表达
+- **无 API key 优雅降级** — 不崩溃，返回提示文本
 
 ---
 

@@ -18,6 +18,10 @@ dependencies = [
     "pydantic>=2.9",
     "websockets>=13",
     "jinja2>=3.1.6",
+    "openai>=1.0",
+    "mcp>=1.28.1",
+    "sqlite-vec>=0.1.9",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]
@@ -29,6 +33,8 @@ mommy-semicon = "mommy_chaogu.cli:main_semicon"
 mommy-flows = "mommy_chaogu.cli:main_flows"
 mommy-web = "mommy_chaogu.cli:main_web"
 mommy-earnings = "mommy_chaogu.earnings.cli:main_earnings"
+mommy-agent = "mommy_chaogu.cli:main_agent"
+mommy-mcp = "mommy_chaogu.agent.mcp_server:main_mcp"
 mommy-chaogu = "mommy_chaogu.cli:main"
 
 [project.optional-dependencies]
@@ -63,7 +69,11 @@ strict = true
 python_version = "3.12"
 
 [[tool.mypy.overrides]]
-module = ["efinance", "pandas", "pandas.*", "rich", "retry", "tqdm", "multitasking", "jsonpath"]
+module = [
+    "efinance", "pandas", "pandas.*", "rich", "retry", "tqdm", "multitasking",
+    "jsonpath", "requests", "requests.*",
+    "sqlalchemy", "sqlalchemy.*",
+]
 ignore_missing_imports = true
 
 # cache 模块涉及 JSON 反序列化，类型推导弱，整体放宽
@@ -80,7 +90,7 @@ ignore_errors = true
 
 # web 模块涉及 FastAPI 依赖注入和 Pydantic，类型相对弱
 [[tool.mypy.overrides]]
-module = ["mommy_chaogu.web.*"]
+module = ["mommy_chaogu.web.*", "mommy_chaogu.agent.*", "mommy_chaogu.backtest.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -88,7 +98,7 @@ module = ["mommy_chaogu.cli"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["fastapi", "uvicorn", "starlette", "httpx"]
+module = ["fastapi", "uvicorn", "starlette", "httpx", "openai", "openai.*", "mcp", "mcp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

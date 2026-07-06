@@ -4,7 +4,7 @@
 >
 > 跟 DESIGN 互补：DESIGN 讲「为什么这样设计」，LEDGER 讲「具体怎么走到这一步」。
 
-最后更新：2026-06-28 22:45（M4 持仓 + 资金流图表 + 盘面扫描）
+最后更新：2026-07-04（多模型横向对比回测 trial_2，memory-system-v1 分支）
 
 ---
 
@@ -31,6 +31,18 @@
 | **M7.3** | **2026-07-02** | **中报窗口实战手册 v1.0（12 章节）** | **`018b276`** | **✅** |
 | **M7.4** | **2026-07-02** | **earnings_actual 模块（types/store/service/signals/adapter/cli）** | **(待提交)** | **✅** |
 | **M7.5** | **2026-07-02** | **柯力 603662 + 中信报告实战分析** | **(本文档)** | **✅** |
+| **M7.6** | **2026-07-02** | **EfinanceEarningsAdapter + 真实东财数据** | **`cb02971`** | **✅** |
+| **Merge-1** | **2026-07-03** | **main + agent-centric 分支合并** | **`830d67b`** | **✅** |
+| **Mem-1** | **2026-07-03** | **记忆系统 Phase 1（情景+预测+验证+抽取）** | **`d4e3a2b`** | **✅** |
+| **Mem-3** | **2026-07-03** | **记忆系统 Phase 3+4（脉络+语义+提炼）** | **`a5f9c1e`** | **✅** |
+| **Mem-5** | **2026-07-03** | **记忆系统 Phase 5（向量检索 sqlite-vec）** | **`be9700b`** | **✅** |
+| **Mem-Docs** | **2026-07-03** | **文档更新（PROGRESS/PROJECT-LOG/LEDGER/README）** | **`8dbba16`** | **✅** |
+| **BT-1** | **2026-07-04** | **30 天真实数据回测（154 条预测，53% 命中率）** | **`4649e5e`** | **✅** |
+| **DB-1** | **2026-07-04** | **数据库分库重组（market/portfolio/agent/reference）** | **`79f7adc`** | **✅** |
+| **LLM-BT** | **2026-07-04** | **LLM 回测框架 + Token Tracker + zai provider** | **`e6edf43` / `863acf8`** | **✅** |
+| **Agent-BT** | **2026-07-04** | **Agent 原生回测 trial_1（25 条预测，47% 命中率，bullish 88%）** | **`73ea5ba`** | **✅** |
+| **CFG-1** | **2026-07-04** | **.env 持久化配置 + AgentService 加 zai provider** | **`643af95`** | **✅** |
+| **LLM-CMP** | **2026-07-04** | **5 模型横向对比回测 trial_2（70 条 × 5 模型）** | **本次提交** | **✅** |
 
 ---
 
@@ -1203,3 +1215,214 @@ verdict          数量       占比
 3. **业绩预告日 70% 跳空**——T+1 9:30-9:35 行动窗口稍纵即逝
 4. **多主题篮子 > 单一自选股**——团长要的「主题篮子」模型落地
 5. **数据 → 策略 → 实战**——3 步走，每步都有 commit + 测试 + 文档
+
+---
+
+## LLM-BT — LLM 回测框架 + Token Tracker
+
+**日期**：2026-07-04
+**Commit**：`e6edf43` — `feat: LLM backtest framework + token tracker + backtest report`
+**Commit**：`863acf8` — `feat(backtest): add zai/glm-4.7 provider for LLM backtest`
+**代码量**：~800 行（token_tracker 300 + backtest_llm 600 + 测试 300）
+
+### 目标
+
+规则引擎回测只看资金流两个维度。LLM 回测用完整 agent 工具链对同样数据做更立体的
+判断，衡量「LLM + 多数据源」相对于纯规则的增益，以及 token 成本是否值得。
+
+团长特别要求：跑 LLM 回测之前先搭一个可以观测 LLM Token 使用量的系统。
+
+### 产出
+
+| 文件 | 作用 | 行数 |
+|---|---|---|
+| `src/mommy_chaogu/agent/token_tracker.py` | Token 用量追踪（per-provider / per-model 统计 + 成本估算） | ~300 |
+| `tests/test_agent/test_token_tracker.py` | 36 个单测 | ~300 |
+| `scripts/backtest_llm.py` | LLM 驱动回测脚本（离线读 market.db，4 provider 支持） | ~600 |
+| `docs/BACKTEST-REPORT.md` | 回测报告（方法学 + 规则引擎结果 + LLM 框架状态） | ~320 |
+
+### Token Tracker 设计
+
+- **`TokenUsage` dataclass** — 累计 prompt/completion/total tokens + 估算成本
+- **`TokenTracker`** — 按 provider + model 维度聚合，支持 session 级和全局统计
+- **定价表** — 内置 6 个模型（deepseek-chat / deepseek-coder / gpt-4o / gpt-4o-mini /
+  moonshot-v1-8k / glm-4.7）的每百万 token 单价（¥/M input, ¥/M output）
+- **持久化** — 写入 `data/agent.db` 的 `token_usage` 表
+
+### LLM 回测脚本设计
+
+- **离线**：从 `data/market.db` 读 klines + flows，不联网
+- **滑动窗口**：每个交易日 × 每只股票，取前 N 天数据拼成上下文喂 LLM
+- **JSON 输出**：LLM 返回 `{direction, rationale}` 结构化预测
+- **T+N 验证**：同规则引擎 `verify_prediction()`，对比入场价 vs T+5 收盘
+- **4 provider**：deepseek / openai / kimi（moonshot）/ zai（z.ai / glm-4.7）
+- **dry-run 模式**：不调 LLM，只打印上下文，验证数据管线
+
+### 关键决策
+
+1. **离线读 market.db 而非实时拉取** — 保证可复现，不受网络波动影响
+2. **z.ai 可作为 LLM provider** — kimi-code 自身就是 LLM，可直接调 z.ai 接口，
+   不需要外部 API key
+3. **Token Tracker 独立于回测** — 也能用于生产环境的 AgentService token 监控
+
+### 验证
+
+- 36 token tracker 单测全过
+- dry-run 验证通过（能读 market.db 真实数据、构建上下文）
+- 518 passed（482 + 36 token tracker），ruff ✅，mypy ✅
+- 注意：5 月 K 线存在但资金流数据从 6/4 开始，LLM 回测有效窗口约 15 个交易日
+
+### 当前状态
+
+框架全部就绪，**trial_1 尚未实跑**。上一个 session 在配置 zai provider 时中断。
+下次只需：
+
+```bash
+export ZAI_API_KEY="..."
+uv run python scripts/backtest_llm.py --provider zai --model glm-4.7
+```
+
+---
+
+## Agent-BT — Agent 原生回测 trial_1
+
+**日期**：2026-07-04
+**Commit**：本次提交
+
+### 目标
+
+在没有外部 API key 的情况下，利用 coding agent 自身的 LLM 能力直接分析真实市场
+数据，完成首次 LLM 回测 trial_1。同时验证「agent 原生回测」作为第三种回测方法的
+可行性。
+
+### 方法
+
+1. `scripts/prepare_agent_backtest.py` 从 `data/market.db` 抽取 5 只半导体链股票 ×
+   5 个日期 = 25 条数据包，每条包含前 10 天 K 线 + 资金流上下文
+2. **数据/答案分离**：数据包不含 T+5 收盘价，单独输出到 answers 文件（防 look-ahead bias）
+3. Agent 直接读取数据包 JSON，逐条分析 K 线形态 + 资金流趋势 + 量价关系，输出预测
+4. 用与规则引擎完全相同的评分逻辑验证（direction → change_pct → hit/missed + score）
+
+### 结果
+
+| 指标 | 值 | vs 规则引擎 |
+|---|---|---|
+| 方向性预测 | 19 条（+6 条 neutral） | 规则引擎无 neutral |
+| **总命中率** | **47%（9/19）** | 规则引擎 53%（-6pp） |
+| **Bullish 命中率** | **88%（7/8）** | 规则引擎 41%（**+47pp** ✅） |
+| **Bearish 命中率** | **18%（2/11）** | 规则引擎 57%（**-39pp** ❌） |
+| 估算成本 | **¥0** | ¥0 |
+
+### 核心发现
+
+**LLM bullish 判断远胜规则引擎（88% vs 41%）**，但 bearish 判断严重失准（18%）。
+原因：回测区间半导体板块整体强势上涨，LLM 基于短期资金流流出的 bearish 判断被
+板块趋势反复打脸。
+
+**两种方法互补性极强**：bullish 用 LLM + bearish 用规则引擎，理论混合命中率可达 73%。
+
+### 产出
+
+| 文件 | 作用 |
+|---|---|
+| `scripts/prepare_agent_backtest.py` | Agent 原生回测数据准备脚本（通用基础设施） |
+| `docs/BACKTEST-REPORT.md` §3.4 | Agent 原生 trial_1 完整结果 |
+| `docs/BACKTEST-REPORT.md` §3.5 | Agent 原生回测模式文档（概念 / 优劣 / 复现步骤） |
+
+---
+
+## CFG-1 — .env 持久化配置 + AgentService 加 zai provider
+
+**日期**：2026-07-04
+**Commit**：本次提交
+
+### 目标
+
+所有 LLM provider 的 API key 只能通过 shell `export` 设置，没有持久化方式，
+不利于部署和 cron 场景。同时 `AgentService`（生产环境）不支持 zai provider。
+
+### 产出
+
+| 文件 | 改动 |
+|---|---|
+| `pyproject.toml` | 新增 `python-dotenv>=1.0` 依赖 |
+| `src/mommy_chaogu/config.py` | `load_config()` 加 `load_dotenv()`；`_apply_env_overrides()` 按 provider 自动选对应 key；TOML 模板更新 |
+| `src/mommy_chaogu/agent/service.py` | `SUPPORTED_PROVIDERS` 加 zai（base_url / default_model / env_key） |
+| `.env.example` | 密钥配置模板（4 provider key + Server酱 + provider 切换） |
+| `tests/test_config.py` | 更新 env override 测试适配多 provider key |
+| `AGENTS.md` | 新增密钥配置章节 |
+| `README.md` | 快速上手更新为 `.env` 方式 |
+
+### 配置优先级
+
+```
+shell 环境变量  >  .env 文件  >  config.toml  >  代码默认值
+```
+
+### 使用方式
+
+```bash
+# 方式一：.env 文件（推荐，持久化）
+cp .env.example .env
+# 编辑 .env：
+#   ZAI_API_KEY=xxx
+#   AGENT_PROVIDER=zai
+
+# 方式二：环境变量（CI / Docker / cron）
+export ZAI_API_KEY=xxx
+export AGENT_PROVIDER=zai
+```
+
+### 验证
+
+- 518 tests passed，ruff ✅，mypy strict ✅
+
+---
+
+## LLM-CMP — 5 模型横向对比回测 trial_2
+
+**日期**：2026-07-04
+**Commit**：本次提交
+
+### 目标
+
+用 z.ai API 的 5 个 GLM 模型对同一批数据做预测回测，横向对比不同模型的命中率、
+分析风格和 token 消耗。完整记录每条预测的 prompt / LLM 回复 / 方向 / 理由。
+
+### 方法
+
+- **数据**：10 只半导体链股票 × 7 个日期 = 70 条预测
+- **模型**：glm-4.7 / glm-5 / glm-5-turbo / glm-5.1 / glm-5.2
+- **API**：z.ai OpenAI 兼容接口，temperature=0.3
+- **评分**：与规则引擎完全相同的 verify_prediction 逻辑
+- **过程记录**：每条预测完整记录 prompt_sent / llm_response / direction / rationale /
+  tokens / actual_change_pct / status / score
+
+### 结果
+
+| 模型 | **总命中率** | Bullish% | Bearish% | Token | 成本¥ |
+|---|---|---|---|---|---|
+| **glm-5** | **50.0%** | 93.1% | 17.9% | 104K | 0.21 |
+| glm-5.2 | 47.0% | 89.3% | 15.8% | 101K | 0.20 |
+| glm-4.7 | 45.9% | **95.8%** | 13.5% | 180K | 0.36 |
+| glm-5.1 | 44.1% | 92.3% | 14.3% | 107K | 0.21 |
+| glm-5-turbo | 43.9% | 91.7% | 16.7% | 103K | 0.21 |
+
+### 关键发现
+
+1. **所有模型 bullish 命中率 89-96%**，但 bearish 只有 13-18%——系统性偏差源于
+   回测期间半导体板块整体强势上涨
+2. **glm-5 总命中率最高（50%）**，bearish 也最准（17.9%）
+3. **glm-4.7 最详尽**（平均 1,379 token/条），bullish 最准（95.8%），但成本是其他
+   模型的 1.7 倍
+4. **glm-5-turbo 最精炼**（551 token/条），命中率略低但性价比最高
+5. **北方华创（002371）是唯一所有模型都 86% 命中的股票**——趋势性强
+
+### 产出
+
+| 文件 | 内容 |
+|---|---|
+| `/tmp/backtest_multi/run_model.py` | 通用回测脚本（参数化 model name） |
+| `/tmp/backtest_multi/results_{model}.json` × 5 | 每个模型的完整预测记录 |
+| `/tmp/backtest_multi/comparison_summary.json` | 横向对比汇总 |
+| `docs/BACKTEST-REPORT.md` §3.6 | 完整对比报告 |
