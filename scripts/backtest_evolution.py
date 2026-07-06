@@ -503,7 +503,8 @@ def run_backtest(db_path: str = str(AGENT_DB)) -> None:
     print(f"  ✅ 命中: {hits}  ❌ 失误: {missed}  ⏰ 过期: {expired}")
     verifiable = hits + missed
     print(
-        "  命中率: " + format_hit_rate(hits, verifiable)
+        "  命中率: "
+        + format_hit_rate(hits, verifiable)
         + (f"（排除 {expired} 条过期）" if expired else "")
     )
 
@@ -570,7 +571,9 @@ def run_backtest(db_path: str = str(AGENT_DB)) -> None:
             else "  "
         )
         if verifiable:
-            print(f"  {emoji} {label:20s} {hits}/{len(verifiable)} {format_hit_rate(hits, len(verifiable))}")
+            print(
+                f"  {emoji} {label:20s} {hits}/{len(verifiable)} {format_hit_rate(hits, len(verifiable))}"
+            )
 
     # 最准 / 最差
     verified = [

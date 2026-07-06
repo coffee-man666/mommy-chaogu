@@ -278,9 +278,7 @@ def verify(direction: str, entry: float, actual: float | None) -> tuple[str, flo
 
 def _offline_verify(
     predictions: list[dict[str, Any]],
-    series_by_code: dict[
-        str, tuple[list[dict[str, Any]], dict[str, dict[str, Any]], list[str]]
-    ],
+    series_by_code: dict[str, tuple[list[dict[str, Any]], dict[str, dict[str, Any]], list[str]]],
     current_date: str,
     horizon: int,
     tracker: Any,
@@ -331,10 +329,7 @@ def _offline_verify(
                 scope=f"stock:{code}",
                 code=code,
                 name=rec.get("name"),
-                summary=(
-                    f"{actual_date} 验证 {rec['direction']} → {status}"
-                    f" (score={score:.2f})"
-                ),
+                summary=(f"{actual_date} 验证 {rec['direction']} → {status} (score={score:.2f})"),
                 data={
                     "status": status,
                     "score": score,
@@ -607,9 +602,7 @@ def run(args: argparse.Namespace) -> int:
         # 记忆系统：周期性离线验证（每 3 天）+ 提炼（每 5 天）
         if pipeline is not None:
             if day_idx > 0 and day_idx % 3 == 0:
-                _offline_verify(
-                    predictions, series_by_code, date, args.horizon, tracker, episodic
-                )
+                _offline_verify(predictions, series_by_code, date, args.horizon, tracker, episodic)
             if day_idx > 0 and day_idx % 5 == 0:
                 pipeline.consolidate()
 
@@ -670,7 +663,8 @@ def run(args: argparse.Namespace) -> int:
     n_hits = len(hits)
     n_verifiable = len(judged)
     print(
-        "  命中率: " + format_hit_rate(n_hits, n_verifiable)
+        "  命中率: "
+        + format_hit_rate(n_hits, n_verifiable)
         + (f"（排除 {len(expired)} 条过期）" if expired else "")
     )
 
@@ -759,14 +753,15 @@ def run(args: argparse.Namespace) -> int:
             with tracker.session() as s:
                 from sqlalchemy import text as _sa_text
 
-                total_p = s.execute(
-                    _sa_text("SELECT COUNT(*) FROM predictions")
-                ).scalar() or 0
-                linked = s.execute(
-                    _sa_text(
-                        "SELECT COUNT(*) FROM predictions WHERE source_event_id IS NOT NULL"
-                    )
-                ).scalar() or 0
+                total_p = s.execute(_sa_text("SELECT COUNT(*) FROM predictions")).scalar() or 0
+                linked = (
+                    s.execute(
+                        _sa_text(
+                            "SELECT COUNT(*) FROM predictions WHERE source_event_id IS NOT NULL"
+                        )
+                    ).scalar()
+                    or 0
+                )
             if total_p:
                 print(
                     f"  Traceability: {linked}/{total_p} 条预测关联了 episodic event"

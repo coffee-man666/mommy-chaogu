@@ -254,7 +254,11 @@ class AgentReportService:
             # memory_prompt 是完整的 system prompt，我们取其中的记忆段落追加到报告 prompt
             from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
 
-            memory_section = memory_prompt[len(SYSTEM_PROMPT) :] if memory_prompt.startswith(SYSTEM_PROMPT) else ""
+            memory_section = (
+                memory_prompt[len(SYSTEM_PROMPT) :]
+                if memory_prompt.startswith(SYSTEM_PROMPT)
+                else ""
+            )
             if memory_section.strip():
                 base_prompt += f"\n\n--- 记忆上下文 ---{memory_section}"
 

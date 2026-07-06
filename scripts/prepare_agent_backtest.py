@@ -146,7 +146,9 @@ def build_context(
 
     # 前 N 个交易日的 K 线（不包含预测日本身）
     start_idx = max(0, pred_idx - CONTEXT_KLINE_DAYS)
-    context_klines = [k for k in all_klines if start_idx <= all_dates.index(k["date"]) < pred_idx + 1]
+    context_klines = [
+        k for k in all_klines if start_idx <= all_dates.index(k["date"]) < pred_idx + 1
+    ]
     # 包含预测日当天（agent 能看到当天收盘数据）
     context_klines = [k for k in all_klines if k["date"] <= pred_date][-CONTEXT_KLINE_DAYS:]
 
@@ -199,7 +201,9 @@ def run(args: argparse.Namespace) -> int:
     stock_info = get_stock_names(stocks, ref_db)
     print(f"选股：{', '.join(f'{c}({stock_info[c][0]})' for c in stocks)}")
     print(f"预测日期：{', '.join(pred_dates)}")
-    print(f"每只股票 {len(pred_dates)} 个预测点 × {len(stocks)} 只 = {len(pred_dates) * len(stocks)} 条预测")
+    print(
+        f"每只股票 {len(pred_dates)} 个预测点 × {len(stocks)} 只 = {len(pred_dates) * len(stocks)} 条预测"
+    )
 
     data_package: list[dict[str, Any]] = []
     answers: list[dict[str, Any]] = {}
@@ -217,7 +221,9 @@ def run(args: argparse.Namespace) -> int:
             print(f"  ⚠️ {code} 无资金流数据，K 线可用但分析质量会降低")
 
         for pred_date in pred_dates:
-            ctx = build_context(code, name, subcategory, all_klines, all_flows, pred_date, all_dates)
+            ctx = build_context(
+                code, name, subcategory, all_klines, all_flows, pred_date, all_dates
+            )
             if ctx is None:
                 print(f"  ⚠️ {code} 在 {pred_date} 无数据，跳过")
                 continue
@@ -242,7 +248,9 @@ def run(args: argparse.Namespace) -> int:
                 ),
             }
 
-            flow_summary = f"{len(ctx['context_flows'])} 天资金流" if ctx["context_flows"] else "无资金流"
+            flow_summary = (
+                f"{len(ctx['context_flows'])} 天资金流" if ctx["context_flows"] else "无资金流"
+            )
             print(f"  ✓ {code} {name} @ {pred_date} — 入场价 {entry_price} — {flow_summary}")
 
     # 写文件

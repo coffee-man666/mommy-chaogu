@@ -268,7 +268,8 @@ class TestEpisodicContentHash:
 
         engine = create_engine(f"sqlite:///{db}", future=True)
         with engine.begin() as conn:
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 CREATE TABLE episodic_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -286,12 +287,15 @@ class TestEpisodicContentHash:
                     prediction_id INTEGER,
                     created_at TEXT NOT NULL
                 )
-            """))
-            conn.execute(text("""
+            """)
+            )
+            conn.execute(
+                text("""
                 INSERT INTO episodic_events
                     (timestamp, event_type, scope, data, summary, created_at)
                 VALUES ('2026-01-01', 'market_snapshot', 'market', '{}', 'old', '2026-01-01')
-            """))
+            """)
+            )
         engine.dispose()
 
         # 重新打开应自动迁移
@@ -314,11 +318,14 @@ class TestEpisodicCleanupOld:
         from sqlalchemy import text
 
         with episodic.engine.begin() as conn:
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 INSERT INTO episodic_events
                     (timestamp, event_type, scope, data, summary, created_at)
                 VALUES (:ts, 'signal_event', 'market', '{}', 'old signal', :ts)
-            """), {"ts": old_ts})
+            """),
+                {"ts": old_ts},
+            )
 
         deleted = episodic.cleanup_old(days=90)
         assert deleted == 1
@@ -340,16 +347,22 @@ class TestEpisodicCleanupOld:
         old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
         # 100 天前的 analysis_record 不应被 90 天 cleanup 删除
         with episodic.engine.begin() as conn:
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 INSERT INTO episodic_events
                     (timestamp, event_type, scope, data, summary, created_at)
                 VALUES (:ts, 'analysis_record', 'market', '{}', 'old analysis', :ts)
-            """), {"ts": old_ts})
-            conn.execute(text("""
+            """),
+                {"ts": old_ts},
+            )
+            conn.execute(
+                text("""
                 INSERT INTO episodic_events
                     (timestamp, event_type, scope, data, summary, created_at)
                 VALUES (:ts, 'market_snapshot', 'market', '{}', 'old snapshot', :ts)
-            """), {"ts": old_ts})
+            """),
+                {"ts": old_ts},
+            )
 
         deleted = episodic.cleanup_old(days=90)
         assert deleted == 0
@@ -363,11 +376,14 @@ class TestEpisodicCleanupOld:
 
         old_ts = (datetime.now(UTC) - timedelta(days=200)).isoformat()
         with episodic.engine.begin() as conn:
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 INSERT INTO episodic_events
                     (timestamp, event_type, scope, data, summary, created_at)
                 VALUES (:ts, 'analysis_record', 'market', '{}', 'very old', :ts)
-            """), {"ts": old_ts})
+            """),
+                {"ts": old_ts},
+            )
 
         deleted = episodic.cleanup_old(days=90)
         assert deleted == 1
@@ -386,11 +402,14 @@ class TestEpisodicCleanupOld:
         old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
         with episodic.engine.begin() as conn:
             for i in range(3):
-                conn.execute(text("""
+                conn.execute(
+                    text("""
                     INSERT INTO episodic_events
                         (timestamp, event_type, scope, data, summary, created_at)
                     VALUES (:ts, 'signal_event', 'market', '{}', :s, :ts)
-                """), {"ts": old_ts, "s": f"old-{i}"})
+                """),
+                    {"ts": old_ts, "s": f"old-{i}"},
+                )
 
         deleted = episodic.cleanup_old(days=90)
         assert deleted == 3

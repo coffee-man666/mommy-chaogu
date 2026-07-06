@@ -88,9 +88,7 @@ def format_hit_rate(hits: int, total: int) -> str:
     rate = hits / total * 100
     low, high = wilson_ci(hits, total)
     p_str = _format_pvalue(binomial_test(hits, total))
-    return (
-        f"{rate:.1f}% (Wilson 95% CI: [{low * 100:.1f}%, {high * 100:.1f}%], {p_str})"
-    )
+    return f"{rate:.1f}% (Wilson 95% CI: [{low * 100:.1f}%, {high * 100:.1f}%], {p_str})"
 
 
 def _price_of(pred: dict[str, Any], *keys: str) -> float | None:

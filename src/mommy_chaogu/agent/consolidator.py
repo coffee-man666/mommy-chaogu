@@ -325,9 +325,7 @@ class MemoryConsolidator:
 
         summary_parts: list[str] = []
         if predictions_reviewed > 0:
-            summary_parts.append(
-                f"本周复盘 {predictions_reviewed} 条预测，命中率 {hit_rate:.0%}。"
-            )
+            summary_parts.append(f"本周复盘 {predictions_reviewed} 条预测，命中率 {hit_rate:.0%}。")
         if knowledge:
             summary_parts.append(f"沉淀 {len(knowledge)} 条知识。")
         summary_text = " ".join(summary_parts) or "本周无足够数据生成复盘。"

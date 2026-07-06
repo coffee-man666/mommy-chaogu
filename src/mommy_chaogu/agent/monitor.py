@@ -189,7 +189,11 @@ class AgentMonitor:
             memory_prompt = pipeline.build_prompt(query="盘中异动扫描")
             from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
 
-            memory_section = memory_prompt[len(SYSTEM_PROMPT) :] if memory_prompt.startswith(SYSTEM_PROMPT) else ""
+            memory_section = (
+                memory_prompt[len(SYSTEM_PROMPT) :]
+                if memory_prompt.startswith(SYSTEM_PROMPT)
+                else ""
+            )
             system_content = "你是一个 A 股盘中异动扫描器。只返回 JSON。" + memory_section
         else:
             system_content = "你是一个 A 股盘中异动扫描器。只返回 JSON。"

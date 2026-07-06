@@ -152,9 +152,7 @@ class AgentService:
         """
         # 动态构建 system prompt（注入历史事件 + 判断回顾 + 知识）
         if self._pipeline:
-            system_prompt = system_override or self._pipeline.build_prompt(
-                query=user_message
-            )
+            system_prompt = system_override or self._pipeline.build_prompt(query=user_message)
         else:
             system_prompt = system_override or SYSTEM_PROMPT
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]

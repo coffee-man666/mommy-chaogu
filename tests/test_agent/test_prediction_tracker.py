@@ -506,7 +506,9 @@ class TestPredictionCleanupOld:
             tracker.update_status(pid, status="hit", actual_price=100.0)
             with tracker.engine.begin() as conn:
                 conn.execute(
-                    text("UPDATE predictions SET created_at = :ts, verified_at = :ts WHERE id = :id"),
+                    text(
+                        "UPDATE predictions SET created_at = :ts, verified_at = :ts WHERE id = :id"
+                    ),
                     {"ts": old_ts, "id": pid},
                 )
 
@@ -516,14 +518,12 @@ class TestPredictionCleanupOld:
 
 class TestTimeframeUnification:
     """timeframe 映射统一：prediction_tracker 和 verify_engine 用同一套天数。"""
+
     def test_timeframe_mapping_is_unified(self) -> None:
         """两个模块引用同一个 _TIMEFRAME_DAYS 常量。"""
         from mommy_chaogu.agent import prediction_tracker, verify_engine
 
-        assert (
-            prediction_tracker._TIMEFRAME_DAYS
-            is verify_engine._TIMEFRAME_DAYS
-        )
+        assert prediction_tracker._TIMEFRAME_DAYS is verify_engine._TIMEFRAME_DAYS
 
     def test_timeframe_mapping_values(self) -> None:
         """统一映射为日历天。"""
@@ -557,14 +557,9 @@ class TestTimeframeUnification:
         # +4 天：未到期
         assert _is_expired(created_at, "5d", now=now + timedelta(days=4)) is False
         # +5 天 +1 秒：已到期
-        assert (
-            _is_expired(created_at, "5d", now=now + timedelta(days=5, seconds=1))
-            is True
-        )
+        assert _is_expired(created_at, "5d", now=now + timedelta(days=5, seconds=1)) is True
 
-    def test_compute_verify_after_5d_is_5_days(
-        self, tracker: PredictionTracker
-    ) -> None:
+    def test_compute_verify_after_5d_is_5_days(self, tracker: PredictionTracker) -> None:
         """create("5d") 的 verify_after 距 created_at 正好 5 天。"""
         before = datetime.now(UTC)
         pid = tracker.create(

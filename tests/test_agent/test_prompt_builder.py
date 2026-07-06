@@ -159,9 +159,7 @@ class TestBuildPromptWithInsight:
         assert knowledge_pos != -1
         assert insight_pos < knowledge_pos
 
-    def test_no_insight_falls_back_to_knowledge_only(
-        self, semantic: SemanticMemory
-    ) -> None:
+    def test_no_insight_falls_back_to_knowledge_only(self, semantic: SemanticMemory) -> None:
         """semantic 有知识但无 insight → 只注入已有认知，不报错。"""
         semantic.upsert("sector_thesis", "sector:创新药", "创新药上行")
 
