@@ -63,6 +63,10 @@ class ToolContext:
     watchlist_store: WatchlistStore | None = None
     portfolio_store: PortfolioStore | None = None
     db_path: Path | None = None
+    # LLM / embedding client（OpenAI 兼容），记忆查询工具需要。
+    # 为 None 时记忆工具降级为无 LLM 模式。
+    client: Any | None = None
+    model: str | None = None
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], str]
@@ -386,6 +390,71 @@ _TOOL_DEFINITIONS: list[ToolDef] = [
                 },
             },
             "required": ["action"],
+        },
+    ),
+    ToolDef(
+        name="search_similar_events",
+        description=(
+            "语义搜索历史事件记忆。用向量检索找与当前情况相似的历史事件，"
+            "如'半导体暴跌'或'茅台大涨'。用于复盘'上次类似情况发生了什么'。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "搜索文本，如 '半导体暴跌，主力大幅流出'",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 5",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    ToolDef(
+        name="get_prediction_history",
+        description=(
+            "查询 agent 的历史预测记录及命中状态（hit/missed/pending）。"
+            "用于回顾'我之前对某只股票的判断准不准'。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "股票代码（可选，按个股过滤），如 '600519'",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["hit", "missed", "pending"],
+                    "description": "按状态过滤（可选）",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认 10",
+                    "default": 10,
+                },
+            },
+        },
+    ),
+    ToolDef(
+        name="get_market_narrative",
+        description=(
+            "生成过去 N 天的市场脉络叙述（转折点 → 因果链 → 当前状态）。"
+            "基于情景记忆中的历史事件，用 LLM 生成复盘分析。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "回顾天数，默认 7",
+                    "default": 7,
+                }
+            },
         },
     ),
 ]
@@ -737,6 +806,154 @@ def _handle_manage_alert(ctx: ToolContext, args: dict[str, Any]) -> str:
     return _json({"error": f"未知 action: {action!r}"})
 
 
+def _handle_search_similar_events(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """语义搜索历史事件。embedding client 不可用时降级为关键词搜索。"""
+    if ctx.db_path is None:
+        return _json({"error": "记忆系统未配置（db_path is None）"})
+
+    query = args["query"]
+    limit = args.get("limit", 5)
+
+    # lazy import 避免循环依赖
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(ctx.db_path)
+
+    # 有 embedding client → 向量语义搜索
+    if ctx.client is not None:
+        from mommy_chaogu.agent.vector_search import VectorSearch
+
+        model = ctx.model or "text-embedding-3-small"
+        try:
+            vs = VectorSearch(episodic, ctx.client, model=model)
+            results = vs.search_similar(query, top_k=limit)
+            return _json(
+                [
+                    {
+                        "id": r.get("id"),
+                        "summary": r.get("summary"),
+                        "timestamp": r.get("timestamp"),
+                        "score": r.get("distance"),
+                        "scope": r.get("scope"),
+                    }
+                    for r in results
+                ]
+            )
+        except Exception as e:
+            _log.warning("search_similar_events: 向量搜索失败，降级关键词搜索: %s", e)
+
+    # 降级：拉最近事件做关键词过滤
+    events = episodic.recent(days=90, limit=limit * 10)
+    # 中文分词困难，用 2 字滑窗提取关键词
+    cleaned = query.replace("，", " ").strip()
+    tokens = cleaned.split()
+    keywords: list[str] = []
+    for token in tokens:
+        if len(token) >= 2:
+            keywords.extend(token[i : i + 2] for i in range(len(token) - 1))
+        else:
+            keywords.append(token)
+    if keywords:
+        filtered = [
+            e
+            for e in events
+            if any(kw in (e.get("summary") or "") or kw in (e.get("name") or "") for kw in keywords)
+        ]
+    else:
+        filtered = events
+    return _json(
+        [
+            {
+                "id": e.get("id"),
+                "summary": e.get("summary"),
+                "timestamp": e.get("timestamp"),
+                "score": None,
+                "scope": e.get("scope"),
+                "degraded": True,
+            }
+            for e in filtered[:limit]
+        ]
+    )
+
+
+def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """查询预测历史，可选按 code / status 过滤。"""
+    if ctx.db_path is None:
+        return _json({"error": "记忆系统未配置（db_path is None）"})
+
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    code = args.get("code")
+    status = args.get("status")
+    limit = args.get("limit", 10)
+
+    tracker = PredictionTracker(ctx.db_path)
+    preds = tracker.all(limit=limit, status=status)
+
+    # all() 不支持 code 过滤，在 Python 层过滤
+    if code is not None:
+        preds = [p for p in preds if p.get("code") == code]
+
+    return _json(
+        [
+            {
+                "id": p.get("id"),
+                "code": p.get("code"),
+                "name": p.get("name"),
+                "prediction": p.get("prediction"),
+                "direction": p.get("direction"),
+                "status": p.get("status"),
+                "score": p.get("accuracy_score"),
+                "created_at": p.get("created_at"),
+                "verified_at": p.get("verified_at"),
+            }
+            for p in preds
+        ]
+    )
+
+
+def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """生成市场脉络叙述。LLM 不可用时降级为返回事件列表。"""
+    if ctx.db_path is None:
+        return _json({"error": "记忆系统未配置（db_path is None）"})
+
+    days = args.get("days", 7)
+
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(ctx.db_path)
+
+    # 有 LLM client → 生成叙事
+    if ctx.client is not None and ctx.model is not None:
+        from mommy_chaogu.agent.narrative import MarketNarrative
+
+        try:
+            narrative = MarketNarrative(episodic, ctx.client, model=ctx.model)
+            text = narrative.generate_narrative(days=days)
+            return _json({"narrative": text, "days": days})
+        except Exception as e:
+            _log.warning("get_market_narrative: LLM 生成失败，降级事件列表: %s", e)
+
+    # 降级：返回最近事件列表
+    events = episodic.recent(days=days, limit=50)
+    return _json(
+        {
+            "degraded": True,
+            "days": days,
+            "events": [
+                {
+                    "id": e.get("id"),
+                    "timestamp": e.get("timestamp"),
+                    "event_type": e.get("event_type"),
+                    "scope": e.get("scope"),
+                    "summary": e.get("summary"),
+                }
+                for e in events
+            ],
+        }
+    )
+
+
 # ---------- 注册表 ----------
 
 
@@ -759,6 +976,9 @@ _HANDLERS: dict[str, ToolHandler] = {
     "backfill_history": _handle_backfill_history,
     "manage_alert": _handle_manage_alert,
     "get_portfolio_analysis": _handle_get_portfolio_analysis,
+    "search_similar_events": _handle_search_similar_events,
+    "get_prediction_history": _handle_get_prediction_history,
+    "get_market_narrative": _handle_get_market_narrative,
 }
 
 _TOOL_MAP: dict[str, ToolDef] = {td.name: td for td in _TOOL_DEFINITIONS}

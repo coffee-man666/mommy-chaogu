@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mommy_chaogu.agent.memory import ConversationMemory
+from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
@@ -40,6 +41,11 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "base_url": "https://api.moonshot.cn/v1",
         "default_model": "moonshot-v1-8k",
         "env_key": "MOONSHOT_API_KEY",
+    },
+    "zai": {
+        "base_url": "https://api.z.ai/api/coding/paas/v4",
+        "default_model": "glm-4.7",
+        "env_key": "ZAI_API_KEY",
     },
 }
 
@@ -79,9 +85,32 @@ class AgentService:
         provider: str | None = None,
         api_key: str | None = None,
         max_tool_calls: int = 10,
+        episodic: Any | None = None,
+        tracker: Any | None = None,
+        semantic: Any | None = None,
+        vector_search: Any | None = None,
     ) -> None:
         self._tools = ToolRegistry(ctx)
         self._max_tool_calls = max_tool_calls
+        self._episodic = episodic
+        self._tracker = tracker
+        self._semantic = semantic
+        self._vector_search = vector_search
+        self._ctx = ctx
+
+        # 记忆流水线：当 episodic 和 tracker 同时就绪时启用，封装
+        # prompt 构建 + 事实抽取 + 持久化逻辑
+        if episodic is not None and tracker is not None:
+            self._pipeline: MemoryPipeline | None = MemoryPipeline(
+                episodic=episodic,
+                tracker=tracker,
+                semantic=semantic,
+                vector_search=vector_search,
+                client=self._client,
+                model=self._model,
+            )
+        else:
+            self._pipeline = None
 
         # 解析 provider 配置
         provider = provider or os.environ.get("AGENT_PROVIDER", "deepseek")
@@ -116,8 +145,18 @@ class AgentService:
 
         如果传入 *memory*，会先从中加载最近对话作为上下文，
         完成后将本轮 user / assistant 消息持久化到 memory。
+
+        如果配置了 *episodic* + *tracker*，会通过 MemoryPipeline：
+        1. 用 build_prompt() 注入历史事件和判断回顾
+        2. 对话结束后提取结构化 observations + predictions（record_analysis）
         """
-        system_prompt = system_override or SYSTEM_PROMPT
+        # 动态构建 system prompt（注入历史事件 + 判断回顾 + 知识）
+        if self._pipeline:
+            system_prompt = system_override or self._pipeline.build_prompt(
+                query=user_message
+            )
+        else:
+            system_prompt = system_override or SYSTEM_PROMPT
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
         if memory is not None:
@@ -135,6 +174,17 @@ class AgentService:
         if memory is not None:
             memory.add("user", user_message)
             memory.add("assistant", resp.text)
+
+        # 后置 hook：事实抽取（失败不 block 主流程）
+        if self._pipeline:
+            try:
+                self._pipeline.record_analysis(
+                    user_message,
+                    resp.text,
+                    adapter=self._ctx.adapter if self._ctx else None,
+                )
+            except Exception as e:
+                _log.warning("pipeline record_analysis failed: %s", e)
 
         return resp
 

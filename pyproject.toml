@@ -20,6 +20,8 @@ dependencies = [
     "jinja2>=3.1.6",
     "openai>=1.0",
     "mcp>=1.28.1",
+    "sqlite-vec>=0.1.9",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]

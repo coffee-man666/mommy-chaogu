@@ -58,6 +58,7 @@
 | **微信推送** | Server酱³，阈值过滤 + JSON 去重 |
 | **Web UI** | Vite + Vue 3 + FastAPI，手机访问 |
 | **AI Agent** | 18 个 function-calling 工具 + MCP Server + 盘中扫描 |
+| **自进化记忆** | 情景记忆 + 预测验证闭环 + 语义知识 + 向量检索 |
 | **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分 |
 | **OpenClaw cron** | 4 个自动化 jobs（盘前 / 盘中 / 收盘 / 周报）|
 | **质量门** | ruff + mypy --strict + 300+ 测试 + CI |
@@ -95,7 +96,10 @@ uv run mommy-flows pull --pool semicon --days 30
 uv run mommy-report render --chain humanoid_robot
 
 # 7. AI 行情助手（需要 LLM API key）
-export DEEPSEEK_API_KEY="sk-xxx"     # 或 OPENAI_API_KEY / MOONSHOT_API_KEY
+#    方式一：.env 文件持久化（推荐）
+cp .env.example .env       # 然后编辑 .env 填入 key
+#    方式二：环境变量（适合 cron / Docker）
+export ZAI_API_KEY="xxx"   # 或 DEEPSEEK_API_KEY / OPENAI_API_KEY / MOONSHOT_API_KEY
 uv run mommy-agent chat              # 交互式对话
 uv run mommy-agent report --board BK1106 --board-name "创新药"  # 板块分析日报
 uv run mommy-agent tools             # 列出所有工具
@@ -114,7 +118,31 @@ uv run mommy-flows backtest --rule flow_in_spike --days 30  # 回测指定规则
 
 ---
 
-## 🏗️ 架构
+## 📂 数据库布局
+
+项目使用 4 个按职责分离的 SQLite 数据库：
+
+| 数据库 | 用途 |
+|---|---|
+| `data/market.db` | 行情缓存 + 历史 K 线 + 资金流 |
+| `data/portfolio.db` | 自选股 + 持仓 + 告警 |
+| `data/agent.db` | 记忆系统（对话 + 事件 + 预测 + 知识 + 向量） |
+| `data/reference.db` | 半导体产业链 + 业绩数据 |
+
+路径可通过环境变量覆盖（`MOMMY_MARKET_DB` / `MOMMY_PORTFOLIO_DB` 等），定义在 `src/mommy_chaogu/db_paths.py`。
+
+### ⚠️ 从旧版本升级
+
+如果项目中有旧版 `data/watchlist.db`（所有表混在一个文件里），运行迁移脚本：
+
+```bash
+uv run python scripts/migrate_db_layout.py --check   # 先检查
+uv run python scripts/migrate_db_layout.py            # 执行迁移
+```
+
+迁移后旧文件会重命名为 `.bak`，数据自动分配到新的 4 个数据库。
+
+---
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -252,7 +280,7 @@ mommy-chaogu
 ├── mommy-semicon      # 半导体产业链查询
 ├── mommy-earnings     # 财报前瞻 vs 实际 比对
 ├── mommy-web          # Web 服务（手机 UI + WS 推送）
-├── mommy-agent        # AI 行情助手（chat / report / scan / monitor）
+├── mommy-agent        # AI 行情助手（chat / report / scan / monitor / verify / predictions / events / remember / narrative / consolidate / knowledge / search）
 ├── mommy-mcp          # MCP Server（stdio 协议）
 └── mommy-chaogu       # 统一入口（config init）
 ```
@@ -351,6 +379,8 @@ uv run mommy-web --port 8765
 | [`docs/DESIGN.md`](docs/DESIGN.md) | 架构 + 5 份 ADR |
 | [`docs/LEDGER.md`](docs/LEDGER.md) | commit 级别时间线 |
 | **[`docs/EARNINGS-HANDBOOK.md`](docs/EARNINGS-HANDBOOK.md)** | 🆕 2026 中报窗口实战手册 |
+| **[`docs/MEMORY-SYSTEM-PLAN.md`](docs/MEMORY-SYSTEM-PLAN.md)** | 🆕 自进化记忆系统设计（四层架构 + 预测验证闭环）|
+| **[`docs/BACKTEST-REPORT.md`](docs/BACKTEST-REPORT.md)** | 🆕 回测报告（规则引擎 + LLM agent 方法学与结果）|
 | [`docs/KLINE-SPEC.md`](docs/KLINE-SPEC.md) | K 线组件规范 |
 | [`docs/DISCUSSION-NOTES.md`](docs/DISCUSSION-NOTES.md) | 历史决策上下文 |
 
@@ -427,19 +457,24 @@ uv run mypy --strict src        # type check
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~22,000+ 行（src 15,000 + tests 4,000 + web 3,000）|
-| 测试 | **300+ passed**（离线 + agent + earnings + infra）|
+| 代码量 | ~36,000+ 行（src 23,000 + tests 9,000 + web 4,000）|
+| 测试 | **518 passed**（离线 + agent + earnings + infra + memory-system + token-tracker）|
 | ruff | ✅ All checks passed |
 | mypy --strict | ✅ 0 errors |
 | CI | ✅ GitHub Actions（ruff + mypy + pytest） |
 | 数据源 | 3（efinance / tencent / cninfo）+ 东财新闻/基本面/龙虎榜直连 |
-| CLI 子应用 | 11 / 子命令 35+ |
+| CLI 子应用 | 11 / 子命令 40+（含 8 个记忆系统子命令） |
 | 业务规则 | 7 signals + 4 flows ratio + 自定义告警 + earnings verdict |
-| 数据库表 | 15+（含 agent 记忆 + 推送去重 + earnings）|
+| 数据库 | **4 库**（market / portfolio / agent / reference，环境变量可覆盖）|
+| 数据库表 | 20+（含 5 张记忆系统表 + 回测数据 + earnings） |
 | Web 端点 | 20+ REST + 3 WebSocket |
 | 推送渠道 | Server酱³（微信） |
 | AI 工具 | **18** 个 function-calling tools |
-| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi |
+| 记忆系统 | **5 层**（情景/预测验证/语义知识/向量检索/工作记忆） |
+| Token Tracker | ✅ 按 provider/model 聚合 token 用量 + 成本估算 |
+| 回测 | ✅ 规则引擎（154 条，53%）+ Agent 原生（25 条，47%）+ **5 模型横向对比**（350 条，glm-5 最佳 50%）|
+| LLM Provider | DeepSeek（默认）/ OpenAI / Kimi / **z.ai（glm-4.7/5/5-turbo/5.1/5.2）**|
+| 密钥配置 | `.env` 文件持久化 + 环境变量（4 provider 自动识别）|
 | MCP Server | ✅ stdio 协议，任意 MCP client 可连接 |
 
 ---

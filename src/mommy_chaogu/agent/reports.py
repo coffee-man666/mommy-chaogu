@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
+from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 from mommy_chaogu.agent.service import AgentService
 
 _log = logging.getLogger(__name__)
@@ -28,8 +30,11 @@ class AgentReportService:
         print(text)
     """
 
-    def __init__(self, agent: AgentService) -> None:
+    def __init__(self, agent: AgentService, db_path: Path | None = None) -> None:
         self._agent = agent
+        self._memory: EpisodicMemory | None = None
+        if db_path is not None:
+            self._memory = EpisodicMemory(db_path)
 
     def generate_daily_report(
         self,
@@ -68,6 +73,8 @@ class AgentReportService:
                 len(resp.tool_calls),
                 resp.rounds,
             )
+
+        self._record_analysis(data, board_name, pool_name)
 
         return resp.text
 
@@ -185,11 +192,70 @@ class AgentReportService:
             "top_outflow_30d": [_fmt(s) for s in top_30d_out],
         }
 
+    def _build_analysis_summary(self, data: dict[str, Any], is_sector: bool) -> str:
+        """从结构化数据构造 ≤200 字的关键结论摘要。"""
+        if is_sector:
+            name = data.get("board_name", "")
+            avg = data.get("avg_change_pct", 0)
+            net = data.get("total_main_net_yi", 0)
+            up = data.get("up_count", 0)
+            down = data.get("down_count", 0)
+            return f"{name} 均涨跌{avg}%，主力净流{net}亿，涨{up}只跌{down}只"
+        # pool 模式
+        pool = data.get("pool_name", "")
+        top_in = data.get("top_inflow_today", [])
+        top_name = top_in[0]["name"] if top_in else "无"
+        top_amt = top_in[0].get("main_net_yi", 0) if top_in else 0
+        return f"{pool} 主力净流入榜首：{top_name}({top_amt}亿)"
+
+    def _record_analysis(
+        self,
+        data: dict[str, Any],
+        board_name: str | None,
+        pool_name: str,
+    ) -> None:
+        """将关键分析写入 episodic memory（db_path 为 None 时跳过）。"""
+        if self._memory is None:
+            return
+
+        is_sector = bool(board_name or data.get("board_name"))
+        if is_sector:
+            name = board_name or data.get("board_name", "")
+            scope = f"sector:{name}"
+        else:
+            scope = "market"
+
+        summary = self._build_analysis_summary(data, is_sector)
+        try:
+            self._memory.write(
+                event_type="analysis_record",
+                scope=scope,
+                summary=summary[:200],
+                data=data,
+                source="agent_report",
+                trade_date=datetime.now().strftime("%Y-%m-%d"),
+            )
+        except Exception:
+            _log.exception("write analysis_record to episodic memory failed")
+
     def _build_prompt(self, data: dict[str, Any], title: str) -> str:
-        """构造给 agent 的数据 prompt。"""
+        """构造给 agent 的数据 prompt。注入记忆上下文（已有认知 + 近期事件）。"""
         import json
 
         from mommy_chaogu.agent.prompt import REPORT_PROMPT_TEMPLATE
 
         data_str = json.dumps(data, ensure_ascii=False, indent=2)
-        return REPORT_PROMPT_TEMPLATE.format(data=data_str)
+        base_prompt = REPORT_PROMPT_TEMPLATE.format(data=data_str)
+
+        # 注入记忆上下文（如果 agent 有 pipeline）
+        pipeline = getattr(self._agent, "_pipeline", None)
+        if pipeline is not None:
+            memory_prompt = pipeline.build_prompt(query=title)
+            # memory_prompt 是完整的 system prompt，我们取其中的记忆段落追加到报告 prompt
+            from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
+
+            memory_section = memory_prompt[len(SYSTEM_PROMPT) :] if memory_prompt.startswith(SYSTEM_PROMPT) else ""
+            if memory_section.strip():
+                base_prompt += f"\n\n--- 记忆上下文 ---{memory_section}"
+
+        return base_prompt

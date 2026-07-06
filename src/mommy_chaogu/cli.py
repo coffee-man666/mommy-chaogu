@@ -28,6 +28,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import NoReturn
 
+# ---------- 默认路径 ----------
+from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 from mommy_chaogu.market_data import EfinanceAdapter
 from mommy_chaogu.monitor import Monitor
 from mommy_chaogu.semicon.store import Board, ChainPosition, Subcategory
@@ -39,15 +41,14 @@ from mommy_chaogu.watchlist.store import (
     StockEntryNotFoundError,
 )
 
-# ---------- 默认路径 ----------
-
-DEFAULT_DB_PATH = Path("data/watchlist.db")
+DEFAULT_DB_PATH = PORTFOLIO_DB  # 自选股 + 持仓
 DEFAULT_LOG_PATH = Path("data/monitor.log")
 DEFAULT_SIGNALS_LOG_PATH = Path("data/signals.log")
-DEFAULT_CACHE_DB_PATH = Path("data/watchlist.db")  # cache 与 watchlist 共用一份 db
-DEFAULT_SEMICON_DB_PATH = Path("data/semicon.db")  # 半导体产业链独立 db
-DEFAULT_FLOWS_SEMICON_DB_PATH = Path("data/semicon.db")  # flows 拉哪只从哪取
-DEFAULT_FLOWS_DB_PATH = Path("data/watchlist.db")  # 资金流缓存落到哪（复用 cache 表）
+DEFAULT_CACHE_DB_PATH = MARKET_DB  # 行情缓存
+DEFAULT_SEMICON_DB_PATH = REFERENCE_DB  # 半导体产业链
+DEFAULT_FLOWS_SEMICON_DB_PATH = REFERENCE_DB  # flows 拉哪只从哪取
+DEFAULT_FLOWS_DB_PATH = MARKET_DB  # 资金流缓存
+DEFAULT_AGENT_DB_PATH = AGENT_DB  # 记忆系统
 DEFAULT_FLOWS_MONITOR_LOG_PATH = Path("data/flows_monitor.log")  # monitor 信号日志
 DEFAULT_FLOWS_REPORT_DIR = Path("data/")  # 收盘日报输出目录
 
@@ -1516,39 +1517,54 @@ def main_report() -> NoReturn:
 
 
 def _build_agent_ctx(args: argparse.Namespace) -> object:
-    """构造 AgentService 的 ToolContext。"""
+    """构造 AgentService 的 ToolContext。
+
+    行情数据用 MARKET_DB，用户数据用 PORTFOLIO_DB。
+    """
     from mommy_chaogu.agent.tools import ToolContext
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
 
-    db_path = Path(args.db)
+    market_db = MARKET_DB
+    portfolio_db = PORTFOLIO_DB
+
     base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
-    store = CacheStore(db_path)
+    store = CacheStore(market_db)
     adapter = CachedMarketDataAdapter(base, store)
 
-    watchlist_store = WatchlistStore(db_path)
-    portfolio_store = PortfolioStore(db_path)
+    watchlist_store = WatchlistStore(portfolio_db)
+    portfolio_store = PortfolioStore(portfolio_db)
 
     return ToolContext(
         adapter=adapter,
         watchlist_store=watchlist_store,
         portfolio_store=portfolio_store,
-        db_path=db_path,
+        db_path=AGENT_DB,
     )
 
 
 def cmd_agent_chat(args: argparse.Namespace) -> int:
     """交互式对话。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
     from mommy_chaogu.agent.memory import ConversationMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
     from mommy_chaogu.agent.service import AgentService
 
     ctx = _build_agent_ctx(args)
+    episodic = EpisodicMemory(Path(args.db))
+    tracker = PredictionTracker(Path(args.db))
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    semantic = SemanticMemory(Path(args.db))
     agent = AgentService(
         ctx,  # type: ignore[arg-type]
         model=args.model,
         provider=args.provider,
+        episodic=episodic,
+        tracker=tracker,
+        semantic=semantic,
     )
     memory = ConversationMemory(Path(args.db))
 
@@ -1588,6 +1604,7 @@ def cmd_agent_report(args: argparse.Namespace) -> int:
     """生成收盘日报。"""
     from mommy_chaogu.agent.reports import AgentReportService
     from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.db_paths import AGENT_DB
 
     ctx = _build_agent_ctx(args)
     agent = AgentService(
@@ -1595,7 +1612,7 @@ def cmd_agent_report(args: argparse.Namespace) -> int:
         model=args.model,
         provider=args.provider,
     )
-    report_svc = AgentReportService(agent)
+    report_svc = AgentReportService(agent, db_path=AGENT_DB)
 
     print(f"📊 生成收盘日报 ({args.board or args.pool})...")
     print("─" * 60)
@@ -1655,6 +1672,7 @@ def cmd_agent_scan(args: argparse.Namespace) -> int:
     """单次 agent 扫描。"""
     from mommy_chaogu.agent.monitor import AgentMonitor
     from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.db_paths import AGENT_DB
 
     ctx = _build_agent_ctx(args)
     agent = AgentService(
@@ -1670,6 +1688,7 @@ def cmd_agent_scan(args: argparse.Namespace) -> int:
         adapter=ctx.adapter,  # type: ignore[attr-defined]
         watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
         notifier=notifier,
+        db_path=AGENT_DB,
     )
 
     print("🔍 Agent 盘中扫描...")
@@ -1683,6 +1702,7 @@ def cmd_agent_monitor(args: argparse.Namespace) -> int:
     """持续 agent 监控。"""
     from mommy_chaogu.agent.monitor import AgentMonitor
     from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.db_paths import AGENT_DB
 
     ctx = _build_agent_ctx(args)
     agent = AgentService(
@@ -1699,6 +1719,7 @@ def cmd_agent_monitor(args: argparse.Namespace) -> int:
         watchlist_store=ctx.watchlist_store,  # type: ignore[attr-defined]
         notifier=notifier,
         interval_seconds=args.interval,
+        db_path=AGENT_DB,
     )
 
     print(f"🤖 Agent 监控启动（每 {args.interval:.0f}s 扫描一次）")
@@ -1736,13 +1757,342 @@ def _build_notifier(args: argparse.Namespace) -> object:
     )
 
 
+def cmd_agent_verify(args: argparse.Namespace) -> int:
+    """验证所有到期预测。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.verify_engine import verify_pending
+    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.market_data import (
+        EfinanceAdapter,
+        FallbackAdapter,
+        TencentAdapter,
+    )
+
+    db_path = Path(args.db)
+    tracker = PredictionTracker(db_path)
+    episodic = EpisodicMemory(db_path)
+
+    store = CacheStore(db_path)
+    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    adapter = CachedMarketDataAdapter(base, store)
+
+    print("🔍 验证到期预测...")
+    print("─" * 60)
+
+    results = verify_pending(
+        tracker=tracker,
+        episodic=episodic,
+        adapter=adapter,
+        cache_store=store,
+    )
+
+    print(f"验证 {results['total']} 条预测")
+    print(f"  ✅ hit: {results['hit']}")
+    print(f"  ❌ missed: {results['missed']}")
+    print(f"  ⚠️  data_unavailable: {results['data_unavailable']}")
+    print(f"  ⏰ expired: {results['expired']}")
+
+    if results["hit"] + results["missed"] > 0:
+        rate = results["hit"] / (results["hit"] + results["missed"]) * 100
+        print(f"\n命中率: {rate:.0f}%")
+
+    return 0
+
+
+def cmd_agent_predictions(args: argparse.Namespace) -> int:
+    """查看预测列表。"""
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    tracker = PredictionTracker(Path(args.db))
+    preds = tracker.all(limit=args.limit, status=args.status)
+
+    if not preds:
+        print("（暂无预测）")
+        return 0
+
+    print(f"{'状态':12s} {'代码':8s} {'名称':10s} {'预测':30s} {'得分':>4s}")
+    print("─" * 70)
+
+    for p in preds:
+        status = p["status"]
+        code = p["code"]
+        name = (p.get("name") or "")[:10]
+        pred_text = (p.get("prediction") or "")[:30]
+        score = p.get("accuracy_score")
+        score_str = f"{score:.1f}" if score is not None else "  -"
+        print(f"{status:12s} {code:8s} {name:10s} {pred_text:30s} {score_str:>4s}")
+
+    stats = tracker.stats()
+    print(
+        f"\n总计: {stats['total']}  pending: {stats['pending']}  "
+        f"hit: {stats['hit']}  missed: {stats['missed']}  expired: {stats['expired']}"
+    )
+
+    return 0
+
+
+def cmd_agent_events(args: argparse.Namespace) -> int:
+    """查看情景记忆事件。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(Path(args.db))
+    events = episodic.recent(days=args.days, scope=args.scope, limit=args.limit)
+
+    if args.type:
+        events = [e for e in events if e.get("event_type") == args.type]
+
+    if not events:
+        print("（暂无事件）")
+        return 0
+
+    for e in events:
+        ts = e.get("timestamp", "")[:16]
+        etype = e.get("event_type", "")
+        summary = e.get("summary", "")
+        print(f"[{ts}] [{etype:16s}] {summary}")
+
+    return 0
+
+
+def cmd_agent_remember(args: argparse.Namespace) -> int:
+    """手动写入事件。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(Path(args.db))
+    summary = args.reason or f"{args.action or '记录'} {args.code}"
+
+    eid = episodic.write(
+        event_type=args.type,
+        scope=f"stock:{args.code}",
+        code=args.code,
+        name=args.name,
+        summary=summary,
+        data={
+            "action": args.action,
+            "price": args.price,
+            "shares": args.shares,
+        },
+        source="user",
+    )
+
+    print(f"✅ 已记录事件 #{eid}: {summary}")
+    return 0
+
+
+def cmd_agent_narrative(args: argparse.Namespace) -> int:
+    """生成市场脉络叙述。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.narrative import MarketNarrative
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(ctx, model=args.model, provider=args.provider)  # type: ignore[arg-type]
+    episodic = EpisodicMemory(Path(args.db))
+
+    nar = MarketNarrative(episodic, agent._client, agent._model)  # type: ignore[attr-defined]
+
+    if args.changes:
+        print("🔍 检测最近变化...")
+        print("─" * 60)
+        text = nar.detect_changes(scope=args.scope or "market")
+    else:
+        print(f"📖 生成过去 {args.days} 天的 {args.scope or 'market'} 脉络...")
+        print("─" * 60)
+        text = nar.generate_narrative(scope=args.scope or "market", days=args.days)
+
+    print(text)
+
+    if args.push:
+        try:
+            import os
+
+            key = os.environ.get("SERVER_CHAN_KEY", "")
+            if not key:
+                print("\n⚠️  未设置 SERVER_CHAN_KEY，跳过推送")
+            else:
+                from mommy_chaogu.push import ServerChanPusher
+
+                pusher = ServerChanPusher(send_key=key)
+                pusher.push(f"📖 市场脉络 {args.days}天", text)
+                print("\n📱 已推送到微信")
+        except Exception as e:
+            print(f"\n⚠️  推送失败: {e}")
+
+    return 0
+
+
+def cmd_agent_consolidate(args: argparse.Namespace) -> int:
+    """从情景记忆提炼语义知识。"""
+    from mommy_chaogu.agent.consolidator import MemoryConsolidator
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+    from mommy_chaogu.agent.service import AgentService
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(ctx, model=args.model, provider=args.provider)  # type: ignore[arg-type]
+
+    db_path = Path(args.db)
+    episodic = EpisodicMemory(db_path)
+    semantic = SemanticMemory(db_path)
+    tracker = PredictionTracker(db_path)
+
+    cons = MemoryConsolidator(
+        episodic=episodic,
+        semantic=semantic,
+        tracker=tracker,
+        client=agent._client,  # type: ignore[attr-defined]
+        model=agent._model,  # type: ignore[attr-defined]
+    )
+
+    print("🧠 提炼语义知识...")
+    print("─" * 60)
+
+    results = cons.consolidate_all()
+
+    print(f"板块叙事: {results['sector_theses']} 条")
+    print(f"市场状态: {results['market_regime']} 条")
+    print(f"规律归纳: {results['patterns']} 条")
+
+    return 0
+
+
+def cmd_agent_knowledge(args: argparse.Namespace) -> int:
+    """查看语义知识库。"""
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    semantic = SemanticMemory(Path(args.db))
+
+    if args.search:
+        results = semantic.search(args.search, top_k=args.limit)
+        print(f"搜索 '{args.search}' → {len(results)} 条结果")
+    else:
+        results = semantic.get_active(limit=args.limit)
+        print(f"活跃知识 {len(results)} 条")
+
+    print("─" * 60)
+
+    for entry in results:
+        ktype = entry.get("knowledge_type", "")
+        scope = entry.get("scope", "")
+        content = entry.get("content", "")
+        confidence = entry.get("confidence", 0)
+        hits = entry.get("hit_count", 0)
+        misses = entry.get("miss_count", 0)
+
+        print(f"\n[{ktype:16s}] {scope}")
+        print(f"  {content}")
+        hm = f"  置信度 {confidence:.0%}" if confidence else ""
+        if hits or misses:
+            hm += f"  | ✅{hits} ❌{misses}"
+        if hm:
+            print(hm)
+
+    return 0
+
+
+def cmd_agent_search(args: argparse.Namespace) -> int:
+    """语义搜索相似历史事件。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.service import AgentService
+    from mommy_chaogu.agent.vector_search import VectorSearch
+
+    ctx = _build_agent_ctx(args)
+    agent = AgentService(ctx, model=args.model, provider=args.provider)  # type: ignore[arg-type]
+    episodic = EpisodicMemory(Path(args.db))
+
+    vs = VectorSearch(
+        episodic,
+        agent._client,  # type: ignore[attr-defined]
+        model="text-embedding-3-small",
+    )
+
+    if args.embed:
+        print("🔢 为事件生成 embedding...")
+        results = vs.embed_pending(batch_size=50)
+        print(f"  已生成: {results['embedded']}")
+        print(f"  失败: {results['failed']}")
+        print(f"  跳过: {results['skipped']}")
+        stats = vs.stats()
+        print(f"  覆盖率: {stats['coverage']:.0%} ({stats['embedded']}/{stats['total_events']})")
+        return 0
+
+    if not args.query:
+        print("请提供搜索关键词（--query）或用 --embed 生成 embedding")
+        return 1
+
+    print(f"🔍 搜索相似事件: '{args.query}'")
+    print("─" * 60)
+
+    results = vs.search_similar(
+        args.query,
+        scope=args.scope,
+        top_k=args.limit,
+        days_back=args.days,
+    )
+
+    if not results:
+        print("（无结果，可能需要先运行 --embed 生成向量）")
+        return 0
+
+    for r in results:
+        ts = r.get("timestamp", "")[:16]
+        summary = r.get("summary", "")
+        dist = r.get("distance", 0)
+        similarity = max(0, 1 - dist)
+        print(f"[{ts}] 相似度 {similarity:.0%}")
+        print(f"  {summary}")
+        print()
+
+    return 0
+
+
+def cmd_agent_cleanup(args: argparse.Namespace) -> int:
+    """清理过期记忆：TTL 删除 + 去重保留。
+
+    - episodic_events: signal_event 等 90 天清理，analysis_record /
+      market_snapshot 保留 180 天
+    - predictions: 已验证/过期的 90 天清理（pending 不删）
+    - semantic_knowledge: 非 active 且 180 天未更新的清理
+    """
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    db_path = Path(args.db)
+    episodic = EpisodicMemory(db_path)
+    tracker = PredictionTracker(db_path)
+    semantic = SemanticMemory(db_path)
+
+    days = args.days
+    print("🧹 清理过期记忆...")
+    print("─" * 60)
+
+    n_episodic = episodic.cleanup_old(days=days)
+    print(f"episodic_events: 删除 {n_episodic} 条（>{days}d 的短时事件 / >180d 的长期事件）")
+
+    n_preds = tracker.cleanup_old(days=days)
+    print(f"predictions:     删除 {n_preds} 条（>{days}d 的 hit/missed/expired，pending 保留）")
+
+    sem_days = args.semantic_days
+    n_sem = semantic.cleanup_inactive(days=sem_days)
+    print(f"semantic_knowledge: 删除 {n_sem} 条（>{sem_days}d 未更新的非 active 知识）")
+
+    total = n_episodic + n_preds + n_sem
+    print(f"\n共清理 {total} 条")
+    return 0
+
+
 def build_agent_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-agent",
         description="妈妈炒股 - AI 行情助手（对话 / 日报）",
     )
     p.add_argument(
-        "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
+        "--db",
+        default=str(DEFAULT_AGENT_DB_PATH),
+        help=f"数据库路径 (默认 {DEFAULT_AGENT_DB_PATH})",
     )
     p.add_argument("--model", default=None, help="LLM 模型名（默认按 provider）")
     p.add_argument(
@@ -1783,6 +2133,78 @@ def build_agent_parser() -> argparse.ArgumentParser:
     )
     p_mon.add_argument("--push", action="store_true", help="推送到微信")
     p_mon.set_defaults(func=cmd_agent_monitor)
+
+    # verify — 验证到期预测
+    p_ver = sub.add_parser("verify", help="验证所有到期预测")
+    p_ver.set_defaults(func=cmd_agent_verify)
+
+    # predictions — 查看预测列表
+    p_pred = sub.add_parser("predictions", help="查看预测列表")
+    p_pred.add_argument("--status", default=None, help="按状态过滤 (pending/hit/missed/expired)")
+    p_pred.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
+    p_pred.set_defaults(func=cmd_agent_predictions)
+
+    # events — 查看情景记忆事件
+    p_ev = sub.add_parser("events", help="查看情景记忆事件")
+    p_ev.add_argument("--scope", default=None, help="按 scope 过滤 (如 stock:603662)")
+    p_ev.add_argument("--type", default=None, help="按事件类型过滤")
+    p_ev.add_argument("--days", type=int, default=7, help="最近 N 天 (默认 7)")
+    p_ev.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
+    p_ev.set_defaults(func=cmd_agent_events)
+
+    # remember — 手动写入事件
+    p_rem = sub.add_parser("remember", help="手动记录事件 (如买卖决策)")
+    p_rem.add_argument("--type", default="trade_decision", help="事件类型 (默认 trade_decision)")
+    p_rem.add_argument("--code", required=True, help="股票代码")
+    p_rem.add_argument("--name", default=None, help="股票名称")
+    p_rem.add_argument("--action", default=None, help="动作 (buy/sell/hold)")
+    p_rem.add_argument("--price", type=float, default=None, help="价格")
+    p_rem.add_argument("--shares", type=int, default=None, help="数量")
+    p_rem.add_argument("--reason", default=None, help="备注/原因")
+    p_rem.set_defaults(func=cmd_agent_remember)
+
+    # narrative — 市场脉络生成
+    p_nar = sub.add_parser("narrative", help="生成市场脉络叙述")
+    p_nar.add_argument("--days", type=int, default=30, help="回溯天数 (默认 30)")
+    p_nar.add_argument(
+        "--scope", default=None, help="范围 (如 market / sector:创新药 / stock:603662)"
+    )
+    p_nar.add_argument("--changes", action="store_true", help="只检测最近变化")
+    p_nar.add_argument("--push", action="store_true", help="推送到微信")
+    p_nar.set_defaults(func=cmd_agent_narrative)
+
+    # consolidate — 知识提炼
+    p_con = sub.add_parser("consolidate", help="从情景记忆提炼语义知识")
+    p_con.set_defaults(func=cmd_agent_consolidate)
+
+    # knowledge — 查看知识库
+    p_kn = sub.add_parser("knowledge", help="查看语义知识库")
+    p_kn.add_argument("--search", default=None, help="关键词搜索")
+    p_kn.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
+    p_kn.set_defaults(func=cmd_agent_knowledge)
+
+    # search — 语义搜索相似历史事件
+    p_se = sub.add_parser("search", help="语义搜索相似历史事件")
+    p_se.add_argument("query", nargs="?", default=None, help="搜索文本")
+    p_se.add_argument("--scope", default=None, help="按 scope 过滤")
+    p_se.add_argument("--days", type=int, default=90, help="回溯天数 (默认 90)")
+    p_se.add_argument("--limit", type=int, default=5, help="返回条数 (默认 5)")
+    p_se.add_argument("--embed", action="store_true", help="为事件生成 embedding")
+    p_se.set_defaults(func=cmd_agent_search)
+
+    # cleanup — 清理过期记忆（TTL + 去重保留）
+    p_cl = sub.add_parser("cleanup", help="清理过期记忆（TTL 删除 + 去重）")
+    p_cl.add_argument(
+        "--days", type=int, default=90, help="episodic/predictions 清理阈值天数 (默认 90)"
+    )
+    p_cl.add_argument(
+        "--semantic-days",
+        type=int,
+        default=180,
+        dest="semantic_days",
+        help="semantic_knowledge 清理阈值天数 (默认 180)",
+    )
+    p_cl.set_defaults(func=cmd_agent_cleanup)
 
     return p
 

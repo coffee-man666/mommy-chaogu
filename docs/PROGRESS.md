@@ -2,7 +2,7 @@
 
 > mommy-chaogu 当前在哪个位置？**做完什么**、**还差什么**、**接下来做什么**。
 
-最后更新：2026-07-03（main + agent-centric 合并 — earnings + M8 Infra Upgrade 全部整合）
+最后更新：2026-07-05（memory-system-v1 — MemoryPipeline 统一管道 + 全入口记忆激活 + 回测记忆闭环）
 
 ---
 
@@ -10,19 +10,21 @@
 
 | 维度 | 状态 |
 |---|---|
-| 项目阶段 | **main + agent-centric 合并完成（earnings 业绩比对 + M8 Infra Upgrade + AI Agent 全线整合）** |
-| 代码量 | **~22,000+ 行**（Python src ~15,000 + tests ~4,000 + web ~3,000） |
-| 测试 | **300+ 个通过**（离线 + agent + earnings + infra） |
-| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi，**18 function-calling 工具**，Web 聊天 + 流式推送 + **MCP Server**） |
+| 项目阶段 | **记忆系统 Phase 1-5 闭环 + 回测改进 + 数据库分库 + 多模型 LLM 回测** |
+| 代码量 | **~36,000+ 行**（Python src ~23,000 + tests ~9,000 + web ~4,000） |
+| 测试 | **709 个通过**（含 MemoryPipeline + 记忆系统全入口激活 + 回测改进 + TTL/去重 + walk-forward/regime） |
+| **AI Agent** | **✅ LLM agent 层**（deepseek/openai/kimi/zai，**21 function-calling 工具**（含记忆查询），Web 聊天 + 流式推送 + **MCP Server**） |
+| **自进化记忆** | **✅ MemoryPipeline 全入口激活**（聊天/回测/报告/监控 全部读写记忆，cron 自动验证+提炼，`--memory-db` 回测可见进化曲线） |
+| **30 天回测** | **✅ 154 条预测验证，命中率 53%（含 buy-and-hold 基准 + Wilson CI + 二项检验）** |
+| **LLM 回测** | **✅ 5 模型横向对比完成**（glm-4.7/5/5-turbo/5.1/5.2，70 条 × 5 = 350 条预测，最佳 glm-5 50% 命中率）|
+| **数据库** | **✅ 分库重组**（market/portfolio/agent/reference 4 库，含迁移脚本） |
 | 供应链数据资产 | **3 个 JSON**（机器人 25 / 半导体 106 / 材料 41， 总计 172 只） |
-| **业绩前瞻数据** | **earnings_preview.db（41 家公司中信证券 H1 2026）+ 13 主题 group** |
-| **实战手册** | **docs/EARNINGS-HANDBOOK.md（407 行，12 章节实战手册）** |
-| **earnings_actual 模块** | **src/mommy_chaogu/earnings/（7 个文件 / 1263 行）+ 51 测试** |
+| **回测数据** | **market.db: 106 只 × 42 天 K 线(4437 行) + 92 只 × 21 天资金流(1917 行)** |
 | 数据报告 | 10+ 条实战推送（hub SQLite 留底） |
-| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors |
-| 文档 | DESIGN / PROJECT-LOG / LEDGER / **PROGRESS** / **KLINE-SPEC** / DISCUSSION-NOTES / **EARNINGS-HANDBOOK** **7 份齐** |
-| 自动化 | **4 个 OpenClaw cron jobs**（盘前/盘中/收盘/周报） |
-| **实战验证** | ✅ 柯力 603662 H1 2026 +188~+217% 业绩前瞻入库 + 反转初期识别 |
+| 代码质量 | ruff ✅ / mypy strict ✅ 0 errors / **CI ✅** |
+| 文档 | DESIGN / PROJECT-LOG / LEDGER / PROGRESS / KLINE-SPEC / DISCUSSION-NOTES / EARNINGS-HANDBOOK / MEMORY-SYSTEM-PLAN / BRANCH-MERGE-ANALYSIS / BACKTEST-REPORT / **AGENTS.md** **11 份齐** |
+| 自动化 | **6 个 cron jobs**（盘前/盘中/收盘/周报 + `cron_verify.sh` 每日验证 + `cron_consolidate.sh` 周度提炼） |
+| **实战验证** | ✅ 记忆系统闭环 + 30 天回测 + 数据库迁移 + 5 模型 LLM 回测对比 |
 
 ---
 
@@ -75,6 +77,140 @@
                      + 东方财富 push2.eastmoney.com 直连
                        （大盘指数 / 板块排行 / 板块成分股 / 龙虎榜）
 ```
+
+---
+
+### ✅ 30 天回测验证 + 数据库重组（`memory-system-v1` 分支，2026-07-04）
+
+#### 30 天真实数据回测
+
+用 10 只股票 × 24 天真实行情数据（腾讯日 K 线 + 东财资金流）跑完整闭环：
+
+| 指标 | 值 |
+|---|---|
+| 数据源 | 腾讯日 K 线（10 只 × 24 天）+ 东财资金流（10 只 × 21 天）+ 东财公告（44 条） |
+| 总预测 | 154 条（规则引擎自动生成，4 条信号规则） |
+| 命中 | 82（53%） |
+| 提炼知识 | 10 条（含个股命中率 + 市场规律） |
+| Prompt 进化 | 612 字 → 2185 字 |
+
+**关键发现**：
+- 看跌比看涨准（57% vs 41%）——趋势延续性强
+- 极端信号更可信（10bp+ 59% vs 5-10bp 50%）
+- 个股差异巨大：比亚迪 84% vs 柯力传感 18%
+- 脚本：`scripts/backtest_evolution.py`
+
+#### 半导体链 106 只数据采集
+
+| 数据 | 成功 | 总行数 | 存储 |
+|---|---|---|---|
+| K 线 | 106/106 | 4437 行（5/6 → 7/3） | data/market.db |
+| 资金流 | 92/106 | 1917 行（6/4 → 7/3） | data/market.db |
+| 股票列表 | 106 | — | data/reference.db |
+
+14 只资金流不可用（模拟芯片类：圣邦/思瑞浦/纳芯微等，东财接口不覆盖）。
+
+#### 数据库分库重组
+
+从 1 个 `watchlist.db`（所有表混在一起）→ 4 个按职责分离的数据库：
+
+| 数据库 | 用途 | 关键表 |
+|---|---|---|
+| `data/market.db` | 行情数据 | quote_cache, bar_cache, klines, flows |
+| `data/portfolio.db` | 用户数据 | groups, stock_entries, positions |
+| `data/agent.db` | 记忆系统 | agent_memory, episodic_events, predictions, semantic_knowledge |
+| `data/reference.db` | 参考库 | semicon_stocks, earnings_* |
+
+新增文件：
+- `src/mommy_chaogu/db_paths.py` — 统一路径管理（环境变量可覆盖）
+- `scripts/migrate_db_layout.py` — 自动迁移脚本（ATTACH + INSERT）
+- `scripts/fetch_semicon_data.py` — 批量抓取半导体链数据
+- `AGENTS.md` — agent / 开发者项目指南
+
+向后兼容：环境变量覆盖、`--db` 参数、测试用 tmp_path 不受影响。
+
+---
+
+### ✅ Memory System v1: 自进化记忆系统 Phase 1-5（`memory-system-v1` 分支）
+
+> **核心能力**：让 agent 从「每次从零开始」变成「越用越懂」——记住过去、验证判断、沉淀经验、找相似事件。
+>
+> 设计文档：`docs/MEMORY-SYSTEM-PLAN.md`（四层记忆架构 + 预测验证闭环 + 数据缺失降级策略）
+
+#### Phase 1 — 情景记忆 + 预测追踪 + 降级验证
+
+| 文件 | 内容 |
+|---|---|
+| `agent/episodic_memory.py` | 结构化事件存储（episodic_events 表，4 种事件类型 + data_coverage 追踪） |
+| `agent/prediction_tracker.py` | 预测生命周期（predictions 表，pending → hit/missed/expired/unverifiable） |
+| `agent/verify_engine.py` | 降级验证引擎（报价优先 → 资金流可选 → 不伪造结果，评分 1.0/0.7/0.3/0.0） |
+| `agent/extractor.py` | 对话后 LLM 事实抽取（JSON response mode，失败不 block 主流程） |
+| `agent/prompt_builder.py` | 动态 system prompt（注入知识 + 事件 + 判断回顾） |
+
+#### Phase 3 — 市场脉络生成
+
+| 文件 | 内容 |
+|---|---|
+| `agent/narrative.py` | 市场脉络叙述（30 天主线 + 转折点 + 因果链 + 变化检测 + 时段对比） |
+
+#### Phase 4 — 语义记忆 + 知识提炼
+
+| 文件 | 内容 |
+|---|---|
+| `agent/semantic_memory.py` | 语义知识库（semantic_knowledge 表，4 种知识 + supersede + 置信度校准） |
+| `agent/consolidator.py` | LLM 离线知识提炼（板块叙事 / 市场状态 / 规律归纳 + 命中率校准 confidence） |
+
+#### Phase 5 — 向量检索
+
+| 文件 | 内容 |
+|---|---|
+| `agent/vector_search.py` | 语义搜索（sqlite-vec + embedding API，"找相似历史事件"） |
+
+#### 8 个 CLI 子命令
+
+```
+mommy-agent verify          # 验证到期预测
+mommy-agent predictions     # 查看预测 + 命中率
+mommy-agent events          # 查看情景记忆
+mommy-agent remember        # 手动记录事件
+mommy-agent narrative       # 市场脉络叙述
+mommy-agent consolidate     # 知识提炼
+mommy-agent knowledge       # 查看知识库
+mommy-agent search          # 语义搜索相似事件
+mommy-agent cleanup         # 清理过期记忆（TTL + 去重）
+```
+
+#### 新增表（5 张，同一份 data/watchlist.db）
+
+| 表 | 用途 |
+|---|---|
+| `episodic_events` | 情景记忆（结构化事件流） |
+| `predictions` | 预测追踪（pending → hit/missed/expired） |
+| `semantic_knowledge` | 语义知识（active / superseded + hit_count/miss_count） |
+| `episodic_embeddings` | embedding 元数据 |
+| `episodic_vec` | sqlite-vec 虚拟表（float[1536]） |
+
+#### 测试（+121 个）
+
+| 测试文件 | 数量 | 覆盖 |
+|---|---|---|
+| test_episodic.py | 16 | CRUD / query / prefix-scope / persistence |
+| test_prediction_tracker.py | 20 | CRUD / status / attempts / stats |
+| test_verify_engine.py | 23 | scoring / quote / target / degraded / expired / batch |
+| test_prompt_builder.py | 7 | empty / events / predictions / full |
+| test_extractor.py | 8 | extraction / store / entry_price / data_coverage |
+| test_narrative.py | 7 | generate / detect_changes / compare / failure |
+| test_semantic.py | 21 | CRUD / upsert-supersede / recalibrate / persistence |
+| test_consolidator.py | 9 | sector_theses / market_regime / patterns / failure |
+| test_vector_search.py | 10 | pack/unpack / store / embed / search / stats |
+
+#### 实战验证
+
+- ✅ 验证降级策略：hit / missed / data_unavailable → expired 全路径
+- ✅ 置信度校准：0.8 → 命中率 30% → 0.55 → 命中率 70% → 0.62
+- ✅ 向量检索：embed_pending 100% 覆盖，search_similar 正确返回相似事件
+- ✅ prompt 注入：知识 + 事件 + 判断回顾 三部分正确注入
+- ✅ 向后兼容：无 episodic/tracker 时 AgentService 行为不变
 
 ---
 
@@ -382,7 +518,17 @@ src/mommy_chaogu/signals/         31 规则 + custom_alerts   ← M8 扩展
 
 ## 下一步候选（按团长优先级）
 
-> 📅 2026-07-03 更新：main + agent-centric 合并完成。earnings 业绩比对 + M8 Infra Upgrade（MCP Server / 统一配置 / 记忆 / 回测 / 基本面 / 新闻 / 组合分析）全部上线。
+> 📅 2026-07-04 更新：5 模型横向对比回测完成（glm-4.7/5/5-turbo/5.1/5.2，70 条 × 5 = 350 条预测）。glm-5 最佳（50% 命中率，bullish 93%）。下一步可扩展到下跌区间验证 bearish 策略。
+
+### ✅ 7/4 多模型 LLM 回测（已完成）
+- ✅ **5 模型横向对比** —— glm-5 最佳（50% 命中率），glm-4.7 bullish 最准（96%）
+- ✅ **过程完整记录** —— 每条预测含 prompt/LLM 回复/方向/理由/token/命中状态
+- ✅ **Agent 原生 trial_1** —— 25 条预测，bullish 88%，零成本
+- ✅ **通用回测脚本** —— `run_model.py` 参数化，可复现
+
+### ✅ 7/4 回测 + 数据库重组
+- ✅ **30 天真实数据回测** —— 154 条预测，53% 命中率，提炼 10 条知识
+- ✅ **数据库分库** —— market / portfolio / agent / reference 4 库 + 迁移脚本 + AGENTS.md
 
 ### ✅ 7/1 实战验证
 1. **cron 链路实跑** —— 4 个 job 修后于 7/1 8:30 盘前预热成功（拉了 105/106 只半导体资金流，hub 实际收到 webhook）

@@ -21,8 +21,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
+from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 from mommy_chaogu.agent.scan_prompt import SCAN_PROMPT_TEMPLATE
 from mommy_chaogu.agent.service import AgentService
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
@@ -77,12 +79,16 @@ class AgentMonitor:
         watchlist_store: WatchlistStore,
         notifier: SignalNotifier | None = None,
         interval_seconds: float = 180.0,
+        db_path: Path | None = None,
     ) -> None:
         self.agent = agent
         self.adapter = adapter
         self.watchlist = watchlist_store
         self.notifier = notifier
         self.interval = interval_seconds
+        self._memory: EpisodicMemory | None = None
+        if db_path is not None:
+            self._memory = EpisodicMemory(db_path)
 
     # ============================================================
     # 数据收集
@@ -162,7 +168,8 @@ class AgentMonitor:
         alerts, summary = self._ask_agent(prompt)
 
         # 4. 推送
-        pushed = self._push_alerts(alerts)
+        stocks_by_code = {s["code"]: s for s in data.get("stocks", [])}
+        pushed = self._push_alerts(alerts, stocks_by_code=stocks_by_code)
 
         elapsed = (datetime.now(UTC) - t0).total_seconds()
         return AgentScanResult(
@@ -175,12 +182,23 @@ class AgentMonitor:
         )
 
     def _ask_agent(self, prompt: str) -> tuple[list[AgentAlert], str]:
-        """调 LLM，解析 JSON 返回。"""
+        """调 LLM，解析 JSON 返回。注入记忆上下文。"""
+        # 注入记忆（如果 agent 有 pipeline）
+        pipeline = getattr(self.agent, "_pipeline", None)
+        if pipeline is not None:
+            memory_prompt = pipeline.build_prompt(query="盘中异动扫描")
+            from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
+
+            memory_section = memory_prompt[len(SYSTEM_PROMPT) :] if memory_prompt.startswith(SYSTEM_PROMPT) else ""
+            system_content = "你是一个 A 股盘中异动扫描器。只返回 JSON。" + memory_section
+        else:
+            system_content = "你是一个 A 股盘中异动扫描器。只返回 JSON。"
+
         try:
             resp = self.agent._client.chat.completions.create(
                 model=self.agent._model,
                 messages=[
-                    {"role": "system", "content": "你是一个 A 股盘中异动扫描器。只返回 JSON。"},
+                    {"role": "system", "content": system_content},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
@@ -223,13 +241,28 @@ class AgentMonitor:
     # 推送
     # ============================================================
 
-    def _push_alerts(self, alerts: list[AgentAlert]) -> list[str]:
-        """构造 Signal 走现有 notifier 推送。返回成功推送的 code 列表。"""
-        if not alerts or not self.notifier:
+    def _push_alerts(
+        self,
+        alerts: list[AgentAlert],
+        stocks_by_code: dict[str, dict[str, Any]] | None = None,
+    ) -> list[str]:
+        """构造 Signal 走现有 notifier 推送。返回成功推送的 code 列表。
+
+        若 ``self._memory`` 不为 None，同时把每条告警写入 episodic memory。
+        """
+        if not alerts:
             return []
 
         pushed: list[str] = []
         for a in alerts:
+            # 写入 episodic memory（db_path 为 None 时跳过）
+            if self._memory is not None:
+                stock = (stocks_by_code or {}).get(a.code, {})
+                self._record_signal_event(a, stock)
+
+            if not self.notifier:
+                continue
+
             signal = Signal(
                 timestamp=datetime.now(),
                 code=a.code,
@@ -249,6 +282,35 @@ class AgentMonitor:
             except Exception:
                 _log.exception("push alert failed: %s %s", a.code, a.name)
         return pushed
+
+    def _record_signal_event(
+        self,
+        alert: AgentAlert,
+        stock: dict[str, Any],
+    ) -> None:
+        """将单条告警写入 episodic memory。"""
+        data = {
+            "severity": alert.severity,
+            "message": alert.message,
+            "price": stock.get("price"),
+            "change_pct": stock.get("change_pct"),
+            "main_net_wan": stock.get("main_net_wan"),
+            "volume_ratio": stock.get("volume_ratio"),
+        }
+        try:
+            self._memory.write(
+                event_type="signal_event",
+                scope=f"stock:{alert.code}",
+                code=alert.code,
+                name=alert.name,
+                summary=alert.message[:200],
+                data=data,
+                source="agent_monitor",
+                tags=[alert.severity],
+                trade_date=datetime.now().strftime("%Y-%m-%d"),
+            )
+        except Exception:
+            _log.exception("write signal_event to episodic memory failed")
 
     # ============================================================
     # 持续循环（CLI 用）
