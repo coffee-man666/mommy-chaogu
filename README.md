@@ -1,378 +1,311 @@
-# 妈妈炒股 (mommy-chaogu)
+# mommy-chaogu
 
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-270%20passed-brightgreen.svg)](#-开发)
+[![Tests](https://img.shields.io/badge/tests-700%2B-brightgreen.svg)](#开发)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type check: mypy strict](https://img.shields.io/badge/mypy--strict-0%20errors-blue.svg)](https://mypy-lang.org/)
 
-> 给妈妈用的 **A 股行情监控 + 投资陪伴** 工具。
-> 从「行情监控」切入，逐步扩展到「资金流 / 产业链 / 财报 / 推送 / 风险提示」。
-
-[快速上手](#-快速上手) · [架构](#-架构) · [功能](#-功能模块) · [财报实战](#-财报窗口实战) · [CLI](#-cli-速查) · [文档](#-文档体系) · [开发](#-开发)
-
 </div>
 
-妈妈不需要成为技术专家，妈妈的手机应该比基金经理的彭博终端更懂她 —— 这是这个项目的初衷。
+A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自进化记忆系统、回测引擎。
+
+从一个「给妈妈用的手机行情工具」起步，逐步演进为涵盖数据采集、信号告警、LLM 分析、预测验证闭环、回测评估的完整投研框架。
 
 ---
 
-## ✨ 为什么做这个
+## 核心能力
 
-- 妈妈 50 多岁开始学炒股，但行情软件太复杂（5 档盘口 + Level-2 + 各种技术指标）
-- 主力资金动向（A 股最关键的信息）散落在各种研报、论坛、付费软件里
-- 妈妈应该在**收盘后**做决策，不是在交易时段盯盘
-- 中报 / 季报窗口是 A 股 alpha 的关键节点，但预告日期 + 实际值对比都是手动跟踪
-
-**解决方案**：一个为妈妈定制的 Python 工具集，提供：
-1. 实时行情 + K 线 + 资金流（手机 Web 可访问）
-2. 多源 fallback（东财主 + 腾讯备）
-3. 信号告警 + 微信推送（妈妈不用主动打开）
-4. 财报窗口的预告 vs 实际比对系统
-5. 业绩弹性 / 板块轮动 / 配对交易的多维分析
-
----
-
-## 🚀 核心特性
-
-| 能力 | 实现 |
+| 能力 | 说明 |
 |---|---|
-| **实时行情** | 报价 / K 线 / 5档盘口 / 大盘指数 / 板块榜 |
-| **资金流** | 日内分时累计 + 历史日级 + 流通市值比率 (bp) |
-| **多源 fallback** | efinance → tencent → cached（无感降级）|
-| **自选股** | SQLite + SQLAlchemy 2.0，按主题分组（M:N 支持）|
-| **信号告警** | 7 条内置规则（price / flow / portfolio / ...）|
-| **微信推送** | Server酱³，阈值过滤 + JSON 去重 |
-| **Web UI** | Vite + Vue 3 + FastAPI，手机访问 |
-| **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分 |
-| **OpenClaw cron** | 4 个自动化 jobs（盘前 / 盘中 / 收盘 / 周报）|
-| **质量门** | ruff + mypy --strict + 270 个测试 |
+| **行情数据** | 多源 fallback（东财 + 腾讯 + 缓存），报价 / K 线 / 资金流 / 板块排行 / 基本面 |
+| **资金流分析** | 主力净流入比率 (bp) 信号、板块扫描、收盘日报、历史回测 |
+| **AI Agent** | 21 个 function-calling 工具，支持 deepseek / openai / kimi / z.ai (GLM)，Web 聊天 + 流式推送 |
+| **自进化记忆** | 5 层记忆架构（工作/情景/预测验证/语义知识/向量检索），MemoryPipeline 全入口激活 |
+| **回测引擎** | 规则回测 + LLM 回测 + 组合分析 + walk-forward 过拟合检测 + 市场环境分组分析 |
+| **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分，4 种 verdict 分级 |
+| **信号告警** | 7 条内置规则 + 自定义价格/涨跌幅告警 + Server酱微信推送 |
+| **Web UI** | Vite + Vue 3 + FastAPI，手机可访问，WebSocket 实时推送 |
 
 ---
 
-## 📦 快速上手
+## 快速上手
 
 ```bash
-# 1. 安装（需要 Python 3.12+）
+# 安装（需要 Python 3.12+）
 git clone https://github.com/coffee-man666/mommy-chaogu.git
 cd mommy-chaogu
 uv sync --extra dev
 
-# 2. 自选股分组管理
-uv run mommy-watchlist add-group 白酒 --description "持仓分组"
-uv run mommy-watchlist add 600519 --group 白酒
+# 配置密钥
+cp .env.example .env
+# 编辑 .env，填入 LLM API key
+
+# 跑测试确认环境正常
+uv run pytest -m "not network"
+```
+
+### 基础用法
+
+```bash
+# 自选股管理
+uv run mommy-watchlist add-group 半导体 --description "持仓分组"
+uv run mommy-watchlist add 688981 --group 半导体
 uv run mommy-watchlist list
 
-# 3. 实时监控（持续轮询，按 Ctrl+C 退出）
-uv run mommy-monitor snapshot    # 一次快照
-uv run mommy-monitor run         # 持续 5min 轮询
+# 行情快照
+uv run mommy-monitor snapshot
 
-# 4. Web UI（手机可访问）
-uv run mommy-web --port 8765 --poll-interval 3
-# → http://<host>:8765/
-
-# 5. 财报窗口分析（7/15-8/31 实战）
-uv run mommy-earnings pull --codes 603662,603986 --period "H1 2026"
-uv run mommy-earnings score --period "H1 2026"
-uv run mommy-earnings summary --period "H1 2026"
-
-# 6. 资金流扫描（板块维度）
+# 资金流扫描（板块维度）
 uv run mommy-flows pull --pool semicon --days 30
-uv run mommy-report render --chain humanoid_robot
-```
 
----
-
-## 🏗️ 架构
-
-```
-┌────────────────────────────────────────────────────────────┐
-│  Web UI (Vite + Vue 3)                                     │
-│  ├─ 首页 (5 只自选 + 主力合计 + WebSocket)                 │
-│  ├─ 详情 (klinecharts K线 + 5档 + 资金流)                  │
-│  ├─ 板块扫描 (沪深 + 行业 + 概念)                          │
-│  ├─ 信号中心 (实时告警列表)                                │
-│  └─ 设置 (服务状态 + 缓存命中率 + 自选股 CRUD)             │
-└────────────────────┬───────────────────────────────────────┘
-                     │ HTTP / WebSocket
-                     ↓
-┌────────────────────────────────────────────────────────────┐
-│  FastAPI (uvicorn :8765)                                    │
-│  ├─ /api/* REST (20+ 端点)                                 │
-│  ├─ /ws/* WebSocket                                         │
-│  └─ BackgroundService (5s 轮询 + SignalNotifier)            │
-└────────────────────┬───────────────────────────────────────┘
-                     │
-   ┌─────────────────┼─────────────────┐
-   ↓                 ↓                 ↓
-┌────────┐    ┌────────────┐    ┌──────────┐
-│ Cache  │ →  │ Adapter    │ →  │ Data     │
-│ Layer  │    │ Fallback   │    │ Sources  │
-│ SQLite │    │ (Protocol) │    │ • efin   │
-│ 5 表   │    │            │    │ • tencent│
-└────────┘    └────────────┘    │ • cninfo │
-                                 └──────────┘
-```
-
-### 核心设计原则
-
-1. **接口先行 (Protocol-first)**：所有数据源走 `MarketDataAdapter` Protocol，加新数据源只需实现 Protocol
-2. **dataclass 化**：行情数据用 `@dataclass(frozen=True, slots=True)` 定义，金额一律 `Decimal`
-3. **降级优先 (Graceful degradation)**：第三方接口挂了 → 缓存兜底 → 妈妈无感
-4. **数据库是唯一真相源**：拉新失败保留旧数据，从不主动清空
-5. **测试金字塔**：大量离线单元测试 + 少量网络集成测试（`@pytest.mark.network`）
-
----
-
-## 📊 功能模块
-
-### 数据层
-
-| 模块 | 行数 | 说明 |
-|---|---|---|
-| `market_data/` | ~1500 | efinance / tencent / fallback 三种 adapter |
-| `cache/` | ~900 | SQLite + 装饰器链 + 节流 + freshness |
-| `watchlist/` | ~600 | SQLite + SQLAlchemy 2.0，自选分组 |
-
-### 业务层
-
-| 模块 | 行数 | 说明 |
-|---|---|---|
-| `flows/` | ~1200 | 资金流 ratio 监控 + 板块扫描 + 收盘日报 |
-| `signals/` | ~700 | 7 条内置告警规则 + Alerter |
-| `earnings/` | ~1900 | 业绩前瞻 + actual vs predicted 自动打分 |
-| `semicon/` | ~400 | 半导体产业链种子库（106 只）|
-
-### 服务层
-
-| 模块 | 行数 | 说明 |
-|---|---|---|
-| `monitor/` | ~500 | snapshot + 持续轮询 |
-| `web/` | ~1500 | FastAPI + 20 REST + 2 WebSocket |
-| `push/` | ~300 | Server酱 推送 + 去重 |
-| `report_render/` | ~600 | 报告 HTML 渲染 |
-
----
-
-## 🎯 财报窗口实战（新模块）
-
-> 中报 / 季报窗口（7/15-8/31）是 A 股 alpha 的关键节点。这个项目内置了完整的实战流水线。
-
-### 工作流
-
-```
-1. 业绩前瞻入库
-   scripts/load_earnings_preview.py
-   → data/earnings_preview.db（券商预测 41 家公司）
-
-2. 主题分组
-   scripts/seed_thematic_groups.py
-   → watchlist.db 13 个主题组
-
-3. 实际披露拉取（7/15 起）
-   uv run mommy-earnings pull --codes 603662 --period "H1 2026"
-   → ef.stock.get_all_company_performance() 实时数据
-
-4. 实际 vs 预测打分
-   uv run mommy-earnings score --period "H1 2026"
-   → data/earnings_actual.db
-   → 4 种 verdict: SUPER_BEAT / BEAT / MEET / MISS / DEEP_MISS
-
-5. 信号触发
-   uv run mommy-earnings watch --days 7
-   → T-7 警示 + 超预期 / 低于预期 即时告警
-```
-
-### 4 大实战策略（详见 [`docs/EARNINGS-HANDBOOK.md`](docs/EARNINGS-HANDBOOK.md)）
-
-1. **超预期交易**：T+1 9:30-9:35 行动窗口，70% 跳空开盘
-2. **Convexity Plays**：预测 +200% 以上的标的具备期权式 payoff
-3. **板块内配对**：AI 算力 long 寒武纪 / short 海光
-4. **板块轮动**：半导体 / 面板 / LED 超配，消费电子低配
-
----
-
-## 📸 实际效果示例
-
-### 资金流扫描（半导体板块）
-
-```bash
-$ uv run mommy-flows pull --pool semicon --days 30
-
-📊 半导体板块资金流 (近 30 天)
-================================================
-板块总计: 19 家公司 / 8.4 万亿成交额
-主力净流入总计: +47.6亿 (主线资金偏多)
-日均主力: +1.59亿
-
-💥 TOP 5 净流入 (按 bp):
-  +127bp 聚辰股份     +8.94亿
-  +104bp 深科技       +3.42亿
-   +89bp 澜起科技     +12.50亿
-   +78bp 兆易创新     +14.23亿
-   +52bp 北京君正     +5.67亿
-
-⚠️ TOP 3 净流出 (按 bp):
-   -191bp 晶方科技    -3.21亿
-   -161bp 长电科技    -5.89亿
-   -156bp 华天科技    -3.45亿
-```
-
-### 财报前瞻 vs 实际比对
-
-```bash
-$ uv run mommy-earnings score --period "H1 2026"
-
-📊 比对完成: 成功 2, 失败 0
-耗时: 1.23s
-
-🏆 TOP 5 (按置信度 + gap 排序):
-代码       名称         预测区间         实际          verdict
-──────────────────────────────────────────────────────
-603662  柯力传感     188~217%      202.5%     🟢 超预期
-603986  兆易创新    1070~1370%    1220.0%    🟡 符合
-```
-
-### Web UI（手机可访问）
-
-```
-+─────────────────────────────+
-│ 🥳 妈妈的自选股               │
-│                                  │
-│ 600519 贵州茅台 ▲ +1.85%       │
-│         主力 +1.2亿 (37bp)     │
-│                                  │
-│ 300750 宁德时代 ▼ -0.42%      │
-│         主力 -0.8亿 (-22bp)    │
-│                                  │
-│ [查看详情]  [资金流]  [K线]      │
-+─────────────────────────────+
-```
-
----
-
-## 🛠️ CLI 速查（9 个子应用）
-
-```
-mommy-chaogu
-├── mommy-watchlist    # 自选股管理（按主题分组）
-├── mommy-monitor      # 实时监控（snapshot / 持续轮询）
-├── mommy-cache        # 缓存管理（命中率 / warmup / refresh）
-├── mommy-report       # 报告渲染（HTML）
-├── mommy-flows        # 资金流拉新 + 板块扫描
-├── mommy-semicon      # 半导体产业链查询
-├── mommy-earnings     # 财报前瞻 vs 实际 比对 ⭐ 新增
-└── mommy-web          # Web 服务（手机 UI + WS）
-```
-
----
-
-## 📱 Web UI
-
-```bash
-uv run mommy-web --port 8765 --poll-interval 3
-```
-
-手机浏览器访问 `http://<host>:8765/`。
-
-**4+ 个页面**：
-- **首页** — 自选股 + 主力合计 + 涨跌统计 + WebSocket 实时推送
-- **详情** — K 线（klinecharts）+ MA5/10/30/60 + 资金流 5 维图表
-- **板块扫描** — 沪深 + 行业 + 概念，30 秒轮询
-- **信号中心** — 触发历史（点跳详情页 K 线）
-- **设置** — 服务状态 + 缓存命中率 + 自选股 CRUD
-
----
-
-## 📡 数据源
-
-| 数据源 | 用途 | 接口 |
-|---|---|---|
-| **东方财富 (efinance)** | 主力数据源（行情 / K 线 / 资金流 / 业绩）| `ef.stock.*` |
-| **腾讯财经 (Tencent)** | 备援（行情）| `qt.gtimg.cn` |
-| **巨潮资讯 (cninfo)** | 公告日历 | `hisAnnouncement/query` |
-
-多源 fallback 装饰器链：`CachedMarketDataAdapter(FallbackAdapter([EfinanceAdapter, TencentAdapter]))`
-
-> ⚠️ efinance 凌晨 2-3 点会主动断（东财服务器维护），fallback 自动接管
-
----
-
-## 🔔 Server酱 微信推送（可选）
-
-```bash
-export SERVER_CHAN_KEY="SCT2*****"
-export WEB_BASE_URL="http://192.168.10.84:8765"
+# Web UI（手机访问）
 uv run mommy-web --port 8765
 ```
 
-**推送规则**：
-- 只推 WARNING + CRITICAL（INFO 太多刷屏）
-- 同一 `(股票代码, 规则ID, 日期)` 同一天只推 1 次（JSON 去重）
-- 免费版 5 条/天，VIP ¥9/月无限
+### AI Agent 对话
+
+```bash
+# 配置 z.ai (GLM) 作为 LLM provider
+# .env 中设置 ZAI_API_KEY 和 AGENT_PROVIDER=zai
+
+# 与 agent 对话（自动调用记忆系统）
+uv run mommy-agent chat "中芯国际最近资金流怎么样？"
+
+# 生成收盘日报（agent 驱动 + 记忆注入）
+uv run mommy-agent report --board-code BK0475 --board-name 半导体
+
+# 盘中智能扫描
+uv run mommy-agent scan
+
+# 查看预测历史和验证结果
+uv run mommy-agent predictions
+uv run mommy-agent verify
+```
+
+### LLM 回测（带记忆系统）
+
+```bash
+# 基本回测（无记忆）
+uv run python scripts/backtest_llm.py --model glm-4.7 --provider zai \
+  --max-dates 7 --horizon 5
+
+# 带记忆系统的回测（记忆进化 + 知识提炼 + traceability）
+uv run python scripts/backtest_llm.py --model glm-4.7 --provider zai \
+  --db data/backtest.db --memory-db data/memory.db \
+  --max-dates 7 --horizon 5
+```
+
+带记忆的回测会在报告中输出记忆进化统计：
+
+```
+记忆系统进化
+  Episodic events: 27 条
+  Predictions: 21 条 (hit 9, missed 12)
+  Semantic knowledge: 3 条
+  Insight summaries: 2 条
+  Traceability: 21/21 条预测关联了 episodic event (100%)
+```
 
 ---
 
-## ⏰ OpenClaw 自动化（4 个 cron jobs）
+## 架构
 
-| 时间 | 任务 | 行为 |
+```
+                Web UI (Vite + Vue 3)
+                    |
+                    | HTTP / WebSocket
+                    v
+              FastAPI (uvicorn)
+               /     |      \
+              /      |       \
+    Cache Layer   Agent     Data Sources
+    (SQLite)    Service    (efinance / tencent)
+                  |
+           MemoryPipeline ---- EpisodicMemory
+                  |          -- PredictionTracker
+                  |          -- SemanticMemory
+                  |          -- VectorSearch
+                  |
+           ToolRegistry (21 tools)
+```
+
+### 数据库布局
+
+4 个按职责分离的 SQLite 数据库，互不干扰：
+
+| 数据库 | 用途 | 关键表 |
 |---|---|---|
-| 周一~五 8:30 | 盘前预热 | 拉全市场资金流 / warmup 缓存 |
-| 周一~五 9:30 | 盘中监控启动 | 启动 `mommy-monitor run --max-seconds 19800` |
-| 周一~五 15:30 | 收盘日报 | 渲染 HTML + 推微信 |
-| 周六 10:00 | 周报汇总 | 复盘一周实战 |
+| `data/market.db` | 行情数据 | quote_cache, bar_cache, klines, flows |
+| `data/portfolio.db` | 用户数据 | groups, stock_entries, positions |
+| `data/agent.db` | 记忆系统 | episodic_events, predictions, semantic_knowledge, insight_summary |
+| `data/reference.db` | 参考库 | semicon_stocks, earnings_* |
 
-详细配置见 [`docs/`](docs/) 下的对应文档。
+### 核心设计原则
+
+1. **Protocol-first** — 所有数据源走 `MarketDataAdapter` Protocol，加新源只需实现接口
+2. **Decimal 金额** — 财务数据一律 `Decimal`，不用 `float`
+3. **Graceful degradation** — 数据源挂了自动 fallback 到缓存，用户无感
+4. **数据库是唯一真相源** — 拉新失败保留旧数据，从不主动清空
+5. **记忆系统全入口激活** — 任何分析入口（聊天/回测/报告/监控）都自动读写记忆
 
 ---
 
-## 📚 文档体系（7 份）
+## 自进化记忆系统
 
-| 文档 | 用途 |
+记忆系统让 agent 从「每次从零开始」变成「越用越懂」— 记住过去、讲出脉络、验证判断、沉淀经验。
+
+### 5 层架构
+
+| 层 | 模块 | 职责 |
+|---|---|---|
+| Working Memory | `ConversationMemory` | 当前对话上下文 |
+| Episodic Memory | `EpisodicMemory` | 结构化市场事件流（分析记录、告警信号、验证结果） |
+| Prediction Tracking | `PredictionTracker` | 预测记录 + 到期验证 + 命中率统计 |
+| Semantic Memory | `SemanticMemory` | 提炼后的知识（板块叙事、市场状态、规律模式、周度复盘） |
+| Vector Search | `VectorSearch` | 语义搜索历史事件（sqlite-vec + embedding API） |
+
+### MemoryPipeline
+
+`MemoryPipeline` 是统一入口，任何分析场景一行代码接入：
+
+```python
+pipeline = MemoryPipeline(episodic, tracker, semantic, client, model)
+
+# 构建注入了记忆的 prompt（已有认知 + 近期事件 + 判断回顾 + 相似事件）
+system_prompt = pipeline.build_prompt(query="中芯国际")
+
+# 分析完成后自动提取 + 存储
+pipeline.record_analysis(user_msg, assistant_response)
+
+# 验证到期预测（回填 traceability 链）
+pipeline.verify_predictions(adapter)
+
+# 提炼语义知识 + 生成 insight summary
+pipeline.consolidate()
+```
+
+### 全入口激活
+
+| 入口 | 读取记忆 | 写入记忆 | 提炼知识 |
+|---|---|---|---|
+| Web/CLI 聊天 | build_prompt | record_analysis | cron |
+| LLM 回测 | build_prompt | episodic + source_event_id | 内联 |
+| 收盘报告 | build_prompt | analysis_record | cron |
+| 监控告警 | build_prompt | signal_event | cron |
+
+---
+
+## 回测引擎
+
+### 三条回测路径
+
+| 路径 | 脚本 | 评分逻辑 | 数据源 |
+|---|---|---|---|
+| 规则引擎 | `backtest_evolution.py` | 方向命中率 + ±2% 死区 | 实时拉网络 |
+| LLM 驱动 | `backtest_llm.py` | 统一评分 + 交易成本扣减 | market.db 离线 |
+| BacktestEngine | `backtest/engine.py` | 做多 P&L + Sharpe | cache SQLite |
+
+### 分析工具
+
+| 模块 | 用途 |
 |---|---|
-| **[`docs/PROJECT-LOG.md`](docs/PROJECT-LOG.md)** | 🆕 一站式总览（新人 / 未来自己 必读）|
-| [`docs/PROGRESS.md`](docs/PROGRESS.md) | 当前进度 + 下一步优先级 |
-| [`docs/DESIGN.md`](docs/DESIGN.md) | 架构 + 5 份 ADR |
-| [`docs/LEDGER.md`](docs/LEDGER.md) | commit 级别时间线 |
-| **[`docs/EARNINGS-HANDBOOK.md`](docs/EARNINGS-HANDBOOK.md)** | 🆕 2026 中报窗口实战手册 |
-| [`docs/KLINE-SPEC.md`](docs/KLINE-SPEC.md) | K 线组件规范 |
-| [`docs/DISCUSSION-NOTES.md`](docs/DISCUSSION-NOTES.md) | 历史决策上下文 |
+| `backtest/scoring.py` | 统一评分（±2% 死区，neutral 不再固定 hit） |
+| `backtest/costs.py` | A 股交易成本模型（佣金 + 印花税 + 过户费 + 滑点 = 0.341%） |
+| `backtest/portfolio.py` | 组合层面分析（净值曲线 + max-DD + Sharpe） |
+| `backtest/walk_forward.py` | Walk-forward 过拟合检测 |
+| `backtest/regime_analysis.py` | 市场环境分组分析（bull/bear/sideways） |
+| `backtest_stats.py` | Wilson CI + 精确二项检验（无 scipy 依赖） |
+
+### 回测输出示例
+
+```
+命中率: 42.9% (Wilson 95% CI: [24.5%, 63.5%], p=0.66)
+Buy-and-hold 基准: 67%
+Alpha (策略-基准): -24%
+
+分方向
+  bullish : 5/8 62.5% (Wilson 95% CI: [30.6%, 86.3%])
+  bearish : 4/13 30.8% (Wilson 95% CI: [12.7%, 57.6%])
+```
 
 ---
 
-## 🧪 开发
+## CLI 速查
 
-### 安装开发依赖
-
-```bash
-uv sync --extra dev
+```
+mommy-chaogu
+├── mommy-watchlist    # 自选股管理（分组 / 增删 / 告警 / 导出）
+├── mommy-monitor      # 实时监控（快照 / 持续轮询 / 信号日志）
+├── mommy-cache        # 缓存管理（命中率 / warmup / refresh）
+├── mommy-report       # HTML 报告渲染
+├── mommy-flows        # 资金流拉新 + 板块扫描 + 收盘日报
+├── mommy-semicon      # 半导体产业链查询
+├── mommy-earnings     # 财报前瞻 vs 实际 比对
+├── mommy-agent        # AI 行情助手（chat / report / scan / verify / consolidate ...）
+├── mommy-mcp          # MCP Server（stdio 协议，可接入 Claude Desktop）
+└── mommy-web          # Web 服务（REST API + WebSocket）
 ```
 
-### 跑测试
+`mommy-agent` 子命令：
 
-```bash
-# 离线测试（270 个，应该全过）
-uv run pytest -m "not network"
-
-# 网络测试（需要联网，标记 network）
-uv run pytest -m network
-
-# 全部
-uv run pytest
-
-# 单个模块
-uv run pytest tests/earnings/ -v
+```
+chat         与 agent 对话（自动调用记忆系统）
+report       生成收盘日报（agent 驱动 + 记忆注入）
+scan         盘中智能扫描
+monitor      持续监控循环
+verify       验证到期预测
+predictions  查看预测历史
+events       查看近期事件
+narrative    生成市场脉络叙述
+consolidate  提炼语义知识
+knowledge    查看活跃知识
+search       向量语义搜索
+cleanup      清理旧数据（TTL + 去重）
+tools        列出可用工具
 ```
 
-### 代码质量门
+---
+
+## 自动化
+
+### Cron 定时任务
+
+| 脚本 | 时间 | 功能 |
+|---|---|---|
+| OpenClaw | 周一~五 8:30 | 盘前预热缓存 |
+| OpenClaw | 周一~五 9:30 | 启动盘中监控 |
+| OpenClaw | 周一~五 15:30 | 收盘日报 + 推送 |
+| OpenClaw | 周六 10:00 | 周报汇总 |
+| `cron_verify.sh` | 周一~五 16:00 | 验证到期预测 |
+| `cron_consolidate.sh` | 周五 18:00 | 验证 + 提炼知识 + 生成 insight |
+
+---
+
+## 数据源
+
+| 数据源 | 用途 | 接口 |
+|---|---|---|
+| **东方财富 (efinance)** | 主力数据源（行情 / K 线 / 资金流 / 业绩） | `ef.stock.*` |
+| **腾讯财经 (Tencent)** | 备援（行情） | `qt.gtimg.cn` |
+| **巨潮资讯 (cninfo)** | 公告日历 | `hisAnnouncement/query` |
+
+多源 fallback 链：`CachedMarketDataAdapter(FallbackAdapter([EfinanceAdapter, TencentAdapter]))`
+
+---
+
+## 开发
+
+### 代码质量
 
 ```bash
-uv run ruff check .             # lint
-uv run ruff format .            # format
-uv run mypy --strict src        # type check
+uv run ruff check .          # lint
+uv run ruff format .         # format
+uv run mypy --strict src     # type check (0 errors)
+uv run pytest -m "not network"  # 700+ 离线测试
 ```
 
 ### 项目结构
@@ -380,142 +313,79 @@ uv run mypy --strict src        # type check
 ```
 mommy-chaogu/
 ├── src/mommy_chaogu/
-│   ├── market_data/      # 数据源适配层
-│   ├── cache/            # SQLite 缓存
-│   ├── watchlist/        # 自选股 ORM
-│   ├── monitor/          # 实时监控
-│   ├── signals/          # 告警规则
-│   ├── flows/            # 资金流
-│   ├── earnings/         # 财报比对 ⭐
-│   ├── semicon/          # 半导体产业链
-│   ├── web/              # FastAPI 后端
-│   ├── push/             # 微信推送
-│   ├── report_render/    # 报告 HTML
-│   └── cli.py            # CLI 入口
-├── web/                  # Vite + Vue 3 前端
-├── tests/                # 270 个测试
-├── docs/                 # 7 份文档
-├── scripts/              # loader 脚本
-├── data/                 # 运行时数据（不入库）
-├── supply_chains/        # 产业链数据资产
-├── reports/              # 实战产物
-└── pyproject.toml        # 项目配置
+│   ├── market_data/         # 数据源适配层（efinance + tencent + fallback）
+│   ├── cache/               # SQLite 缓存（5 表 + 节流 + freshness）
+│   ├── watchlist/           # 自选股 ORM（SQLAlchemy 2.0）
+│   ├── monitor/             # 实时监控
+│   ├── signals/             # 告警规则 + Alerter
+│   ├── flows/               # 资金流分析 + 信号
+│   ├── earnings/            # 财报前瞻 vs 实际比对
+│   ├── agent/               # LLM agent（21 工具 + MCP + 记忆系统 + MemoryPipeline）
+│   ├── backtest/            # 回测引擎（评分 + 成本 + 组合 + walk-forward + regime）
+│   ├── portfolio/           # 持仓 + 组合分析
+│   ├── semicon/             # 半导体产业链参考库
+│   ├── web/                 # FastAPI + WebSocket
+│   ├── push/                # Server酱推送
+│   ├── db_paths.py          # 统一数据库路径管理
+│   └── cli.py               # CLI 入口（12 个子应用）
+├── tests/                   # 700+ 测试
+├── scripts/                 # 回测 / 迁移 / cron 脚本
+├── docs/                    # 项目文档
+├── web/                     # Vite + Vue 3 前端
+└── pyproject.toml
 ```
 
----
+### 文档
 
-## 🗺️ 路线图
-
-### 🎯 v1.0（下一个发布）
-- [ ] CI 集成 GitHub Actions 徽章（已上线 CI, 即将加徽章）
-- [ ] EarningsCalendar 公告日历爬取（巨潮资讯 API）
-- [ ] 7/15 起 cron 集成财报扫描（日报推送）
-- [ ] 沪股 / 深股 / 北交所 全面覆盖
-
-### 🌱 v1.1（中期）
-- [ ] 回测引擎（验证信号规则历史表现）
-- [ ] WebSocket 实时多客户端推送
-- [ ] PWA 离线访问（妈妈加桌面像 App）
-- [ ] 多用户支持（妈妈 + 丈母娘 + 团长）
-- [ ] 回放系统（资金流 + 报表）
-
-### 🔭 v2.0（长期）
-- [ ] 微信小程序（复用 web 资产，Taro 重编译）
-- [ ] 内网穿透（Cloudflare Tunnel 0 配置）
-- [ ] 多语言（English README）
-- [ ] 插件市场（允许外部策略包）
-
-### 💡 灵感收集
-- 实时异动扫盘（龙虎榜 + 大宗交易）
-- 主力重仓股跟踪（社保 / QFII / 公募）
-- 财报季自动生成「个人持仓影响」报告
-- 二级行业轮动热力图
-- 估值指标体系（PE/PB/PS 历史百分位）
+| 文档 | 用途 |
+|---|---|
+| [PROGRESS.md](docs/PROGRESS.md) | 当前进度 + 里程碑 |
+| [DESIGN.md](docs/DESIGN.md) | 架构设计 + ADR |
+| [MEMORY-SYSTEM-PLAN.md](docs/MEMORY-SYSTEM-PLAN.md) | 记忆系统设计（5 层架构 + MemoryPipeline） |
+| [BACKTEST-REPORT.md](docs/BACKTEST-REPORT.md) | 回测报告（多模型横向对比） |
+| [EVALUATION-2026-07-05.md](docs/EVALUATION-2026-07-05.md) | 记忆系统 + 回测系统评估报告 |
+| [EARNINGS-HANDBOOK.md](docs/EARNINGS-HANDBOOK.md) | 财报窗口实战手册 |
+| [KLINE-SPEC.md](docs/KLINE-SPEC.md) | K 线组件规范 |
 
 ---
 
-## 🤔 FAQ
-
-### Q: 这个项目和同花顺 / 东方财富 / 雪球有什么区别？
-
-A: **同花顺/东财** 是通用终端，面向所有股民，功能多但复杂。**雪球** 是社区。**mommy-chaogu** 是为「妈妈的特定需求」定制：
-- 资金流按 **流通市值比率 (bp)** 计算，绝对值可比性
-- 财报前瞻 vs 实际打分（券商偏差自动跟踪）
-- 多源 fallback，妈妈手机从不卡住
-- 中文文案 + 口语化输出（“主力在买” 而不是 “net_inflow > threshold”）
-
-### Q: 为什么用 Protocol + Adapter 模式？
-
-A: 三层好处：
-1. **可测**：mock adapter 不依赖网络
-2. **可扩展**：加东财/腾讯/cninfo 只需实现 Protocol
-3. **降级**：东财挂了自动走腾讯，妈妈无感
-
-### Q: 为什么不直接买同花顺 iFinD？
-
-A: 年费 ¥5000+ 对个人不划算。这个项目代码量 ~16,000 行，单人 1 个月能维护完。妈妈本身已有 Web UI + 推送 + 自选股覆盖 90% 场景。
-
-### Q: 性能怎么样？
-
-A: 实际实测（7/1 实战验证）：
-- 半导体 106 只 × 拉资金流 = 1.5 秒
-- 全市场快照 = 4 秒
-- Web 首屏 = < 1 秒
-- 微信推送 = 0.3 秒
-
-### Q: 会上传妈妈的自选股吗？
-
-A: **不会**。`data/watchlist.db` 已在 `.gitignore` 中。妈妈的自选股、持仓是隐私，项目本身只追踪「公开产业链主题股」作为示例。
-
----
-
-## 🤝 贡献
-
-欢迎 PR / Issue！
-
-**PR 流程**：
-1. fork → branch (`feat/xxx` 或 `fix/xxx`)
-2. 写测试（保持覆盖率）
-3. `uv run ruff format . && uv run ruff check . && uv run mypy --strict src`
-4. `uv run pytest -m "not network"` 全过
-5. commit（`feat:` / `fix:` / `docs:` 前缀）→ push → PR
-
-**Issue 模板**：见 `.github/ISSUE_TEMPLATE/`
-
----
-
-## 📜 License
-
-[MIT](LICENSE) © 2026 coffee-man666
-
----
-
-## 🙏 致谢
-
-- [efinance](https://github.com/Micro-sheep/efinance) — 主力行情数据源
-- [腾讯财经](https://qt.gtimg.cn/) — 备援数据源
-- [巨潮资讯](http://www.cninfo.com.cn/) — 公告数据
-- [FastAPI](https://fastapi.tiangolo.com/) + [Vite](https://vitejs.dev/) + [Vue 3](https://vuejs.org/)
-- [Server酱³](https://sct.ftqq.com/) — 微信推送
-- [OpenClaw](https://github.com/openclaw/openclaw) — 多 agent 调度
-
----
-
-## 📈 项目数据
+## 项目数据
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~16,000 行（src 11,300 + tests 4,100 + web ~800 + scripts 600 + docs 1,000）|
-| 测试 | **270 passed**（247 离线 + 23 网络 marked）|
-| ruff | ✅ All checks passed |
-| mypy --strict | ✅ 0 errors |
-| 数据源 | 3（efinance / tencent / cninfo）|
-| CLI 子应用 | 9 / 子命令 30+ |
-| 业务规则 | 7（signals）+ 4（earnings）|
-| 数据库表 | 13+ |
-| Web 端点 | 20+ REST + 2 WebSocket |
-| Push 渠道 | Server酱³（微信）|
+| 代码量 | ~38,000 行（src ~25,000 + tests ~10,000 + web ~3,000） |
+| 测试 | 700+ passed（离线 + 网络 marked） |
+| CLI 子应用 | 12 个 / 子命令 50+ |
+| Agent 工具 | 21 个 function-calling tools |
+| 数据库 | 4 个（market / portfolio / agent / reference） |
+| Cron 自动化 | 6 个定时任务 |
+| LLM Provider | 4 个（deepseek / openai / kimi / z.ai） |
 
 ---
 
-**⚠️ 免责声明**：本项目仅供学习和个人投资参考，不构成任何投资建议。A 股投资有风险，入市需谨慎。
+## 贡献
+
+```bash
+# 1. fork → branch
+git checkout -b feat/xxx
+
+# 2. 写测试 + 实现功能
+uv run ruff format . && uv run ruff check .
+uv run mypy --strict src
+uv run pytest -m "not network"
+
+# 3. commit + push + PR
+git commit -m "feat: xxx"
+```
+
+Conventional Commits：`feat / fix / docs / refactor / chore`
+
+---
+
+## License
+
+[MIT](LICENSE)
+
+---
+
+**免责声明**：本项目仅供学习和个人投资参考，不构成任何投资建议。A 股投资有风险，入市需谨慎。
