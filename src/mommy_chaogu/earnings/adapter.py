@@ -53,12 +53,7 @@ class EarningsAdapter(Protocol):
 
 
 class MockEarningsAdapter:
-    """Mock 数据源，固定 41 家公司的假数据。
-
-        用于：
-    - 单元测试
-    - 演示：手动触发 actual vs predicted 比对流程
-    - 演练：实战前预演信号触发
+    """Mock 数据源，用于单元测试和演示。
 
     数据生成规则：
     - 80% 概率在预测区间内
@@ -68,7 +63,7 @@ class MockEarningsAdapter:
 
     name = "mock"
 
-    # 41 家公司的固定 seed（与 earnings_preview.db 同步）
+    # 测试 fixture（代表性子集，不要求与 earnings_preview.json 完全同步）
     MOCK_DATA: ClassVar[dict[str, dict[str, object]]] = {
         "603662": {"name": "柯力传感", "low": 188.0, "high": 217.0},
         "603986": {"name": "兆易创新", "low": 1070.0, "high": 1370.0},
@@ -77,9 +72,9 @@ class MockEarningsAdapter:
         "300223": {"name": "北京君正", "low": 440.0, "high": 520.0},
         "002617": {"name": "露笑科技", "low": 336.0, "high": 627.0},
         "688519": {"name": "南亚新材", "low": 354.0, "high": 505.0},
-        "002876": {"name": "三孚新科", "low": 261.0, "high": 502.0},
+        "002876": {"name": "三利谱", "low": 261.0, "high": 502.0},
         "301536": {"name": "星宸科技", "low": 336.0, "high": 627.0},
-        "688072": {"name": "富创精密", "low": 188.0, "high": 217.0},
+        "688072": {"name": "拓荆科技", "low": 30.0, "high": 60.0},
     }
 
     def fetch_actual(
