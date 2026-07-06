@@ -16,6 +16,7 @@
     uv run python scripts/clean_supply_chains.py --all          # 处理全部
     uv run python scripts/clean_supply_chains.py --check semiconductor  # dry-run + diff
 """
+
 from __future__ import annotations
 
 import argparse

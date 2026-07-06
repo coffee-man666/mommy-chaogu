@@ -42,9 +42,16 @@ def rebuild_earnings_preview(stocks: list[dict]) -> int:
                 report_period, report_source, report_date, watchlist_flag)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                s["code"], s["name"], s["sector"], s.get("subsector", ""),
-                s["growth_low"], s["growth_high"], growth_mid, s["growth_text"],
-                s.get("core_driver", ""), s.get("highlight", ""),
+                s["code"],
+                s["name"],
+                s["sector"],
+                s.get("subsector", ""),
+                s["growth_low"],
+                s["growth_high"],
+                growth_mid,
+                s["growth_text"],
+                s.get("core_driver", ""),
+                s.get("highlight", ""),
                 s.get("report_period", "H1 2026"),
                 s.get("report_source", "中信证券"),
                 s.get("report_date", "2026-07-02"),
@@ -127,7 +134,9 @@ def main() -> None:
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM earnings_preview")
     print(f"\n验证: earnings_preview count = {cur.fetchone()[0]}")
-    cur.execute("SELECT sector, COUNT(*) FROM earnings_preview GROUP BY sector ORDER BY COUNT(*) DESC")
+    cur.execute(
+        "SELECT sector, COUNT(*) FROM earnings_preview GROUP BY sector ORDER BY COUNT(*) DESC"
+    )
     for sector, cnt in cur.fetchall():
         print(f"  {sector}: {cnt}")
     conn.close()

@@ -122,9 +122,16 @@ def migrate_earnings_db() -> int:
                 report_period, report_source, report_date, watchlist_flag)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                s["code"], s["name"], s["sector"], s.get("subsector", ""),
-                s["growth_low"], s["growth_high"], growth_mid, s["growth_text"],
-                s.get("core_driver", ""), s.get("highlight", ""),
+                s["code"],
+                s["name"],
+                s["sector"],
+                s.get("subsector", ""),
+                s["growth_low"],
+                s["growth_high"],
+                growth_mid,
+                s["growth_text"],
+                s.get("core_driver", ""),
+                s.get("highlight", ""),
                 s.get("report_period", "H1 2026"),
                 s.get("report_source", "中信证券"),
                 s.get("report_date", "2026-07-02"),
@@ -194,11 +201,30 @@ def migrate_supply_chains() -> int:
         return 0
 
     runtime_fields = {
-        "price", "prev_close", "change_pct", "open", "high", "low",
-        "volume", "volume_hand", "turnover", "turnover_yi", "turnover_rate",
-        "volume_ratio", "pe_dynamic", "total_market_cap", "circulating_market_cap",
-        "main_net", "super_large_net", "large_net", "medium_net", "small_net",
-        "amount", "amplitude", "change", "market_type_raw",
+        "price",
+        "prev_close",
+        "change_pct",
+        "open",
+        "high",
+        "low",
+        "volume",
+        "volume_hand",
+        "turnover",
+        "turnover_yi",
+        "turnover_rate",
+        "volume_ratio",
+        "pe_dynamic",
+        "total_market_cap",
+        "circulating_market_cap",
+        "main_net",
+        "super_large_net",
+        "large_net",
+        "medium_net",
+        "small_net",
+        "amount",
+        "amplitude",
+        "change",
+        "market_type_raw",
         "main_net_ratio",
     }
 
@@ -302,8 +328,14 @@ def main() -> None:
     # 检查已知修正
     if EP_DB.exists():
         conn = sqlite3.connect(str(EP_DB))
-        for code, expected in [("688072", "拓荆科技"), ("300613", "富瀚微"), ("688007", "光峰科技")]:
-            row = conn.execute("SELECT name FROM earnings_preview WHERE code = ?", (code,)).fetchone()
+        for code, expected in [
+            ("688072", "拓荆科技"),
+            ("300613", "富瀚微"),
+            ("688007", "光峰科技"),
+        ]:
+            row = conn.execute(
+                "SELECT name FROM earnings_preview WHERE code = ?", (code,)
+            ).fetchone()
             actual = row[0] if row else "NOT FOUND"
             status = "✅" if actual == expected else "❌"
             print(f"  {status} {code} = {actual} (应为 {expected})")

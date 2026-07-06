@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -136,12 +136,13 @@ def test_upsert_calendar(store: EarningsStore):
 
 
 def test_list_calendars_filter(store: EarningsStore):
-    """日历可按日期范围过滤。"""
+    """日历可按日期范围过滤（日期相对 today 计算，避免跨午夜失效）。"""
+    today = date.today()
     c1 = EarningsCalendar(
         code="603662",
         name="柯力",
         period="H1 2026",
-        disclosure_date=date(2026, 7, 20),
+        disclosure_date=today + timedelta(days=10),
         is_estimated=False,
         source="x",
     )
@@ -149,7 +150,7 @@ def test_list_calendars_filter(store: EarningsStore):
         code="603986",
         name="兆易",
         period="H1 2026",
-        disclosure_date=date(2026, 7, 25),
+        disclosure_date=today + timedelta(days=20),
         is_estimated=False,
         source="x",
     )
@@ -157,20 +158,20 @@ def test_list_calendars_filter(store: EarningsStore):
         code="002745",
         name="木林森",
         period="H1 2026",
-        disclosure_date=date(2026, 8, 5),
+        disclosure_date=today + timedelta(days=35),
         is_estimated=False,
         source="x",
     )
     for c in [c1, c2, c3]:
         store.upsert_calendar(c)
 
-    # 未来 7 天 = 7/2 + 7 = 7/9
+    # 未来 7 天 = today + 7 → 只有 today+10 在范围外
     cals = store.list_calendars(days_ahead=7)
-    assert len(cals) == 0  # 7/20 都在 7/9 之后
+    assert len(cals) == 0
 
-    # 未来 30 天 = 7/2 + 30 = 8/1
+    # 未来 30 天 = today + 30 → today+10、today+20 在内；today+35 排除
     cals = store.list_calendars(days_ahead=30)
-    assert len(cals) == 2  # 7/20, 7/25
+    assert len(cals) == 2
 
 
 def test_upsert_score(store: EarningsStore):

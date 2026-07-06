@@ -68,7 +68,9 @@ def load_json() -> list[dict]:
     meta = data.get("meta", {})
     stocks = data.get("stocks", [])
     print(f"📂 JSON: {JSON_PATH.name}")
-    print(f"📋 来源: {meta.get('source', '?')} {meta.get('report_date', '?')} ({meta.get('report_period', '?')})")
+    print(
+        f"📋 来源: {meta.get('source', '?')} {meta.get('report_date', '?')} ({meta.get('report_period', '?')})"
+    )
     print(f"📦 数据量: {len(stocks)} 家公司\n")
     return stocks
 
@@ -94,9 +96,16 @@ def build_db(stocks: list[dict], db_path: Path) -> int:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                s["code"], s["name"], s["sector"], s.get("subsector", ""),
-                s["growth_low"], s["growth_high"], growth_mid, s["growth_text"],
-                s.get("core_driver", ""), s.get("highlight", ""),
+                s["code"],
+                s["name"],
+                s["sector"],
+                s.get("subsector", ""),
+                s["growth_low"],
+                s["growth_high"],
+                growth_mid,
+                s["growth_text"],
+                s.get("core_driver", ""),
+                s.get("highlight", ""),
                 s.get("report_period", "H1 2026"),
                 s.get("report_source", "中信证券"),
                 s.get("report_date", "2026-07-02"),
@@ -124,11 +133,15 @@ def print_summary(db_path: Path) -> None:
 
     print("\n板块汇总:")
     cur.execute("SELECT * FROM v_sector_summary")
-    print(f"{'板块':<14} {'家数':>4} {'平均增速':>10} {'最高':>10} {'最低':>10} {'+200%':>5} {'+50~200':>8} {'下滑':>4}")
+    print(
+        f"{'板块':<14} {'家数':>4} {'平均增速':>10} {'最高':>10} {'最低':>10} {'+200%':>5} {'+50~200':>8} {'下滑':>4}"
+    )
     print("-" * 70)
     for row in cur.fetchall():
         sector, n, avg, mx, mn, exp, high, dec = row
-        print(f"{sector:<14} {n:>4} {avg:>+9.1f}% {mx:>+9.1f}% {mn:>+9.1f}% {exp:>5} {high:>8} {dec:>4}")
+        print(
+            f"{sector:<14} {n:>4} {avg:>+9.1f}% {mx:>+9.1f}% {mn:>+9.1f}% {exp:>5} {high:>8} {dec:>4}"
+        )
 
     conn.close()
 
