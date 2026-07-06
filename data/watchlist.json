@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": "1.0",
     "stats": {
-      "groups": 18,
+      "groups": 19,
       "entries": 79,
       "codes": 79
     }
@@ -185,6 +185,32 @@
       ]
     },
     {
+      "name": "半导体-功率",
+      "description": "H1 2026 业绩前瞻（来源: 中信证券 2026-07-02）",
+      "entries": [
+        {
+          "code": "300373",
+          "name": "扬杰科技",
+          "note": null
+        },
+        {
+          "code": "603290",
+          "name": "斯达半导",
+          "note": null
+        },
+        {
+          "code": "605111",
+          "name": "新洁能",
+          "note": null
+        },
+        {
+          "code": "688396",
+          "name": "华润微",
+          "note": null
+        }
+      ]
+    },
+    {
       "name": "半导体-存储",
       "description": "H1 2026 业绩前瞻（来源: 中信证券 2026-07-02）",
       "entries": [
@@ -248,37 +274,17 @@
       ]
     },
     {
-      "name": "半导体-模拟功率",
+      "name": "半导体-模拟",
       "description": "H1 2026 业绩前瞻（来源: 中信证券 2026-07-02）",
       "entries": [
-        {
-          "code": "300373",
-          "name": "扬杰科技",
-          "note": null
-        },
         {
           "code": "300661",
           "name": "圣邦股份",
           "note": null
         },
         {
-          "code": "603290",
-          "name": "斯达半导",
-          "note": null
-        },
-        {
-          "code": "605111",
-          "name": "新洁能",
-          "note": null
-        },
-        {
           "code": "688052",
           "name": "纳芯微",
-          "note": null
-        },
-        {
-          "code": "688396",
-          "name": "华润微",
           "note": null
         },
         {
