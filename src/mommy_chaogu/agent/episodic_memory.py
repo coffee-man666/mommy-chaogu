@@ -78,7 +78,7 @@ class EpisodicMemory:
 
     用法::
 
-        em = EpisodicMemory(Path("data/watchlist.db"))
+        em = EpisodicMemory(Path("data/agent.db"))
         em.write(
             event_type="market_snapshot",
             scope="market",

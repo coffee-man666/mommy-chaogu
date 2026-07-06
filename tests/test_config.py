@@ -12,6 +12,25 @@ from mommy_chaogu.config import (
     load_config,
 )
 
+# 所有可能影响测试的 env var
+_ENV_KEYS = (
+    "DEEPSEEK_API_KEY",
+    "OPENAI_API_KEY",
+    "MOONSHOT_API_KEY",
+    "ZAI_API_KEY",
+    "SERVER_CHAN_KEY",
+    "AGENT_PROVIDER",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_env(monkeypatch: pytest.MonkeyPatch):
+    """每个测试前清除所有相关 env var，mock 掉 load_dotenv 防止 .env 泄漏。"""
+    for key in _ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr("mommy_chaogu.config.load_dotenv", lambda *a, **kw: False)
+
+
 # ---------- 默认值 ----------
 
 
@@ -23,7 +42,7 @@ def test_load_config_defaults_when_no_file(tmp_path: Path):
     assert cfg.agent.max_tool_calls == 10
     assert cfg.cache.quote_fetch_interval_seconds == 300
     assert cfg.monitor.interval_seconds == 30.0
-    assert cfg.db_path == "data/watchlist.db"
+    assert cfg.db_path == "data/market.db"
 
 
 def test_load_config_reads_toml(tmp_path: Path):

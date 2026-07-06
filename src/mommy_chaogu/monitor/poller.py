@@ -80,7 +80,7 @@ class Monitor:
     """基于自选池的行情监控。
 
     用法：
-        store = WatchlistStore(Path("data/watchlist.db"))
+        store = WatchlistStore(Path("data/portfolio.db"))
         adapter = EfinanceAdapter()
         monitor = Monitor(store, adapter, log_path=Path("data/monitor.log"))
 

@@ -90,7 +90,7 @@ class PredictionTracker:
 
     用法::
 
-        tracker = PredictionTracker(Path("data/watchlist.db"))
+        tracker = PredictionTracker(Path("data/agent.db"))
         pid = tracker.create(code="600519", name="贵州茅台",
                              prediction="看涨", direction="up",
                              timeframe="5d")

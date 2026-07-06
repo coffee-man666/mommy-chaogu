@@ -119,6 +119,7 @@ def copy_table(src_conn: sqlite3.Connection, dst_db: Path, table: str) -> int:
         # 表存在但为空，INSERT
         src_conn.execute(f"INSERT INTO dst.{table} SELECT * FROM main.{table}")
 
+    src_conn.commit()
     src_conn.execute("DETACH DATABASE dst")
     return rows
 
@@ -166,7 +167,11 @@ def run(check_only: bool = False) -> None:
 
         if not check_only:
             backup = LEGACY_WATCHLIST_DB.with_suffix(".db.bak")
-            LEGACY_WATCHLIST_DB.rename(backup)
+            if backup.exists():
+                # .bak 已存在，说明之前迁移过，直接删掉空的旧文件
+                LEGACY_WATCHLIST_DB.unlink(missing_ok=True)
+            else:
+                LEGACY_WATCHLIST_DB.rename(backup)
             print(f"  ✅ {LEGACY_WATCHLIST_DB.name} → {backup.name}")
 
     # ---------- 2. semicon.db → reference.db ----------
@@ -183,8 +188,10 @@ def run(check_only: bool = False) -> None:
         conn.close()
         if not check_only:
             backup = LEGACY_SEMICON_DB.with_suffix(".db.bak")
-            LEGACY_SEMICON_DB.rename(backup)
-            print(f"  ✅ {LEGACY_SEMICON_DB.name} → {backup.name}")
+            if backup.exists():
+                LEGACY_SEMICON_DB.unlink(missing_ok=True)
+            else:
+                LEGACY_SEMICON_DB.rename(backup)
 
     # ---------- 3. earnings dbs → reference.db ----------
     for db_file in [LEGACY_EARNINGS_ACTUAL_DB, LEGACY_EARNINGS_PREVIEW_DB]:

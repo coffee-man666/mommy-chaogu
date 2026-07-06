@@ -83,7 +83,7 @@ class FlowService:
     """资金流高级 API。
 
     用法：
-        service = FlowService.from_default(Path("data/watchlist.db"))
+        service = FlowService.from_default(Path("data/market.db"))
         result = service.pull_today(SemiconPool(...), force=True)
         for s in service.top_today(pool, n=20, by="inflow"):
             print(s.code, s.main_net)
@@ -405,8 +405,7 @@ class FlowService:
 
         n_today = 0
         n_history = 0
-        s: Any = self.store.session()
-        with s:
+        with self.store.session() as s:
             for code in codes:
                 r: Any = s.execute(
                     text("DELETE FROM today_money_flow_cache WHERE code = :code"),

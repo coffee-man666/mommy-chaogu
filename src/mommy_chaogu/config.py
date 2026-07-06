@@ -25,6 +25,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from mommy_chaogu.db_paths import MARKET_DB
+
 DEFAULT_CONFIG_PATH = Path("config.toml")
 
 # provider → 对应的环境变量名
@@ -76,7 +78,7 @@ class MonitorConfig:
 class AppConfig:
     """顶层配置，聚合所有子配置。"""
 
-    db_path: str = "data/watchlist.db"
+    db_path: str = str(MARKET_DB)
     agent: AgentConfig = field(default_factory=AgentConfig)
     push: PushConfig = field(default_factory=PushConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
@@ -145,7 +147,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     monitor = _build_section(MonitorConfig, data.get("monitor", {}))
 
     cfg = AppConfig(
-        db_path=data.get("db_path", "data/watchlist.db"),
+        db_path=data.get("db_path", str(MARKET_DB)),
         agent=agent,  # type: ignore[arg-type]
         push=push,  # type: ignore[arg-type]
         cache=cache,  # type: ignore[arg-type]
@@ -168,7 +170,7 @@ _CONFIG_TEMPLATE = """\
 #   SERVER_CHAN_KEY   → push.server_chan_key
 #   AGENT_PROVIDER    → agent.provider
 
-db_path = "data/watchlist.db"
+db_path = "{market_db}"
 
 [agent]
 provider = "deepseek"          # deepseek / openai / kimi / zai
@@ -198,5 +200,5 @@ def create_default_config(path: str | Path) -> Path:
     """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
+    p.write_text(_CONFIG_TEMPLATE.format(market_db=MARKET_DB), encoding="utf-8")
     return p

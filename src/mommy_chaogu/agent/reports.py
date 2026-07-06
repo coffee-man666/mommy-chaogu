@@ -25,7 +25,7 @@ class AgentReportService:
 
     用法：
         agent = AgentService(ctx)
-        svc = AgentReportService(agent, db_path=Path("data/watchlist.db"))
+        svc = AgentReportService(agent, db_path=PORTFOLIO_DB)
         text = svc.generate_daily_report(pool_name="semicon")
         print(text)
     """
@@ -144,19 +144,15 @@ class AgentReportService:
 
     def _collect_pool_data(self, pool_name: str) -> dict[str, Any]:
         """从 flows 缓存读取资金流排行（需要先 mommy-flows pull）。"""
-        from pathlib import Path
-
+        from mommy_chaogu.db_paths import MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
         from mommy_chaogu.flows.pool import build_pool
         from mommy_chaogu.flows.service import FlowService
 
-        db_path = Path("data/watchlist.db")
-        semicon_db = Path("data/semicon.db")
-
         pool = build_pool(
             name=pool_name,
-            db_path=semicon_db if pool_name == "semicon" else db_path,
+            db_path=REFERENCE_DB if pool_name == "semicon" else PORTFOLIO_DB,
         )
-        service = FlowService.from_default(db_path)
+        service = FlowService.from_default(MARKET_DB)
 
         # 当日排行
         top_in = service.top_today(pool, n=10, by="main_net", direction="in")

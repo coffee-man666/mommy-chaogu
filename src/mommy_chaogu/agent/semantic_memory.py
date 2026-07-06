@@ -71,7 +71,7 @@ class SemanticMemory:
 
     用法::
 
-        sm = SemanticMemory(Path("data/watchlist.db"))
+        sm = SemanticMemory(Path("data/agent.db"))
         sm.upsert(
             knowledge_type="sector_thesis",
             scope="sector:创新药",

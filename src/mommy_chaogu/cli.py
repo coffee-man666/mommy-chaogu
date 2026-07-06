@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
+from mommy_chaogu.db_paths import MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 from mommy_chaogu.market_data import EfinanceAdapter
 from mommy_chaogu.monitor import Monitor
 from mommy_chaogu.semicon.store import Board, ChainPosition, Subcategory
@@ -40,15 +41,15 @@ from mommy_chaogu.watchlist.store import (
 
 # ---------- 默认路径 ----------
 
-DEFAULT_DB_PATH = Path("data/watchlist.db")
+DEFAULT_DB_PATH = PORTFOLIO_DB  # watchlist / portfolio / custom_alerts
 DEFAULT_LOG_PATH = Path("data/monitor.log")
 DEFAULT_SIGNALS_LOG_PATH = Path("data/signals.log")
-DEFAULT_CACHE_DB_PATH = Path("data/watchlist.db")  # cache 与 watchlist 共用一份 db
-DEFAULT_SEMICON_DB_PATH = Path("data/semicon.db")  # 半导体产业链独立 db
-DEFAULT_FLOWS_SEMICON_DB_PATH = Path("data/semicon.db")  # flows 拉哪只从哪取
-DEFAULT_FLOWS_DB_PATH = Path("data/watchlist.db")  # 资金流缓存落到哪（复用 cache 表）
+DEFAULT_CACHE_DB_PATH = MARKET_DB  # quote/bar/flow 缓存
+DEFAULT_SEMICON_DB_PATH = REFERENCE_DB  # 半导体产业链
+DEFAULT_FLOWS_SEMICON_DB_PATH = REFERENCE_DB  # flows 拉哪只从哪取
+DEFAULT_FLOWS_DB_PATH = MARKET_DB  # 资金流缓存落到哪（复用 cache 表）
 DEFAULT_FLOWS_MONITOR_LOG_PATH = Path("data/flows_monitor.log")  # monitor 信号日志
-DEFAULT_FLOWS_REPORT_DIR = Path("data/")  # 收盘日报输出目录
+DEFAULT_FLOWS_REPORT_DIR = Path("reports/")  # 收盘日报输出目录
 
 
 # ---------- 共用 ----------
@@ -1699,7 +1700,7 @@ def cmd_report_render(args: argparse.Namespace) -> int:
 
 
 def cmd_report_index(args: argparse.Namespace) -> int:
-    """扫描所有 flows_report_*.md，渲染 index.html。"""
+    """扫描所有 .md 报告，渲染 index.html。"""
     from mommy_chaogu.report_render import (
         ReportData,
         parse_markdown_report,
@@ -1711,12 +1712,21 @@ def cmd_report_index(args: argparse.Namespace) -> int:
         print(f"❌ 报告目录不存在: {src_dir}")
         return 1
 
-    md_files = sorted(src_dir.glob("flows_report_*.md"))
+    md_files = sorted(src_dir.glob("*.md"))
     if not md_files:
-        print(f"❌ 没有任何报告: {src_dir}/flows_report_*.md")
+        print(f"❌ 没有任何报告: {src_dir}/*.md")
         return 1
 
-    reports: list[ReportData] = [parse_markdown_report(p) for p in md_files]
+    reports: list[ReportData] = []
+    for p in md_files:
+        try:
+            reports.append(parse_markdown_report(p))
+        except Exception:
+            # 跳过非 flows 日报格式的 .md 文件
+            continue
+    if not reports:
+        print(f"❌ 没有找到可解析的 flows 日报: {src_dir}/*.md")
+        return 1
     p = render_index(reports, out_dir=args.out_dir)
     print(f"✅ {p}  ({len(reports)} 份报告)")
     return 0

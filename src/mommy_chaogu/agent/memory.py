@@ -37,7 +37,7 @@ class ConversationMemory:
 
     用法::
 
-        mem = ConversationMemory(Path("data/watchlist.db"))
+        mem = ConversationMemory(Path("data/agent.db"))
         mem.add("user", "茅台多少钱")
         mem.add("assistant", "茅台现价 1680")
         recent = mem.recent(limit=10)

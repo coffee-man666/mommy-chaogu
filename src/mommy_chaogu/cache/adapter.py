@@ -41,7 +41,7 @@ class CachedMarketDataAdapter:
 
     用法：
         base = EfinanceAdapter()
-        store = CacheStore(Path("data/watchlist.db"))
+        store = CacheStore(Path("data/market.db"))
         adapter = CachedMarketDataAdapter(base, store)
         # 用法和 base 一样，但会自动读/写缓存
         quote = adapter.get_quote("600519")

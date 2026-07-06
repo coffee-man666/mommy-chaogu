@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from mommy_chaogu.db_paths import PORTFOLIO_DB
 from mommy_chaogu.web.background import BackgroundService, set_service
 from mommy_chaogu.web.deps import get_adapter, get_alerter, get_watchlist_store
 from mommy_chaogu.web.routes import agent, cache, market, portfolio, quotes, signals, watchlist, ws
@@ -36,7 +37,7 @@ def create_app(
     """FastAPI app 工厂。
 
     参数：
-        db_path: 自选股/缓存数据库路径（None 用默认 data/watchlist.db）
+        db_path: 自选股/缓存数据库路径（None 用默认 data/portfolio.db）
         poll_interval_seconds: 后台轮询间隔（秒）
     """
     if db_path is not None:
@@ -71,7 +72,7 @@ def create_app(
             )
             from mommy_chaogu.signals import SignalSeverity
 
-            push_db = (db_path or Path("data/watchlist.db")).parent / "pushed.json"
+            push_db = (db_path or PORTFOLIO_DB).parent / "pushed.json"
             try:
                 pusher = ServerChanPusher(
                     send_key=server_chan_key,

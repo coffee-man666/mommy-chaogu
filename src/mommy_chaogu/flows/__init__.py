@@ -3,8 +3,8 @@
 设计：
 - 复用现有 CachedMarketDataAdapter（节流 + 缓存已经写好）
 - 加 PoolSource 抽象：把「拉哪几只」从「怎么拉」里解耦
-  - WatchlistPool：从 data/watchlist.db 自选股池拿 codes
-  - SemiconPool：从 data/semicon.db 半导体产业链拿 codes
+  - WatchlistPool：从 data/portfolio.db 自选股池拿 codes
+  - SemiconPool：从 data/reference.db 半导体产业链拿 codes
   - CustomPool：CLI --codes 传入
 - FlowService 高层 API：pull / top / show / stats
 - FlowMonitor：持续轮询 + ratio-based 异动检测

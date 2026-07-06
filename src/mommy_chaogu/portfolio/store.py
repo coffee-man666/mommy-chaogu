@@ -34,7 +34,7 @@ class PortfolioStore:
     """SQLite-backed 持仓存储。
 
     用法：
-        store = PortfolioStore(Path("data/watchlist.db"))
+        store = PortfolioStore(Path("data/portfolio.db"))
         pos = store.add_position("600519", "贵州茅台", Decimal("1800"), 100)
         summary = store.summary({"600519": Decimal("1850")})
     """

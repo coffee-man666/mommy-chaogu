@@ -4,7 +4,7 @@
 - CustomAlert 是不可变 dataclass（frozen + slots），作为公开 API 的返回值
 - CustomAlertStore 用 SQLAlchemy ORM 管理 SQLite 持久化，内部转换成 dataclass
 - evaluate 是纯静态方法，接收 CustomAlert + Quote，返回是否触发
-- 和 watchlist/portfolio 共用同一份 data/watchlist.db，独立表 custom_alerts
+- 和 watchlist/portfolio 共用同一份 data/portfolio.db，独立表 custom_alerts
 """
 
 from __future__ import annotations
@@ -119,7 +119,7 @@ class CustomAlertStore:
     """SQLite-backed 自定义告警存储。
 
     用法：
-        store = CustomAlertStore(Path("data/watchlist.db"))
+        store = CustomAlertStore(Path("data/portfolio.db"))
         store.add("600519", "贵州茅台", "price_below", Decimal("1600"))
         for a in store.list_all():
             print(a)

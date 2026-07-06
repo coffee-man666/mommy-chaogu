@@ -45,7 +45,7 @@ class WatchlistStore:
     """SQLite-backed 自选池存储。
 
     用法：
-        store = WatchlistStore(Path("data/watchlist.db"))
+        store = WatchlistStore(Path("data/portfolio.db"))
         store.add_group("白酒", description="白酒板块")
         store.add_entry("600519", "白酒", note="妈妈长期持有")
         for entry in store.list_entries():

@@ -87,7 +87,7 @@ class SemiconStore:
     """SQLite-backed 半导体产业链参考库。
 
     用法：
-        store = SemiconStore(Path("data/semicon.db"))
+        store = SemiconStore(Path("data/reference.db"))
         store.bulk_upsert(SEED_STOCKS)
         for s in store.list_by_chain("上游"):
             print(s.code, s.name, s.subcategory)
