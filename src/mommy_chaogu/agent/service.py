@@ -98,20 +98,6 @@ class AgentService:
         self._vector_search = vector_search
         self._ctx = ctx
 
-        # 记忆流水线：当 episodic 和 tracker 同时就绪时启用，封装
-        # prompt 构建 + 事实抽取 + 持久化逻辑
-        if episodic is not None and tracker is not None:
-            self._pipeline: MemoryPipeline | None = MemoryPipeline(
-                episodic=episodic,
-                tracker=tracker,
-                semantic=semantic,
-                vector_search=vector_search,
-                client=self._client,
-                model=self._model,
-            )
-        else:
-            self._pipeline = None
-
         # 解析 provider 配置
         provider = provider or os.environ.get("AGENT_PROVIDER", "deepseek")
         config = SUPPORTED_PROVIDERS.get(provider, SUPPORTED_PROVIDERS["deepseek"])
@@ -133,6 +119,21 @@ class AgentService:
         if config["base_url"]:
             client_kwargs["base_url"] = config["base_url"]
         self._client = OpenAI(**client_kwargs)
+
+        # 记忆流水线：当 episodic 和 tracker 同时就绪时启用，封装
+        # prompt 构建 + 事实抽取 + 持久化逻辑
+        # （必须在 self._client / self._model 赋值之后）
+        if episodic is not None and tracker is not None:
+            self._pipeline: MemoryPipeline | None = MemoryPipeline(
+                episodic=episodic,
+                tracker=tracker,
+                semantic=semantic,
+                vector_search=vector_search,
+                client=self._client,
+                model=self._model,
+            )
+        else:
+            self._pipeline = None
 
     def chat(
         self,

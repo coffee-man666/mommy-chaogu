@@ -36,6 +36,7 @@ mommy-earnings = "mommy_chaogu.earnings.cli:main_earnings"
 mommy-agent = "mommy_chaogu.cli:main_agent"
 mommy-mcp = "mommy_chaogu.agent.mcp_server:main_mcp"
 mommy-chaogu = "mommy_chaogu.cli:main"
+mommy = "mommy_chaogu.cli:main_mommy"
 
 [project.optional-dependencies]
 dev = [

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { agentStream } from '../../api/agent'
+import { agentStream, agentRoute } from '../../api/agent'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
   toolsUsed?: string[]
+  steps?: string[]
 }
 
 const messages = ref<Message[]>([])
@@ -15,13 +16,15 @@ const chatRef = ref<HTMLElement>()
 
 const stream = ref<ReturnType<typeof agentStream> | null>(null)
 
-// 快捷问题
+// 快捷问题 — 按场景分组
 const quickQuestions = [
+  '今天怎么样？',
+  '大盘怎么样？',
+  '主力在买什么？',
   '我的持仓怎么样？',
-  '今天大盘怎么样？',
+  '半导体板块怎么样',
   '创新药板块分析',
-  '半导体板块分析',
-  '有什么异动？',
+  '今日总结',
 ]
 
 function scrollToBottom() {
@@ -32,52 +35,67 @@ function scrollToBottom() {
   })
 }
 
-function send(message: string) {
+async function send(message: string) {
   const text = message.trim()
   if (!text || loading.value) return
 
   // 显示用户消息
   messages.value.push({ role: 'user', content: text })
-  input.value('')
   input.value = ''
   loading.value = true
 
   // 创建 assistant 占位
   const assistantIdx = messages.value.length
-  messages.value.push({ role: 'assistant', content: '' })
-
+  messages.value.push({ role: 'assistant', content: '正在为你查询数据...' })
   scrollToBottom()
+
+  // 先尝试工作流路由（快速路径）
+  try {
+    const route = await agentRoute(text)
+    if (route.matched && route.reply) {
+      // 工作流命中
+      messages.value[assistantIdx].content = route.reply
+      if (route.steps) {
+        messages.value[assistantIdx].steps = route.steps
+          .filter(s => s.success)
+          .map(s => s.name)
+      }
+      loading.value = false
+      scrollToBottom()
+      return
+    }
+  } catch {
+    // 路由失败，继续走 LLM 对话
+  }
+
+  // Fallback: WebSocket 流式对话
+  messages.value[assistantIdx].content = ''
 
   // 构造 history（最近 10 轮）
   const history = messages.value
-    .slice(0, -2) // 排除当前这轮
+    .slice(0, -2)
     .map((m) => ({ role: m.role, content: m.content }))
 
-  // 初始化 WS
   if (stream.value) {
     stream.value.close()
   }
 
   let currentText = ''
   stream.value = agentStream(
-    // onChunk
     (chunk: string) => {
       currentText += chunk
       messages.value[assistantIdx].content = currentText
       scrollToBottom()
     },
-    // onDone
     (toolsUsed: string[], _rounds: number) => {
       messages.value[assistantIdx].toolsUsed = toolsUsed
       loading.value = false
       scrollToBottom()
     },
-    // onThinking
     () => {
-      messages.value[assistantIdx].content = '思考中...'
+      messages.value[assistantIdx].content = '正在为你查询数据...'
       scrollToBottom()
     },
-    // onError
     (msg: string) => {
       messages.value[assistantIdx].content = `❌ ${msg}`
       loading.value = false
@@ -99,7 +117,7 @@ onMounted(() => {
   // 欢迎消息
   messages.value.push({
     role: 'assistant',
-    content: '你好！我是妈妈的行情助手。可以问我大盘行情、板块分析、持仓情况等。',
+    content: '你好！我是妈妈的行情助手 📋\n\n我可以帮你：\n· 看行情 — "今天怎么样"\n· 分析股票 — "分析比亚迪"\n· 看板块 — "半导体板块怎么样"\n· 看资金 — "主力在买什么"\n· 看持仓 — "我的持仓怎么样"\n· 写报告 — "今日总结"\n\n试试下面的快捷按钮，或者直接问我！',
   })
 })
 
@@ -125,6 +143,9 @@ onUnmounted(() => {
         </div>
         <div v-if="msg.toolsUsed && msg.toolsUsed.length > 0" class="msg-tools">
           🔧 {{ msg.toolsUsed.join(', ') }}
+        </div>
+        <div v-if="msg.steps && msg.steps.length > 0" class="msg-steps">
+          ✓ {{ msg.steps.join(' · ') }}
         </div>
       </div>
     </div>
@@ -218,6 +239,13 @@ onUnmounted(() => {
   font-size: 11px;
   color: #999;
   margin-top: 4px;
+  padding: 0 4px;
+}
+
+.msg-steps {
+  font-size: 11px;
+  color: #52c41a;
+  margin-top: 2px;
   padding: 0 4px;
 }
 

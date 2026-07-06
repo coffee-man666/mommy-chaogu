@@ -2,6 +2,7 @@
 
 端点：
 - POST /api/agent/chat  — 单轮问答（返回完整文本）
+- POST /api/agent/route — 尝试工作流路由（返回是否命中 + 结果）
 - WS  /ws/agent          — 流式对话（打字机效果，逐字返回）
 """
 
@@ -35,7 +36,95 @@ class ChatResponse(BaseModel):
     rounds: int = 0
 
 
+class RouteRequest(BaseModel):
+    message: str
+
+
+class RouteResponse(BaseModel):
+    matched: bool
+    workflow_id: str = ""
+    reply: str = ""
+    steps: list[dict[str, Any]] = []
+
+
 # ---------- REST 端点 ----------
+
+
+def _get_router() -> Any:
+    """懒加载 NLRouter（避免 app 启动时构建 adapter）。"""
+    from functools import lru_cache
+
+    @lru_cache(maxsize=1)
+    def _build() -> Any:
+        from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+        from mommy_chaogu.db_paths import AGENT_DB, PORTFOLIO_DB
+        from mommy_chaogu.portfolio.store import PortfolioStore
+        from mommy_chaogu.watchlist.store import WatchlistStore
+        from mommy_chaogu.web.deps import get_adapter
+        from mommy_chaogu.workflow.engine import WorkflowExecutor
+        from mommy_chaogu.workflow.router import NLRouter
+
+        adapter = get_adapter()
+        ctx = ToolContext(
+            adapter=adapter,
+            watchlist_store=WatchlistStore(PORTFOLIO_DB),
+            portfolio_store=PortfolioStore(PORTFOLIO_DB),
+            db_path=AGENT_DB,
+        )
+        tool_registry = ToolRegistry(ctx)
+
+        # 尝试构建 LLM summarizer
+        llm_summarizer = None
+        agent = get_agent_service()
+        if agent is not None:
+
+            class _AgentSummarizer:
+                def __init__(self, svc: Any) -> None:
+                    self._svc = svc
+
+                def summarize(self, template: str, context: str) -> str:
+                    prompt = template.format(context=context)
+                    resp = self._svc.chat_raw([{"role": "user", "content": prompt}])
+                    return resp.text
+
+            llm_summarizer = _AgentSummarizer(agent)
+
+        executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
+        return NLRouter(executor=executor)
+
+    return _build()
+
+
+@router.post("/route", response_model=RouteResponse)
+async def route_message(req: RouteRequest) -> RouteResponse:
+    """尝试工作流路由。
+
+    如果命中预定义工作流，执行并返回结果。
+    如果未命中，返回 matched=false 让前端 fallback 到 /chat。
+    """
+    nl_router = _get_router()
+    route = nl_router.route(req.message)
+
+    if not route.matched or route.workflow is None:
+        return RouteResponse(matched=False)
+
+    result = await asyncio.to_thread(nl_router.execute_route, route, req.message)
+
+    steps_data = [
+        {
+            "name": s.display_name,
+            "tool": s.tool_name,
+            "success": s.success,
+        }
+        for s in result.steps
+    ]
+
+    return RouteResponse(
+        matched=True,
+        workflow_id=route.workflow.id,
+        reply=result.summary,
+        steps=steps_data,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)

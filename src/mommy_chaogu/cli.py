@@ -564,8 +564,310 @@ def main_agent() -> NoReturn:
 
 
 # ============================================================
-# 顶级命令 mommy-chaogu
+# mommy — 面向用户的自然语言入口
 # ============================================================
+
+
+_WELCOME = """\
+╭──────────────────────────────────────────╮
+│     📋 妈妈炒股 — 你的投资助手            │
+╰──────────────────────────────────────────╯
+
+我可以帮你：
+
+  📈 看行情   "今天怎么样" / "大盘怎么样"
+  🔍 分析股票 "分析一下比亚迪" / "600519 怎么样"
+  📊 看板块   "半导体板块怎么样" / "创新药板块分析"
+  💰 看资金   "主力在买什么" / "资金流怎么样"
+  💼 看持仓   "我的持仓怎么样"
+  📋 管自选   "加个自选股 600519"
+  📅 看业绩   "中报怎么样" / "业绩披露"
+  📝 写报告   "今日总结" / "收盘报告"
+
+输入问题开始，输入 q 退出。
+"""
+
+
+def _run_mommy_repl(
+    router: object,
+    executor: object,
+    agent: object | None,
+) -> NoReturn:
+    """自然语言交互式 REPL。
+
+    先尝试匹配工作流（零成本快速路径），
+    未命中则 fallback 到 AgentService（LLM 自主对话）。
+    """
+    print(_WELCOME)
+
+    from mommy_chaogu.workflow.engine import WorkflowResult
+
+    while True:
+        try:
+            user_input = input("❯ ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n再见！")
+            sys.exit(0)
+
+        if not user_input:
+            continue
+        if user_input.lower() in ("q", "quit", "exit"):
+            print("再见！")
+            sys.exit(0)
+
+        # 帮助命令
+        if user_input.lower() in ("help", "帮助", "?"):
+            print(_WELCOME)
+            continue
+
+        # 尝试路由到工作流
+        route = router.route(user_input)  # type: ignore[attr-defined]
+        if route.matched:
+            # 工作流执行 + 进度显示
+            def on_start(name: str) -> None:
+                print(f"  ⠹ {name}...", end="\r", flush=True)
+
+            def on_done(name: str, ok: bool) -> None:
+                mark = "✓" if ok else "✗"
+                print(f"  {mark} {name}" + " " * 10)
+
+            print()
+            result: WorkflowResult = router.execute_route(  # type: ignore[attr-defined]
+                route,
+                user_input,
+                on_step_start=on_start,
+                on_step_done=on_done,
+            )
+            print()
+
+            if result.summary:
+                print(result.summary)
+                print()
+            elif result.steps:
+                # 没有总结时显示简单结果
+                _print_workflow_result(result)
+                print()
+
+            # 建议
+            print("💡 继续问我，或输入 q 退出\n")
+        else:
+            # Fallback: 通用 LLM agent
+            if agent is None:
+                print(
+                    "⚠️ 这个问题需要 AI 助手回答，但未配置 API key。\n"
+                    "   请在 .env 文件中设置 DEEPSEEK_API_KEY 或 ZAI_API_KEY。\n"
+                )
+                continue
+
+            print("\n🤔 让我想想...\n")
+            try:
+                resp = agent.chat(user_input)
+                print(f"{resp.text}\n")
+                if resp.tool_calls:
+                    tool_names = ", ".join(tc.name for tc in resp.tool_calls)
+                    print(f"[调用了 {len(resp.tool_calls)} 个工具: {tool_names}]\n")
+            except Exception as e:
+                print(f"⚠️ 出错了: {e}\n")
+
+
+def _print_workflow_result(result: object) -> None:
+    """没有 LLM 总结时，简单格式化输出工作流结果。"""
+
+    for sr in result.steps:  # type: ignore[attr-defined]
+        if not sr.success:
+            continue
+        print(f"**{sr.display_name}**")
+        data = sr.data
+        if isinstance(data, dict):
+            # 尝试提取关键字段
+            if "indexes" in data:
+                for idx in data["indexes"][:6]:  # type: ignore[index]
+                    if isinstance(idx, dict):
+                        name = idx.get("name", "?")
+                        price = idx.get("price", "?")
+                        chg = idx.get("change_pct", 0)
+                        sign = "+" if chg and chg >= 0 else ""
+                        print(
+                            f"  {name}: {price} ({sign}{chg:.2f}%)" if chg else f"  {name}: {price}"
+                        )
+            elif "sectors" in data:
+                sectors = data["sectors"][:5]  # type: ignore[index]
+                for s in sectors:
+                    if isinstance(s, dict):
+                        print(f"  {s.get('name', '?')}: {s.get('change_pct', '?')}%")
+            elif "stocks" in data:
+                stocks = data["stocks"][:10]  # type: ignore[index]
+                for st in stocks:
+                    if isinstance(st, dict):
+                        code = st.get("code", "?")
+                        name = st.get("name", "")
+                        chg = st.get("change_pct", 0)
+                        sign = "+" if chg and chg >= 0 else ""
+                        print(f"  {code} {name}: {sign}{chg}%" if chg else f"  {code} {name}")
+            else:
+                # 概要输出
+                keys = list(data.keys())[:5]
+                print(f"  ({', '.join(keys)})")
+        elif isinstance(data, list):
+            print(f"  共 {len(data)} 条")
+        elif isinstance(data, str) and data:
+            print(f"  {data[:200]}")
+        print()
+
+
+def main_mommy() -> NoReturn:
+    """mommy — 面向用户的自然语言入口。
+
+    无参数 → 进入交互式 REPL
+    带参数 → 单次自然语言查询
+    --raw <subcommand> → 透传到底层 CLI
+    """
+    # --raw 模式：透传到底层 CLI 子命令
+    if len(sys.argv) > 1 and sys.argv[1] in ("--raw", "--advanced"):
+        # 移除 --raw，让底层命令解析剩余参数
+        remaining = sys.argv[2:]
+        if not remaining:
+            print("用法: mommy --raw <子命令> [参数]")
+            print("可用子命令: watchlist, monitor, cache, semicon, flows, report, agent")
+            sys.exit(1)
+        subcmd = remaining[0]
+        sub_args = remaining[1:]
+
+        cmd_map: dict[str, str] = {
+            "watchlist": "mommy-watchlist",
+            "monitor": "mommy-monitor",
+            "cache": "mommy-cache",
+            "semicon": "mommy-semicon",
+            "flows": "mommy-flows",
+            "report": "mommy-report",
+            "agent": "mommy-agent",
+        }
+        if subcmd not in cmd_map:
+            print(f"未知子命令: {subcmd}")
+            print(f"可用: {', '.join(cmd_map.keys())}")
+            sys.exit(1)
+
+        # 转交控制权给对应的 main_* 函数
+        sys.argv = [cmd_map[subcmd], *sub_args]
+        dispatch = {
+            "watchlist": main_watchlist,
+            "monitor": main_monitor,
+            "cache": main_cache,
+            "semicon": main_semicon,
+            "flows": main_flows,
+            "report": main_report,
+            "agent": main_agent,
+        }
+        dispatch[subcmd]()
+        return
+
+    # 正常自然语言模式
+    parser = argparse.ArgumentParser(
+        prog="mommy",
+        description="妈妈炒股 - 自然语言投资助手",
+        epilog="输入自然语言开始对话，或用 --raw 访问高级命令。",
+    )
+    parser.add_argument(
+        "query",
+        nargs="*",
+        help="自然语言提问（留空则进入交互式对话）",
+    )
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="访问底层 CLI 子命令（高级用户）",
+    )
+    # 解析已知参数，剩余的忽略（避免 argparse 报错）
+    args, _unknown = parser.parse_known_args()
+
+    # 构建工具链
+    from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
+    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.portfolio.store import PortfolioStore
+    from mommy_chaogu.watchlist.store import WatchlistStore
+    from mommy_chaogu.workflow.engine import WorkflowExecutor
+    from mommy_chaogu.workflow.router import NLRouter
+
+    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    store = CacheStore(MARKET_DB)
+    adapter = CachedMarketDataAdapter(base, store)
+    ctx = ToolContext(
+        adapter=adapter,
+        watchlist_store=WatchlistStore(PORTFOLIO_DB),
+        portfolio_store=PortfolioStore(PORTFOLIO_DB),
+        db_path=AGENT_DB,
+    )
+    tool_registry = ToolRegistry(ctx)
+
+    # 构建 LLM summarizer adapter（如果 API key 可用）
+    llm_summarizer = None
+    agent: object | None = None
+    try:
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+        from mommy_chaogu.agent.semantic_memory import SemanticMemory
+        from mommy_chaogu.agent.service import AgentService
+
+        episodic = EpisodicMemory(AGENT_DB)
+        agent = AgentService(
+            ctx,
+            episodic=episodic,
+            tracker=PredictionTracker(AGENT_DB),
+            semantic=SemanticMemory(AGENT_DB),
+            vector_search=None,  # VectorSearch 需要 LLM client，延迟到 AgentService 内部处理
+        )
+
+        # Adapter: 让 AgentService 兼容 LLMSummarizer Protocol
+        class _AgentSummarizer:
+            def __init__(self, svc: AgentService) -> None:
+                self._svc = svc
+
+            def summarize(self, template: str, context: str) -> str:
+                prompt = template.format(context=context)
+                resp = self._svc.chat_raw(
+                    [{"role": "user", "content": prompt}],
+                )
+                return resp.text
+
+        llm_summarizer = _AgentSummarizer(agent)
+    except (ValueError, OSError):
+        # 没有配置 API key — 工作流仍可执行（没有 LLM 总结）
+        pass
+
+    executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)  # type: ignore[arg-type]
+    router = NLRouter(executor=executor)
+
+    # 单次查询模式
+    query = " ".join(args.query).strip() if args.query else ""
+    if query:
+        route = router.route(query)
+        if route.matched:
+            print()
+            result = router.execute_route(
+                route,
+                query,
+                on_step_start=lambda n: print(f"  ⠹ {n}...", end="\r", flush=True),
+                on_step_done=lambda n, ok: print(f"  {'✓' if ok else '✗'} {n}" + " " * 10),
+            )
+            print()
+            if result.summary:
+                print(result.summary)
+            else:
+                _print_workflow_result(result)
+        else:
+            # Fallback to agent
+            if agent is None:
+                print("⚠️ 未配置 API key，无法处理这个问题的回答。")
+                print("   请在 .env 文件中设置 API key。")
+            else:
+                resp = agent.chat(query)
+                print(resp.text)
+        sys.exit(0)
+
+    # 交互式 REPL
+    _run_mommy_repl(router, executor, agent)
 
 
 def main() -> int:

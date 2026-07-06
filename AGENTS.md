@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（709 个）
+uv run pytest -m "not network"   # 跑测试（796 个）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -66,15 +66,37 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/            # LLM agent（21 工具 + MCP + 记忆系统 5 层 + MemoryPipeline 统一管道）
+├── agent/           # LLM agent（21 工具 + MCP + 记忆系统 5 层 + MemoryPipeline 统一管道）
+├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库
 ├── web/             # FastAPI + WebSocket
 ├── push/            # Server酱微信推送
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（12 个子命令，含 cleanup）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 12 个子命令）
 ```
+
+## 自然语言入口
+
+项目有两层 CLI 入口：
+
+1. **`mommy` — 面向用户的自然语言入口**（主要入口）
+   - 输入自然语言，系统自动匹配预定义工作流或 fallback 到 LLM agent
+   - `uv run mommy` → 交互式 REPL
+   - `uv run mommy 今天怎么样` → 单次查询
+   - `uv run mommy --raw watchlist list` → 透传到底层 CLI（高级用户）
+
+2. **底层 CLI 子命令**（高级用户 + CI）
+   - `mommy-watchlist` / `mommy-monitor` / `mommy-cache` / `mommy-flows` 等
+   - 这些命令不变，`mommy` 是包装层不是替代
+
+工作流引擎见 `src/mommy_chaogu/workflow/`：
+- `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor
+- `definitions.py` — 9 个预定义工作流（morning_brief / stock_analysis / sector_scan 等）
+- `router.py` — NLRouter（正则匹配优先，fallback 到 AgentService）
+
+Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 
 ## 开发规范
 

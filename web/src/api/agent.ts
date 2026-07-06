@@ -7,11 +7,28 @@ export interface ChatResponse {
   rounds: number
 }
 
+export interface RouteStep {
+  name: string
+  tool: string
+  success: boolean
+}
+
+export interface RouteResponse {
+  matched: boolean
+  workflow_id?: string
+  reply?: string
+  steps?: RouteStep[]
+}
+
 export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
 ): Promise<ChatResponse> {
   return apiPost<ChatResponse>('/api/agent/chat', { message, history })
+}
+
+export async function agentRoute(message: string): Promise<RouteResponse> {
+  return apiPost<RouteResponse>('/api/agent/route', { message })
 }
 
 // WebSocket 流式对话
