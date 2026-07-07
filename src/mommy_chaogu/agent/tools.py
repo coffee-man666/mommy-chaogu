@@ -457,6 +457,34 @@ _TOOL_DEFINITIONS: list[ToolDef] = [
             },
         },
     ),
+    ToolDef(
+        name="list_themes",
+        description=(
+            "列出所有可用的主题/产业链观察列表（半导体、创新药、机器人、材料、中报等）。"
+            "返回每个主题的 ID、名称、股票数量、子板块。"
+            "当用户提到'半导体供应链'、'创新药'、'机器人'等产业链时，先用此工具获取主题列表。"
+        ),
+        parameters={"type": "object", "properties": {}},
+    ),
+    ToolDef(
+        name="get_theme_stocks",
+        description=(
+            "获取某个主题/产业链的成分股列表 + 实时行情。"
+            "参数 theme_id 从 list_themes 获取（如 semiconductor/innovative_drug/humanoid_robot/earnings_watch）。"
+            "返回每只股票的代码、名称、报价、涨跌幅、主力净流入、子板块分类等。"
+            "当用户想看某个产业链的股票时用此工具。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "theme_id": {
+                    "type": "string",
+                    "description": "主题 ID（如 semiconductor, innovative_drug, humanoid_robot, materials, earnings_watch）",
+                },
+            },
+            "required": ["theme_id"],
+        },
+    ),
 ]
 
 
@@ -954,6 +982,126 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
     )
 
 
+def _handle_list_themes(_ctx: ToolContext, _args: dict[str, Any]) -> str:
+    """列出所有主题/产业链。"""
+    import json
+    from pathlib import Path
+
+    data_dir = Path("data/supply_chains")
+    themes: list[dict[str, Any]] = []
+
+    if data_dir.exists():
+        for f in sorted(data_dir.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                meta = data.get("meta", {})
+                stocks = data.get("stocks", [])
+                theme_id = meta.get("id", f.stem)
+                themes.append(
+                    {
+                        "id": theme_id,
+                        "name": meta.get("name", f.stem),
+                        "total_stocks": len(stocks),
+                        "subcategories": meta.get("subcategories", []),
+                        "description": meta.get("description", "")[:120],
+                    }
+                )
+            except Exception:
+                continue
+
+    # earnings_preview
+    earnings_file = Path("data/earnings_preview.json")
+    if earnings_file.exists():
+        try:
+            data = json.loads(earnings_file.read_text(encoding="utf-8"))
+            stocks = data.get("stocks", [])
+            if stocks:
+                themes.append(
+                    {
+                        "id": "earnings_watch",
+                        "name": "中报观察",
+                        "total_stocks": len(stocks),
+                        "subcategories": sorted(
+                            {s.get("sector", "") for s in stocks if s.get("sector")}
+                        ),
+                        "description": "2026 H1 中报高增长观察列表",
+                    }
+                )
+        except Exception:
+            pass
+
+    return _json(themes)
+
+
+def _handle_get_theme_stocks(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """获取主题成分股 + 实时行情。"""
+    import json
+    from pathlib import Path
+
+    theme_id = args.get("theme_id", "")
+    if not theme_id:
+        return _json({"error": "缺少 theme_id 参数"})
+
+    # 先找 supply_chains
+    data_dir = Path("data/supply_chains")
+    stocks_data: list[dict[str, Any]] = []
+
+    if data_dir.exists():
+        for f in data_dir.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                meta = data.get("meta", {})
+                if meta.get("id", f.stem) == theme_id:
+                    stocks_data = data.get("stocks", [])
+                    break
+            except Exception:
+                continue
+
+    # earnings_preview
+    if not stocks_data and theme_id == "earnings_watch":
+        earnings_file = Path("data/earnings_preview.json")
+        if earnings_file.exists():
+            try:
+                data = json.loads(earnings_file.read_text(encoding="utf-8"))
+                stocks_data = data.get("stocks", [])
+            except Exception:
+                pass
+
+    if not stocks_data:
+        return _json({"error": f"主题不存在或无数据: {theme_id}"})
+
+    # 批量获取行情
+    results: list[dict[str, Any]] = []
+    for stock in stocks_data:
+        code = stock.get("code", "")
+        if not code:
+            continue
+        item: dict[str, Any] = {
+            "code": code,
+            "name": stock.get("name", ""),
+            "subcategory": stock.get("subcategory", stock.get("sector", "")),
+            "level": stock.get("level", ""),
+            "role": stock.get("role", ""),
+        }
+        # 业绩数据
+        if stock.get("growth_text"):
+            item["growth_text"] = stock["growth_text"]
+            item["core_driver"] = stock.get("core_driver", "")
+        try:
+            q = ctx.adapter.get_quote(code)
+            if q:
+                item["price"] = float(q.price)
+                item["change_pct"] = float(q.change_pct)
+                item["volume"] = q.volume
+                item["pe"] = float(q.pe) if q.pe else None
+                item["main_net_inflow"] = float(q.main_net_inflow) if q.main_net_inflow else None
+        except Exception:
+            pass
+        results.append(item)
+
+    return _json(results)
+
+
 # ---------- 注册表 ----------
 
 
@@ -979,6 +1127,8 @@ _HANDLERS: dict[str, ToolHandler] = {
     "search_similar_events": _handle_search_similar_events,
     "get_prediction_history": _handle_get_prediction_history,
     "get_market_narrative": _handle_get_market_narrative,
+    "list_themes": _handle_list_themes,
+    "get_theme_stocks": _handle_get_theme_stocks,
 }
 
 _TOOL_MAP: dict[str, ToolDef] = {td.name: td for td in _TOOL_DEFINITIONS}
