@@ -128,15 +128,15 @@ def get_semantic_memory() -> object:
 def get_agent_service() -> object:
     """全局 AgentService 单例（lazy init）。
 
-    如果未配置 API key 则返回 None（路由层处理降级）。
+    通过 load_config() 解析 provider（shell env > .env > config.toml），
+    自动读取对应的 API key。如果未配置则返回 None（路由层处理降级）。
     """
-    import os
-
     from mommy_chaogu.agent.service import AgentService
     from mommy_chaogu.agent.tools import ToolContext
+    from mommy_chaogu.config import load_config
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    cfg = load_config()
+    if not cfg.agent.api_key:
         return None  # type: ignore[return-value]
 
     ctx = ToolContext(
@@ -147,6 +147,9 @@ def get_agent_service() -> object:
     )
     return AgentService(
         ctx,
+        provider=cfg.agent.provider,
+        model=cfg.agent.model,
+        api_key=cfg.agent.api_key,
         episodic=get_episodic_memory(),
         tracker=get_prediction_tracker(),
         semantic=get_semantic_memory(),
