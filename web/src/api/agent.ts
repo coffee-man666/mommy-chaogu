@@ -43,6 +43,16 @@ export function agentStream(
 } {
   const ws = new WebSocket(wsUrl('/ws/agent'))
 
+  // 连接建立前的待发消息缓冲
+  let pendingMessage: { message: string; history?: Array<{ role: string; content: string }> } | null = null
+
+  ws.onopen = () => {
+    if (pendingMessage) {
+      ws.send(JSON.stringify(pendingMessage))
+      pendingMessage = null
+    }
+  }
+
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data)
@@ -60,11 +70,25 @@ export function agentStream(
     }
   }
 
-  ws.onerror = () => onError('WebSocket 连接失败')
+  ws.onerror = () => {
+    if (ws.readyState === WebSocket.CONNECTING) {
+      onError('WebSocket 连接失败，请检查服务是否正常运行')
+    } else {
+      onError('WebSocket 连接中断')
+    }
+  }
 
   return {
     send(message: string, history?: Array<{ role: string; content: string }>) {
-      ws.send(JSON.stringify({ message, history }))
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ message, history }))
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        // 连接还没建立，缓冲等 onopen
+        pendingMessage = { message, history }
+      } else {
+        // CLOSING / CLOSED
+        onError('WebSocket 连接已关闭，请刷新页面重试')
+      }
     },
     close() {
       ws.close()
