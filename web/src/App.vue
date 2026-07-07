@@ -15,6 +15,10 @@ import { RouterView, RouterLink } from 'vue-router'
         <span class="sidebar-icon">📈</span>
         <span>行情</span>
       </RouterLink>
+      <RouterLink to="/themes" class="sidebar-item">
+        <span class="sidebar-icon">🔬</span>
+        <span>主题</span>
+      </RouterLink>
       <RouterLink to="/portfolio" class="sidebar-item">
         <span class="sidebar-icon">💰</span>
         <span>持仓</span>
@@ -52,9 +56,9 @@ import { RouterView, RouterLink } from 'vue-router'
         <span class="tab-icon">💬</span>
         <span>问</span>
       </RouterLink>
-      <RouterLink to="/signals" class="tab-item">
-        <span class="tab-icon">🔔</span>
-        <span>信号</span>
+      <RouterLink to="/themes" class="tab-item">
+        <span class="tab-icon">🔬</span>
+        <span>主题</span>
       </RouterLink>
       <RouterLink to="/settings" class="tab-item">
         <span class="tab-icon">⚙️</span>

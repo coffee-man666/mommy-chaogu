@@ -30,6 +30,7 @@ from mommy_chaogu.web.routes import (
     portfolio,
     quotes,
     signals,
+    themes,
     watchlist,
     ws,
 )
@@ -145,6 +146,7 @@ def create_app(
     app.include_router(cache.router)
     app.include_router(agent.router)
     app.include_router(earnings.router)
+    app.include_router(themes.router)
     app.include_router(ws.router)
 
     # 健康检查
