@@ -20,6 +20,7 @@ from typing import Any
 
 from mommy_chaogu.agent.memory import ConversationMemory
 from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
+from mommy_chaogu.agent.memory_service import MemoryService
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
@@ -89,13 +90,10 @@ class AgentService:
         tracker: Any | None = None,
         semantic: Any | None = None,
         vector_search: Any | None = None,
+        memory_service: MemoryService | None = None,
     ) -> None:
         self._tools = ToolRegistry(ctx)
         self._max_tool_calls = max_tool_calls
-        self._episodic = episodic
-        self._tracker = tracker
-        self._semantic = semantic
-        self._vector_search = vector_search
         self._ctx = ctx
 
         # 解析 provider 配置
@@ -120,20 +118,22 @@ class AgentService:
             client_kwargs["base_url"] = config["base_url"]
         self._client = OpenAI(**client_kwargs)
 
-        # 记忆流水线：当 episodic 和 tracker 同时就绪时启用，封装
-        # prompt 构建 + 事实抽取 + 持久化逻辑
-        # （必须在 self._client / self._model 赋值之后）
-        if episodic is not None and tracker is not None:
-            self._pipeline: MemoryPipeline | None = MemoryPipeline(
-                episodic=episodic,
-                tracker=tracker,
-                semantic=semantic,
-                vector_search=vector_search,
-                client=self._client,
-                model=self._model,
-            )
+        # 记忆服务：优先使用外部传入的，否则从 episodic/tracker/semantic 构造
+        if memory_service is not None:
+            self._memory_service = memory_service
         else:
-            self._pipeline = None
+            # 向后兼容：从散件构造 MemoryPipeline → MemoryService
+            pipeline: MemoryPipeline | None = None
+            if episodic is not None and tracker is not None:
+                pipeline = MemoryPipeline(
+                    episodic=episodic,
+                    tracker=tracker,
+                    semantic=semantic,
+                    vector_search=vector_search,
+                    client=self._client,
+                    model=self._model,
+                )
+            self._memory_service = MemoryService(pipeline=pipeline, memory=None)
 
     def chat(
         self,
@@ -144,23 +144,31 @@ class AgentService:
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
-        如果传入 *memory*，会先从中加载最近对话作为上下文，
-        完成后将本轮 user / assistant 消息持久化到 memory。
-
-        如果配置了 *episodic* + *tracker*，会通过 MemoryPipeline：
-        1. 用 build_prompt() 注入历史事件和判断回顾
-        2. 对话结束后提取结构化 observations + predictions（record_analysis）
+        记忆行为：
+        - 如果传入 *memory*，用它做跨轮次对话上下文 + 持久化
+        - 如果 *memory_service* 存在（构造时传入），对话前注入历史事件/预测/知识，
+          对话后提取 observations/predictions
         """
-        # 动态构建 system prompt（注入历史事件 + 判断回顾 + 知识）
-        if self._pipeline:
-            system_prompt = system_override or self._pipeline.build_prompt(query=user_message)
+        ms = self._memory_service
+
+        # 1. 构造 system prompt（注入记忆）
+        if system_override:
+            system_prompt = system_override
+        elif ms is not None:
+            system_prompt = ms.get_context(query=user_message)
         else:
-            system_prompt = system_override or SYSTEM_PROMPT
+            system_prompt = SYSTEM_PROMPT
+
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
+        # 2. 对话历史上下文
         if memory is not None:
-            # 用持久化记忆作为对话上下文
+            # 用传入的 memory（向后兼容）
             for h in memory.recent():
+                messages.append({"role": h["role"], "content": h["content"]})
+        elif ms is not None and ms.has_memory:
+            # 用 MemoryService 内部的对话记忆
+            for h in ms.get_recent_messages():
                 messages.append({"role": h["role"], "content": h["content"]})
         elif history:
             for h in history:
@@ -170,20 +178,17 @@ class AgentService:
 
         resp = self._run_loop(messages)
 
+        # 3. 对话后记录 + 提取
+        adapter = self._ctx.adapter if self._ctx else None
         if memory is not None:
+            # 向后兼容：直接用传入的 memory
             memory.add("user", user_message)
             memory.add("assistant", resp.text)
-
-        # 后置 hook：事实抽取（失败不 block 主流程）
-        if self._pipeline:
-            try:
-                self._pipeline.record_analysis(
-                    user_message,
-                    resp.text,
-                    adapter=self._ctx.adapter if self._ctx else None,
-                )
-            except Exception as e:
-                _log.warning("pipeline record_analysis failed: %s", e)
+            if ms is not None:
+                # 同时走 MemoryService 的提取管道
+                ms.record_conversation(user_message, resp.text, adapter=adapter)
+        elif ms is not None:
+            ms.record_conversation(user_message, resp.text, adapter=adapter)
 
         return resp
 

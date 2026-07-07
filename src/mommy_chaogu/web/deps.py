@@ -125,6 +125,37 @@ def get_semantic_memory() -> object:
 
 
 @lru_cache(maxsize=1)
+def get_memory_service() -> object:
+    """全局 MemoryService 单例。
+
+    封装 MemoryPipeline + ConversationMemory，
+    任何需要记忆能力的入口（AgentService / MCP）都可使用。
+    """
+    from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
+    from mommy_chaogu.agent.memory_service import MemoryService
+
+    episodic = get_episodic_memory()
+    tracker = get_prediction_tracker()
+    semantic = get_semantic_memory()
+
+    pipeline = None
+    if episodic is not None and tracker is not None:
+        # MemoryPipeline 需要 LLM client 做事实提取，
+        # 但这里不传 client — get_context 不需要 LLM，
+        # record_analysis 的 LLM 提取在 AgentService 构造后补充。
+        pipeline = MemoryPipeline(
+            episodic=episodic,
+            tracker=tracker,
+            semantic=semantic,
+        )
+
+    return MemoryService(
+        pipeline=pipeline,
+        memory=get_agent_memory(),
+    )
+
+
+@lru_cache(maxsize=1)
 def get_agent_service() -> object:
     """全局 AgentService 单例（lazy init）。
 
@@ -145,6 +176,9 @@ def get_agent_service() -> object:
         portfolio_store=get_portfolio_store(),
         db_path=get_agent_db(),
     )
+
+    # AgentService 内部会从散件构造 MemoryPipeline（带 LLM client），
+    # 所以这里直接传 episodic/tracker/semantic 保持兼容。
     return AgentService(
         ctx,
         provider=cfg.agent.provider,

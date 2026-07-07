@@ -33,7 +33,7 @@ _log = logging.getLogger(__name__)
 
 
 def _build_context() -> ToolContext:
-    """从项目默认配置构造 ToolContext。"""
+    """从项目默认配置构造 ToolContext（含记忆服务）。"""
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import MARKET_DB, PORTFOLIO_DB
     from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
@@ -44,12 +44,44 @@ def _build_context() -> ToolContext:
     store = CacheStore(MARKET_DB)
     adapter = CachedMarketDataAdapter(base, store)
 
+    # 构造记忆服务（MCP 外部 agent 也能获得记忆注入）
+    memory_service = _build_memory_service()
+
     return ToolContext(
         adapter=adapter,
         watchlist_store=WatchlistStore(PORTFOLIO_DB),
         portfolio_store=PortfolioStore(PORTFOLIO_DB),
         db_path=MARKET_DB,
+        memory_service=memory_service,
     )
+
+
+def _build_memory_service() -> Any:
+    """构造 MemoryService（用于 MCP 等非 AgentService 入口）。
+
+    如果 LLM API key 未配置，pipeline 不带 client（get_context 仍可用，
+    record_analysis 会跳过 LLM 提取）。
+    """
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.memory import ConversationMemory
+    from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
+    from mommy_chaogu.agent.memory_service import MemoryService
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+    from mommy_chaogu.db_paths import AGENT_DB
+
+    episodic = EpisodicMemory(AGENT_DB)
+    tracker = PredictionTracker(AGENT_DB)
+    semantic = SemanticMemory(AGENT_DB)
+    memory = ConversationMemory(AGENT_DB)
+
+    pipeline = MemoryPipeline(
+        episodic=episodic,
+        tracker=tracker,
+        semantic=semantic,
+    )
+
+    return MemoryService(pipeline=pipeline, memory=memory)
 
 
 def create_mcp_server(ctx: ToolContext | None = None) -> Server:
@@ -95,7 +127,7 @@ async def run_stdio() -> None:
     ctx = _build_context()
     server = create_mcp_server(ctx)
     async with stdio_server() as (read_stream, write_stream):
-        _log.info("mommy-chaogu MCP server started (14 tools)")
+        _log.info("mommy-chaogu MCP server started (24 tools)")
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 

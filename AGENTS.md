@@ -73,6 +73,7 @@ src/mommy_chaogu/
 ├── semicon/         # 半导体产业链参考库
 ├── web/             # FastAPI + WebSocket
 ├── tui/             # Textual 终端 UI（三栏 dashboard + AI 对话 + 个股详情）
+├── services/        # 统一数据服务层（工具层和 API 层共用）
 ├── push/            # Server酱微信推送
 ├── db_paths.py      # 统一数据库路径管理
 └── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个子命令）

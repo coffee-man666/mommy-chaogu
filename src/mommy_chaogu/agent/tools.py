@@ -67,6 +67,8 @@ class ToolContext:
     # 为 None 时记忆工具降级为无 LLM 模式。
     client: Any | None = None
     model: str | None = None
+    # 独立记忆服务（MCP 等非 AgentService 入口用）
+    memory_service: Any | None = None
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], str]
@@ -483,6 +485,24 @@ _TOOL_DEFINITIONS: list[ToolDef] = [
                 },
             },
             "required": ["theme_id"],
+        },
+    ),
+    ToolDef(
+        name="get_memory_context",
+        description=(
+            "获取项目积累的历史分析记忆。"
+            "返回最近的 episodic events、predictions（含命中率）、semantic knowledge。"
+            "在分析个股或板块前调用此工具，获取历史判断和准确率数据。"
+            "适用于 MCP 等外部 agent — 内置 agent 已自动注入记忆，不需要手动调。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "查询关键词（如股票名 '茅台'、板块名 '半导体'）",
+                },
+            },
         },
     ),
 ]
@@ -984,122 +1004,82 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
 
 def _handle_list_themes(_ctx: ToolContext, _args: dict[str, Any]) -> str:
     """列出所有主题/产业链。"""
-    import json
-    from pathlib import Path
+    from mommy_chaogu.services.theme_service import ThemeService
 
-    data_dir = Path("data/supply_chains")
-    themes: list[dict[str, Any]] = []
-
-    if data_dir.exists():
-        for f in sorted(data_dir.glob("*.json")):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-                meta = data.get("meta", {})
-                stocks = data.get("stocks", [])
-                theme_id = meta.get("id", f.stem)
-                themes.append(
-                    {
-                        "id": theme_id,
-                        "name": meta.get("name", f.stem),
-                        "total_stocks": len(stocks),
-                        "subcategories": meta.get("subcategories", []),
-                        "description": meta.get("description", "")[:120],
-                    }
-                )
-            except Exception:
-                continue
-
-    # earnings_preview
-    earnings_file = Path("data/earnings_preview.json")
-    if earnings_file.exists():
-        try:
-            data = json.loads(earnings_file.read_text(encoding="utf-8"))
-            stocks = data.get("stocks", [])
-            if stocks:
-                themes.append(
-                    {
-                        "id": "earnings_watch",
-                        "name": "中报观察",
-                        "total_stocks": len(stocks),
-                        "subcategories": sorted(
-                            {s.get("sector", "") for s in stocks if s.get("sector")}
-                        ),
-                        "description": "2026 H1 中报高增长观察列表",
-                    }
-                )
-        except Exception:
-            pass
-
+    svc = ThemeService()
+    # 工具层面向 LLM，description 截断到 120 字以节省 token。
+    themes = [
+        {
+            "id": t["id"],
+            "name": t["name"],
+            "total_stocks": t["total_stocks"],
+            "subcategories": t["subcategories"],
+            "description": t["description"][:120],
+        }
+        for t in svc.list_themes()
+    ]
     return _json(themes)
 
 
 def _handle_get_theme_stocks(ctx: ToolContext, args: dict[str, Any]) -> str:
     """获取主题成分股 + 实时行情。"""
-    import json
-    from pathlib import Path
+    from mommy_chaogu.services.theme_service import ThemeService
 
     theme_id = args.get("theme_id", "")
     if not theme_id:
         return _json({"error": "缺少 theme_id 参数"})
 
-    # 先找 supply_chains
-    data_dir = Path("data/supply_chains")
-    stocks_data: list[dict[str, Any]] = []
+    svc = ThemeService(adapter=ctx.adapter)
+    items = svc.get_theme_quotes(theme_id)
 
-    if data_dir.exists():
-        for f in data_dir.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-                meta = data.get("meta", {})
-                if meta.get("id", f.stem) == theme_id:
-                    stocks_data = data.get("stocks", [])
-                    break
-            except Exception:
-                continue
-
-    # earnings_preview
-    if not stocks_data and theme_id == "earnings_watch":
-        earnings_file = Path("data/earnings_preview.json")
-        if earnings_file.exists():
-            try:
-                data = json.loads(earnings_file.read_text(encoding="utf-8"))
-                stocks_data = data.get("stocks", [])
-            except Exception:
-                pass
-
-    if not stocks_data:
+    if not items:
         return _json({"error": f"主题不存在或无数据: {theme_id}"})
 
-    # 批量获取行情
+    # 工具层面向 LLM：行情用 float，只保留关键字段。
     results: list[dict[str, Any]] = []
-    for stock in stocks_data:
-        code = stock.get("code", "")
-        if not code:
-            continue
+    for it in items:
         item: dict[str, Any] = {
-            "code": code,
-            "name": stock.get("name", ""),
-            "subcategory": stock.get("subcategory", stock.get("sector", "")),
-            "level": stock.get("level", ""),
-            "role": stock.get("role", ""),
+            "code": it["code"],
+            "name": it["name"],
+            "subcategory": it["subcategory"],
+            "level": it["level"],
+            "role": it["role"],
         }
-        # 业绩数据
-        if stock.get("growth_text"):
-            item["growth_text"] = stock["growth_text"]
-            item["core_driver"] = stock.get("core_driver", "")
-        try:
-            q = ctx.adapter.get_quote(code)
-            if q:
-                item["price"] = float(q.price)
-                item["change_pct"] = float(q.change_pct)
-                item["volume"] = q.volume
-                item["pe"] = float(q.pe) if q.pe else None
-                item["main_net_inflow"] = float(q.main_net_inflow) if q.main_net_inflow else None
-        except Exception:
-            pass
+        if it.get("growth_text"):
+            item["growth_text"] = it["growth_text"]
+            item["core_driver"] = it.get("core_driver", "")
+        if it["price"] is not None:
+            item["price"] = float(it["price"])
+            item["change_pct"] = float(it["change_pct"])
+            item["volume"] = it["volume"]
+            item["pe"] = float(it["pe"]) if it["pe"] else None
+            item["main_net_inflow"] = (
+                float(it["main_net_inflow"]) if it["main_net_inflow"] else None
+            )
         results.append(item)
 
     return _json(results)
+
+
+def _handle_get_memory_context(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """获取记忆上下文（MCP 等外部 agent 用）。"""
+    ms = ctx.memory_service
+    if ms is None:
+        return _json(
+            {"error": "记忆服务未配置", "hint": "此工具仅在有记忆服务的入口可用（如 MCP Server）"}
+        )
+
+    query = args.get("query")
+    context = ms.get_context(query=query)
+    stats = ms.stats()
+
+    return _json(
+        {
+            "context": context,
+            "stats": stats,
+            "has_memory": ms.has_memory,
+        }
+    )
 
 
 # ---------- 注册表 ----------
@@ -1129,6 +1109,7 @@ _HANDLERS: dict[str, ToolHandler] = {
     "get_market_narrative": _handle_get_market_narrative,
     "list_themes": _handle_list_themes,
     "get_theme_stocks": _handle_get_theme_stocks,
+    "get_memory_context": _handle_get_memory_context,
 }
 
 _TOOL_MAP: dict[str, ToolDef] = {td.name: td for td in _TOOL_DEFINITIONS}

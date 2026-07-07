@@ -1,9 +1,8 @@
 """/api/themes 路由：主题/产业链观察列表。
 
-数据来源：
+数据来源（由 ThemeService 统一加载）：
 - data/supply_chains/*.json — 供应链 JSON（半导体/创新药/机器人/材料）
 - data/earnings_preview.json — 中报观察列表
-- data/reference.db semicon_stocks — 半导体详细数据
 
 端点：
 - GET /api/themes                — 所有主题列表
@@ -13,105 +12,34 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+
+from mommy_chaogu.services.theme_service import ThemeService
 
 _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/themes", tags=["themes"])
 
-_DATA_DIR = Path("data/supply_chains")
-_EARNINGS_FILE = Path("data/earnings_preview.json")
-
-
-def _load_json(path: Path) -> dict[str, Any]:
-    """安全加载 JSON 文件。"""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        _log.warning("theme file not found: %s", path)
-        return {}
-    except Exception as e:
-        _log.warning("failed to load %s: %s", path, e)
-        return {}
-
-
-def _load_all_themes() -> dict[str, dict[str, Any]]:
-    """加载所有主题数据。"""
-    themes: dict[str, dict[str, Any]] = {}
-
-    # supply_chains/*.json
-    if _DATA_DIR.exists():
-        for f in sorted(_DATA_DIR.glob("*.json")):
-            data = _load_json(f)
-            if not data:
-                continue
-            meta = data.get("meta", {})
-            theme_id = meta.get("id", f.stem)
-            stocks = data.get("stocks", [])
-            themes[theme_id] = {
-                "id": theme_id,
-                "name": meta.get("name", f.stem),
-                "description": meta.get("description", ""),
-                "subcategories": meta.get("subcategories", []),
-                "chain_positions": meta.get("chain_positions", []),
-                "total_stocks": len(stocks),
-                "stocks": stocks,
-                "source": "supply_chain",
-            }
-
-    # earnings_preview.json → 中报观察
-    if _EARNINGS_FILE.exists():
-        data = _load_json(_EARNINGS_FILE)
-        stocks = data.get("stocks", [])
-        if stocks:
-            themes["earnings_watch"] = {
-                "id": "earnings_watch",
-                "name": "中报观察",
-                "description": data.get("meta", {}).get(
-                    "description", "2026 H1 中报高增长观察列表"
-                ),
-                "subcategories": sorted(
-                    {s.get("sector", "") for s in stocks if s.get("sector")}
-                ),
-                "chain_positions": [],
-                "total_stocks": len(stocks),
-                "stocks": stocks,
-                "source": "earnings_preview",
-            }
-
-    return themes
-
 
 @router.get("")
 async def list_themes() -> dict[str, Any]:
     """所有主题列表（不含成分股详情）。"""
-    themes = _load_all_themes()
-    items = [
-        {
-            "id": t["id"],
-            "name": t["name"],
-            "description": t["description"],
-            "total_stocks": t["total_stocks"],
-            "subcategories": t["subcategories"],
-            "source": t["source"],
-        }
-        for t in themes.values()
-    ]
+    svc = ThemeService()
+    items = svc.list_themes()
     return {"items": items, "total": len(items)}
 
 
 @router.get("/{theme_id}")
 async def get_theme(theme_id: str) -> dict[str, Any]:
     """单个主题详情（含成分股）。"""
-    themes = _load_all_themes()
-    if theme_id not in themes:
+    svc = ThemeService()
+    theme = svc.get_theme(theme_id)
+    if theme is None:
         raise HTTPException(status_code=404, detail=f"主题不存在: {theme_id}")
-    return themes[theme_id]
+    return theme
 
 
 @router.get("/{theme_id}/quotes")
@@ -125,65 +53,62 @@ async def get_theme_quotes(
     """
     from mommy_chaogu.web.deps import get_adapter
 
-    themes = _load_all_themes()
-    if theme_id not in themes:
+    svc = ThemeService(adapter=get_adapter())
+    theme = svc.get_theme(theme_id)
+    if theme is None:
         raise HTTPException(status_code=404, detail=f"主题不存在: {theme_id}")
 
-    theme = themes[theme_id]
-    stocks = theme["stocks"]
-    codes = [s.get("code", "") for s in stocks][:limit]
-    codes = [c for c in codes if c]
+    items = svc.get_theme_quotes(theme_id, limit=limit)
 
-    if not codes:
-        return {"items": [], "total": 0}
-
-    adapter = get_adapter()
+    # API 层面向前端：行情用 str（保留 Decimal 精度），区分成功/失败两种 item 格式。
     results: list[dict[str, Any]] = []
-
-    for stock in stocks[:limit]:
-        code = stock.get("code", "")
-        if not code:
-            continue
-        try:
-            q = adapter.get_quote(code)
-            if q:
-                results.append(
-                    {
-                        "code": code,
-                        "name": stock.get("name", q.name),
-                        "price": str(q.price),
-                        "change_pct": str(q.change_pct),
-                        "volume": q.volume,
-                        "turnover_rate": str(q.turnover_rate)
-                        if q.turnover_rate
-                        else None,
-                        "pe": str(q.pe) if q.pe else None,
-                        "main_net_inflow": str(q.main_net_inflow)
-                        if q.main_net_inflow
-                        else None,
-                        "subcategory": stock.get("subcategory", stock.get("sector", "")),
-                        "level": stock.get("level", stock.get("chain_position", "")),
-                        "role": stock.get("role", ""),
-                        # 业绩数据（earnings_watch 主题特有）
-                        "growth_text": stock.get("growth_text", ""),
-                        "growth_low": stock.get("growth_low"),
-                        "growth_high": stock.get("growth_high"),
-                        "core_driver": stock.get("core_driver", ""),
-                        "highlight": stock.get("highlight", ""),
-                    }
-                )
-        except Exception as e:
-            _log.debug("quote failed for %s: %s", code, e)
+    for it in items:
+        if it["error"] is not None:
+            # 行情拉取失败：精简错误 item
             results.append(
                 {
-                    "code": code,
-                    "name": stock.get("name", ""),
+                    "code": it["code"],
+                    "name": it["name"],
                     "price": "",
                     "change_pct": "",
-                    "subcategory": stock.get("subcategory", stock.get("sector", "")),
-                    "level": stock.get("level", ""),
-                    "error": str(e),
+                    "subcategory": it["subcategory"],
+                    "level": it["level"],
+                    "error": it["error"],
+                }
+            )
+        elif it["price"] is None:
+            # adapter 返回空行情：跳过（与原实现一致）
+            continue
+        else:
+            results.append(
+                {
+                    "code": it["code"],
+                    "name": it["name"],
+                    "price": str(it["price"]),
+                    "change_pct": str(it["change_pct"]),
+                    "volume": it["volume"],
+                    "turnover_rate": str(it["turnover_rate"])
+                    if it["turnover_rate"]
+                    else None,
+                    "pe": str(it["pe"]) if it["pe"] else None,
+                    "main_net_inflow": str(it["main_net_inflow"])
+                    if it["main_net_inflow"]
+                    else None,
+                    "subcategory": it["subcategory"],
+                    "level": it["level"],
+                    "role": it["role"],
+                    # 业绩数据（earnings_watch 主题特有）
+                    "growth_text": it["growth_text"],
+                    "growth_low": it["growth_low"],
+                    "growth_high": it["growth_high"],
+                    "core_driver": it["core_driver"],
+                    "highlight": it["highlight"],
                 }
             )
 
-    return {"theme_id": theme_id, "theme_name": theme["name"], "items": results, "total": len(results)}
+    return {
+        "theme_id": theme_id,
+        "theme_name": theme["name"],
+        "items": results,
+        "total": len(results),
+    }
