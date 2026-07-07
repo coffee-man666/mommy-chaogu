@@ -76,3 +76,77 @@ async def ws_signals(
         pass
     finally:
         service.remove_signal_subscriber(websocket)  # type: ignore[arg-type]
+
+
+# ---------- Agent 流式对话 WebSocket ----------
+
+
+@router.websocket("/ws/agent")
+async def ws_agent(websocket: WebSocket) -> None:
+    """AI 对话流式 WebSocket。
+
+    消息格式：
+    - 客户端发: {"message": "...", "history": [...]}
+    - 服务端回: {"type": "thinking"} (一次)
+    - 服务端回: {"type": "chunk", "text": "..."} (多次)
+    - 服务端回: {"type": "done", "tools_used": [...], "rounds": N}
+    """
+    import asyncio
+    import json
+
+    await websocket.accept()
+
+    from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
+
+    agent = get_agent_service()
+    memory = get_agent_memory()
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "message": "无效的 JSON"})
+                continue
+
+            user_message = msg.get("message", "").strip()
+            if not user_message:
+                continue
+
+            if agent is None:
+                await websocket.send_json(
+                    {
+                        "type": "done",
+                        "text": "AI 助手未配置。",
+                        "tools_used": [],
+                        "rounds": 0,
+                    }
+                )
+                continue
+
+            # thinking 状态
+            await websocket.send_json({"type": "thinking"})
+
+            # agent.chat 是同步的，用 to_thread 包装
+            resp = await asyncio.to_thread(agent.chat, user_message, None, None, memory)
+
+            # 分段发送（小段快发）
+            text = resp.text
+            chunk_size = 12
+            for i in range(0, len(text), chunk_size):
+                chunk = text[i : i + chunk_size]
+                await websocket.send_json({"type": "chunk", "text": chunk})
+                await asyncio.sleep(0.01)
+
+            await websocket.send_json(
+                {
+                    "type": "done",
+                    "tools_used": [tc.name for tc in resp.tool_calls],
+                    "rounds": resp.rounds,
+                }
+            )
+
+    except WebSocketDisconnect:
+        pass
