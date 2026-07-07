@@ -1,157 +1,133 @@
 # Agent 接口设计反思
 
-> 记录 agent 接口的进化过程、设计决策、踩过的坑。
-> 不记录 bugfix 细节和 changelog，只关注"agent 怎么连接数据和能力"这件事。
+> 从高层设计角度记录 agent 接口的进化、踩过的坑、以及坑背后的设计教训。
 
 ---
 
-## 背景：四种 Agent 模式
+## 核心问题：Agent 怎么连接数据和能力
 
-项目有四个 agent 入口，共享同一套工具层和记忆系统：
+这个项目的 agent 不是孤立的 LLM 对话框。它是一个"会调工具的投资助手"——用户说自然语言，agent 调工具拿数据，给出分析。
 
-| 模式 | 入口 | 推理者 | 数据获取 | 记忆 | 工作流 |
-|---|---|---|---|---|---|
-| ① 内置 AgentService | `uv run mommy` / `mommy-web` | 项目内置 LLM | 23 个封装工具 | ✅ 5 层 | ✅ 正则优先 |
-| ② MCP Server | 外部 agent 连 `mommy-mcp` | 外部 LLM | 通过 MCP 调同样的 23 个工具 | ✅ 查询工具 | ❌ |
-| ③ Coding Agent | 在项目目录开 Kimi Code / Claude | 外部 LLM | 读文件 / 跑命令 / 查 DB | ❌ | ❌ |
-| ④ 回测 Agent | `scripts/backtest_llm.py` | 脚本内 LLM | 直接读 SQLite | ✅ 可选 | ❌ |
+这引出了所有设计决策的出发点：
 
-模式 ② 和 ③ 的本质区别：② 通过 MCP 协议调项目封装好的工具（有缓存、有 fallback、有资金流计算），③ 是 agent 自己想办法找数据。② 有记忆查询能力，③ 没有。
+**工具层 = agent 的能力边界。**
 
-模式 ① 是项目的主设计——双层路由（正则工作流优先，LLM 自主对话兜底）+ 5 层记忆系统 + 统一工具层。
+LLM 再聪明，没有工具就拿不到数据。agent 能做什么，完全取决于工具层暴露了什么。这不是技术细节，而是整个系统的核心约束。
 
 ---
 
-## 核心设计原则：工具层是能力原语
+## 四种 Agent 模式的本质区别
 
-所有入口共享 `ToolRegistry`。加一个工具 = Web Agent / CLI Agent / MCP Server 三个入口同时获得能力。
+项目有四个入口，但真正重要的区别不是"入口在哪"，而是**谁来做推理、数据从哪来**：
 
-```
-ToolRegistry (23 tools)
-  ├─ Web Agent (deps.py → AgentService)
-  ├─ CLI Agent (cli.py → AgentService)
-  └─ MCP Server (mcp_server.py)
-```
+| | 内置 Agent | MCP Server | Coding Agent | 回测 Agent |
+|---|---|---|---|---|
+| **推理者** | 项目自己的 LLM | 外部 LLM | 外部 LLM | 脚本控制的 LLM |
+| **数据来源** | 项目封装的工具 | 项目封装的工具（同构） | Agent 自己找（异构） | 直接读 DB |
+| **能力边界** | 由工具层定义 | 由工具层定义 | 由文件系统定义 | 由脚本定义 |
+| **记忆** | 完整 5 层 | 只能查询 | 无 | 可选 |
 
-工具是项目的"能力 API"——不是 REST API，而是 LLM 可调用的 function-calling 接口。每个工具是一个独立的能力单元：有明确的 schema（参数 + 返回）、独立的 handler、统一的错误处理（异常返回 `{"error": ...}` 而不是崩溃）。
+**模式 ① 和 ② 是同一种模式的两个入口**——都是"LLM + 项目封装的工具"。区别只是 LLM 是项目自己调还是外部调。
 
----
+**模式 ③ 是完全不同的物种**——coding agent 不走工具层，它直接读文件、跑命令、查数据库。它的能力边界是"整个文件系统"，不受控、无记忆、无缓存、无 fallback。
 
-## 进化记录
+一个关键的认知转变：
 
-### v1: 21 工具 — 行情 + 基础分析
-
-初始工具集覆盖了看盘核心需求：
-
-- 行情（7）：报价 / 批量报价 / 指数 / 板块排行 / 搜板块 / 成分股 / K 线
-- 资金流（2）：当日 / 历史
-- 用户数据（3）：自选股 / 持仓 / 风险分析
-- 新闻公告（4）：新闻 / 公告 / 龙虎榜 / 基本面
-- 操作（3）：回填历史 / 告警管理 / 市场叙事
-- 记忆查询（2）：相似事件检索 / 预测历史
-
-**设计决策**：工具只做数据获取，不做"分析"——分析交给 LLM。工具返回结构化 JSON，LLM 负责解读和叙事。这保证了工具的复用性（工作流和 agent 都能用同一套工具）。
-
-### v2: 23 工具 — 主题/产业链能力补全
-
-**问题暴露**：用户通过 Web 对话问"看看半导体供应链"，agent 用 `search_sector` 搜东财板块 API，东财没有"半导体供应链"这个概念，返回空。agent 回复"暂未获取到数据"。
-
-但项目其实有 106 只半导体产业链股票的完整数据（`supply_chains/semiconductor.json` + `reference.db`），只是工具层访问不到。
-
-**反思**：工具层的覆盖范围决定了 agent 的能力边界。LLM 再聪明，没有工具也拿不到数据。这是一个"能力盲区"——数据在项目里，但没暴露给 agent。
-
-**修复**：加 `list_themes` + `get_theme_stocks` 两个工具。三个入口自动获得能力。
-
-**教训**：每次给项目加新数据源（供应链、业绩、回测结果等），必须同时考虑：agent 能不能访问到？如果不能，要么加工具，要么加 Web API 路由。数据不暴露 = 不存在。
+> "让 Kimi Code 看项目跑" ≠ "用项目设计的 agent"
+>
+> 前者是 coding agent 当临时数据分析师，后者是项目封装好的投研助手。两者做的事表面上相似（都是"问行情然后分析"），但底层的可靠性、一致性、记忆能力完全不同。
 
 ---
 
-## 接口设计中的坑
+## 踩过的坑与设计教训
 
-### 坑 1: 路由 prefix 导致 WebSocket 路径错位
+### 教训 1：数据存在 ≠ 数据可用
 
-**现象**：Web 对话发消息，WebSocket 崩溃，日志报 `assert scope["type"] == "http"`。
+**事件**：用户问"看看半导体供应链"，agent 回答"找不到数据"。但项目里有 106 只半导体股的完整产业链数据。
 
-**根因**：`agent.router` 有 `prefix="/api/agent"`，WebSocket 注册为 `@router.websocket("/ws/agent")`，实际路径变成 `/api/agent/ws/agent`。前端连 `/ws/agent` 匹配不到任何路由 → 落到 `app.mount("/", StaticFiles)` → StaticFiles 断言只处理 HTTP → 崩溃。
+**根因**：数据在 `supply_chains/semiconductor.json` 和 `reference.db` 里，但 agent 的 23 个工具里没有一个能读它们。agent 只能调东财板块 API，东财没有"半导体供应链"这个概念。
 
-**教训**：FastAPI 的 prefix 对 WebSocket 路由同样生效，这点容易被忽略。WebSocket 路由应该放在无 prefix 的 router 里，或者注册时使用完整路径。
+**设计教训**：
 
-### 坑 2: 前端 WebSocket 不等连接建立就发消息
+> 每当你往项目里加了一类新数据（供应链、业绩、回测结果、用户画像……），必须同时回答一个问题：agent 能访问到它吗？如果不能，在工具层加一个入口。数据不暴露给 agent = 数据不存在。
 
-**现象**：前端报"WebSocket 连接失败"。
+这不是一次性的工作，而是持续的过程。项目的数据会增长（今天有半导体，明天有创新药，后天有机器人），工具层必须跟着扩展。
 
-**根因**：`new WebSocket()` 返回时连接还在 `CONNECTING` 状态。前端立即调 `ws.send()`，消息丢失或触发 `onerror`。
+### 教训 2：配置解析必须只有一个入口
 
-**教训**：WebSocket 是异步的。`new WebSocket()` ≠ 已连接。必须等 `onopen` 回调后才能 `send()`，或者用消息缓冲队列。
+**事件**：`.env` 里配了 `AGENT_PROVIDER=zai` + `ZAI_API_KEY`，但 Web 对话一直回复"AI 助手未配置"。
 
-### 坑 3: Provider 配置读取不统一
+**根因**：项目有三层配置（shell env > .env > config.toml），`config.py` 的 `load_config()` 做了统一解析。但 Web 的 `deps.py` 绕过了它，直接 `os.environ.get("DEEPSEEK_API_KEY")` 硬编码只查了两个 provider 的 key。
 
-**现象**：Web 对话返回"AI 助手未配置"，但 `.env` 里明明配了 `ZAI_API_KEY`。
+**设计教训**：
 
-**根因**：`web/deps.py` 的 `get_agent_service()` 硬编码只查 `DEEPSEEK_API_KEY` 和 `OPENAI_API_KEY`。用 zai/kimi provider 时 key 读不到。
+> 任何"快捷方式"最终都是坑。`deps.py` 的作者大概是觉得"大多数用户用 deepseek，先查这个就行"。但这打破了配置解析的一致性——config.py 支持 4 个 provider，deps.py 只认 2 个。
 
-**反思**：项目有三层配置（shell env > .env > config.toml），`config.py` 的 `load_config()` 已经做了统一解析。但 `deps.py` 绕过了它，直接查环境变量。这是一个"配置读取入口不统一"的问题。
+一个系统里的配置读取入口必须只有一个。所有需要读配置的地方都走同一个函数，这个函数负责完整的优先级链路。这不是过度工程，而是防止"某些入口能用、某些入口不能用"的不一致体验。
 
-**教训**：所有需要读配置的地方都应该走 `load_config()`，不要直接 `os.environ.get()`。配置解析逻辑应该集中在一处。
+### 教训 3：接口契约要在连接层面保证，不靠约定
 
----
+**事件**：Web 对话 WebSocket 连接失败。
 
-## 当前工具清单（23 个）
+**根因（两个独立问题叠加）**：
+- 后端：路由 prefix 把 `/ws/agent` 变成了 `/api/agent/ws/agent`，前端连不上
+- 前端：连接还在建立中就 `send()`，消息丢失
 
-| 类别 | 工具 | 数据来源 |
-|---|---|---|
-| **行情** | get_quote / get_quotes | CachedMarketDataAdapter |
-| | get_market_indexes | 东财指数 API |
-| | get_sector_ranking / search_sector / get_sector_stocks | 东财板块 API |
-| | get_bars | CachedMarketDataAdapter |
-| **资金流** | get_money_flow_today / get_money_flow_history | CachedMarketDataAdapter |
-| **主题/产业链** | list_themes | supply_chains/*.json + earnings_preview.json |
-| | get_theme_stocks | supply_chains JSON + 实时行情 |
-| **用户数据** | get_watchlist | WatchlistStore (portfolio.db) |
-| | get_portfolio / get_portfolio_analysis | PortfolioStore (portfolio.db) |
-| | manage_alert | CustomAlertStore (portfolio.db) |
-| **新闻公告** | search_news / get_announcements / get_longhuban / get_fundamentals | 东财 API |
-| **操作** | backfill_history | CachedMarketDataAdapter |
-| | get_market_narrative | EpisodicMemory + LLM |
-| **记忆查询** | search_similar_events | VectorSearch (sqlite-vec) |
-| | get_prediction_history | PredictionTracker (agent.db) |
+两个问题都不是"逻辑错误"——它们是"接口契约没有在连接层面被保证"。后端以为前端知道完整路径，前端以为 `new WebSocket()` 等于已连接。两边都做了"自己觉得对"的事，但契约不对齐。
+
+**设计教训**：
+
+> 异步接口的契约（路径、时序、状态）不能靠人记，要在代码层面保证。WebSocket 连接必须等 `onopen` 才能发消息，这应该是一个封装好的行为，而不是每个调用方都要记住的约定。
 
 ---
 
-## 待解决的接口设计问题
+## 当前架构的设计原则
 
-### 1. record_analysis 的静默降级
+从这些教训中提炼出五条原则：
 
-`MemoryPipeline.record_analysis()` 在对话结束后自动提取 observations + predictions。但它是用 LLM 做提取的——需要额外一次 API 调用。如果这次调用失败（网络/超时/格式错误），静默降级只 log warning。
+**1. 工具层是能力原语，所有入口共享。**
 
-**结果**：对话记忆（agent_memory）写成功了，但 episodic_events 和 predictions 没有新增。用户以为记忆系统在工作，实际上只工作了一半。
+加一个工具 = Web Agent / CLI Agent / MCP Server 同时获得能力。不要为某个入口单独写数据获取逻辑——如果 Web 需要某个数据，agent 也需要，把它做成工具。
 
-**待思考**：是否应该在 Web UI 上提示"记忆提取失败"？还是保持静默？
+**2. 数据不暴露 = 不存在。**
 
-### 2. 向量检索层缺失
+项目里的每一类数据，都必须有对应的工具入口。检查工具清单就是检查 agent 的能力清单。
 
-`episodic_embeddings` 表不存在（sqlite-vec 未加载）。代码有降级——降级为关键词搜索。但 agent 的 `search_similar_events` 工具因此只能做关键词匹配，无法做语义搜索。
+**3. 工具只做数据获取，分析交给 LLM。**
 
-**影响**：agent 无法"语义回忆"——比如用户问"上次茅台跌的时候你怎么说的"，agent 无法通过语义找到相关的历史对话。
+工具返回结构化数据（JSON），LLM 负责解读、叙事、给判断。这保证了工具的复用性（工作流和 agent 都能用同一套工具），也保证了分析能力的可迭代（换 LLM 就能换分析风格，工具不用改）。
 
-### 3. Coding Agent 模式的能力边界
+**4. 配置读取只有一个入口。**
 
-当用户用 Kimi Code / Claude 直接在项目目录里操作时（模式 ③），coding agent 有完整的文件系统访问权限。它能读所有 DB、改所有文件、跑所有脚本。这不一定是好事——它可能误删数据、改错配置。
+所有需要读 provider / api_key / db_path 的地方都走 `load_config()`。不允许直接 `os.environ.get()`。
 
-**待思考**：是否需要为 coding agent 提供"安全沙箱"指引？比如在 `AGENTS.md` 里标注哪些路径只读、哪些操作需要确认。
+**5. 记忆系统可选可降级，但不能假装在工作。**
 
-### 4. 工具粒度
-
-当前 23 个工具粒度偏细——`get_quote` 和 `get_quotes` 分开、`get_money_flow_today` 和 `get_money_flow_history` 分开。这对 LLM 来说是好事（schema 清晰），但如果工具数继续增长（30+），LLM 选择工具的准确率会下降。
-
-**待思考**：是否需要引入工具分类/分组？或者让 NLRouter 的工作流也覆盖更多场景，减少 LLM 需要自主选工具的频率？
+任何一层记忆组件失败都不阻塞主对话。但如果记忆管道（record_analysis）静默失败了，用户以为记忆在积累实际没有——这比直接报错更危险。静默降级 + 可观测性才是完整的设计。
 
 ---
 
-## 设计原则总结
+## 待思考的设计问题
 
-1. **工具是能力原语** — 每个工具是一个独立能力单元，三个入口共享。加数据源 = 加工具。
-2. **数据不暴露 = 不存在** — 项目里有的数据，必须通过工具或 API 暴露给 agent，否则 agent 用不了。
-3. **工具只做数据获取，分析交给 LLM** — 保证工具的复用性。
-4. **统一配置入口** — 所有配置读取走 `load_config()`，不要直接查环境变量。
-5. **记忆系统可选可降级** — 任何一层记忆组件失败都不阻塞主流程，但要有手段让用户知道。
+### 工具粒度 vs 工具数量
+
+当前 23 个工具，粒度偏细（`get_quote` 和 `get_quotes` 分开、`get_money_flow_today` 和 `get_money_flow_history` 分开）。这对 LLM 选择工具是好事——schema 清晰、职责单一。但如果工具继续增长到 30+，LLM 需要扫描更多工具定义才能选对，准确率会下降。
+
+**可能的演进方向**：
+- 引入工具分组（行情类 / 资金流类 / 记忆类），先选组再选具体工具
+- 让 NLRouter 的工作流覆盖更多场景，减少 LLM 需要自主选工具的频率
+- 合并同质工具（`get_quote` + `get_quotes` → 一个 `get_quotes` 接受单个或多个 code）
+
+### Coding Agent 的定位
+
+当 Kimi Code / Claude 在项目目录里操作时，它的能力边界是整个文件系统。这对**开发这个项目**是合理的（要能改代码、跑测试、写文件），但对**使用这个项目做投研**是危险的（可能误删数据库、改错配置）。
+
+需要明确：coding agent 是"开发模式"，投研用户不应该走这条路。项目自己的 agent（模式 ① / ②）才是"使用模式"。
+
+### 记忆系统的可信度
+
+记忆系统现在有 316 条事件、136 条预测（67 命中 / 69 失误）、12 条提炼知识。但所有数据都来自回测——不是真实对话中积累的。
+
+Web 对话的记忆管道（record_analysis）需要 LLM 做事实抽取，这个抽取是否可靠？如果 agent 在对话中说了"茅台看涨"，这个判断会被提取成 prediction 吗？提取的准确率如何？这些目前是黑盒。
+
+记忆系统的价值取决于数据质量。低质量的记忆比没有记忆更危险——它会误导 agent 做出错误的"经验判断"。
