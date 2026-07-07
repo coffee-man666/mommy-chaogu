@@ -1,0 +1,17 @@
+/* Mommy Chaogu TUI 全局样式
+   深色主题，三栏布局 */
+
+Screen {
+    background: $surface;
+    color: $text;
+}
+
+/* 主屏布局 */
+#main-content {
+    height: 1fr;
+}
+
+/* 通用面板边框 */
+Widget {
+    scrollbar-size: 1 1;
+}

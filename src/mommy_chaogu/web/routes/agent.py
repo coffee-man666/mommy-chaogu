@@ -163,6 +163,40 @@ async def chat(
 # ---------- WebSocket 端点（流式） ----------
 
 
+@router.get("/history")
+async def get_history(limit: int = 50) -> dict[str, Any]:
+    """获取对话历史（从 agent_memory 表）。"""
+    memory = get_agent_memory()
+    try:
+        rows = memory.recent(limit=limit)
+        return {"messages": rows, "total": len(rows)}
+    except Exception:
+        return {"messages": [], "total": 0}
+
+
+@router.get("/predictions")
+async def get_predictions(limit: int = 20) -> dict[str, Any]:
+    """获取预测记录。"""
+    tracker = get_prediction_tracker_safe()
+    if tracker is None:
+        return {"predictions": [], "total": 0}
+    try:
+        rows = tracker.list_recent(limit=limit)  # type: ignore[attr-defined]
+        return {"predictions": rows, "total": len(rows)}
+    except Exception:
+        return {"predictions": [], "total": 0}
+
+
+def get_prediction_tracker_safe() -> Any:
+    """安全获取 prediction tracker（可能未配置）。"""
+    try:
+        from mommy_chaogu.web.deps import get_prediction_tracker
+
+        return get_prediction_tracker()
+    except Exception:
+        return None
+
+
 @router.websocket("/ws/agent")
 async def agent_ws(
     websocket: WebSocket,
@@ -217,13 +251,13 @@ async def agent_ws(
 
             resp = await asyncio.to_thread(agent.chat, user_message, None, None, memory)
 
-            # 分段发送（模拟流式效果，每 ~50 字一段）
+            # 分段发送（小段快发，给前端更好的渐进渲染体验）
             text = resp.text
-            chunk_size = 50
+            chunk_size = 12
             for i in range(0, len(text), chunk_size):
                 chunk = text[i : i + chunk_size]
                 await websocket.send_json({"type": "chunk", "text": chunk})
-                await asyncio.sleep(0.03)  # 30ms 间隔
+                await asyncio.sleep(0.01)  # 10ms 间隔
 
             await websocket.send_json(
                 {

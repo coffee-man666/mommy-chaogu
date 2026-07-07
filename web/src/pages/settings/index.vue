@@ -2,8 +2,11 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { listWatchlist, listGroups, addStock, removeStock } from '../../api/watchlist'
 import { useTheme } from '../../composables/useTheme'
+import { useWatchlistStore } from '../../stores/watchlist'
 import { cacheStats, health } from '../../api/cache'
 import type { WatchlistStock, WatchlistGroup, CacheStats, Health } from '../../api/types'
+
+const watchlistStore = useWatchlistStore()
 
 const watchlist = ref<WatchlistStock[]>([])
 const groups = ref<WatchlistGroup[]>([])
@@ -18,6 +21,14 @@ const adding = ref(false)
 const removing = ref<string | null>(null)
 const refreshing = ref(false)
 const lastRefresh = ref<Date>(new Date())
+
+// 分组管理
+const showAddGroup = ref(false)
+const newGroupName = ref('')
+const newGroupDesc = ref('')
+const addingGroup = ref(false)
+const removingGroup = ref<string | null>(null)
+const confirmDelete = ref<string | null>(null)
 
 async function load() {
   try {
@@ -75,6 +86,47 @@ async function doRemove(s: WatchlistStock) {
     alert('❌ ' + (e.message || '删除失败'))
   } finally {
     removing.value = null
+  }
+}
+
+async function doAddGroup() {
+  if (!newGroupName.value.trim()) {
+    alert('⚠️ 请填写分组名称')
+    return
+  }
+  addingGroup.value = true
+  try {
+    await watchlistStore.addGroup(newGroupName.value.trim(), newGroupDesc.value.trim() || undefined)
+    newGroupName.value = ''
+    newGroupDesc.value = ''
+    showAddGroup.value = false
+    await load()
+  } catch (e: any) {
+    alert('❌ 新建分组失败: ' + (e.message || e))
+  } finally {
+    addingGroup.value = false
+  }
+}
+
+function clickDeleteGroup(name: string) {
+  if (confirmDelete.value === name) {
+    doRemoveGroup(name)
+  } else {
+    confirmDelete.value = name
+  }
+}
+
+async function doRemoveGroup(name: string) {
+  removingGroup.value = name
+  try {
+    await watchlistStore.removeGroup(name)
+    confirmDelete.value = null
+    await load()
+  } catch (e: any) {
+    alert('❌ 删除分组失败: ' + (e.message || e))
+    confirmDelete.value = null
+  } finally {
+    removingGroup.value = null
   }
 }
 
@@ -194,11 +246,37 @@ onUnmounted(() => {
     </div>
 
     <div class="card">
-      <div class="card-title">📂 分组 ({{ groups.length }})</div>
+      <div class="card-title">
+        📂 分组 ({{ groups.length }})
+        <span class="add-btn" @click="showAddGroup = !showAddGroup">
+          {{ showAddGroup ? '✕ 取消' : '+ 新建' }}
+        </span>
+      </div>
+
+      <div v-if="showAddGroup" class="add-form">
+        <input v-model="newGroupName" placeholder="分组名称（如 白酒）" class="input" />
+        <input v-model="newGroupDesc" placeholder="描述（可选）" class="input" />
+        <button class="submit-btn" @click="doAddGroup" :disabled="addingGroup">
+          {{ addingGroup ? '创建中...' : '创建分组' }}
+        </button>
+      </div>
+
       <div v-if="!groups.length" class="empty-hint-card">还没有分组</div>
       <div v-for="g in groups" :key="g.name" class="group-row">
-        <span class="group-name">{{ g.name }}</span>
-        <span class="group-count">{{ g.n_stocks }} 只</span>
+        <div class="group-info">
+          <span class="group-name">{{ g.name }}</span>
+          <span class="group-desc" v-if="g.description">{{ g.description }}</span>
+        </div>
+        <div class="group-right">
+          <span class="group-count">{{ g.n_stocks }} 只</span>
+          <button
+            :class="['group-del-btn', { confirming: confirmDelete === g.name }]"
+            @click="clickDeleteGroup(g.name)"
+            :disabled="removingGroup === g.name"
+          >
+            {{ removingGroup === g.name ? '删除中' : confirmDelete === g.name ? '确认删除？' : '删除' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -399,13 +477,60 @@ onUnmounted(() => {
 
 .group-row:last-child { border-bottom: none; }
 
+.group-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .group-name { font-size: 15px; font-weight: 500; }
+
+.group-desc {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.group-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .group-count {
   font-size: 12px;
   color: #999;
   background: var(--color-bg);
   padding: 2px 8px;
   border-radius: 10px;
+}
+
+.group-del-btn {
+  color: var(--color-primary);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  background: white;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.group-del-btn:active:not(:disabled) {
+  background: var(--color-primary);
+  color: white;
+}
+
+.group-del-btn.confirming {
+  background: #c83e3e;
+  border-color: #c83e3e;
+  color: white;
+}
+
+.group-del-btn:disabled {
+  opacity: 0.6;
 }
 
 .add-form {

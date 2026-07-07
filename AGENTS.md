@@ -72,9 +72,10 @@ src/mommy_chaogu/
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库
 ├── web/             # FastAPI + WebSocket
+├── tui/             # Textual 终端 UI（三栏 dashboard + AI 对话 + 个股详情）
 ├── push/            # Server酱微信推送
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 12 个子命令）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个子命令）
 ```
 
 ## 自然语言入口
@@ -97,6 +98,16 @@ src/mommy_chaogu/
 - `router.py` — NLRouter（正则匹配优先，fallback 到 AgentService）
 
 Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
+
+## TUI 终端界面
+
+`uv run mommy-tui` → Textual 三栏 dashboard（自选股树 + 实时行情表 + AI 对话面板），SSH 友好。
+
+- `src/mommy_chaogu/tui/app.py` — App 主类 + `main()` 入口
+- `tui/data_service.py` — 异步数据层（直接调内部 adapter/store，不走 HTTP）
+- `tui/screens/dashboard.py` — 主屏三栏布局
+- `tui/screens/detail.py` — 个股详情屏（报价 + Sparkline + K 线表）
+- `tui/widgets/` — QuoteTable / WatchlistTree / ChatPanel / IndexCards / StatusBar
 
 ## 开发规范
 

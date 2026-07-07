@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { getPortfolio, addPosition, removePosition } from '../../api/portfolio'
+import { getPortfolio, addPosition, removePosition, listAdjustments, addAdjustment } from '../../api/portfolio'
 import { fmtPrice, fmtPct, fmtMoney, changeColor } from '../../api'
-import type { PortfolioSummary, PositionDetail } from '../../api/types'
+import type { PortfolioSummary, PositionDetail, Adjustment } from '../../api/types'
 import { useSpeechRecognition } from '../../composables/useSpeechRecognition'
 
 const router = useRouter()
@@ -12,6 +12,17 @@ const loading = ref(true)
 const showAdd = ref(false)
 const adding = ref(false)
 const removing = ref<number | null>(null)
+
+// 调仓展开 + 表单
+const expandedAdj = ref<number | null>(null)
+const adjustmentsMap = ref<Record<number, Adjustment[]>>({})
+const adjLoading = ref(false)
+const adjSubmitting = ref<number | null>(null)
+const adjAction = ref<'buy' | 'sell' | 'dividend'>('buy')
+const adjPrice = ref('')
+const adjShares = ref('')
+const adjDate = ref('')
+const adjNote = ref('')
 
 // 表单
 const newCode = ref('')
@@ -109,6 +120,78 @@ async function doRemove(pos: PositionDetail) {
 
 function goDetail(code: string) {
   router.push({ name: 'detail', params: { code } })
+}
+
+// ---- 调仓 ----
+
+function actionLabel(action: string): string {
+  if (action === 'buy') return '加仓'
+  if (action === 'sell') return '减仓'
+  return '分红'
+}
+
+function actionColor(action: string): string {
+  if (action === 'buy') return '#c83e3e'
+  if (action === 'sell') return '#2d8e3d'
+  return '#b8860b'
+}
+
+async function toggleAdj(p: PositionDetail) {
+  if (expandedAdj.value === p.id) {
+    expandedAdj.value = null
+    return
+  }
+  expandedAdj.value = p.id
+  // 重置表单
+  adjAction.value = 'buy'
+  adjPrice.value = ''
+  adjShares.value = ''
+  adjDate.value = ''
+  adjNote.value = ''
+  // 拉历史记录
+  if (!adjustmentsMap.value[p.id]) {
+    adjLoading.value = true
+    try {
+      adjustmentsMap.value[p.id] = await listAdjustments(p.id)
+    } catch (e) {
+      console.error(e)
+      adjustmentsMap.value[p.id] = []
+    } finally {
+      adjLoading.value = false
+    }
+  }
+}
+
+async function submitAdj(p: PositionDetail) {
+  if (!adjPrice.value.trim() || !adjShares.value.trim()) {
+    alert('请填写价格和股数')
+    return
+  }
+  adjSubmitting.value = p.id
+  try {
+    // 后端 AddAdjustmentIn 无 date 字段，日期拼入 note 保留
+    const noteParts: string[] = []
+    if (adjDate.value) noteParts.push(`[${adjDate.value}]`)
+    if (adjNote.value.trim()) noteParts.push(adjNote.value.trim())
+    await addAdjustment(p.id, {
+      action: adjAction.value,
+      price: adjPrice.value.trim(),
+      shares: parseInt(adjShares.value.trim()),
+      note: noteParts.join(' '),
+    })
+    // 刷新记录 + 持仓
+    adjustmentsMap.value[p.id] = await listAdjustments(p.id)
+    adjPrice.value = ''
+    adjShares.value = ''
+    adjDate.value = ''
+    adjNote.value = ''
+    adjAction.value = 'buy'
+    await load()
+  } catch (e: any) {
+    alert('调仓失败: ' + (e.message || e))
+  } finally {
+    adjSubmitting.value = null
+  }
 }
 
 function pnlColor(pnl: string | null): string {
@@ -224,45 +307,113 @@ onUnmounted(() => {
         :key="p.id"
         class="position-row"
       >
-        <div class="pos-main" @click="goDetail(p.code)">
-          <div class="pos-header">
-            <span class="pos-name">{{ p.name || p.code }}</span>
-            <span class="pos-code">{{ p.code }}</span>
-          </div>
-          <div class="pos-data">
-            <div class="pos-cell">
-              <span class="cell-label">成本</span>
-              <span class="cell-val">{{ fmtPrice(p.avg_cost) }}</span>
+        <div class="pos-top">
+          <div class="pos-main" @click="goDetail(p.code)">
+            <div class="pos-header">
+              <span class="pos-name">{{ p.name || p.code }}</span>
+              <span class="pos-code">{{ p.code }}</span>
             </div>
-            <div class="pos-cell">
-              <span class="cell-label">现价</span>
-              <span class="cell-val" :style="{ color: changeColor(((Number(p.current_price) - Number(p.avg_cost)) / Number(p.avg_cost) * 100).toFixed(2)) }">
-                {{ p.current_price ? fmtPrice(p.current_price) : '-' }}
+            <div class="pos-data">
+              <div class="pos-cell">
+                <span class="cell-label">成本</span>
+                <span class="cell-val">{{ fmtPrice(p.avg_cost) }}</span>
+              </div>
+              <div class="pos-cell">
+                <span class="cell-label">现价</span>
+                <span class="cell-val" :style="{ color: changeColor(((Number(p.current_price) - Number(p.avg_cost)) / Number(p.avg_cost) * 100).toFixed(2)) }">
+                  {{ p.current_price ? fmtPrice(p.current_price) : '-' }}
+                </span>
+              </div>
+              <div class="pos-cell">
+                <span class="cell-label">股数</span>
+                <span class="cell-val">{{ p.shares }}</span>
+              </div>
+              <div class="pos-cell">
+                <span class="cell-label">市值</span>
+                <span class="cell-val">{{ fmtWan(p.market_value) }}</span>
+              </div>
+            </div>
+            <div class="pos-pnl-row" v-if="p.unrealized_pnl">
+              <span class="pnl-tag" :style="{ background: pnlColor(p.unrealized_pnl) }">
+                {{ pnlSign(p.unrealized_pnl) }}{{ fmtWan(p.unrealized_pnl) }}
+                ({{ fmtPct(p.unrealized_pnl_pct || '0') }})
               </span>
             </div>
-            <div class="pos-cell">
-              <span class="cell-label">股数</span>
-              <span class="cell-val">{{ p.shares }}</span>
-            </div>
-            <div class="pos-cell">
-              <span class="cell-label">市值</span>
-              <span class="cell-val">{{ fmtWan(p.market_value) }}</span>
-            </div>
           </div>
-          <div class="pos-pnl-row" v-if="p.unrealized_pnl">
-            <span class="pnl-tag" :style="{ background: pnlColor(p.unrealized_pnl) }">
-              {{ pnlSign(p.unrealized_pnl) }}{{ fmtWan(p.unrealized_pnl) }}
-              ({{ fmtPct(p.unrealized_pnl_pct || '0') }})
-            </span>
+          <div class="pos-side-btns">
+            <button
+              class="adj-toggle-btn"
+              @click="toggleAdj(p)"
+            >
+              {{ expandedAdj === p.id ? '收起' : '＋调仓' }}
+            </button>
+            <button
+              class="clear-btn"
+              @click="doRemove(p)"
+              :disabled="removing === p.id"
+            >
+              {{ removing === p.id ? '...' : '清仓' }}
+            </button>
           </div>
         </div>
-        <button
-          class="clear-btn"
-          @click="doRemove(p)"
-          :disabled="removing === p.id"
-        >
-          {{ removing === p.id ? '...' : '清仓' }}
-        </button>
+
+        <!-- 调仓区域 -->
+        <div class="adj-area" v-if="expandedAdj === p.id">
+          <!-- 调仓表单 -->
+          <div class="adj-form">
+            <div class="adj-form-title">记录调仓</div>
+            <div class="adj-form-row">
+              <select v-model="adjAction" class="adj-select">
+                <option value="buy">加仓</option>
+                <option value="sell">减仓</option>
+                <option value="dividend">分红</option>
+              </select>
+              <input v-model="adjPrice" placeholder="价格" class="adj-input" inputmode="decimal" />
+              <input v-model="adjShares" placeholder="股数" class="adj-input" inputmode="numeric" />
+            </div>
+            <div class="adj-form-row">
+              <input v-model="adjDate" type="date" class="adj-input" />
+              <input v-model="adjNote" placeholder="备注（可选）" class="adj-input" />
+            </div>
+            <button
+              class="adj-submit-btn"
+              @click="submitAdj(p)"
+              :disabled="adjSubmitting === p.id"
+            >
+              {{ adjSubmitting === p.id ? '提交中...' : '提交' }}
+            </button>
+          </div>
+
+          <!-- 历史调仓记录 -->
+          <div class="adj-history" v-if="adjustmentsMap[p.id] && adjustmentsMap[p.id].length">
+            <div class="adj-history-title">历史记录</div>
+            <div class="adj-timeline">
+              <div
+                v-for="adj in adjustmentsMap[p.id]"
+                :key="adj.id"
+                class="timeline-item"
+              >
+                <div class="timeline-dot" :style="{ background: actionColor(adj.action) }"></div>
+                <div class="timeline-body">
+                  <div class="timeline-head">
+                    <span class="timeline-action" :style="{ color: actionColor(adj.action) }">{{ actionLabel(adj.action) }}</span>
+                    <span class="timeline-price">{{ fmtPrice(adj.price) }} × {{ adj.shares }}股</span>
+                  </div>
+                  <div class="timeline-meta">
+                    <span class="timeline-date">{{ adj.timestamp.slice(0, 16).replace('T', ' ') }}</span>
+                    <span class="timeline-note" v-if="adj.note">{{ adj.note }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="adj-history-empty" v-else-if="!adjLoading">
+            暂无调仓记录
+          </div>
+          <div class="adj-history-empty" v-else>
+            加载中...
+          </div>
+        </div>
       </div>
     </div>
 
@@ -472,12 +623,39 @@ onUnmounted(() => {
 }
 
 .position-row {
-  display: flex;
-  align-items: stretch;
   border-bottom: 1px solid var(--color-bg);
 }
 
 .position-row:last-child { border-bottom: none; }
+
+.pos-top {
+  display: flex;
+  align-items: stretch;
+}
+
+.pos-side-btns {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-left: 1px solid #f0f0f0;
+}
+
+.adj-toggle-btn {
+  flex: 1;
+  color: var(--color-primary);
+  font-size: 12px;
+  background: white;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0 8px;
+  white-space: nowrap;
+  min-width: 56px;
+}
+
+.adj-toggle-btn:active {
+  background: var(--color-bg);
+}
 
 .pos-main {
   flex: 1;
@@ -544,14 +722,17 @@ onUnmounted(() => {
 }
 
 .clear-btn {
-  width: 56px;
+  flex: 1;
   color: #999;
   font-size: 13px;
   background: white;
   border: none;
-  border-left: 1px solid #f0f0f0;
+  border-top: 1px solid #f0f0f0;
   cursor: pointer;
   font-weight: 500;
+  padding: 0 8px;
+  white-space: nowrap;
+  min-width: 56px;
 }
 
 .clear-btn:active:not(:disabled) {
@@ -560,6 +741,165 @@ onUnmounted(() => {
 }
 
 .clear-btn:disabled { opacity: 0.5; }
+
+/* 调仓区域 */
+.adj-area {
+  background: #fafafa;
+  padding: 14px 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.adj-form {
+  background: white;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #eee;
+}
+
+.adj-form-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #555;
+}
+
+.adj-form-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.adj-select {
+  flex: 0 0 auto;
+  background: #f8f8f8;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  font-family: inherit;
+}
+
+.adj-input {
+  flex: 1;
+  background: #f8f8f8;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  font-family: inherit;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.adj-input:focus,
+.adj-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.adj-submit-btn {
+  background: var(--color-primary);
+  color: white;
+  padding: 9px;
+  border-radius: 6px;
+  font-size: 14px;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.adj-submit-btn:disabled { opacity: 0.6; }
+.adj-submit-btn:active:not(:disabled) { background: var(--color-primary-dark); }
+
+/* 调仓历史时间线 */
+.adj-history-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.adj-timeline {
+  position: relative;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 10px;
+  padding-bottom: 12px;
+  position: relative;
+}
+
+.timeline-item:last-child { padding-bottom: 0; }
+
+.timeline-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 0;
+  width: 2px;
+  background: #e0e0e0;
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+  z-index: 1;
+}
+
+.timeline-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.timeline-action {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.timeline-price {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  color: #333;
+}
+
+.timeline-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.timeline-date {
+  color: #aaa;
+  font-family: 'Courier New', monospace;
+}
+
+.timeline-note {
+  color: #666;
+}
+
+.adj-history-empty {
+  text-align: center;
+  font-size: 13px;
+  color: #bbb;
+  padding: 12px 0;
+}
 
 .loading-box {
   padding: 60px 0;
