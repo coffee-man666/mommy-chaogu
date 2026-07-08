@@ -1,7 +1,8 @@
 """TUI 模块：Textual 终端界面。
 
-基于 Textual 框架，直接复用项目内部 adapter/store，
-不走 HTTP，提供三栏 dashboard 布局 + 个股详情屏。
+类 Claude Code CLI 的沉浸式体验：
+  - 沉浸式 AI 对话（默认主屏）
+  - 数据看板（Tab 切换）
 """
 
 from mommy_chaogu.tui.app import MommyTUIApp

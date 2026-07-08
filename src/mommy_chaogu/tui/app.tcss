@@ -1,17 +1,25 @@
 /* Mommy Chaogu TUI 全局样式
-   深色主题，三栏布局 */
+   深色主题，沉浸式体验 */
 
 Screen {
     background: $surface;
     color: $text;
 }
 
-/* 主屏布局 */
-#main-content {
-    height: 1fr;
-}
-
-/* 通用面板边框 */
 Widget {
     scrollbar-size: 1 1;
+}
+
+/* Markdown 渲染样式 */
+Markdown {
+    padding: 0 1;
+}
+
+Markdown > .markdown--code {
+    background: $boost;
+    color: $text;
+}
+
+Markdown > .markdown--block {
+    margin: 0 0 1 0;
 }

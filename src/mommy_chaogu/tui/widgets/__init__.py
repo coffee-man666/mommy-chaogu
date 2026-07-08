@@ -1,17 +1,15 @@
 """widgets 包：TUI 可复用组件。"""
 
-from mommy_chaogu.tui.widgets.chat_panel import ChatPanel
-from mommy_chaogu.tui.widgets.flow_bars import FlowBars
-from mommy_chaogu.tui.widgets.index_cards import IndexCards
+from mommy_chaogu.tui.widgets.chat_message import ChatMessage
+from mommy_chaogu.tui.widgets.index_strip import IndexStrip
 from mommy_chaogu.tui.widgets.quote_table import QuoteTable
 from mommy_chaogu.tui.widgets.status_bar import StatusBar
-from mommy_chaogu.tui.widgets.watchlist_tree import WatchlistTree
+from mommy_chaogu.tui.widgets.tool_indicator import ToolIndicator
 
 __all__ = [
-    "ChatPanel",
-    "FlowBars",
-    "IndexCards",
+    "ChatMessage",
+    "IndexStrip",
     "QuoteTable",
     "StatusBar",
-    "WatchlistTree",
+    "ToolIndicator",
 ]

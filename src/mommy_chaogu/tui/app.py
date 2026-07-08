@@ -1,23 +1,26 @@
 """Textual TUI 主入口。
 
-MommyTUIApp — 基于 Textual 的终端界面。
-三栏 dashboard 布局，直接复用项目内部 adapter/store。
+MommyTUIApp — 类 Claude Code CLI 的沉浸式体验。
+
+两个 Screen 模式，Tab 快捷键切换：
+  - ChatScreen（默认）：沉浸式 AI 对话
+  - DashboardScreen：数据看板（自选股/持仓/主题/信号）
 """
 
 from __future__ import annotations
 
 import logging
-from typing import ClassVar
 
 from textual.app import App
 
 from mommy_chaogu.tui.data_service import TUIDataService
+from mommy_chaogu.tui.screens.chat import ChatScreen
 from mommy_chaogu.tui.screens.dashboard import DashboardScreen
 
 _log = logging.getLogger(__name__)
 
 
-class MommyTUIApp(App):
+class MommyTUIApp(App[None]):
     """Mommy Chaogu TUI 主应用。
 
     用法：
@@ -25,21 +28,28 @@ class MommyTUIApp(App):
         python -m mommy_chaogu.tui.app
     """
 
-    TITLE = "Mommy Chaogu TUI"
+    TITLE = "Mommy Chaogu"
     CSS_PATH = "app.tcss"
-
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("q", "quit", "退出"),
-    ]
 
     def __init__(self) -> None:
         super().__init__()
-        # 数据服务在 app 上，所有 widget 通过 self.app.data_service 访问
         self.data_service = TUIDataService()
+        self._mode = "chat"
 
     def on_mount(self) -> None:
-        """挂载主屏。"""
-        self.push_screen(DashboardScreen())
+        """挂载默认主屏（沉浸式对话）。"""
+        self.push_screen(ChatScreen())
+
+    def action_cycle_screen(self) -> None:
+        """Tab 切换模式：对话 ↔ 看板。"""
+        if self._mode == "chat":
+            self._mode = "dashboard"
+            self.pop_screen()
+            self.push_screen(DashboardScreen())
+        else:
+            self._mode = "chat"
+            self.pop_screen()
+            self.push_screen(ChatScreen())
 
 
 def main() -> None:

@@ -1,9 +1,8 @@
 """实时行情表（DataTable + 定时刷新）。
 
-列：代码/名称/现价/涨跌幅/主力净流入。
-set_interval(5) 定时刷新行情。
-选中行 → 回车触发 push 详情屏。
-涨用红色（A 股习惯），跌用绿色。
+列：代码/名称/现价/涨跌幅/主力。
+选中行回车 → push 详情屏。
+红涨绿跌（A 股习惯）。
 """
 
 from __future__ import annotations
@@ -16,15 +15,18 @@ from typing import ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from textual.coordinate import Coordinate
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
 _log = logging.getLogger(__name__)
 
-# A 股涨跌色：红涨绿跌
 COLOR_UP = "red"
 COLOR_DOWN = "green"
 COLOR_FLAT = "white"
+
+# 匹配 Textual DOMNode.BINDINGS 的类型
+_Bindings = list[Binding | tuple[str, str] | tuple[str, str, str]]
 
 
 class QuoteTable(Vertical):
@@ -42,13 +44,12 @@ class QuoteTable(Vertical):
             self.code = code
             self.name = name
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[_Bindings] = [
         Binding("enter", "activate_row", "详情", show=True),
     ]
 
     DEFAULT_CSS = """
     QuoteTable {
-        width: 3fr;
         height: 100%;
         border: round $panel;
     }
@@ -70,38 +71,56 @@ class QuoteTable(Vertical):
         self._refresh_task: object = None
 
     def compose(self) -> ComposeResult:
-        yield Static("📊 实时行情", classes="title")
+        yield Static("📊 自选股行情", classes="title")
         yield DataTable(id="quote-grid", cursor_type="row")
 
     def on_mount(self) -> None:
-        """初始化表格列 + 定时刷新。"""
         table = self.query_one("#quote-grid", DataTable)
         table.add_column("代码", width=8)
         table.add_column("名称", width=10)
         table.add_column("现价", width=10)
         table.add_column("涨跌幅", width=10)
-        table.add_column("主力净流入", width=14)
+        table.add_column("主力", width=10)
 
+        # 加载自选股代码
+        self._refresh_task = asyncio.get_event_loop().create_task(self._load_and_refresh())
         self.set_interval(5, self._refresh_quotes)
 
-    def set_codes(self, codes: list[dict[str, str]]) -> None:
-        """设置当前监控的股票列表。
+    async def _load_and_refresh(self) -> None:
+        """启动时加载全部自选股代码。"""
+        data_service = getattr(self.app, "data_service", None)
+        if data_service is None:
+            return
 
-        Args:
-            codes: [{"code": "600519", "name": "贵州茅台"}, ...]
-        """
-        self._codes = [c["code"] for c in codes]
-        self._code_name = {c["code"]: c["name"] for c in codes}
-        # 立即触发一次刷新
-        self._refresh_task = asyncio.get_event_loop().create_task(self._refresh_quotes())
+        try:
+            codes = await data_service.get_all_watchlist_codes()
+        except Exception as e:
+            _log.warning("加载自选股代码失败: %s", e)
+            return
+
+        if not codes:
+            return
+
+        try:
+            grouped = await data_service.get_watchlist_stocks()
+        except Exception:
+            grouped = {}
+
+        self._codes = codes
+        for stocks in grouped.values():
+            for s in stocks:
+                self._code_name.setdefault(s["code"], s["name"])
+        for c in codes:
+            self._code_name.setdefault(c, c)
+
+        await self._refresh_quotes()
 
     async def _refresh_quotes(self) -> None:
         """从 data_service 拉取行情并更新表格。"""
         if not self._codes:
             return
 
-        app = self.app
-        data_service = getattr(app, "data_service", None)
+        data_service = getattr(self.app, "data_service", None)
         if data_service is None:
             return
 
@@ -121,7 +140,6 @@ class QuoteTable(Vertical):
             price_str = f"{q.price:.2f}"
             pct_str = f"{q.change_pct:+.2f}%"
 
-            # A 股习惯：红涨绿跌
             pct_val = float(q.change_pct)
             if pct_val > 0:
                 pct_color = COLOR_UP
@@ -133,7 +151,7 @@ class QuoteTable(Vertical):
                 pct_color = COLOR_FLAT
                 price_color = COLOR_FLAT
 
-            # 主力净流入（从 quote 拿不到，暂显示 —）
+            # 主力净流入暂不可用
             flow_str = "—"
 
             table.add_row(
@@ -150,7 +168,9 @@ class QuoteTable(Vertical):
         if table.cursor_row is None or table.cursor_row < 0:
             return
         with contextlib.suppress(Exception):
-            row_key = table.coordinate_to_cell_key((table.cursor_row, 0)).row_key
+            row_key = table.coordinate_to_cell_key(
+                Coordinate(table.cursor_row, 0)
+            ).row_key
             code = str(row_key.value)
             name = self._code_name.get(code, code)
             self.post_message(self.QuoteRowActivated(code=code, name=name))
