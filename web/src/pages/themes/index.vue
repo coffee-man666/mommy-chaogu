@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiGet } from '../../api/client'
-import EmptyState from '../../components/EmptyState.vue'
+import { apiGet } from '@/api/client'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 
 interface Theme {
   id: string
@@ -11,6 +13,14 @@ interface Theme {
   total_stocks: number
   subcategories: string[]
   source: string
+}
+
+const themeIcons: Record<string, string> = {
+  semiconductor: '🔧',
+  innovative_drug: '💊',
+  humanoid_robot: '🤖',
+  materials: '🧱',
+  earnings_watch: '📊',
 }
 
 const router = useRouter()
@@ -27,127 +37,93 @@ onMounted(async () => {
     loading.value = false
   }
 })
-
-const themeIcons: Record<string, string> = {
-  semiconductor: '🔧',
-  innovative_drug: '💊',
-  humanoid_robot: '🤖',
-  materials: '🧱',
-  earnings_watch: '📊',
-}
 </script>
 
 <template>
-  <div class="themes-page">
-    <h2 class="page-title">主题观察</h2>
-    <p class="page-desc">产业链全景 + 中报高增长观察</p>
+  <div class="min-h-screen bg-background pb-6">
+    <!-- 顶部头部 -->
+    <header
+      class="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground px-4 py-4"
+    >
+      <h1 class="text-2xl font-bold">📦 主题观察</h1>
+      <p class="text-sm opacity-85 mt-1">产业链全景 + 中报高增长观察</p>
+    </header>
 
-    <EmptyState v-if="!loading && themes.length === 0" icon="📂" title="暂无主题数据" />
-
-    <div class="theme-grid">
+    <div class="p-3">
+      <!-- 骨架屏 -->
       <div
-        v-for="t in themes"
-        :key="t.id"
-        class="theme-card"
-        @click="router.push(`/themes/${t.id}`)"
+        v-if="loading"
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
       >
-        <div class="theme-icon">{{ themeIcons[t.id] || '📈' }}</div>
-        <div class="theme-info">
-          <div class="theme-name">{{ t.name }}</div>
-          <div class="theme-desc">{{ t.description }}</div>
-          <div class="theme-meta">
-            <span class="stock-count">{{ t.total_stocks }} 只</span>
-            <span v-if="t.subcategories.length" class="sub-count">
-              {{ t.subcategories.length }} 个子板块
-            </span>
-          </div>
-        </div>
-        <div class="theme-arrow">→</div>
+        <Card v-for="i in 4" :key="i">
+          <CardContent class="p-4 space-y-3">
+            <div class="flex items-center gap-3">
+              <Skeleton class="size-10 rounded-lg" />
+              <div class="space-y-1.5">
+                <Skeleton class="h-4 w-20" />
+                <Skeleton class="h-3 w-14" />
+              </div>
+            </div>
+            <Skeleton class="h-3 w-full" />
+            <Skeleton class="h-3 w-2/3" />
+          </CardContent>
+        </Card>
+      </div>
+
+      <!-- 主题卡片网格 -->
+      <div
+        v-else
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      >
+        <Card
+          v-for="t in themes"
+          :key="t.id"
+          class="cursor-pointer transition-all hover:shadow-md hover:border-primary/50"
+          @click="router.push(`/themes/${t.id}`)"
+        >
+          <CardContent class="p-4">
+            <div class="flex items-start gap-3">
+              <span class="text-3xl leading-none flex-shrink-0">
+                {{ themeIcons[t.id] || '📈' }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="text-base font-bold text-card-foreground truncate">
+                    {{ t.name }}
+                  </h3>
+                  <span class="text-muted-foreground text-lg flex-shrink-0">›</span>
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                  {{ t.description }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 统计指标 -->
+            <div class="mt-3 flex items-center gap-2">
+              <Badge variant="secondary" class="text-xs">
+                {{ t.total_stocks }} 只
+              </Badge>
+              <Badge
+                v-if="t.subcategories && t.subcategories.length"
+                variant="outline"
+                class="text-xs text-muted-foreground"
+              >
+                {{ t.subcategories.length }} 个子板块
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <!-- 空状态 -->
+      <div
+        v-if="!loading && themes.length === 0"
+        class="py-16 text-center"
+      >
+        <span class="text-4xl">📂</span>
+        <p class="mt-2 text-sm text-muted-foreground">暂无主题数据</p>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.themes-page {
-  padding: 16px;
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0 0 4px;
-}
-.page-desc {
-  font-size: 13px;
-  color: #999;
-  margin: 0 0 16px;
-}
-
-.theme-grid {
-  display: grid;
-  gap: 12px;
-}
-
-.theme-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #eee);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: box-shadow 0.15s, border-color 0.15s;
-}
-.theme-card:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  border-color: var(--color-primary, #c83e3e);
-}
-
-.theme-icon {
-  font-size: 32px;
-  flex-shrink: 0;
-}
-
-.theme-info {
-  flex: 1;
-  min-width: 0;
-}
-.theme-name {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.theme-desc {
-  font-size: 13px;
-  color: #888;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-.theme-meta {
-  display: flex;
-  gap: 12px;
-  margin-top: 6px;
-  font-size: 12px;
-}
-.stock-count {
-  color: var(--color-primary, #c83e3e);
-  font-weight: 600;
-}
-.sub-count {
-  color: #aaa;
-}
-
-.theme-arrow {
-  font-size: 20px;
-  color: #ccc;
-  flex-shrink: 0;
-}
-</style>

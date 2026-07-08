@@ -1,215 +1,59 @@
 <script setup lang="ts">
 import { RouterView, RouterLink } from 'vue-router'
+import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Settings } from 'lucide-vue-next'
+import { cn } from '@/lib/utils'
 </script>
 
 <template>
-  <div class="app">
+  <div class="flex min-h-screen bg-background text-foreground">
     <!-- 桌面端侧边导航 -->
-    <nav class="sidebar">
-      <div class="sidebar-logo">📊 投研</div>
-      <RouterLink to="/dashboard" class="sidebar-item">
-        <span class="sidebar-icon">🏠</span>
-        <span>仪表盘</span>
+    <nav class="hidden md:flex w-16 flex-col items-center gap-2 border-r bg-card py-4 sticky top-0 h-screen">
+      <RouterLink to="/dashboard" class="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" active-class="!bg-primary/10 !text-primary">
+        <LayoutDashboard class="size-5" />
       </RouterLink>
-      <RouterLink to="/market" class="sidebar-item">
-        <span class="sidebar-icon">📈</span>
-        <span>行情</span>
+      <RouterLink to="/market" class="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" active-class="!bg-primary/10 !text-primary">
+        <TrendingUp class="size-5" />
       </RouterLink>
-      <RouterLink to="/themes" class="sidebar-item">
-        <span class="sidebar-icon">🔬</span>
-        <span>主题</span>
+      <RouterLink to="/themes" class="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" active-class="!bg-primary/10 !text-primary">
+        <Microscope class="size-5" />
       </RouterLink>
-      <RouterLink to="/portfolio" class="sidebar-item">
-        <span class="sidebar-icon">💰</span>
-        <span>持仓</span>
+      <RouterLink to="/portfolio" class="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" active-class="!bg-primary/10 !text-primary">
+        <Wallet class="size-5" />
       </RouterLink>
-      <RouterLink to="/agent" class="sidebar-item">
-        <span class="sidebar-icon">💬</span>
-        <span>问</span>
+      <RouterLink to="/agent" class="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" active-class="!bg-primary/10 !text-primary">
+        <MessageSquare class="size-5" />
       </RouterLink>
-      <RouterLink to="/signals" class="sidebar-item">
-        <span class="sidebar-icon">🔔</span>
-        <span>信号</span>
+      <RouterLink to="/signals" class="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" active-class="!bg-primary/10 !text-primary">
+        <Bell class="size-5" />
       </RouterLink>
-      <RouterLink to="/settings" class="sidebar-item">
-        <span class="sidebar-icon">⚙️</span>
-        <span>设置</span>
+      <div class="flex-1" />
+      <RouterLink to="/settings" class="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" active-class="!bg-primary/10 !text-primary">
+        <Settings class="size-5" />
       </RouterLink>
     </nav>
 
     <!-- 主内容区 -->
-    <main class="main-content">
+    <main class="flex-1 min-w-0 pb-16 md:pb-0">
       <RouterView />
     </main>
 
     <!-- 移动端底部 tab -->
-    <nav class="tab-bar">
-      <RouterLink to="/market" class="tab-item">
-        <span class="tab-icon">📈</span>
-        <span>行情</span>
+    <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-14 border-t bg-card md:hidden">
+      <RouterLink to="/market" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
+        <TrendingUp class="size-5" /><span>行情</span>
       </RouterLink>
-      <RouterLink to="/portfolio" class="tab-item">
-        <span class="tab-icon">💰</span>
-        <span>持仓</span>
+      <RouterLink to="/themes" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
+        <Microscope class="size-5" /><span>主题</span>
       </RouterLink>
-      <RouterLink to="/agent" class="tab-item">
-        <span class="tab-icon">💬</span>
-        <span>问</span>
+      <RouterLink to="/portfolio" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
+        <Wallet class="size-5" /><span>持仓</span>
       </RouterLink>
-      <RouterLink to="/themes" class="tab-item">
-        <span class="tab-icon">🔬</span>
-        <span>主题</span>
+      <RouterLink to="/agent" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
+        <MessageSquare class="size-5" /><span>问</span>
       </RouterLink>
-      <RouterLink to="/settings" class="tab-item">
-        <span class="tab-icon">⚙️</span>
-        <span>设置</span>
+      <RouterLink to="/settings" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
+        <Settings class="size-5" /><span>设置</span>
       </RouterLink>
     </nav>
   </div>
 </template>
-
-<style>
-/* 全局重置 */
-html, body, #app, .app {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  min-height: 100vh;
-  background: var(--color-bg);
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 14px;
-  color: #333;
-  line-height: 1.5;
-}
-
-button {
-  font-family: inherit;
-  font-size: inherit;
-}
-
-/* ========== 桌面端布局（≥768px） ========== */
-
-.app {
-  display: flex;
-  padding-bottom: 0;
-}
-
-.sidebar {
-  display: none;
-  width: 64px;
-  min-height: 100vh;
-  background: var(--color-surface, #fff);
-  border-right: 1px solid var(--color-border, #eee);
-  flex-direction: column;
-  align-items: center;
-  padding: 12px 0;
-  gap: 4px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.sidebar-logo {
-  font-size: 24px;
-  margin-bottom: 16px;
-  padding: 8px 0;
-}
-
-.sidebar-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 10px;
-  font-size: 11px;
-  color: #999;
-  text-decoration: none;
-  gap: 3px;
-  transition: background 0.15s;
-}
-
-.sidebar-item:hover {
-  background: var(--color-bg, #f5f5f5);
-}
-
-.sidebar-item.router-link-active {
-  color: var(--color-primary);
-  background: var(--color-primary) 10;
-  font-weight: 600;
-}
-
-.sidebar-icon {
-  font-size: 20px;
-}
-
-.main-content {
-  flex: 1;
-  min-width: 0;
-  padding-bottom: 0;
-}
-
-.tab-bar {
-  display: flex;
-}
-
-@media (min-width: 768px) {
-  .sidebar {
-    display: flex;
-  }
-
-  .main-content {
-    padding-bottom: 0;
-  }
-
-  .tab-bar {
-    display: none;
-  }
-}
-
-/* ========== 移动端布局（<768px） ========== */
-
-@media (max-width: 767px) {
-  .app {
-    flex-direction: column;
-    padding-bottom: 60px;
-  }
-
-  .main-content {
-    padding-bottom: 60px;
-  }
-}
-
-.tab-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 56px;
-  background: white;
-  border-top: 1px solid var(--color-border, #eee);
-  z-index: 100;
-}
-
-.tab-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: #999;
-  gap: 2px;
-  text-decoration: none;
-}
-
-.tab-item.router-link-active {
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.tab-icon {
-  font-size: 20px;
-}
-</style>

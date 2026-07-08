@@ -1,40 +1,76 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMarketStore } from '../../stores/market'
-import { usePortfolioStore } from '../../stores/portfolio'
-import { useWatchlistStore } from '../../stores/watchlist'
-import { getGainers, getSectors } from '../../api/market'
-import { apiGet } from '../../api/client'
-import { fmtPrice, fmtPct, fmtWan, changeColor, pnlColor, pnlSign } from '../../utils/format'
-import PriceText from '../../components/PriceText.vue'
-import ChangePct from '../../components/ChangePct.vue'
-import EmptyState from '../../components/EmptyState.vue'
-import type { RankingQuote, SectorQuote, Signal } from '../../api/types'
+import { apiGet } from '@/api/client'
+import { fmtPrice, fmtPct, fmtWan } from '@/utils/format'
+import { cn } from '@/lib/utils'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import type { IndexQuote, SectorQuote, Signal, Quote, PortfolioSummary } from '@/api/types'
+
+interface SnapshotResponse {
+  quotes: Quote[]
+  timestamp: string
+}
 
 const router = useRouter()
-const marketStore = useMarketStore()
-const portfolioStore = usePortfolioStore()
-const watchlistStore = useWatchlistStore()
 
-const gainers = ref<RankingQuote[]>([])
-const topSectors = ref<SectorQuote[]>([])
+// ---------- 数据 ----------
+const indexes = ref<IndexQuote[]>([])
+const quotes = ref<Quote[]>([])
+const portfolio = ref<PortfolioSummary | null>(null)
+const sectors = ref<SectorQuote[]>([])
 const recentSignals = ref<Signal[]>([])
+const watchCodes = ref<string[]>([])
 const dataAge = ref(0)
+const loading = ref(false)
 
 let refreshTimer: number | null = null
 let ageTimer: number | null = null
 
+async function loadWatchlist() {
+  try {
+    type WatchlistStock = { code: string; name: string; group: string }
+    const list = await apiGet<WatchlistStock[]>('/api/watchlist')
+    watchCodes.value = list.map((s) => s.code)
+  } catch {
+    watchCodes.value = []
+  }
+}
+
 async function loadAll() {
+  loading.value = true
+  // 先拿到自选股代码，再拉行情（保证 quote 覆盖自选股）
+  if (watchCodes.value.length === 0) await loadWatchlist()
   await Promise.all([
-    marketStore.fetchAll(),
-    portfolioStore.fetchAll(),
-    watchlistStore.fetchAll(),
-    getGainers(10).then((d) => (gainers.value = d)).catch(() => {}),
-    getSectors(10).then((d) => (topSectors.value = d)).catch(() => {}),
-    apiGet<Signal[]>('/api/signals/recent').then((d) => (recentSignals.value = d.slice(0, 3))).catch(() => {}),
+    apiGet<IndexQuote[]>('/api/market/indexes')
+      .then((d) => (indexes.value = d))
+      .catch(() => {}),
+    apiGet<SnapshotResponse>('/api/quotes')
+      .then((d) => (quotes.value = d.quotes ?? []))
+      .catch(() => {}),
+    apiGet<PortfolioSummary>('/api/portfolio')
+      .then((d) => (portfolio.value = d))
+      .catch(() => {}),
+    apiGet<Signal[]>('/api/signals/recent')
+      .then((d) => (recentSignals.value = d.slice(0, 5)))
+      .catch(() => {}),
+    apiGet<SectorQuote[]>('/api/market/sectors?limit=12')
+      .then((d) => (sectors.value = d))
+      .catch(() => {}),
   ])
   dataAge.value = 0
+  loading.value = false
 }
 
 onMounted(() => {
@@ -48,367 +84,306 @@ onUnmounted(() => {
   if (ageTimer) clearInterval(ageTimer)
 })
 
+// ---------- 派生 ----------
 const dataDescription = computed(() => {
   if (dataAge.value < 30) return '实时'
   if (dataAge.value < 120) return `${dataAge.value}秒前`
   return `${Math.floor(dataAge.value / 60)}分钟前`
 })
 
+/** 自选股行情（仅展示有报价的，最多 8 条） */
+const watchlistQuotes = computed(() => {
+  const set = new Set(watchCodes.value)
+  return quotes.value
+    .filter((q) => set.has(q.code))
+    .slice(0, 8)
+})
+
+/** 按涨跌幅排序的板块（前 8） */
+const sortedSectors = computed(() =>
+  [...sectors.value]
+    .sort((a, b) => Number(b.change_pct) - Number(a.change_pct))
+    .slice(0, 8),
+)
+
+/** 涨跌颜色 class */
+function changeClass(v: string | number | null | undefined): string {
+  if (v == null) return 'text-muted-foreground'
+  const n = Number(v)
+  if (isNaN(n) || n === 0) return 'text-muted-foreground'
+  return n > 0 ? 'text-up' : 'text-down'
+}
+
+// AI 快速入口
+const aiQuickActions = [
+  { label: '今天怎么样？', prompt: '今天大盘怎么样' },
+  { label: '持仓分析', prompt: '帮我分析一下持仓' },
+  { label: '主力在买什么？', prompt: '今天主力资金在买哪些板块' },
+  { label: '自选股异动', prompt: '我的自选股今天有什么异动' },
+]
+
+function goAgent(prompt?: string) {
+  router.push({ name: 'agent', query: prompt ? { q: prompt } : undefined })
+}
+
 function goDetail(code: string) {
   router.push({ name: 'detail', params: { code } })
+}
+
+const severityDot: Record<Signal['severity'], string> = {
+  critical: 'bg-destructive',
+  warning: 'bg-yellow-500',
+  info: 'bg-blue-500',
 }
 </script>
 
 <template>
-  <div class="dashboard">
-    <!-- 顶部指数卡片 -->
-    <div class="index-row">
-      <div
-        v-for="idx in marketStore.indexes.slice(0, 6)"
-        :key="idx.code"
-        class="index-card"
-      >
-        <div class="index-name">{{ idx.name }}</div>
-        <PriceText :value="idx.price" :change-pct="idx.change_pct" size="lg" />
-        <ChangePct :value="idx.change_pct" />
+  <div class="mx-auto w-full max-w-7xl space-y-4 p-4 lg:p-6">
+    <!-- 页面标题 + 数据年龄 -->
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-bold tracking-tight">📊 仪表盘</h1>
+      <div class="flex items-center gap-2 text-xs text-muted-foreground">
+        <span
+          class="inline-block size-2 rounded-full"
+          :class="loading ? 'animate-pulse bg-yellow-500' : 'bg-up'"
+        />
+        {{ dataDescription }}
       </div>
     </div>
 
-    <!-- 主区域 grid -->
-    <div class="dash-grid">
+    <!-- 指数卡片行 -->
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <Card
+        v-for="idx in indexes.slice(0, 6)"
+        :key="idx.code"
+        class="gap-0 py-4"
+      >
+        <CardContent class="px-4">
+          <p class="truncate text-xs text-muted-foreground">{{ idx.name }}</p>
+          <p class="mt-1 font-mono text-lg font-bold tabular-nums">
+            {{ fmtPrice(idx.price) }}
+          </p>
+          <p
+            class="mt-0.5 font-mono text-sm font-semibold tabular-nums"
+            :class="changeClass(idx.change_pct)"
+          >
+            {{ fmtPct(idx.change_pct) }}
+          </p>
+        </CardContent>
+      </Card>
+      <Card v-if="indexes.length === 0" class="col-span-full py-6">
+        <CardContent class="px-4 text-center text-sm text-muted-foreground">
+          指数数据加载中…
+        </CardContent>
+      </Card>
+    </div>
+
+    <!-- 主区域：左列(自选股) + 右列(持仓/AI/板块/信号) -->
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <!-- 自选股快览 -->
-      <div class="dash-card watchlist-card">
-        <div class="card-header">
-          <span>📋 自选股</span>
-          <span class="data-age">{{ dataDescription }}</span>
-        </div>
-        <EmptyState
-          v-if="watchlistStore.entries.length === 0"
-          icon="📝"
-          title="暂无自选股"
-          hint="去设置页添加"
-        />
-        <div v-else class="stock-list">
+      <Card class="lg:col-span-2">
+        <CardHeader class="flex items-center justify-between">
+          <CardTitle class="text-base">📋 自选股快览</CardTitle>
+          <Button variant="ghost" size="sm" @click="router.push({ name: 'market' })">
+            全部 →
+          </Button>
+        </CardHeader>
+        <Separator />
+        <CardContent class="px-0">
+          <Table v-if="watchlistQuotes.length > 0">
+            <TableHeader>
+              <TableRow>
+                <TableHead class="pl-6">代码</TableHead>
+                <TableHead>名称</TableHead>
+                <TableHead class="text-right">现价</TableHead>
+                <TableHead class="text-right">涨跌幅</TableHead>
+                <TableHead class="pr-6 text-right">主力净流入</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow
+                v-for="q in watchlistQuotes"
+                :key="q.code"
+                class="cursor-pointer"
+                @click="goDetail(q.code)"
+              >
+                <TableCell class="pl-6 font-mono text-xs text-muted-foreground">
+                  {{ q.code }}
+                </TableCell>
+                <TableCell class="font-medium">{{ q.name }}</TableCell>
+                <TableCell class="text-right font-mono tabular-nums">
+                  {{ fmtPrice(q.price) }}
+                </TableCell>
+                <TableCell
+                  class="text-right font-mono font-semibold tabular-nums"
+                  :class="changeClass(q.change_pct)"
+                >
+                  {{ fmtPct(q.change_pct) }}
+                </TableCell>
+                <TableCell
+                  class="pr-6 text-right font-mono text-xs tabular-nums"
+                  :class="changeClass(q.main_net_inflow)"
+                >
+                  {{ fmtWan(q.main_net_inflow) }}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
           <div
-            v-for="stock in watchlistStore.entries.slice(0, 8)"
-            :key="stock.code"
-            class="stock-row"
-            @click="goDetail(stock.code)"
+            v-else
+            class="flex flex-col items-center gap-2 py-10 text-sm text-muted-foreground"
           >
-            <span class="stock-code">{{ stock.code }}</span>
-            <span class="stock-name">{{ stock.name }}</span>
-            <span class="stock-group">{{ stock.group }}</span>
+            <span>暂无自选股行情</span>
+            <Button variant="outline" size="sm" @click="router.push({ name: 'settings' })">
+              去添加自选股
+            </Button>
           </div>
-          <div
-            v-if="watchlistStore.entries.length > 8"
-            class="more-link"
-            @click="router.push('/market')"
-          >
-            还有 {{ watchlistStore.entries.length - 8 }} 只 →
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <!-- 持仓总览 -->
-      <div class="dash-card portfolio-card">
-        <div class="card-header">
-          <span>💰 持仓总览</span>
-        </div>
-        <EmptyState
-          v-if="!portfolioStore.summary || portfolioStore.summary.n_positions === 0"
-          icon="💹"
-          title="暂无持仓"
-        />
-        <div v-else class="portfolio-overview">
-          <div class="pnl-card">
-            <div class="pnl-label">总市值</div>
-            <div class="pnl-value">{{ fmtWan(portfolioStore.summary.total_market_value) }}</div>
-          </div>
-          <div class="pnl-card">
-            <div class="pnl-label">浮动盈亏</div>
-            <div class="pnl-value" :style="{ color: pnlColor(portfolioStore.summary.total_unrealized_pnl) }">
-              {{ pnlSign(portfolioStore.summary.total_unrealized_pnl) }}{{ fmtWan(portfolioStore.summary.total_unrealized_pnl) }}
+      <Card>
+        <CardHeader class="flex items-center justify-between">
+          <CardTitle class="text-base">💰 持仓总览</CardTitle>
+          <Button variant="ghost" size="sm" @click="router.push({ name: 'portfolio' })">
+            详情 →
+          </Button>
+        </CardHeader>
+        <Separator />
+        <CardContent class="pt-4">
+          <template v-if="portfolio && portfolio.n_positions > 0">
+            <div class="space-y-3">
+              <div>
+                <p class="text-xs text-muted-foreground">总市值</p>
+                <p class="font-mono text-2xl font-bold tabular-nums">
+                  {{ fmtWan(portfolio.total_market_value) }}
+                </p>
+              </div>
+              <Separator />
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <p class="text-xs text-muted-foreground">浮动盈亏</p>
+                  <p
+                    class="font-mono text-lg font-bold tabular-nums"
+                    :class="changeClass(portfolio.total_unrealized_pnl)"
+                  >
+                    {{ Number(portfolio.total_unrealized_pnl ?? 0) >= 0 ? '+' : ''
+                    }}{{ fmtWan(portfolio.total_unrealized_pnl) }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs text-muted-foreground">盈亏率</p>
+                  <p
+                    class="font-mono text-lg font-bold tabular-nums"
+                    :class="changeClass(portfolio.total_unrealized_pnl_pct)"
+                  >
+                    {{ fmtPct(portfolio.total_unrealized_pnl_pct) }}
+                  </p>
+                </div>
+              </div>
+              <Separator />
+              <div class="flex items-center justify-between text-xs text-muted-foreground">
+                <span>持仓数</span>
+                <span class="font-mono">{{ portfolio.n_positions }}</span>
+              </div>
             </div>
-          </div>
-          <div class="pnl-card">
-            <div class="pnl-label">盈亏率</div>
-            <div class="pnl-value" :style="{ color: pnlColor(portfolioStore.summary.total_unrealized_pnl_pct) }">
-              {{ fmtPct(portfolioStore.summary.total_unrealized_pnl_pct) }}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- AI 对话入口 -->
-      <div class="dash-card ai-card" @click="router.push('/agent')">
-        <div class="card-header">
-          <span>🤖 AI 助手</span>
-        </div>
-        <div class="ai-quick">
-          <button class="quick-btn" @click.stop="router.push('/agent')">今天怎么样？</button>
-          <button class="quick-btn" @click.stop="router.push('/agent')">持仓分析</button>
-          <button class="quick-btn" @click.stop="router.push('/agent')">主力在买什么？</button>
-        </div>
-      </div>
-
-      <!-- 板块排行 -->
-      <div class="dash-card sector-card">
-        <div class="card-header">
-          <span>🔥 板块涨幅</span>
-        </div>
-        <EmptyState v-if="topSectors.length === 0" icon="📊" title="暂无数据" />
-        <div v-else class="sector-list">
+          </template>
           <div
-            v-for="(s, i) in topSectors.slice(0, 8)"
-            :key="s.code"
-            class="sector-row"
+            v-else
+            class="flex flex-col items-center gap-2 py-8 text-sm text-muted-foreground"
           >
-            <span class="sector-rank">{{ i + 1 }}</span>
-            <span class="sector-name">{{ s.name }}</span>
-            <div class="sector-bar-container">
-              <div
-                class="sector-bar"
-                :style="{
-                  width: `${Math.min(Math.abs(Number(s.change_pct)) * 20, 100)}%`,
-                  background: changeColor(s.change_pct),
-                }"
-              />
-            </div>
-            <ChangePct :value="s.change_pct" />
+            <span>暂无持仓</span>
+            <Button variant="outline" size="sm" @click="router.push({ name: 'portfolio' })">
+              录入持仓
+            </Button>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
+
+      <!-- AI 快速入口 -->
+      <Card>
+        <CardHeader>
+          <CardTitle class="text-base">🤖 AI 快速入口</CardTitle>
+          <CardDescription>一句话问 AI 助手</CardDescription>
+        </CardHeader>
+        <Separator />
+        <CardContent class="grid grid-cols-2 gap-2 pt-4">
+          <Button
+            v-for="action in aiQuickActions"
+            :key="action.label"
+            variant="outline"
+            size="sm"
+            class="justify-start"
+            @click="goAgent(action.prompt)"
+          >
+            {{ action.label }}
+          </Button>
+          <Button class="col-span-2" size="sm" @click="goAgent()">
+            打开 AI 对话 →
+          </Button>
+        </CardContent>
+      </Card>
+
+      <!-- 板块排行（badge 列表） -->
+      <Card class="lg:col-span-2">
+        <CardHeader class="flex items-center justify-between">
+          <CardTitle class="text-base">🔥 板块排行</CardTitle>
+          <span class="text-xs text-muted-foreground">按涨跌幅</span>
+        </CardHeader>
+        <Separator />
+        <CardContent class="flex flex-wrap gap-2 pt-4">
+          <template v-if="sortedSectors.length > 0">
+            <Badge
+              v-for="(s, i) in sortedSectors"
+              :key="s.code"
+              variant="outline"
+              :class="
+                cn(
+                  'gap-1.5 py-1.5 text-sm tabular-nums',
+                  changeClass(s.change_pct),
+                )
+              "
+            >
+              <span class="text-xs text-muted-foreground">{{ i + 1 }}</span>
+              <span class="font-medium">{{ s.name }}</span>
+              <span class="font-mono">{{ fmtPct(s.change_pct) }}</span>
+            </Badge>
+          </template>
+          <span v-else class="py-4 text-sm text-muted-foreground">暂无板块数据</span>
+        </CardContent>
+      </Card>
 
       <!-- 最近信号 -->
-      <div class="dash-card signal-card">
-        <div class="card-header">
-          <span>🔔 最近信号</span>
-        </div>
-        <EmptyState v-if="recentSignals.length === 0" icon="🔕" title="暂无信号" />
-        <div v-else class="signal-list">
-          <div
-            v-for="sig in recentSignals"
-            :key="sig.timestamp + sig.code"
-            class="signal-row"
-            @click="sig.code && /^\d{6}$/.test(sig.code) && goDetail(sig.code)"
-          >
-            <span
-              class="signal-sev"
-              :class="sig.severity"
-            >{{ sig.severity === 'critical' ? '🔴' : sig.severity === 'warning' ? '🟡' : '🔵' }}</span>
-            <span class="signal-title">{{ sig.title }}</span>
-            <span v-if="sig.name" class="signal-name">{{ sig.name }}</span>
-          </div>
-        </div>
-      </div>
+      <Card>
+        <CardHeader class="flex items-center justify-between">
+          <CardTitle class="text-base">🔔 最近信号</CardTitle>
+          <Button variant="ghost" size="sm" @click="router.push({ name: 'signals' })">
+            全部 →
+          </Button>
+        </CardHeader>
+        <Separator />
+        <CardContent class="space-y-3 pt-4">
+          <template v-if="recentSignals.length > 0">
+            <div
+              v-for="sig in recentSignals"
+              :key="sig.timestamp + sig.code"
+              class="flex items-start gap-2"
+            >
+              <span
+                class="mt-1.5 size-2 shrink-0 rounded-full"
+                :class="severityDot[sig.severity]"
+              />
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium">{{ sig.title }}</p>
+                <p class="truncate text-xs text-muted-foreground">
+                  <span v-if="sig.name">{{ sig.name }} · </span>{{ sig.detail }}
+                </p>
+              </div>
+            </div>
+          </template>
+          <p v-else class="py-4 text-center text-sm text-muted-foreground">暂无信号</p>
+        </CardContent>
+      </Card>
     </div>
   </div>
 </template>
-
-<style scoped>
-.dashboard {
-  padding: 16px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-/* 指数行 */
-.index-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.index-card {
-  background: var(--color-surface, #fff);
-  border-radius: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--color-border, #eee);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.index-name {
-  font-size: 13px;
-  color: #888;
-}
-
-/* 主区域 grid */
-.dash-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  grid-template-rows: auto auto;
-  gap: 12px;
-}
-.watchlist-card { grid-column: 1; grid-row: 1 / 3; }
-.portfolio-card { grid-column: 2; grid-row: 1; }
-.ai-card { grid-column: 3; grid-row: 1; }
-.sector-card { grid-column: 2 / 4; grid-row: 2; }
-.signal-card { display: none; } /* 在窄屏隐藏 */
-
-@media (min-width: 1024px) {
-  .signal-card {
-    display: block;
-    grid-column: 3;
-    grid-row: 2;
-  }
-  .sector-card { grid-column: 2; }
-}
-
-.dash-card {
-  background: var(--color-surface, #fff);
-  border-radius: 12px;
-  padding: 16px;
-  border: 1px solid var(--color-border, #eee);
-  min-height: 120px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: #555;
-}
-.data-age {
-  font-size: 11px;
-  color: #aaa;
-  font-weight: 400;
-}
-
-/* 自选股列表 */
-.stock-list, .sector-list, .signal-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.stock-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.stock-row:hover {
-  background: var(--color-bg, #f5f5f5);
-}
-.stock-code {
-  font-family: 'SF Mono', monospace;
-  font-size: 12px;
-  color: #888;
-  width: 54px;
-}
-.stock-name {
-  flex: 1;
-  color: #333;
-}
-.stock-group {
-  font-size: 11px;
-  color: #aaa;
-  background: var(--color-bg, #f5f5f5);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-.more-link {
-  font-size: 12px;
-  color: var(--color-primary);
-  text-align: center;
-  padding: 6px;
-  cursor: pointer;
-}
-
-/* 持仓概览 */
-.portfolio-overview {
-  display: flex;
-  gap: 16px;
-}
-.pnl-card {
-  flex: 1;
-  text-align: center;
-}
-.pnl-label {
-  font-size: 12px;
-  color: #888;
-  margin-bottom: 4px;
-}
-.pnl-value {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-/* AI 卡片 */
-.ai-card {
-  cursor: pointer;
-  transition: box-shadow 0.15s;
-}
-.ai-card:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-}
-.ai-quick {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.quick-btn {
-  text-align: left;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border, #eee);
-  border-radius: 8px;
-  background: var(--color-bg, #f9f9f9);
-  color: #555;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.quick-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-/* 板块排行 */
-.sector-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 13px;
-}
-.sector-rank {
-  width: 20px;
-  text-align: center;
-  font-weight: 700;
-  color: #aaa;
-}
-.sector-name {
-  width: 80px;
-  color: #333;
-}
-.sector-bar-container {
-  flex: 1;
-  height: 8px;
-  background: #f0f0f0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.sector-bar {
-  height: 100%;
-  border-radius: 4px;
-}
-
-/* 信号 */
-.signal-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  font-size: 13px;
-  cursor: pointer;
-}
-.signal-sev { font-size: 12px; }
-.signal-title { flex: 1; color: #555; }
-.signal-name { font-size: 12px; color: #888; }
-</style>

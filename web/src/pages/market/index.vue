@@ -1,40 +1,51 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { getIndexes, getSectors, getGainers, getLosers } from '../../api/market'
-import { getPortfolio } from '../../api/portfolio'
-import { fmtPrice, fmtPct, changeColor } from '../../api'
-import type { IndexQuote, SectorQuote, RankingQuote } from '../../api/types'
-import type { PortfolioSummary } from '../../api/types'
+import { getIndexes, getGainers, getLosers, getSectors } from '@/api/market'
+import { getPortfolio } from '@/api/portfolio'
+import { fmtPrice, fmtPct, fmtWan, pnlColor, pnlSign } from '@/utils/format'
+import type { IndexQuote, RankingQuote, SectorQuote, PortfolioSummary } from '@/api/types'
+import { Card, CardContent } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const router = useRouter()
 
 const indexes = ref<IndexQuote[]>([])
-const sectors = ref<SectorQuote[]>([])
 const gainers = ref<RankingQuote[]>([])
 const losers = ref<RankingQuote[]>([])
+const sectors = ref<SectorQuote[]>([])
 const portfolio = ref<PortfolioSummary | null>(null)
 
 const loading = ref(true)
-const activeTab = ref<'gainers' | 'losers' | 'sectors'>('gainers')
 const dataAge = ref(0)
+const activeTab = ref('gainers')
 
 let refreshTimer: number | null = null
 let ageTimer: number | null = null
 
 async function load() {
   try {
-    const [idx, sec, g, l, pf] = await Promise.all([
+    const [idx, g, l, sec, pf] = await Promise.all([
       getIndexes().catch(() => []),
-      getSectors(20).catch(() => []),
       getGainers(20).catch(() => []),
       getLosers(20).catch(() => []),
+      getSectors(20).catch(() => []),
       getPortfolio().catch(() => null),
     ])
     indexes.value = idx
-    sectors.value = sec
     gainers.value = g
     losers.value = l
+    sectors.value = sec
     portfolio.value = pf
     dataAge.value = 0
   } catch (e) {
@@ -48,38 +59,18 @@ function goDetail(code: string) {
   router.push({ name: 'detail', params: { code } })
 }
 
-function indexColor(pct: string): string {
+function isUp(pct: string | number | null | undefined): boolean {
+  return Number(pct) > 0
+}
+
+function isDown(pct: string | number | null | undefined): boolean {
+  return Number(pct) < 0
+}
+
+function pctClass(pct: string | number | null | undefined): string {
   const n = Number(pct)
-  if (isNaN(n) || n === 0) return '#fff'
-  return n >= 0 ? 'var(--color-primary)' : 'var(--color-down)'
-}
-
-function fmtFlowWan(s: string | null | undefined): string {
-  if (!s) return '-'
-  const n = Number(s)
-  if (isNaN(n)) return s
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(2)}万`
-  return n.toFixed(0)
-}
-
-function pnlColor(pnl: string | null): string {
-  if (!pnl) return '#999'
-  return Number(pnl) >= 0 ? 'var(--color-primary)' : 'var(--color-down)'
-}
-
-function pnlSign(pnl: string | null): string {
-  if (!pnl) return ''
-  return Number(pnl) >= 0 ? '+' : ''
-}
-
-function fmtWan(s: string | null | undefined): string {
-  if (!s) return '-'
-  const n = Number(s)
-  if (isNaN(n)) return s
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(2)}万`
-  return n.toFixed(2)
+  if (isNaN(n) || n === 0) return 'text-muted-foreground'
+  return n > 0 ? 'text-up' : 'text-down'
 }
 
 const dataDescription = computed(() => {
@@ -90,7 +81,7 @@ const dataDescription = computed(() => {
 
 onMounted(() => {
   load()
-  refreshTimer = window.setInterval(load, 30000)
+  refreshTimer = window.setInterval(load, 30_000)
   ageTimer = window.setInterval(() => dataAge.value++, 1000)
 })
 
@@ -101,436 +92,270 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="market-page">
-    <!-- 顶部红色头部 -->
-    <header class="header">
-      <div class="header-top">
-        <div class="title">📊 盘面</div>
-        <div class="data-age">{{ dataDescription }} · 30秒刷新</div>
+  <div class="min-h-screen bg-background pb-6">
+    <!-- 顶部头部 -->
+    <header
+      class="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground px-4 pt-4 pb-0"
+    >
+      <div class="flex items-baseline justify-between mb-3">
+        <h1 class="text-2xl font-bold">📊 盘面</h1>
+        <span class="text-xs font-mono opacity-85">
+          {{ dataDescription }} · 30秒刷新
+        </span>
       </div>
 
       <!-- 持仓快览条 -->
-      <div class="portfolio-bar" v-if="portfolio && portfolio.n_positions > 0" @click="router.push('/portfolio')">
-        <div class="pb-left">
-          <span class="pb-icon">💰</span>
-          <span class="pb-label">持仓</span>
-          <span class="pb-count">{{ portfolio.n_positions }}</span>
+      <div
+        v-if="portfolio && portfolio.n_positions > 0"
+        class="flex items-center justify-between rounded-xl bg-white/10 px-3 py-2.5 mb-3 cursor-pointer transition-colors hover:bg-white/20"
+        @click="router.push('/portfolio')"
+      >
+        <div class="flex items-center gap-1.5">
+          <span class="text-base">💰</span>
+          <span class="text-sm">持仓</span>
+          <Badge variant="secondary" class="text-xs">{{ portfolio.n_positions }}</Badge>
         </div>
-        <div class="pb-right">
-          <span class="pb-value">{{ fmtWan(portfolio.total_market_value) }}</span>
-          <span class="pb-pnl" :style="{ color: pnlColor(portfolio.total_unrealized_pnl) }">
-            {{ pnlSign(portfolio.total_unrealized_pnl) }}{{ fmtWan(portfolio.total_unrealized_pnl) }}
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold font-mono text-primary-foreground">
+            {{ fmtWan(portfolio.total_market_value) }}
+          </span>
+          <span
+            class="text-sm font-semibold font-mono"
+            :style="{ color: pnlColor(portfolio.total_unrealized_pnl) }"
+          >
+            {{ pnlSign(portfolio.total_unrealized_pnl)
+            }}{{ fmtWan(portfolio.total_unrealized_pnl) }}
             ({{ fmtPct(portfolio.total_unrealized_pnl_pct || '0') }})
           </span>
-          <span class="pb-arrow">›</span>
+          <span class="text-lg text-white/50">›</span>
         </div>
       </div>
     </header>
 
-    <!-- 大盘指数区 -->
-    <section class="index-section">
-      <div class="section-title">📈 大盘指数</div>
-      <div class="index-grid">
-        <div
-          v-for="idx in indexes.slice(0, 4)"
-          :key="idx.code"
-          class="index-card"
-          :style="{ background: indexColor(idx.change_pct) === '#fff' ? '#f0f0f0' : indexColor(idx.change_pct) + '20' }"
-        >
-          <div class="idx-name">{{ idx.name }}</div>
-          <div class="idx-price">{{ fmtPrice(idx.price) }}</div>
-          <div class="idx-pct" :style="{ color: indexColor(idx.change_pct) }">
-            {{ fmtPct(idx.change_pct) }}
-          </div>
-        </div>
+    <!-- 大盘指数卡片 -->
+    <section class="p-3">
+      <h2 class="text-sm font-bold text-muted-foreground mb-2 px-1">📈 大盘指数</h2>
+
+      <!-- Skeleton 加载态 -->
+      <div v-if="loading && indexes.length === 0" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <Card v-for="i in 4" :key="i">
+          <CardContent class="p-3 space-y-2">
+            <Skeleton class="h-3 w-16" />
+            <Skeleton class="h-6 w-24" />
+            <Skeleton class="h-4 w-20" />
+          </CardContent>
+        </Card>
       </div>
-      <div class="index-extra" v-if="indexes.length > 4">
-        <div v-for="idx in indexes.slice(4)" :key="idx.code" class="idx-extra-row">
-          <span class="idx-extra-name">{{ idx.name }}</span>
-          <span class="idx-extra-price">{{ fmtPrice(idx.price) }}</span>
-          <span class="idx-extra-pct" :style="{ color: indexColor(idx.change_pct) }">
-            {{ fmtPct(idx.change_pct) }}
-          </span>
+
+      <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <Card
+          v-for="idx in indexes.slice(0, 6)"
+          :key="idx.code"
+          class="overflow-hidden border-l-4"
+          :class="isUp(idx.change_pct) ? 'border-l-up' : isDown(idx.change_pct) ? 'border-l-down' : 'border-l-border'"
+        >
+          <CardContent class="p-3">
+            <p class="text-xs text-muted-foreground mb-1">{{ idx.name }}</p>
+            <p class="text-lg font-bold font-mono text-card-foreground">
+              {{ fmtPrice(idx.price) }}
+            </p>
+            <p class="text-sm font-bold font-mono" :class="pctClass(idx.change_pct)">
+              {{ fmtPct(idx.change_pct) }}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <!-- 额外指数行（超过6个时） -->
+      <div
+        v-if="indexes.length > 6"
+        class="mt-3 rounded-lg border border-border p-2"
+      >
+        <div
+          v-for="idx in indexes.slice(6)"
+          :key="idx.code"
+          class="flex items-center justify-between py-1.5 text-xs"
+        >
+          <span class="text-muted-foreground">{{ idx.name }}</span>
+          <div class="flex items-center gap-4">
+            <span class="font-mono font-semibold text-card-foreground">{{ fmtPrice(idx.price) }}</span>
+            <span class="font-mono font-bold w-16 text-right" :class="pctClass(idx.change_pct)">
+              {{ fmtPct(idx.change_pct) }}
+            </span>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- Tab 切换：涨幅 / 跌幅 / 板块 -->
-    <section class="rank-section">
-      <div class="rank-tabs">
-        <span :class="['rank-tab', { active: activeTab === 'gainers' }]" @click="activeTab = 'gainers'">
-          🔥 涨幅榜
-        </span>
-        <span :class="['rank-tab', { active: activeTab === 'losers' }]" @click="activeTab = 'losers'">
-          💧 跌幅榜
-        </span>
-        <span :class="['rank-tab', { active: activeTab === 'sectors' }]" @click="activeTab = 'sectors'">
-          🏭 板块榜
-        </span>
-      </div>
+    <section class="px-3">
+      <Tabs v-model="activeTab" default-value="gainers" class="w-full">
+        <TabsList class="grid w-full grid-cols-3">
+          <TabsTrigger value="gainers" class="text-xs">🔥 涨幅榜</TabsTrigger>
+          <TabsTrigger value="losers" class="text-xs">💧 跌幅榜</TabsTrigger>
+          <TabsTrigger value="sectors" class="text-xs">🏭 板块榜</TabsTrigger>
+        </TabsList>
 
-      <!-- 涨幅榜 -->
-      <div v-if="activeTab === 'gainers'" class="rank-list">
-        <div class="rank-row rank-header">
-          <span class="rk-rank">#</span>
-          <span class="rk-name">名称</span>
-          <span class="rk-price">最新</span>
-          <span class="rk-pct">涨幅</span>
-        </div>
-        <div
-          v-for="(item, i) in gainers"
-          :key="item.code"
-          class="rank-row"
-          @click="goDetail(item.code)"
-        >
-          <span class="rk-rank" :class="{ top: i < 3 }">{{ i + 1 }}</span>
-          <span class="rk-name">
-            <span class="rk-stock-name">{{ item.name }}</span>
-            <span class="rk-stock-code">{{ item.code }}</span>
-          </span>
-          <span class="rk-price">{{ fmtPrice(item.price) }}</span>
-          <span class="rk-pct" :style="{ color: 'var(--color-primary)' }">{{ fmtPct(item.change_pct) }}</span>
-        </div>
-        <div v-if="!gainers.length" class="empty-mini">暂无数据</div>
-      </div>
+        <!-- 涨幅榜 -->
+        <TabsContent value="gainers">
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow class="bg-muted/50">
+                  <TableHead class="w-10 text-center text-xs">#</TableHead>
+                  <TableHead class="text-xs">名称</TableHead>
+                  <TableHead class="text-right text-xs">最新</TableHead>
+                  <TableHead class="text-right text-xs">涨幅</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow
+                  v-for="(item, i) in gainers"
+                  :key="item.code"
+                  class="cursor-pointer transition-colors hover:bg-muted/30"
+                  @click="goDetail(item.code)"
+                >
+                  <TableCell class="text-center">
+                    <span
+                      :class="[
+                        'font-mono font-bold text-sm',
+                        i < 3
+                          ? 'inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary'
+                          : 'text-muted-foreground',
+                      ]"
+                    >
+                      {{ i + 1 }}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div class="font-semibold text-sm text-card-foreground truncate max-w-[100px]">
+                      {{ item.name }}
+                    </div>
+                    <div class="text-[10px] text-muted-foreground">{{ item.code }}</div>
+                  </TableCell>
+                  <TableCell class="text-right font-mono font-semibold text-sm">
+                    {{ fmtPrice(item.price) }}
+                  </TableCell>
+                  <TableCell class="text-right font-mono font-bold text-sm text-up">
+                    {{ fmtPct(item.change_pct) }}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            <div v-if="!loading && gainers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+              暂无数据
+            </div>
+          </Card>
+        </TabsContent>
 
-      <!-- 跌幅榜 -->
-      <div v-else-if="activeTab === 'losers'" class="rank-list">
-        <div class="rank-row rank-header">
-          <span class="rk-rank">#</span>
-          <span class="rk-name">名称</span>
-          <span class="rk-price">最新</span>
-          <span class="rk-pct">跌幅</span>
-        </div>
-        <div
-          v-for="(item, i) in losers"
-          :key="item.code"
-          class="rank-row"
-          @click="goDetail(item.code)"
-        >
-          <span class="rk-rank" :class="{ top: i < 3 }">{{ i + 1 }}</span>
-          <span class="rk-name">
-            <span class="rk-stock-name">{{ item.name }}</span>
-            <span class="rk-stock-code">{{ item.code }}</span>
-          </span>
-          <span class="rk-price">{{ fmtPrice(item.price) }}</span>
-          <span class="rk-pct" :style="{ color: 'var(--color-down)' }">{{ fmtPct(item.change_pct) }}</span>
-        </div>
-        <div v-if="!losers.length" class="empty-mini">暂无数据</div>
-      </div>
+        <!-- 跌幅榜 -->
+        <TabsContent value="losers">
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow class="bg-muted/50">
+                  <TableHead class="w-10 text-center text-xs">#</TableHead>
+                  <TableHead class="text-xs">名称</TableHead>
+                  <TableHead class="text-right text-xs">最新</TableHead>
+                  <TableHead class="text-right text-xs">跌幅</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow
+                  v-for="(item, i) in losers"
+                  :key="item.code"
+                  class="cursor-pointer transition-colors hover:bg-muted/30"
+                  @click="goDetail(item.code)"
+                >
+                  <TableCell class="text-center">
+                    <span
+                      :class="[
+                        'font-mono font-bold text-sm',
+                        i < 3
+                          ? 'inline-flex items-center justify-center w-5 h-5 rounded-full bg-down/10 text-down'
+                          : 'text-muted-foreground',
+                      ]"
+                    >
+                      {{ i + 1 }}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div class="font-semibold text-sm text-card-foreground truncate max-w-[100px]">
+                      {{ item.name }}
+                    </div>
+                    <div class="text-[10px] text-muted-foreground">{{ item.code }}</div>
+                  </TableCell>
+                  <TableCell class="text-right font-mono font-semibold text-sm">
+                    {{ fmtPrice(item.price) }}
+                  </TableCell>
+                  <TableCell class="text-right font-mono font-bold text-sm text-down">
+                    {{ fmtPct(item.change_pct) }}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            <div v-if="!loading && losers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+              暂无数据
+            </div>
+          </Card>
+        </TabsContent>
 
-      <!-- 板块榜 -->
-      <div v-else class="rank-list">
-        <div class="rank-row rank-header">
-          <span class="rk-rank">#</span>
-          <span class="rk-name">板块</span>
-          <span class="rk-price">点位</span>
-          <span class="rk-pct">涨幅</span>
-        </div>
-        <div
-          v-for="(item, i) in sectors"
-          :key="item.code"
-          class="rank-row"
-        >
-          <span class="rk-rank" :class="{ top: i < 3 }">{{ i + 1 }}</span>
-          <span class="rk-name">
-            <span class="rk-stock-name">{{ item.name }}</span>
-            <span class="rk-stock-code">{{ item.code }}</span>
-          </span>
-          <span class="rk-price">{{ fmtPrice(item.price) }}</span>
-          <span class="rk-pct" :style="{ color: changeColor(item.change_pct) }">{{ fmtPct(item.change_pct) }}</span>
-        </div>
-        <div v-if="!sectors.length" class="empty-mini">暂无数据</div>
-      </div>
+        <!-- 板块榜 -->
+        <TabsContent value="sectors">
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow class="bg-muted/50">
+                  <TableHead class="w-10 text-center text-xs">#</TableHead>
+                  <TableHead class="text-xs">板块</TableHead>
+                  <TableHead class="text-right text-xs">点位</TableHead>
+                  <TableHead class="text-right text-xs">涨幅</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow
+                  v-for="(item, i) in sectors"
+                  :key="item.code"
+                  class="transition-colors hover:bg-muted/30"
+                >
+                  <TableCell class="text-center">
+                    <span
+                      :class="[
+                        'font-mono font-bold text-sm',
+                        i < 3
+                          ? 'inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary'
+                          : 'text-muted-foreground',
+                      ]"
+                    >
+                      {{ i + 1 }}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div class="font-semibold text-sm text-card-foreground truncate max-w-[100px]">
+                      {{ item.name }}
+                    </div>
+                    <div class="text-[10px] text-muted-foreground">{{ item.code }}</div>
+                  </TableCell>
+                  <TableCell class="text-right font-mono font-semibold text-sm">
+                    {{ fmtPrice(item.price) }}
+                  </TableCell>
+                  <TableCell class="text-right font-mono font-bold text-sm" :class="pctClass(item.change_pct)">
+                    {{ fmtPct(item.change_pct) }}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            <div v-if="!loading && sectors.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+              暂无数据
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </section>
 
     <!-- 加载占位 -->
-    <div v-if="loading" class="loading-box">
-      <div class="loading-text">盘面加载中...</div>
+    <div v-if="loading && indexes.length === 0" class="py-10 text-center text-sm text-muted-foreground">
+      盘面加载中...
     </div>
   </div>
 </template>
-
-<style scoped>
-.market-page {
-  min-height: 100vh;
-  background: var(--color-bg);
-  padding-bottom: 24px;
-}
-
-.header {
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-  color: white;
-  padding: 18px 16px 0;
-}
-
-.header-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 12px;
-}
-
-.title {
-  font-size: 26px;
-  font-weight: bold;
-}
-
-.data-age {
-  font-size: 12px;
-  opacity: 0.85;
-  font-family: 'Courier New', monospace;
-}
-
-/* 持仓快览 */
-.portfolio-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(255, 255, 255, 0.12);
-  padding: 10px 12px;
-  border-radius: 10px;
-  margin-bottom: 12px;
-  cursor: pointer;
-}
-
-.portfolio-bar:active { background: rgba(255, 255, 255, 0.2); }
-
-.pb-left {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.pb-icon { font-size: 16px; }
-.pb-label { font-size: 13px; }
-.pb-count {
-  background: rgba(255, 255, 255, 0.25);
-  color: white;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 10px;
-}
-
-.pb-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pb-value {
-  font-size: 14px;
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
-  color: white;
-}
-
-.pb-pnl {
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Courier New', monospace;
-}
-
-.pb-arrow {
-  font-size: 18px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-/* 大盘指数 */
-.index-section {
-  background: white;
-  margin: 12px;
-  padding: 14px;
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.section-title {
-  font-size: 15px;
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-
-.index-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.index-card {
-  padding: 10px;
-  border-radius: 8px;
-  text-align: left;
-}
-
-.idx-name {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 2px;
-}
-
-.idx-price {
-  font-size: 18px;
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
-  color: #333;
-}
-
-.idx-pct {
-  font-size: 13px;
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
-  margin-top: 2px;
-}
-
-.index-extra {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #eee;
-}
-
-.idx-extra-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  padding: 4px 0;
-}
-
-.idx-extra-name { color: #666; }
-.idx-extra-price { color: #333; font-family: 'Courier New', monospace; font-weight: 600; }
-.idx-extra-pct { font-family: 'Courier New', monospace; font-weight: 700; min-width: 60px; text-align: right; }
-
-/* 排行榜 */
-.rank-section {
-  background: white;
-  margin: 12px;
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  overflow: hidden;
-}
-
-.rank-tabs {
-  display: flex;
-  border-bottom: 1px solid #eee;
-}
-
-.rank-tab {
-  flex: 1;
-  text-align: center;
-  padding: 12px 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: #666;
-  cursor: pointer;
-  user-select: none;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s;
-}
-
-.rank-tab.active {
-  color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
-}
-
-.rank-list {
-  padding: 4px 0;
-}
-
-.rank-row {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  font-size: 13px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--color-bg);
-}
-
-.rank-row:active { background: var(--color-bg); }
-
-.rank-row.rank-header {
-  color: #999;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: default;
-  background: #f8f8f8;
-}
-
-.rank-row.rank-header:active { background: #f8f8f8; }
-
-.rk-rank {
-  width: 28px;
-  font-family: 'Courier New', monospace;
-  font-weight: 700;
-  color: #999;
-  font-size: 13px;
-}
-
-.rk-rank.top {
-  color: var(--color-primary);
-  background: var(--color-bg);
-  border-radius: 50%;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-}
-
-.rk-name {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  margin-left: 4px;
-}
-
-.rk-stock-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rk-stock-code {
-  font-size: 10px;
-  color: #aaa;
-  margin-top: 1px;
-}
-
-.rk-price {
-  width: 70px;
-  text-align: right;
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  color: #333;
-}
-
-.rk-pct {
-  width: 70px;
-  text-align: right;
-  font-family: 'Courier New', monospace;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.empty-mini {
-  padding: 24px 0;
-  text-align: center;
-  color: #999;
-  font-size: 13px;
-}
-
-.loading-box {
-  padding: 40px 0;
-  text-align: center;
-}
-
-.loading-text {
-  color: #999;
-  font-size: 13px;
-}
-</style>
