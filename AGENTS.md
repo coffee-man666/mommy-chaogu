@@ -66,15 +66,17 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（21 工具 + MCP + 记忆系统 5 层 + MemoryPipeline 统一管道）
+├── agent/           # LLM agent（24 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
 ├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库
 ├── web/             # FastAPI + WebSocket
+├── tui/             # Textual 终端 UI（沉浸式 AI 对话 + 数据看板双模式）
+├── services/        # 统一数据服务层（工具层和 API 层共用）
 ├── push/            # Server酱微信推送
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 12 个子命令）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个子命令）
 ```
 
 ## 自然语言入口
@@ -97,6 +99,30 @@ src/mommy_chaogu/
 - `router.py` — NLRouter（正则匹配优先，fallback 到 AgentService）
 
 Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
+
+## TUI 终端界面
+
+`uv run mommy-tui` → 沉浸式双模式终端（类似 Claude Code CLI），Tab 键切换：
+
+- **模式 A：AI 对话** — Markdown 流式渲染 + 工具调用折叠 + 底部输入框
+- **模式 B：数据看板** — TabbedContent（自选股/持仓/主题/信号）+ 状态栏
+
+- `src/mommy_chaogu/tui/app.py` — App 主类（双 Screen 模式）+ `main()` 入口
+- `tui/data_service.py` — 异步数据层（直接调内部 adapter/store，不走 HTTP）
+- `tui/screens/chat.py` — 沉浸式 AI 对话屏
+- `tui/screens/dashboard.py` — 数据看板屏（TabbedContent）
+- `tui/screens/detail.py` — 个股详情屏（报价 + Sparkline + K 线表）
+- `tui/widgets/` — ChatMessage / ToolIndicator / IndexStrip / QuoteTable / StatusBar
+
+## Web 前端
+
+`uv run mommy-web` → Vue 3 + shadcn/vue + Tailwind v4。
+
+- 桌面端侧边导航 + 移动端底部 tab（响应式）
+- 9 个页面：仪表盘/行情/主题/持仓/AI对话/个股详情/信号/设置/主题详情
+- shadcn 组件（reka-ui）+ lucide 图标
+- A 股配色（红涨绿跌）+ 深色/浅色模式
+- klinecharts K 线图 + WebSocket 实时推送
 
 ## 开发规范
 

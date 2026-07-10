@@ -1,31 +1,171 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { listWatchlist, listGroups, addStock, removeStock } from '../../api/watchlist'
-import { useTheme } from '../../composables/useTheme'
-import { cacheStats, health } from '../../api/cache'
-import type { WatchlistStock, WatchlistGroup, CacheStats, Health } from '../../api/types'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { apiGet, apiPost, apiDelete } from '@/api/client'
+import { useTheme } from '@/composables/useTheme'
+import { useWatchlistStore } from '@/stores/watchlist'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import type { WatchlistStock, WatchlistGroup, CacheStats, Health } from '@/api/types'
+
+const { currentMode, toggle: toggleTheme } = useTheme()
+const watchlistStore = useWatchlistStore()
 
 const watchlist = ref<WatchlistStock[]>([])
 const groups = ref<WatchlistGroup[]>([])
-const { themes, currentThemeId, currentTheme, setTheme } = useTheme()
 const cache = ref<CacheStats | null>(null)
 const healthInfo = ref<Health | null>(null)
-const showAdd = ref(false)
-const newCode = ref('')
-const newGroup = ref('')
-const newNote = ref('')
-const adding = ref(false)
-const removing = ref<string | null>(null)
+const loading = ref(true)
 const refreshing = ref(false)
-const lastRefresh = ref<Date>(new Date())
+const lastRefresh = ref(new Date())
+
+// ---------- 添加自选股 ----------
+const showAddStock = ref(false)
+const addingStock = ref(false)
+const stockForm = ref({ code: '', group: '', note: '' })
+
+function resetStockForm() {
+  stockForm.value = { code: '', group: '', note: '' }
+}
+
+async function submitAddStock() {
+  if (!stockForm.value.code.trim() || !stockForm.value.group.trim()) return
+  addingStock.value = true
+  try {
+    await apiPost('/api/watchlist/stocks', {
+      code: stockForm.value.code.trim(),
+      group: stockForm.value.group.trim(),
+      note: stockForm.value.note.trim() || undefined,
+    })
+    showAddStock.value = false
+    resetStockForm()
+    await load()
+  } catch (e: any) {
+    alert('添加失败: ' + (e?.message || e))
+  } finally {
+    addingStock.value = false
+  }
+}
+
+async function removeStock(s: WatchlistStock) {
+  if (!confirm(`从「${s.group}」删除 ${s.code} ${s.name}？`)) return
+  try {
+    await apiDelete(`/api/watchlist/stocks/${s.code}?group=${encodeURIComponent(s.group)}`)
+    await load()
+  } catch (e: any) {
+    alert('删除失败: ' + (e?.message || e))
+  }
+}
+
+// ---------- 分组管理 ----------
+const showAddGroup = ref(false)
+const addingGroup = ref(false)
+const groupForm = ref({ name: '', description: '' })
+const confirmDeleteGroup = ref<string | null>(null)
+const removingGroup = ref<string | null>(null)
+
+function resetGroupForm() {
+  groupForm.value = { name: '', description: '' }
+}
+
+async function submitAddGroup() {
+  if (!groupForm.value.name.trim()) return
+  addingGroup.value = true
+  try {
+    await watchlistStore.addGroup(
+      groupForm.value.name.trim(),
+      groupForm.value.description.trim() || undefined,
+    )
+    showAddGroup.value = false
+    resetGroupForm()
+    await load()
+  } catch (e: any) {
+    alert('新建分组失败: ' + (e?.message || e))
+  } finally {
+    addingGroup.value = false
+  }
+}
+
+function clickDeleteGroup(name: string) {
+  if (confirmDeleteGroup.value === name) {
+    doRemoveGroup(name)
+  } else {
+    confirmDeleteGroup.value = name
+  }
+}
+
+async function doRemoveGroup(name: string) {
+  removingGroup.value = name
+  try {
+    await watchlistStore.removeGroup(name)
+    confirmDeleteGroup.value = null
+    await load()
+  } catch (e: any) {
+    alert('删除分组失败: ' + (e?.message || e))
+    confirmDeleteGroup.value = null
+  } finally {
+    removingGroup.value = null
+  }
+}
+
+// ---------- 格式化 ----------
+function fmtHitRate(r: number): string {
+  return `${(r * 100).toFixed(1)}%`
+}
+
+function fmtUptime(s: number): string {
+  if (s < 60) return `${Math.floor(s)}秒`
+  if (s < 3600) return `${Math.floor(s / 60)}分钟`
+  if (s < 86400) return `${Math.floor(s / 3600)}小时${Math.floor((s % 3600) / 60)}分`
+  return `${Math.floor(s / 86400)}天`
+}
+
+function fmtAge(s: number): string {
+  if (s < 60) return `${Math.floor(s)}秒前`
+  if (s < 3600) return `${Math.floor(s / 60)}分钟前`
+  if (s < 86400) return `${Math.floor(s / 3600)}小时前`
+  return `${Math.floor(s / 86400)}天前`
+}
+
+function fmtLastRefresh(): string {
+  const diff = (Date.now() - lastRefresh.value.getTime()) / 1000
+  if (diff < 5) return '刚刚'
+  if (diff < 60) return `${Math.floor(diff)}秒前`
+  return `${Math.floor(diff / 60)}分钟前`
+}
+
+const lastPollTime = computed(() => {
+  if (!healthInfo.value?.last_snapshot_at) return '-'
+  return healthInfo.value.last_snapshot_at.slice(11, 19)
+})
+
+// ---------- 生命周期 ----------
+let timer: number | null = null
 
 async function load() {
   try {
     const [w, g, c, h] = await Promise.all([
-      listWatchlist(),
-      listGroups(),
-      cacheStats(),
-      health()
+      apiGet<WatchlistStock[]>('/api/watchlist').catch(() => [] as WatchlistStock[]),
+      apiGet<WatchlistGroup[]>('/api/watchlist/groups').catch(() => [] as WatchlistGroup[]),
+      apiGet<CacheStats>('/api/cache/stats').catch(() => null),
+      apiGet<Health>('/api/health').catch(() => null),
     ])
     watchlist.value = w
     groups.value = g
@@ -34,6 +174,8 @@ async function load() {
     lastRefresh.value = new Date()
   } catch (e) {
     console.error(e)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -43,65 +185,9 @@ async function refreshNow() {
   refreshing.value = false
 }
 
-async function doAdd() {
-  if (!newCode.value.trim() || !newGroup.value.trim()) {
-    alert('⚠️ 请填写代码和分组')
-    return
-  }
-  adding.value = true
-  try {
-    await addStock(newCode.value.trim(), newGroup.value.trim(), newNote.value.trim())
-    newCode.value = ''
-    newGroup.value = ''
-    newNote.value = ''
-    showAdd.value = false
-    alert('✅ 已添加')
-    load()
-  } catch (e: any) {
-    alert('❌ ' + (e.message || '添加失败'))
-  } finally {
-    adding.value = false
-  }
-}
-
-async function doRemove(s: WatchlistStock) {
-  if (!confirm(`从「${s.group}」删除 ${s.code} ${s.name}？`)) return
-  removing.value = `${s.code}-${s.group}`
-  try {
-    await removeStock(s.code, s.group)
-    alert('✅ 已删除')
-    load()
-  } catch (e: any) {
-    alert('❌ ' + (e.message || '删除失败'))
-  } finally {
-    removing.value = null
-  }
-}
-
-function fmtHitRate(r: number): string {
-  return `${(r * 100).toFixed(1)}%`
-}
-
-function fmtAge(s: number): string {
-  if (s < 60) return `${Math.floor(s)}秒`
-  if (s < 3600) return `${Math.floor(s / 60)}分`
-  if (s < 86400) return `${Math.floor(s / 3600)}时${Math.floor((s % 3600) / 60)}分`
-  return `${Math.floor(s / 86400)}天`
-}
-
-function fmtLastRefresh(): string {
-  const now = new Date()
-  const diff = (now.getTime() - lastRefresh.value.getTime()) / 1000
-  if (diff < 5) return '刚刚'
-  if (diff < 60) return `${Math.floor(diff)}秒前`
-  return `${Math.floor(diff / 60)}分钟前`
-}
-
-let timer: number | null = null
-
 onMounted(() => {
   load()
-  timer = window.setInterval(load, 30000)
+  timer = window.setInterval(load, 30_000)
 })
 
 onUnmounted(() => {
@@ -110,463 +196,257 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="settings-page">
-    <header class="header">
-      <div class="header-row">
-        <div class="title">设置</div>
-        <button class="refresh-btn" @click="refreshNow" :disabled="refreshing">
-          <span :class="['refresh-icon', { spinning: refreshing }]">↻</span>
+  <div class="mx-auto w-full max-w-3xl space-y-4 p-4 lg:p-6">
+    <!-- 页头 -->
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-bold tracking-tight">⚙️ 设置</h1>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-muted-foreground">上次刷新 {{ fmtLastRefresh() }}</span>
+        <Button variant="outline" size="sm" :disabled="refreshing" @click="refreshNow">
+          <span :class="{ 'animate-spin': refreshing }">↻</span>
           {{ refreshing ? '刷新中' : '刷新' }}
-        </button>
+        </Button>
       </div>
-      <div class="subtitle">上次刷新 {{ fmtLastRefresh() }}</div>
-    </header>
+    </div>
 
-    <!-- 主题选择 -->
-    <div class="card">
-      <div class="card-title">
-        🎨 主题
-        <span class="theme-cur-name">{{ currentTheme().name }} · {{ currentTheme().nameEn }}</span>
-      </div>
-      <div class="theme-grid">
+    <!-- 主题切换 -->
+    <Card>
+      <CardHeader>
+        <CardTitle class="text-base">🎨 主题</CardTitle>
+        <CardDescription>深色 / 浅色模式切换</CardDescription>
+      </CardHeader>
+      <Separator />
+      <CardContent class="flex items-center justify-between pt-4">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium">
+            {{ currentMode === 'dark' ? '🌙 深色模式' : '☀️ 浅色模式' }}
+          </span>
+        </div>
+        <Button variant="outline" size="sm" @click="toggleTheme">
+          {{ currentMode === 'dark' ? '☀️ 切换到浅色' : '🌙 切换到深色' }}
+        </Button>
+      </CardContent>
+    </Card>
+
+    <!-- 服务状态 -->
+    <Card v-if="healthInfo">
+      <CardHeader>
+        <CardTitle class="text-base">🩺 服务状态</CardTitle>
+      </CardHeader>
+      <Separator />
+      <CardContent class="space-y-2 pt-4">
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-muted-foreground">数据源</span>
+          <span class="font-mono font-semibold">{{ healthInfo.adapter_name }}</span>
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-muted-foreground">运行时长</span>
+          <span class="font-mono font-semibold">{{ fmtUptime(healthInfo.uptime_seconds) }}</span>
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-muted-foreground">最后轮询</span>
+          <span class="font-mono font-semibold">{{ lastPollTime }}</span>
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- 缓存状态 -->
+    <Card v-if="cache">
+      <CardHeader>
+        <CardTitle class="text-base">📦 缓存状态</CardTitle>
+      </CardHeader>
+      <Separator />
+      <CardContent class="space-y-2 pt-4">
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-muted-foreground">命中率</span>
+          <span
+            class="font-mono font-bold"
+            :class="Number(cache.hit_rate) >= 0.8 ? 'text-down' : 'text-destructive'"
+          >
+            {{ fmtHitRate(cache.hit_rate) }}
+          </span>
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-muted-foreground">命中 / 未命中</span>
+          <span class="font-mono font-semibold">{{ cache.hits }} / {{ cache.miss }}</span>
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-muted-foreground">拉新成功 / 失败</span>
+          <span class="font-mono font-semibold">{{ cache.fetch_ok }} / {{ cache.fetch_fail }}</span>
+        </div>
+        <template v-if="cache.freshness && cache.freshness.length">
+          <Separator class="my-2" />
+          <p class="text-xs font-semibold text-muted-foreground">数据新鲜度</p>
+          <div
+            v-for="f in cache.freshness"
+            :key="f.code"
+            class="flex items-center justify-between text-sm"
+          >
+            <span class="truncate">{{ f.code }} {{ f.name }}</span>
+            <span class="ml-2 shrink-0 font-mono font-semibold text-muted-foreground">
+              {{ fmtAge(f.age_seconds) }}
+            </span>
+          </div>
+        </template>
+      </CardContent>
+    </Card>
+
+    <!-- 分组管理 -->
+    <Card>
+      <CardHeader class="flex flex-row items-center justify-between">
+        <div class="flex items-center gap-2">
+          <CardTitle class="text-base">📂 分组</CardTitle>
+          <Badge variant="secondary" class="font-mono">{{ groups.length }}</Badge>
+        </div>
+        <Button variant="outline" size="sm" @click="showAddGroup = true">
+          + 新建
+        </Button>
+      </CardHeader>
+      <Separator />
+      <CardContent class="pt-4">
         <div
-          v-for="t in themes"
-          :key="t.id"
-          :class="['theme-item', { active: currentThemeId === t.id }]"
-          @click="setTheme(t.id)"
+          v-if="!groups.length"
+          class="py-6 text-center text-sm text-muted-foreground"
         >
-          <div class="theme-preview">
-            <span class="ts-c1" :style="{ background: t.colors.primary }"></span>
-            <span class="ts-c2" :style="{ background: t.colors.up }"></span>
-            <span class="ts-c3" :style="{ background: t.colors.down }"></span>
-            <span class="ts-c4" :style="{ background: t.colors.gold }"></span>
-          </div>
-          <div class="theme-meta">
-            <div class="theme-num">{{ t.number }}</div>
-            <div class="theme-name">{{ t.name }}</div>
-          </div>
+          还没有分组
         </div>
-      </div>
-    </div>
-
-    <div class="card" v-if="healthInfo">
-      <div class="card-title">🩺 服务状态</div>
-      <div class="card-row">
-        <span class="label">数据源</span>
-        <span class="value">{{ healthInfo.adapter_name }}</span>
-      </div>
-      <div class="card-row">
-        <span class="label">运行</span>
-        <span class="value">{{ Math.floor(healthInfo.uptime_seconds) }}秒</span>
-      </div>
-      <div class="card-row">
-        <span class="label">最后轮询</span>
-        <span class="value">
-          <span v-if="healthInfo.last_snapshot_at">{{ healthInfo.last_snapshot_at.slice(11, 19) }}</span>
-          <span v-else>-</span>
-        </span>
-      </div>
-    </div>
-
-    <div class="card" v-if="cache">
-      <div class="card-title">📦 缓存状态</div>
-      <div class="card-row">
-        <span class="label">命中率</span>
-        <span class="value" :style="{ color: Number(cache.hit_rate) >= 0.8 ? 'var(--color-down)' : 'var(--color-primary)' }">
-          {{ fmtHitRate(cache.hit_rate) }}
-        </span>
-      </div>
-      <div class="card-row">
-        <span class="label">命中 / 未命中</span>
-        <span class="value">{{ cache.hits }} / {{ cache.miss }}</span>
-      </div>
-      <div class="card-row">
-        <span class="label">拉新成功 / 失败</span>
-        <span class="value">{{ cache.fetch_ok }} / {{ cache.fetch_fail }}</span>
-      </div>
-      <div class="freshness-list" v-if="cache.freshness && cache.freshness.length">
-        <div class="freshness-title">数据新鲜度</div>
-        <div v-for="f in cache.freshness" :key="f.code" class="freshness-row">
-          <span class="code">{{ f.code }} {{ f.name }}</span>
-          <span class="age">{{ fmtAge(f.age_seconds) }}前</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">📂 分组 ({{ groups.length }})</div>
-      <div v-if="!groups.length" class="empty-hint-card">还没有分组</div>
-      <div v-for="g in groups" :key="g.name" class="group-row">
-        <span class="group-name">{{ g.name }}</span>
-        <span class="group-count">{{ g.n_stocks }} 只</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">
-        ⭐ 自选股 ({{ watchlist.length }})
-        <span class="add-btn" @click="showAdd = !showAdd">
-          {{ showAdd ? '✕ 取消' : '+ 添加' }}
-        </span>
-      </div>
-
-      <div v-if="showAdd" class="add-form">
-        <input v-model="newCode" placeholder="股票代码（如 600519）" class="input" inputmode="numeric" maxlength="6" />
-        <input v-model="newGroup" placeholder="分组名（如 白酒，新分组会自动创建）" class="input" />
-        <input v-model="newNote" placeholder="备注（可选）" class="input" />
-        <button class="submit-btn" @click="doAdd" :disabled="adding">
-          {{ adding ? '添加中...' : '保存' }}
-        </button>
-      </div>
-
-      <div v-if="!watchlist.length" class="empty-hint-card">
-        还没有自选股，点击「+ 添加」开始
-      </div>
-
-      <div
-        v-for="s in watchlist"
-        :key="`${s.code}-${s.group}`"
-        class="stock-row"
-      >
-        <div class="stock-info">
-          <div class="stock-name">{{ s.name }}</div>
-          <div class="stock-code">{{ s.code }} · {{ s.group }}<span v-if="s.note"> · {{ s.note }}</span></div>
-        </div>
-        <button
-          class="del-btn"
-          @click="doRemove(s)"
-          :disabled="removing === `${s.code}-${s.group}`"
+        <div
+          v-for="g in groups"
+          :key="g.name"
+          class="flex items-center justify-between border-b border-border py-3 last:border-b-0"
         >
-          {{ removing === `${s.code}-${s.group}` ? '删除中' : '删除' }}
-        </button>
-      </div>
-    </div>
+          <div class="min-w-0 flex-1">
+            <span class="font-medium">{{ g.name }}</span>
+            <span v-if="g.description" class="ml-2 text-xs text-muted-foreground">
+              {{ g.description }}
+            </span>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <Badge variant="secondary" class="font-mono text-xs">{{ g.n_stocks }} 只</Badge>
+            <Button
+              :variant="confirmDeleteGroup === g.name ? 'destructive' : 'outline'"
+              size="sm"
+              class="h-7 px-2 text-xs"
+              :disabled="removingGroup === g.name"
+              @click="clickDeleteGroup(g.name)"
+            >
+              {{ removingGroup === g.name ? '删除中' : confirmDeleteGroup === g.name ? '确认删除？' : '删除' }}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
 
-    <div class="footer-tip">
+    <!-- 自选股 -->
+    <Card>
+      <CardHeader class="flex flex-row items-center justify-between">
+        <div class="flex items-center gap-2">
+          <CardTitle class="text-base">⭐ 自选股</CardTitle>
+          <Badge variant="secondary" class="font-mono">{{ watchlist.length }}</Badge>
+        </div>
+        <Button variant="outline" size="sm" @click="showAddStock = true">
+          + 添加
+        </Button>
+      </CardHeader>
+      <Separator />
+      <CardContent class="pt-4">
+        <div
+          v-if="!watchlist.length"
+          class="py-6 text-center text-sm text-muted-foreground"
+        >
+          还没有自选股，点击「+ 添加」开始
+        </div>
+        <div
+          v-for="s in watchlist"
+          :key="`${s.code}-${s.group}`"
+          class="flex items-center justify-between border-b border-border py-3 last:border-b-0"
+        >
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold">{{ s.name }}</p>
+            <p class="text-xs text-muted-foreground">
+              {{ s.code }} · {{ s.group }}<span v-if="s.note"> · {{ s.note }}</span>
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-7 px-3 text-xs hover:text-destructive"
+            @click="removeStock(s)"
+          >
+            删除
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <p class="pb-4 text-center text-xs text-muted-foreground">
       数据来源：东方财富 + 腾讯财经 · 由 Mac mini 本地服务提供
-    </div>
+    </p>
+
+    <!-- 新建分组 Dialog -->
+    <Dialog :open="showAddGroup" @update:open="(v: boolean) => (showAddGroup = v)">
+      <DialogContent class="max-w-md">
+        <DialogHeader>
+          <DialogTitle>新建分组</DialogTitle>
+          <DialogDescription>输入分组名称和描述（可选）</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3">
+          <Input v-model="groupForm.name" placeholder="分组名称（如 白酒）" />
+          <Input v-model="groupForm.description" placeholder="描述（可选）" />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showAddGroup = false">取消</Button>
+          <Button :disabled="addingGroup || !groupForm.name.trim()" @click="submitAddGroup">
+            {{ addingGroup ? '创建中...' : '创建分组' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 添加自选股 Dialog -->
+    <Dialog :open="showAddStock" @update:open="(v: boolean) => (showAddStock = v)">
+      <DialogContent class="max-w-md">
+        <DialogHeader>
+          <DialogTitle>添加自选股</DialogTitle>
+          <DialogDescription>填写股票代码、分组和备注</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3">
+          <Input
+            v-model="stockForm.code"
+            placeholder="股票代码（如 600519）"
+            inputmode="numeric"
+            maxlength="6"
+          />
+          <Select v-model="stockForm.group">
+            <SelectTrigger>
+              <SelectValue placeholder="选择分组（或直接输入新分组名）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="g in groups"
+                :key="g.name"
+                :value="g.name"
+              >
+                {{ g.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            v-model="stockForm.group"
+            placeholder="或输入新分组名"
+          />
+          <Input v-model="stockForm.note" placeholder="备注（可选）" />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showAddStock = false">取消</Button>
+          <Button
+            :disabled="addingStock || !stockForm.code.trim() || !stockForm.group.trim()"
+            @click="submitAddStock"
+          >
+            {{ addingStock ? '添加中...' : '保存' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
-
-<style scoped>
-.settings-page {
-  min-height: 100vh;
-  background: var(--color-bg);
-  padding-bottom: 24px;
-}
-
-.header {
-  background: var(--color-primary);
-  color: white;
-  padding: 18px 16px 14px;
-}
-
-.header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.title {
-  font-size: 24px;
-  font-weight: bold;
-}
-
-.refresh-btn {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  padding: 6px 14px;
-  border-radius: 16px;
-  font-size: 13px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.refresh-btn:disabled {
-  opacity: 0.6;
-}
-
-.refresh-btn:active {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.refresh-icon {
-  display: inline-block;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.spinning {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.subtitle {
-  font-size: 12px;
-  opacity: 0.85;
-}
-
-.card {
-  background: white;
-  margin: 12px;
-  padding: 16px;
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.card-title {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 5px 0;
-  font-size: 14px;
-}
-
-.card-row .label { color: #999; }
-.card-row .value { color: #333; font-family: 'Courier New', monospace; font-weight: 600; }
-
-.add-btn {
-  background: var(--color-primary);
-  color: white;
-  padding: 5px 12px;
-  border-radius: 14px;
-  font-size: 13px;
-  cursor: pointer;
-  user-select: none;
-  font-weight: 600;
-}
-
-.add-btn:active {
-  background: var(--color-primary-dark);
-}
-
-.empty-hint-card {
-  text-align: center;
-  padding: 16px;
-  color: #999;
-  font-size: 13px;
-}
-
-.freshness-list {
-  margin-top: 12px;
-  border-top: 1px solid #f0f0f0;
-  padding-top: 12px;
-}
-
-.freshness-title {
-  font-size: 13px;
-  color: #999;
-  margin-bottom: 8px;
-  font-weight: 600;
-}
-
-.freshness-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  padding: 4px 0;
-}
-
-.freshness-row .code { color: #333; }
-.freshness-row .age {
-  color: #666;
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-}
-
-.group-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-bg);
-}
-
-.group-row:last-child { border-bottom: none; }
-
-.group-name { font-size: 15px; font-weight: 500; }
-.group-count {
-  font-size: 12px;
-  color: #999;
-  background: var(--color-bg);
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-
-.add-form {
-  background: #f8f8f8;
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 12px;
-}
-
-.input {
-  display: block;
-  background: white;
-  padding: 10px;
-  border-radius: 6px;
-  font-size: 14px;
-  margin-bottom: 8px;
-  width: 100%;
-  border: 1px solid #ddd;
-  font-family: inherit;
-  box-sizing: border-box;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
-.submit-btn {
-  background: var(--color-primary);
-  color: white;
-  padding: 10px;
-  border-radius: 6px;
-  font-size: 14px;
-  width: 100%;
-  border: none;
-  margin-top: 4px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.submit-btn:disabled {
-  opacity: 0.6;
-}
-
-.submit-btn:active:not(:disabled) {
-  background: var(--color-primary-dark);
-}
-
-.stock-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-bg);
-}
-
-.stock-row:last-child { border-bottom: none; }
-
-.stock-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.stock-name {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.stock-code {
-  font-size: 12px;
-  color: #999;
-}
-
-.del-btn {
-  color: var(--color-primary);
-  font-size: 13px;
-  padding: 6px 14px;
-  cursor: pointer;
-  background: white;
-  border: 1px solid var(--color-primary);
-  border-radius: 14px;
-  font-weight: 600;
-}
-
-.del-btn:active:not(:disabled) {
-  background: var(--color-primary);
-  color: white;
-}
-
-.del-btn:disabled {
-  opacity: 0.6;
-}
-
-.footer-tip {
-  text-align: center;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  padding: 24px 16px;
-  line-height: 1.6;
-}
-
-/* 主题选择 */
-.theme-cur-name {
-  font-size: 12px;
-  font-weight: normal;
-  color: var(--color-text-muted);
-}
-
-.theme-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.theme-item {
-  border: 2px solid var(--color-border);
-  border-radius: 8px;
-  padding: 8px;
-  cursor: pointer;
-  user-select: none;
-  background: var(--color-card);
-}
-
-.theme-item.active {
-  border-color: var(--color-primary);
-  background: var(--color-bg);
-}
-
-.theme-item:active {
-  transform: scale(0.98);
-}
-
-.theme-preview {
-  display: flex;
-  gap: 3px;
-  margin-bottom: 6px;
-}
-
-.ts-c1, .ts-c2, .ts-c3, .ts-c4 {
-  flex: 1;
-  height: 24px;
-  border-radius: 4px;
-}
-
-.theme-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.theme-num {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  font-family: 'Courier New', monospace;
-  font-weight: 700;
-}
-
-.theme-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text);
-}
-</style>

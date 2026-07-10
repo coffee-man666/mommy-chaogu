@@ -12,7 +12,7 @@ import asyncio
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
@@ -163,75 +163,39 @@ async def chat(
 # ---------- WebSocket 端点（流式） ----------
 
 
-@router.websocket("/ws/agent")
-async def agent_ws(
-    websocket: WebSocket,
-) -> None:
-    """流式对话 WebSocket。
-
-    消息格式：
-    - 客户端发: {"message": "...", "history": [...]}
-    - 服务端回: {"type": "chunk", "text": "..."} (多次)
-    - 服务端回: {"type": "done", "tools_used": [...], "rounds": N}
-    """
-    await websocket.accept()
-
-    # lazy import 避免 app 启动时拉 OpenAI
-    from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
-
-    agent = get_agent_service()
+@router.get("/history")
+async def get_history(limit: int = 50) -> dict[str, Any]:
+    """获取对话历史（从 agent_memory 表）。"""
     memory = get_agent_memory()
-
     try:
-        while True:
-            raw = await websocket.receive_text()
+        rows = memory.recent(limit=limit)
+        return {"messages": rows, "total": len(rows)}
+    except Exception:
+        return {"messages": [], "total": 0}
 
-            import json
 
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                await websocket.send_json({"type": "error", "message": "无效的 JSON"})
-                continue
+@router.get("/predictions")
+async def get_predictions(limit: int = 20) -> dict[str, Any]:
+    """获取预测记录。"""
+    tracker = get_prediction_tracker_safe()
+    if tracker is None:
+        return {"predictions": [], "total": 0}
+    try:
+        rows = tracker.list_recent(limit=limit)  # type: ignore[attr-defined]
+        return {"predictions": rows, "total": len(rows)}
+    except Exception:
+        return {"predictions": [], "total": 0}
 
-            user_message = msg.get("message", "").strip()
-            if not user_message:
-                continue
 
-            if agent is None:
-                await websocket.send_json(
-                    {
-                        "type": "done",
-                        "text": "AI 助手未配置。",
-                        "tools_used": [],
-                        "rounds": 0,
-                    }
-                )
-                continue
+def get_prediction_tracker_safe() -> Any:
+    """安全获取 prediction tracker（可能未配置）。"""
+    try:
+        from mommy_chaogu.web.deps import get_prediction_tracker
 
-            # 同步调用 agent → to_thread
-            # memory 提供持久化对话上下文
+        return get_prediction_tracker()
+    except Exception:
+        return None
 
-            # 先发一个 "thinking" 状态
-            await websocket.send_json({"type": "thinking"})
 
-            resp = await asyncio.to_thread(agent.chat, user_message, None, None, memory)
-
-            # 分段发送（模拟流式效果，每 ~50 字一段）
-            text = resp.text
-            chunk_size = 50
-            for i in range(0, len(text), chunk_size):
-                chunk = text[i : i + chunk_size]
-                await websocket.send_json({"type": "chunk", "text": chunk})
-                await asyncio.sleep(0.03)  # 30ms 间隔
-
-            await websocket.send_json(
-                {
-                    "type": "done",
-                    "tools_used": [tc.name for tc in resp.tool_calls],
-                    "rounds": resp.rounds,
-                }
-            )
-
-    except WebSocketDisconnect:
-        pass
+# NOTE: WebSocket /ws/agent 定义在 ws.py（无 prefix），
+# 因为本 router 有 prefix=/api/agent，会导致路径变成 /api/agent/ws/agent。

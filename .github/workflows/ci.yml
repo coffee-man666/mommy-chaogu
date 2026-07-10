@@ -69,4 +69,5 @@ jobs:
           uv run mommy-report --help
           uv run mommy-agent --help
           uv run mommy-mcp --help
+          uv run mommy-tui --help
           uv run mommy --help

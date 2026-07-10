@@ -22,7 +22,18 @@ from fastapi.staticfiles import StaticFiles
 from mommy_chaogu.db_paths import PORTFOLIO_DB
 from mommy_chaogu.web.background import BackgroundService, set_service
 from mommy_chaogu.web.deps import get_adapter, get_alerter, get_watchlist_store
-from mommy_chaogu.web.routes import agent, cache, market, portfolio, quotes, signals, watchlist, ws
+from mommy_chaogu.web.routes import (
+    agent,
+    cache,
+    earnings,
+    market,
+    portfolio,
+    quotes,
+    signals,
+    themes,
+    watchlist,
+    ws,
+)
 from mommy_chaogu.web.schemas import HealthOut
 
 _log = logging.getLogger(__name__)
@@ -134,6 +145,8 @@ def create_app(
     app.include_router(signals.router)
     app.include_router(cache.router)
     app.include_router(agent.router)
+    app.include_router(earnings.router)
+    app.include_router(themes.router)
     app.include_router(ws.router)
 
     # 健康检查

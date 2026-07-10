@@ -1,19 +1,30 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { agentStream, agentRoute } from '../../api/agent'
+import { useRoute } from 'vue-router'
+import { agentStream, agentRoute } from '@/api/agent'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
+import { Bot, Send, User, Wrench, CheckCircle2, Zap } from 'lucide-vue-next'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
   toolsUsed?: string[]
   steps?: string[]
+  workflowId?: string
+  streaming?: boolean
+  error?: boolean
 }
 
+const route = useRoute()
 const messages = ref<Message[]>([])
 const input = ref('')
 const loading = ref(false)
-const chatRef = ref<HTMLElement>()
-
+const bottomRef = ref<HTMLElement>()
 const stream = ref<ReturnType<typeof agentStream> | null>(null)
 
 // 快捷问题 — 按场景分组
@@ -29,9 +40,7 @@ const quickQuestions = [
 
 function scrollToBottom() {
   nextTick(() => {
-    if (chatRef.value) {
-      chatRef.value.scrollTop = chatRef.value.scrollHeight
-    }
+    bottomRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   })
 }
 
@@ -46,19 +55,19 @@ async function send(message: string) {
 
   // 创建 assistant 占位
   const assistantIdx = messages.value.length
-  messages.value.push({ role: 'assistant', content: '正在为你查询数据...' })
+  messages.value.push({ role: 'assistant', content: '', streaming: true })
   scrollToBottom()
 
   // 先尝试工作流路由（快速路径）
   try {
-    const route = await agentRoute(text)
-    if (route.matched && route.reply) {
-      // 工作流命中
-      messages.value[assistantIdx].content = route.reply
-      if (route.steps) {
-        messages.value[assistantIdx].steps = route.steps
-          .filter(s => s.success)
-          .map(s => s.name)
+    const res = await agentRoute(text)
+    if (res.matched && res.reply) {
+      messages.value[assistantIdx] = {
+        role: 'assistant',
+        content: res.reply,
+        workflowId: res.workflow_id,
+        steps: res.steps?.filter((s) => s.success).map((s) => s.name),
+        streaming: false,
       }
       loading.value = false
       scrollToBottom()
@@ -69,11 +78,9 @@ async function send(message: string) {
   }
 
   // Fallback: WebSocket 流式对话
-  messages.value[assistantIdx].content = ''
-
-  // 构造 history（最近 10 轮）
+  // 构造 history（最近 10 轮，排除当前用户/助手占位）
   const history = messages.value
-    .slice(0, -2)
+    .slice(Math.max(0, messages.value.length - 22), -2)
     .map((m) => ({ role: m.role, content: m.content }))
 
   if (stream.value) {
@@ -89,16 +96,20 @@ async function send(message: string) {
     },
     (toolsUsed: string[], _rounds: number) => {
       messages.value[assistantIdx].toolsUsed = toolsUsed
+      messages.value[assistantIdx].streaming = false
       loading.value = false
       scrollToBottom()
     },
     () => {
-      messages.value[assistantIdx].content = '正在为你查询数据...'
-      scrollToBottom()
+      // thinking — 清空占位文案，进入"打字中"状态
+      messages.value[assistantIdx].content = ''
     },
     (msg: string) => {
-      messages.value[assistantIdx].content = `❌ ${msg}`
+      messages.value[assistantIdx].content = msg
+      messages.value[assistantIdx].error = true
+      messages.value[assistantIdx].streaming = false
       loading.value = false
+      scrollToBottom()
     },
   )
 
@@ -117,8 +128,14 @@ onMounted(() => {
   // 欢迎消息
   messages.value.push({
     role: 'assistant',
-    content: '你好！我是妈妈的行情助手 📋\n\n我可以帮你：\n· 看行情 — "今天怎么样"\n· 分析股票 — "分析比亚迪"\n· 看板块 — "半导体板块怎么样"\n· 看资金 — "主力在买什么"\n· 看持仓 — "我的持仓怎么样"\n· 写报告 — "今日总结"\n\n试试下面的快捷按钮，或者直接问我！',
+    content:
+      '你好！我是妈妈的行情助手 📋\n\n我可以帮你：\n· 看行情 — "今天怎么样"\n· 分析股票 — "分析比亚迪"\n· 看板块 — "半导体板块怎么样"\n· 看资金 — "主力在买什么"\n· 看持仓 — "我的持仓怎么样"\n· 写报告 — "今日总结"\n\n试试下面的快捷按钮，或者直接问我！',
   })
+  // dashboard 跳转带 q 参数 → 自动发送
+  const q = route.query.q
+  if (typeof q === 'string' && q.trim()) {
+    nextTick(() => send(q))
+  }
 })
 
 onUnmounted(() => {
@@ -129,192 +146,190 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="agent-page">
-    <!-- 对话区域 -->
-    <div class="chat-area" ref="chatRef">
+  <div class="flex h-[calc(100dvh-4rem)] flex-col bg-muted/30 md:h-dvh">
+    <!-- 顶栏 -->
+    <header
+      class="flex shrink-0 items-center gap-2 border-b bg-card px-4 py-3"
+    >
       <div
-        v-for="(msg, i) in messages"
-        :key="i"
-        class="msg-row"
-        :class="msg.role === 'user' ? 'msg-user' : 'msg-bot'"
+        class="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary"
       >
-        <div class="msg-bubble" :class="msg.role === 'user' ? 'bubble-user' : 'bubble-bot'">
-          <span class="msg-text">{{ msg.content }}</span>
+        <Bot class="size-5" />
+      </div>
+      <h1 class="text-base font-semibold tracking-tight">AI 对话</h1>
+      <Badge
+        v-if="loading"
+        variant="secondary"
+        class="gap-1"
+      >
+        <span class="size-1.5 animate-pulse rounded-full bg-primary" />
+        思考中
+      </Badge>
+    </header>
+
+    <!-- 对话消息区 -->
+    <ScrollArea class="min-h-0 flex-1">
+      <div class="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
+        <div
+          v-for="(msg, i) in messages"
+          :key="i"
+          :class="
+            cn(
+              'flex gap-3',
+              msg.role === 'user' ? 'flex-row-reverse' : 'flex-row',
+            )
+          "
+        >
+          <!-- 头像 -->
+          <div
+            :class="
+              cn(
+                'flex size-8 shrink-0 items-center justify-center rounded-full',
+                msg.role === 'user'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-card border text-muted-foreground',
+              )
+            "
+          >
+            <User v-if="msg.role === 'user'" class="size-4" />
+            <Bot v-else class="size-4" />
+          </div>
+
+          <!-- 气泡 + 元信息 -->
+          <div
+            :class="
+              cn(
+                'flex min-w-0 max-w-[80%] flex-col gap-1',
+                msg.role === 'user' ? 'items-end' : 'items-start',
+              )
+            "
+          >
+            <!-- 工作流来源标签 -->
+            <Badge
+              v-if="msg.workflowId"
+              variant="outline"
+              class="gap-1 text-up"
+            >
+              <Zap class="size-3" />
+              {{ msg.workflowId }}
+            </Badge>
+
+            <!-- 气泡 -->
+            <div
+              :class="
+                cn(
+                  'whitespace-pre-wrap break-words px-4 py-2.5 text-sm leading-relaxed shadow-sm',
+                  msg.role === 'user'
+                    ? 'rounded-2xl rounded-tr-sm bg-primary text-primary-foreground'
+                    : msg.error
+                      ? 'rounded-2xl rounded-tl-sm border-destructive/30 bg-destructive/5 text-destructive'
+                      : 'rounded-2xl rounded-tl-sm border bg-card text-card-foreground',
+                )
+              "
+            >
+              <!-- 打字中指示器 -->
+              <span
+                v-if="msg.streaming && !msg.content"
+                class="inline-flex items-center gap-1 py-0.5"
+              >
+                <span
+                  class="size-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]"
+                />
+                <span
+                  class="size-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]"
+                />
+                <span class="size-2 animate-bounce rounded-full bg-muted-foreground/50" />
+              </span>
+              <template v-else>{{ msg.content }}</template>
+            </div>
+
+            <!-- 工作流步骤标签 -->
+            <div
+              v-if="msg.steps && msg.steps.length > 0"
+              class="flex flex-wrap gap-1"
+            >
+              <Badge
+                v-for="s in msg.steps"
+                :key="s"
+                variant="outline"
+                class="gap-1 text-up"
+              >
+                <CheckCircle2 class="size-3" />
+                {{ s }}
+              </Badge>
+            </div>
+
+            <!-- 工具调用折叠展示 -->
+            <details
+              v-if="msg.toolsUsed && msg.toolsUsed.length > 0"
+              class="group"
+            >
+              <summary
+                class="inline-flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Wrench class="size-3" />
+                <span>
+                  工具调用 ({{ msg.toolsUsed.length }})
+                </span>
+                <span class="text-muted-foreground/60 group-open:rotate-180 transition-transform">▾</span>
+              </summary>
+              <div class="mt-1.5 flex flex-wrap gap-1">
+                <Badge
+                  v-for="t in msg.toolsUsed"
+                  :key="t"
+                  variant="secondary"
+                  class="font-mono text-xs"
+                >
+                  {{ t }}
+                </Badge>
+              </div>
+            </details>
+          </div>
         </div>
-        <div v-if="msg.toolsUsed && msg.toolsUsed.length > 0" class="msg-tools">
-          🔧 {{ msg.toolsUsed.join(', ') }}
+
+        <!-- 滚动锚点 -->
+        <div ref="bottomRef" />
+      </div>
+    </ScrollArea>
+
+    <!-- 底部：快捷问题 + 输入区 -->
+    <div class="shrink-0 border-t bg-card">
+      <div class="mx-auto w-full max-w-3xl">
+        <!-- 快捷问题 -->
+        <div class="flex gap-2 overflow-x-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Button
+            v-for="q in quickQuestions"
+            :key="q"
+            variant="outline"
+            size="sm"
+            class="shrink-0 rounded-full"
+            :disabled="loading"
+            @click="handleQuick(q)"
+          >
+            {{ q }}
+          </Button>
         </div>
-        <div v-if="msg.steps && msg.steps.length > 0" class="msg-steps">
-          ✓ {{ msg.steps.join(' · ') }}
+
+        <Separator />
+
+        <!-- 输入区 -->
+        <div class="flex items-center gap-2 px-4 py-3">
+          <Input
+            v-model="input"
+            placeholder="问点什么..."
+            :disabled="loading"
+            class="flex-1"
+            @keydown.enter="handleSend"
+          />
+          <Button
+            :disabled="loading || !input.trim()"
+            size="icon"
+            @click="handleSend"
+          >
+            <Send class="size-4" />
+          </Button>
         </div>
       </div>
     </div>
-
-    <!-- 快捷问题 -->
-    <div class="quick-bar">
-      <button
-        v-for="q in quickQuestions"
-        :key="q"
-        class="quick-btn"
-        :disabled="loading"
-        @click="handleQuick(q)"
-      >
-        {{ q }}
-      </button>
-    </div>
-
-    <!-- 输入区 -->
-    <div class="input-bar">
-      <input
-        v-model="input"
-        type="text"
-        class="input-field"
-        placeholder="问点什么..."
-        :disabled="loading"
-        @keydown.enter="handleSend"
-      />
-      <button class="send-btn" :disabled="loading || !input.trim()" @click="handleSend">
-        {{ loading ? '...' : '发送' }}
-      </button>
-    </div>
   </div>
 </template>
-
-<style scoped>
-.agent-page {
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 56px);
-  background: #f5f5f5;
-}
-
-.chat-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.msg-row {
-  display: flex;
-  flex-direction: column;
-  max-width: 85%;
-}
-
-.msg-user {
-  align-self: flex-end;
-  align-items: flex-end;
-}
-
-.msg-bot {
-  align-self: flex-start;
-  align-items: flex-start;
-}
-
-.msg-bubble {
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.6;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
-.bubble-user {
-  background: #1677ff;
-  color: white;
-  border-bottom-right-radius: 4px;
-}
-
-.bubble-bot {
-  background: white;
-  color: #333;
-  border-bottom-left-radius: 4px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.msg-tools {
-  font-size: 11px;
-  color: #999;
-  margin-top: 4px;
-  padding: 0 4px;
-}
-
-.msg-steps {
-  font-size: 11px;
-  color: #52c41a;
-  margin-top: 2px;
-  padding: 0 4px;
-}
-
-.quick-bar {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  background: white;
-  border-top: 1px solid #eee;
-  flex-shrink: 0;
-}
-
-.quick-btn {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  border: 1px solid #1677ff;
-  background: white;
-  color: #1677ff;
-  border-radius: 16px;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.quick-btn:active {
-  background: #1677ff;
-  color: white;
-}
-
-.quick-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.input-bar {
-  display: flex;
-  gap: 8px;
-  padding: 8px 12px;
-  background: white;
-  border-top: 1px solid #eee;
-  flex-shrink: 0;
-}
-
-.input-field {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 14px;
-  outline: none;
-}
-
-.input-field:focus {
-  border-color: #1677ff;
-}
-
-.send-btn {
-  padding: 8px 20px;
-  background: #1677ff;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.send-btn:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
-</style>

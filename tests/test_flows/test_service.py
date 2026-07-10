@@ -289,9 +289,7 @@ def test_pull_today_empty_flows_counted_as_failed(
     assert "000001" in result.failed_codes
 
 
-def test_pull_today_exception_counted_as_failed(
-    service: FlowService, adapter: FakeAdapter
-) -> None:
+def test_pull_today_exception_counted_as_failed(service: FlowService, adapter: FakeAdapter) -> None:
     adapter._today_flows = {"600519": [_money_flow("600519")]}
     adapter._raise_on_today.add("000001")
     pool = CustomPool(["600519", "000001"])
@@ -408,7 +406,9 @@ def test_top_today_skips_uncached(service: FlowService, store: CacheStore) -> No
 
 
 def _seed_history(store: CacheStore, code: str, trade_date: str, main: float) -> None:
-    store.set_money_flow_history(code, trade_date, [_flow_dict(code=code, main=main, ts=f"{trade_date}T15:00:00")])
+    store.set_money_flow_history(
+        code, trade_date, [_flow_dict(code=code, main=main, ts=f"{trade_date}T15:00:00")]
+    )
 
 
 def test_top_history_aggregates(service: FlowService, store: CacheStore) -> None:

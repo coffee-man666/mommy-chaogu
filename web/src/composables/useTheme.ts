@@ -1,41 +1,48 @@
-// 主题 composable —— 管理当前主题，持久化到 localStorage
+// 主题 composable — 深色/浅色模式切换
 
 import { ref, watch } from 'vue'
-import { THEMES, DEFAULT_THEME_ID, applyTheme, getThemeById, type Theme } from '../themes'
 
-const STORAGE_KEY = 'mommy_theme_id'
+type Mode = 'light' | 'dark'
 
-const currentThemeId = ref<string>(DEFAULT_THEME_ID)
+const STORAGE_KEY = 'mommy_theme'
+const currentMode = ref<Mode>('light')
 
 // 初始化时从 localStorage 读
-const saved = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
-if (saved && THEMES.some(t => t.id === saved)) {
-  currentThemeId.value = saved
-}
-// 应用初始主题
 if (typeof window !== 'undefined') {
-  applyTheme(getThemeById(currentThemeId.value))
+  const saved = localStorage.getItem(STORAGE_KEY) as Mode | null
+  if (saved === 'dark' || saved === 'light') {
+    currentMode.value = saved
+  } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    currentMode.value = 'dark'
+  }
+  applyMode(currentMode.value)
 }
 
-// 持久化 & 应用
-watch(currentThemeId, (newId) => {
+function applyMode(mode: Mode) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('dark', mode === 'dark')
+  }
+}
+
+watch(currentMode, (mode) => {
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, newId)
-    applyTheme(getThemeById(newId))
+    localStorage.setItem(STORAGE_KEY, mode)
+    applyMode(mode)
   }
 })
 
 export function useTheme() {
-  function setTheme(id: string) {
-    if (THEMES.some(t => t.id === id)) {
-      currentThemeId.value = id
-    }
+  function toggle() {
+    currentMode.value = currentMode.value === 'dark' ? 'light' : 'dark'
+  }
+
+  function setMode(mode: Mode) {
+    currentMode.value = mode
   }
 
   return {
-    themes: THEMES,
-    currentThemeId,
-    currentTheme: () => getThemeById(currentThemeId.value),
-    setTheme,
+    currentMode,
+    toggle,
+    setMode,
   }
 }

@@ -156,9 +156,7 @@ def test_generate_top_inflow_ordering(
     assert pos_inflow < pos_maotai
 
 
-def test_generate_no_data_codes(
-    service: FlowService, store_of: CacheStore, tmp_path: Path
-) -> None:
+def test_generate_no_data_codes(service: FlowService, store_of: CacheStore, tmp_path: Path) -> None:
     pool = CustomPool(["600519", "000001"])
     # 只有 600519 有市值，000001 无市值 → no_data
     market_caps = {"600519": ("茅台", Decimal("100000000000"))}
@@ -169,18 +167,14 @@ def test_generate_no_data_codes(
     assert "000001" in content
 
 
-def test_generate_creates_parent_dir(
-    service: FlowService, tmp_path: Path
-) -> None:
+def test_generate_creates_parent_dir(service: FlowService, tmp_path: Path) -> None:
     pool = CustomPool([])
     out = tmp_path / "nested" / "deep" / "report.md"
     FlowReport(service).generate(pool, output=out, market_caps={})
     assert out.exists()
 
 
-def test_generate_empty_pool(
-    service: FlowService, tmp_path: Path
-) -> None:
+def test_generate_empty_pool(service: FlowService, tmp_path: Path) -> None:
     pool: PoolSource = CustomPool([])
     out = tmp_path / "r.md"
     FlowReport(service).generate(pool, output=out, market_caps={})

@@ -43,11 +43,11 @@
 
 ### 模式 2：通用 LLM 对话（fallback）
 
-当用户输入不匹配任何工作流时（如"量子计算是什么"、"帮我比较茅台和五粮液"），系统 fallback 到你 — 你有 21 个工具可自主调用。
+当用户输入不匹配任何工作流时（如"量子计算是什么"、"帮我比较茅台和五粮液"），系统 fallback 到你 — 你有 24 个工具可自主调用。
 
 ---
 
-## 你的 21 个工具
+## 你的 24 个工具
 
 ### 行情数据（7 个）
 
@@ -99,6 +99,14 @@
 |------|------|
 | `search_similar_events` | 搜索历史分析事件（向量检索） |
 | `get_prediction_history` | 查看历史预测 + 验证结果 |
+
+### 主题/产业链 + 记忆上下文（3 个）
+
+| 工具 | 用途 |
+|------|------|
+| `list_themes` | 列出所有主题（半导体/创新药/机器人/材料/中报） |
+| `get_theme_stocks` | 获取主题成分股 + 实时行情 |
+| `get_memory_context` | 获取历史分析记忆（MCP 外部 agent 用） |
 
 ---
 
@@ -251,7 +259,7 @@
                   LLM 自主选工具 (function calling)
                       │
                       v
-                  ToolRegistry (21 tools)
+                  ToolRegistry (24 tools)
                       │
                       v
                   CachedMarketDataAdapter
