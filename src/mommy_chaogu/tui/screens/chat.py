@@ -111,9 +111,7 @@ class ChatScreen(Screen[object]):
             return
 
         event.input.clear()
-        self._chat_task = asyncio.get_event_loop().create_task(
-            self._handle_chat(text)
-        )
+        self._chat_task = asyncio.get_event_loop().create_task(self._handle_chat(text))
 
     async def _handle_chat(self, text: str) -> None:
         """处理一次对话：显示用户消息 → 调 agent → 显示回复。"""

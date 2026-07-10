@@ -87,9 +87,7 @@ async def get_theme_quotes(
                     "price": str(it["price"]),
                     "change_pct": str(it["change_pct"]),
                     "volume": it["volume"],
-                    "turnover_rate": str(it["turnover_rate"])
-                    if it["turnover_rate"]
-                    else None,
+                    "turnover_rate": str(it["turnover_rate"]) if it["turnover_rate"] else None,
                     "pe": str(it["pe"]) if it["pe"] else None,
                     "main_net_inflow": str(it["main_net_inflow"])
                     if it["main_net_inflow"]

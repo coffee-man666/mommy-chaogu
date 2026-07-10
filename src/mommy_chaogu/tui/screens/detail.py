@@ -81,9 +81,7 @@ class DetailScreen(Screen[object]):
 
         with Horizontal(classes="detail-body"):
             with Vertical():
-                yield Static(
-                    "加载中…", id="detail-quote-info", classes="detail-quote"
-                )
+                yield Static("加载中…", id="detail-quote-info", classes="detail-quote")
                 yield Static("📈 近 20 日走势", id="detail-spark-title")
                 yield Sparkline(id="detail-spark", data=[0.0])
             with Vertical(classes="detail-kline"):
@@ -197,9 +195,7 @@ class DetailScreen(Screen[object]):
 
             pct_val = float(change_pct) if change_pct else 0.0
             color = COLOR_UP if pct_val > 0 else (COLOR_DOWN if pct_val < 0 else "white")
-            pct_str = (
-                f"[{color}]{pct_val:+.2f}%[/{color}]" if change_pct else "—"
-            )
+            pct_str = f"[{color}]{pct_val:+.2f}%[/{color}]" if change_pct else "—"
 
             vol = int(b.get("volume", 0))
             vol_wan = vol / 10000

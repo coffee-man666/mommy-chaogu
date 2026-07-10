@@ -54,9 +54,7 @@ class StatusBar(Horizontal):
 
     def on_mount(self) -> None:
         self.set_interval(10, self._refresh_portfolio)
-        self._portfolio_task = asyncio.get_event_loop().create_task(
-            self._refresh_portfolio_async()
-        )
+        self._portfolio_task = asyncio.get_event_loop().create_task(self._refresh_portfolio_async())
 
     def _update_time(self) -> None:
         with contextlib.suppress(Exception):
@@ -64,9 +62,7 @@ class StatusBar(Horizontal):
             time_label.update(f"刷新: {datetime.now():%H:%M:%S}")
 
     def _refresh_portfolio(self) -> None:
-        self._portfolio_task = asyncio.get_event_loop().create_task(
-            self._refresh_portfolio_async()
-        )
+        self._portfolio_task = asyncio.get_event_loop().create_task(self._refresh_portfolio_async())
 
     async def _refresh_portfolio_async(self) -> None:
         data_service = getattr(self.app, "data_service", None)
@@ -92,10 +88,7 @@ class StatusBar(Horizontal):
                 pct_str = f" ({float(pct):+.2f}%)" if pct else ""
                 color = "red" if pnl_val >= 0 else "green"
                 sign = "+" if pnl_val >= 0 else ""
-                label = (
-                    f"持仓: {n} 只 | "
-                    f"[{color}]{sign}{pnl_val:,.2f}{pct_str}[/{color}]"
-                )
+                label = f"持仓: {n} 只 | [{color}]{sign}{pnl_val:,.2f}{pct_str}[/{color}]"
 
         with contextlib.suppress(Exception):
             port_label = self.query_one("#status-portfolio", Static)

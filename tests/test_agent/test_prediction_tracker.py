@@ -221,7 +221,9 @@ class TestPredictionUpdateStatus:
         row = tracker.get_by_id(pid)
         assert row is not None
         assert row["verified_at"] is not None
-        assert datetime.fromisoformat(row["verified_at"]) > before
+        verified_at = datetime.fromisoformat(row["verified_at"])
+        # 允许 1 秒容差（SQLite TIMESTAMP 精度可能是秒级）
+        assert (verified_at - before).total_seconds() >= -1
 
 
 class TestPredictionIncrementAttempts:

@@ -330,12 +330,8 @@ class DashboardScreen(Screen[object]):
                 yield SignalList()
         yield StatusBar()
 
-    def on_quote_table_quote_row_activated(
-        self, event: QuoteTable.QuoteRowActivated
-    ) -> None:
+    def on_quote_table_quote_row_activated(self, event: QuoteTable.QuoteRowActivated) -> None:
         """行情表回车 → push 详情屏。"""
         from mommy_chaogu.tui.screens.detail import DetailScreen
 
-        self.app.push_screen(
-            DetailScreen(code=event.code, name=event.name)
-        )
+        self.app.push_screen(DetailScreen(code=event.code, name=event.name))

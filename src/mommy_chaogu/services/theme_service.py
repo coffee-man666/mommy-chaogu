@@ -30,7 +30,8 @@ _EARNINGS_FILE = Path("data/earnings_preview.json")
 def _load_json(path: Path) -> dict[str, Any]:
     """安全加载 JSON 文件。"""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return data
     except FileNotFoundError:
         _log.warning("theme file not found: %s", path)
         return {}
@@ -128,9 +129,7 @@ class ThemeService:
         themes = self._load_all_themes()
         return themes.get(theme_id)
 
-    def get_theme_quotes(
-        self, theme_id: str, limit: int = 100
-    ) -> list[dict[str, Any]]:
+    def get_theme_quotes(self, theme_id: str, limit: int = 100) -> list[dict[str, Any]]:
         """获取主题成分股实时行情。
 
         返回 canonical 列表，每个 item 包含成分股元数据 + 行情字段。
@@ -182,8 +181,8 @@ class ThemeService:
                         item["change_pct"] = q.change_pct
                         item["volume"] = q.volume
                         item["turnover_rate"] = q.turnover_rate
-                        item["pe"] = q.pe
-                        item["main_net_inflow"] = q.main_net_inflow
+                        item["pe"] = q.pe_dynamic
+                        item["main_net_inflow"] = q.extra.get("main_net_inflow")
                 except Exception as e:
                     _log.debug("quote failed for %s: %s", code, e)
                     item["error"] = str(e)

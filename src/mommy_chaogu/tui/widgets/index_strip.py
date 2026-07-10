@@ -81,8 +81,7 @@ class IndexStrip(Horizontal):
                 arrow = "→"
 
             parts.append(
-                f"[bold]{name}[/] "
-                f"[{color}]{float(price):.2f} {arrow}{pct_val:+.2f}%[/{color}]"
+                f"[bold]{name}[/] [{color}]{float(price):.2f} {arrow}{pct_val:+.2f}%[/{color}]"
             )
 
         text = " │ ".join(parts)

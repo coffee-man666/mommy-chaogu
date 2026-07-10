@@ -168,9 +168,7 @@ class QuoteTable(Vertical):
         if table.cursor_row is None or table.cursor_row < 0:
             return
         with contextlib.suppress(Exception):
-            row_key = table.coordinate_to_cell_key(
-                Coordinate(table.cursor_row, 0)
-            ).row_key
+            row_key = table.coordinate_to_cell_key(Coordinate(table.cursor_row, 0)).row_key
             code = str(row_key.value)
             name = self._code_name.get(code, code)
             self.post_message(self.QuoteRowActivated(code=code, name=name))

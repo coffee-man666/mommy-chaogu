@@ -39,10 +39,8 @@ class TUIDataService:
         from mommy_chaogu.watchlist.store import WatchlistStore
 
         self.agent_db = AGENT_DB
-        self.adapter: CachedMarketDataAdapter = CachedMarketDataAdapter(
-            FallbackAdapter([EfinanceAdapter(), TencentAdapter()]),
-            CacheStore(MARKET_DB),
-        )
+        base: Any = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])  # type: ignore[list-item]
+        self.adapter: CachedMarketDataAdapter = CachedMarketDataAdapter(base, CacheStore(MARKET_DB))
         self.watchlist_store: WatchlistStore = WatchlistStore(PORTFOLIO_DB)
         self.portfolio_store: PortfolioStore = PortfolioStore(PORTFOLIO_DB)
         self._agent: AgentService | None = None

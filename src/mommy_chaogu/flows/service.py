@@ -405,14 +405,15 @@ class FlowService:
 
         n_today = 0
         n_history = 0
-        with self.store.session() as s:
+        sess: Any = self.store.session()
+        with sess:
             for code in codes:
-                r: Any = s.execute(
+                r: Any = sess.execute(
                     text("DELETE FROM today_money_flow_cache WHERE code = :code"),
                     {"code": code},
                 )
                 n_today += r.rowcount or 0
-                r = s.execute(
+                r = sess.execute(
                     text("DELETE FROM money_flow_cache WHERE code = :code"),
                     {"code": code},
                 )
