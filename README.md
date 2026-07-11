@@ -134,7 +134,7 @@ uv run mommy web --port 8765
 
 移动端底部 Tab 导航（首页/行情/持仓/AI对话/信号），AI 对话页含 WebSocket 连接状态指示器 + 失败重试。
 
-> 📖 更多功能：[CLI 速查](docs/DETAILED-ARCHITECTURE.md#cli-速查) | [记忆系统](docs/DETAILED-ARCHITECTURE.md#自进化记忆系统) | [回测引擎](docs/DETAILED-ARCHITECTURE.md#回测引擎)
+> 📖 更多功能：[场景化使用指南](docs/USER-GUIDE.md) | [CLI 速查](docs/DETAILED-ARCHITECTURE.md#cli-速查) | [记忆系统](docs/DETAILED-ARCHITECTURE.md#自进化记忆系统) | [回测引擎](docs/DETAILED-ARCHITECTURE.md#回测引擎)
 > 🔧 无 API key？行情查询和资金流等工作流仍可正常使用，AI 分析功能需要配置 key。
 
 ---
