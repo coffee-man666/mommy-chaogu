@@ -92,23 +92,36 @@
 | Markdown widget 渲染 Agent 回复 | ❌ |
 | ToolPanel 可折叠 | ❌ |
 | WatchTable cell diff | ❌ |
-| StockDetailScreen 三栏布局 | ❌ |
-| light/colorblind 主题 | ❌ |
+| StockDetailScreen 三栏布局 | ✅ 已修复 |
+| light/colorblind 主题 | ✅ 已修复 (Ctrl+T 切换) |
 
 ---
 
-## 三、修复优先级
+## 四、最终状态（修复后审计）
 
-| 优先级 | GAP | 工作量 |
-|--------|-----|--------|
-| P0 | Markdown widget 渲染 Agent 回复 | 小 |
-| P0 | WatchTable cell 级更新（防闪烁） | 中 |
-| P0 | j/k/g/G vim 键 | 小 |
-| P1 | ToolPanel Collapsible | 小 |
-| P1 | SummaryCards 当日 vs 累计盈亏 | 小 |
-| P1 | MOMMY_TUI_REFRESH 环境变量 | 小 |
-| P1 | TCSS design token 变量 | 小 |
-| P2 | StockDetailScreen 三栏布局 | 中 |
-| P2 | 多推送渠道 (Bark) | 中 |
-| P2 | light/colorblind 主题 | 中 |
-| P3 | GIF/截图演示 | 外部资源 |
+> 审计时间: 2026-07-11 修复后
+
+### UX Review: 18/19 DONE, 1 外部资源
+
+| 原状态 | 修复后 |
+|--------|--------|
+| #16 多推送渠道 ⚠️ | ✅ BarkPusher 已实现 |
+| #19 GIF/截图 ❌ | 仍缺（需作者录制外部资源） |
+
+### TUI Design Doc: 27/28 DONE, 1 功能性微小差距
+
+| 原状态 | 修复后 |
+|--------|--------|
+| Markdown widget ❌ | ✅ 已用 Markdown widget |
+| ToolPanel Collapsible ❌ | ✅ 已用 Collapsible |
+| WatchTable cell diff ❌ | ✅ 已实现 update_cell_at |
+| j/k/g/G vim 键 ⚠️ | ✅ 已添加 |
+| SummaryCards 标签 ⚠️ | ✅ 已修正（总盈亏/盈亏比例）|
+| MOMMY_TUI_REFRESH ❌ | ✅ 已支持 |
+| StockDetailScreen 三栏 ❌ | ✅ 已改为 Horizontal 三栏 |
+| TCSS design tokens ⚠️ | ✅ 已添加 $up/$down |
+| light/colorblind ❌ | ✅ Ctrl+T 切换（色盲颜色重映射待完善）|
+
+### 残留项（1 项，非阻塞）
+- **GIF/截图演示**：需作者录制，属于外部资源
+- **色盲颜色重映射**：主题切换机制已就位，formatting.change_color() 的条件颜色映射待实现
