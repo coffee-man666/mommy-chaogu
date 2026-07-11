@@ -1,0 +1,41 @@
+# 版本控制
+.git/
+.gitignore
+
+# Python 虚拟环境与缓存
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Node 依赖与构建产物
+node_modules/
+web/node_modules/
+
+# 密钥（不烘焙进镜像）
+.env
+
+# 数据库（不烘焙进镜像）
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Docker 自身
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 文档与报告（镜像内已含 docs/，这里不排除）
+# reports/ 为运行时生成，无需烘焙
+reports/
+
+# IDE / 系统 文件
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,120 @@
+name: Bug 报告 🐛
+description: 妈妈使用过程中发现了问题
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量描述清楚复现步骤，方便我们快速定位问题。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰简洁地描述遇到了什么问题。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: |
+        请提供能稳定复现的操作步骤。
+        命令示例：`uv run mommy 今天怎么样`、`uv run mommy --raw watchlist list`、`uv run mommy-web`
+      placeholder: |
+        1. 运行 `uv run mommy ...`
+        2. 输入 `...`
+        3. 看到 `...`
+        4. 期望应该是 `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 清晰描述你期望发生什么。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么（错误信息 / 截图）。
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: macOS 14 / Windows 11 / Linux (Ubuntu 22.04) / ...
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python 版本
+      description: 运行 `python --version` 的输出。
+      placeholder: "Python 3.12.x"
+    validations:
+      required: true
+
+  - type: input
+    id: project-version
+    attributes:
+      label: 项目版本
+      description: 运行 `git describe --tags` 或提供 commit hash。
+      placeholder: "v0.x.x 或 commit hash"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: user-type
+    attributes:
+      label: 妈妈在用吗？
+      options:
+        - "✅ 是的，妈妈在实际使用"
+        - "❌ 不是，只是我自己在测试"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network
+    attributes:
+      label: 网络环境
+      description: 数据源（东方财富 / 腾讯 / cninfo）能正常访问吗？
+      options:
+        - "✅ 能正常访问"
+        - "❌ 无法访问 / 不确定"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: 贴上相关的错误日志或堆栈信息。
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图
+      description: 如果适用，加截图帮助说明问题。
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 额外上下文
+      description: 任何其他相关信息。
+    validations:
+      required: false

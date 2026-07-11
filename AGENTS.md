@@ -87,11 +87,13 @@ src/mommy_chaogu/
    - 输入自然语言，系统自动匹配预定义工作流或 fallback 到 LLM agent
    - `uv run mommy` → 交互式 REPL
    - `uv run mommy 今天怎么样` → 单次查询
-   - `uv run mommy --raw watchlist list` → 透传到底层 CLI（高级用户）
+   - `uv run mommy watchlist list` → 结构化子命令（直接透传，不需要 --raw）
+   - `uv run mommy --setup` → 首次配置引导
+   - `uv run mommy -v "今天怎么样"` → 显示详细路由 + 工具调用信息
 
-2. **底层 CLI 子命令**（高级用户 + CI）
+2. **底层 CLI 子命令**（向后兼容，高级用户 + CI）
    - `mommy-watchlist` / `mommy-monitor` / `mommy-cache` / `mommy-flows` 等
-   - 这些命令不变，`mommy` 是包装层不是替代
+   - 这些命令保留向后兼容，推荐使用 `mommy <子命令>` 风格
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：
 - `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor

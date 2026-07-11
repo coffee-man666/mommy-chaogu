@@ -39,11 +39,11 @@ import { cn } from '@/lib/utils'
 
     <!-- 移动端底部 tab -->
     <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-14 border-t bg-card md:hidden">
+      <RouterLink to="/dashboard" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
+        <LayoutDashboard class="size-5" /><span>首页</span>
+      </RouterLink>
       <RouterLink to="/market" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
         <TrendingUp class="size-5" /><span>行情</span>
-      </RouterLink>
-      <RouterLink to="/themes" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
-        <Microscope class="size-5" /><span>主题</span>
       </RouterLink>
       <RouterLink to="/portfolio" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
         <Wallet class="size-5" /><span>持仓</span>
@@ -51,8 +51,8 @@ import { cn } from '@/lib/utils'
       <RouterLink to="/agent" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
         <MessageSquare class="size-5" /><span>问</span>
       </RouterLink>
-      <RouterLink to="/settings" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
-        <Settings class="size-5" /><span>设置</span>
+      <RouterLink to="/signals" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
+        <Bell class="size-5" /><span>信号</span>
       </RouterLink>
     </nav>
   </div>

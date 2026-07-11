@@ -1,0 +1,15 @@
+services:
+  mommy-web:
+    build: .
+    container_name: mommy-chaogu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    # 用户只需创建 .env 即可；未创建时回退到 .env.example
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.example
+        required: true
+    restart: unless-stopped

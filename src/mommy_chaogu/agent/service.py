@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -141,6 +142,7 @@ class AgentService:
         history: list[dict[str, str]] | None = None,
         system_override: str | None = None,
         memory: ConversationMemory | None = None,
+        on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
@@ -176,7 +178,7 @@ class AgentService:
 
         messages.append({"role": "user", "content": user_message})
 
-        resp = self._run_loop(messages)
+        resp = self._run_loop(messages, on_tool_call=on_tool_call)
 
         # 3. 对话后记录 + 提取
         adapter = self._ctx.adapter if self._ctx else None
@@ -195,11 +197,16 @@ class AgentService:
     def chat_raw(
         self,
         messages: list[dict[str, Any]],
+        on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentResponse:
         """直接传入完整 messages 列表（灵活但需自己构造格式）。"""
-        return self._run_loop(messages)
+        return self._run_loop(messages, on_tool_call=on_tool_call)
 
-    def _run_loop(self, messages: list[dict[str, Any]]) -> AgentResponse:
+    def _run_loop(
+        self,
+        messages: list[dict[str, Any]],
+        on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> AgentResponse:
         """核心 agent 循环：LLM → tool_calls → execute → LLM → ..."""
         all_tool_calls: list[ToolCallRecord] = []
         rounds = 0
@@ -236,6 +243,10 @@ class AgentService:
                     fn_args = {}
 
                 _log.info("tool_call: %s(%s)", fn_name, fn_args)
+
+                if on_tool_call is not None:
+                    on_tool_call(fn_name, fn_args)
+
                 result = self._tools.call(fn_name, fn_args)
                 all_tool_calls.append(ToolCallRecord(fn_name, fn_args, result))
 

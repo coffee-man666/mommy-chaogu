@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { agentStream, agentRoute } from '@/api/agent'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { Bot, Send, User, Wrench, CheckCircle2, Zap } from 'lucide-vue-next'
+import { Bot, Send, User, Wrench, CheckCircle2, Zap, RotateCcw } from 'lucide-vue-next'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -26,6 +26,36 @@ const input = ref('')
 const loading = ref(false)
 const bottomRef = ref<HTMLElement>()
 const stream = ref<ReturnType<typeof agentStream> | null>(null)
+const lastFailedMessage = ref('')
+
+// WebSocket 连接状态指示
+const wsStatus = computed<'connected' | 'connecting' | 'disconnected'>(() => {
+  if (lastFailedMessage.value) return 'disconnected'
+  if (loading.value) return 'connected'
+  return 'connecting'
+})
+
+const wsDotColor = computed(() => {
+  switch (wsStatus.value) {
+    case 'connected':
+      return 'bg-green-500'
+    case 'disconnected':
+      return 'bg-red-500'
+    default:
+      return 'bg-yellow-500'
+  }
+})
+
+const wsStatusText = computed(() => {
+  switch (wsStatus.value) {
+    case 'connected':
+      return '已连接'
+    case 'disconnected':
+      return '已断开'
+    default:
+      return '待命'
+  }
+})
 
 // 快捷问题 — 按场景分组
 const quickQuestions = [
@@ -47,6 +77,9 @@ function scrollToBottom() {
 async function send(message: string) {
   const text = message.trim()
   if (!text || loading.value) return
+
+  // 清除上次的错误状态
+  lastFailedMessage.value = ''
 
   // 显示用户消息
   messages.value.push({ role: 'user', content: text })
@@ -109,6 +142,7 @@ async function send(message: string) {
       messages.value[assistantIdx].error = true
       messages.value[assistantIdx].streaming = false
       loading.value = false
+      lastFailedMessage.value = text
       scrollToBottom()
     },
   )
@@ -122,6 +156,16 @@ function handleSend() {
 
 function handleQuick(q: string) {
   send(q)
+}
+
+function retry() {
+  if (!lastFailedMessage.value) return
+  // 移除报错的 assistant 消息（最后一条）
+  const last = messages.value[messages.value.length - 1]
+  if (last && last.role === 'assistant' && last.error) {
+    messages.value.pop()
+  }
+  send(lastFailedMessage.value)
 }
 
 onMounted(() => {
@@ -157,6 +201,13 @@ onUnmounted(() => {
         <Bot class="size-5" />
       </div>
       <h1 class="text-base font-semibold tracking-tight">AI 对话</h1>
+      <span
+        class="inline-flex items-center gap-1 text-xs text-muted-foreground"
+        :title="wsStatusText"
+      >
+        <span class="inline-block w-2 h-2 rounded-full" :class="wsDotColor" />
+        {{ wsStatusText }}
+      </span>
       <Badge
         v-if="loading"
         variant="secondary"
@@ -321,6 +372,14 @@ onUnmounted(() => {
             class="flex-1"
             @keydown.enter="handleSend"
           />
+          <Button
+            v-if="lastFailedMessage"
+            variant="outline"
+            size="icon"
+            @click="retry"
+          >
+            <RotateCcw class="size-4" />
+          </Button>
           <Button
             :disabled="loading || !input.trim()"
             size="icon"

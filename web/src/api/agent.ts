@@ -41,42 +41,55 @@ export function agentStream(
   send: (message: string, history?: Array<{ role: string; content: string }>) => void
   close: () => void
 } {
-  const ws = new WebSocket(wsUrl('/ws/agent'))
-
   // 连接建立前的待发消息缓冲
   let pendingMessage: { message: string; history?: Array<{ role: string; content: string }> } | null = null
+  // 初始连接失败时，最多重试一次
+  let retried = false
+  let ws = new WebSocket(wsUrl('/ws/agent'))
 
-  ws.onopen = () => {
-    if (pendingMessage) {
-      ws.send(JSON.stringify(pendingMessage))
-      pendingMessage = null
-    }
-  }
-
-  ws.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data)
-      if (msg.type === 'chunk') {
-        onChunk(msg.text)
-      } else if (msg.type === 'done') {
-        onDone(msg.tools_used || [], msg.rounds || 0)
-      } else if (msg.type === 'thinking') {
-        onThinking()
-      } else if (msg.type === 'error') {
-        onError(msg.message || '未知错误')
+  function attachHandlers(socket: WebSocket) {
+    socket.onopen = () => {
+      if (pendingMessage) {
+        socket.send(JSON.stringify(pendingMessage))
+        pendingMessage = null
       }
-    } catch {
-      // ignore parse errors
+    }
+
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'chunk') {
+          onChunk(msg.text)
+        } else if (msg.type === 'done') {
+          onDone(msg.tools_used || [], msg.rounds || 0)
+        } else if (msg.type === 'thinking') {
+          onThinking()
+        } else if (msg.type === 'error') {
+          onError(msg.message || '未知错误')
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    socket.onerror = () => {
+      if (socket.readyState === WebSocket.CONNECTING && !retried) {
+        // 初始连接失败，2 秒后重连一次
+        retried = true
+        socket.close()
+        setTimeout(() => {
+          ws = new WebSocket(wsUrl('/ws/agent'))
+          attachHandlers(ws)
+        }, 2000)
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        onError('WebSocket 连接失败，请检查服务是否正常运行')
+      } else {
+        onError('WebSocket 连接中断')
+      }
     }
   }
 
-  ws.onerror = () => {
-    if (ws.readyState === WebSocket.CONNECTING) {
-      onError('WebSocket 连接失败，请检查服务是否正常运行')
-    } else {
-      onError('WebSocket 连接中断')
-    }
-  }
+  attachHandlers(ws)
 
   return {
     send(message: string, history?: Array<{ role: string; content: string }>) {

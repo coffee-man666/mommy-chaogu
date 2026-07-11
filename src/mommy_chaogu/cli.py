@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
-from mommy_chaogu.db_paths import MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
+from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 from mommy_chaogu.market_data import EfinanceAdapter
 from mommy_chaogu.monitor import Monitor
 from mommy_chaogu.semicon.store import Board, ChainPosition, Subcategory
@@ -195,6 +195,13 @@ def build_watchlist_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-watchlist",
         description="妈妈炒股 - 自选股池管理",
+        epilog=(
+            "example:\n"
+            "  mommy watchlist add 600519 --group 白酒\n"
+            "  mommy watchlist list --by-group\n"
+            "  mommy watchlist groups"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
@@ -399,6 +406,13 @@ def build_monitor_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-monitor",
         description="妈妈炒股 - 自选股监控",
+        epilog=(
+            "example:\n"
+            "  mommy monitor snapshot\n"
+            "  mommy monitor run --interval 30\n"
+            "  mommy monitor log --tail 20"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
@@ -585,6 +599,8 @@ _WELCOME = """\
   📅 看业绩   "中报怎么样" / "业绩披露"
   📝 写报告   "今日总结" / "收盘报告"
 
+也可直接输入子命令：watchlist / monitor / cache / flows / agent / web / tui
+
 输入问题开始，输入 q 退出。
 """
 
@@ -593,6 +609,7 @@ def _run_mommy_repl(
     router: object,
     executor: object,
     agent: object | None,
+    verbose: bool = False,
 ) -> NoReturn:
     """自然语言交互式 REPL。
 
@@ -624,6 +641,14 @@ def _run_mommy_repl(
         # 尝试路由到工作流
         route = router.route(user_input)  # type: ignore[attr-defined]
         if route.matched:
+            # 显示匹配反馈
+            wf_desc = route.workflow.description  # type: ignore[attr-defined]
+            if verbose:
+                wf_id = route.workflow.id  # type: ignore[attr-defined]
+                print(f"  [匹配工作流: {wf_desc}] (id={wf_id})")
+            else:
+                print(f"  [匹配: {wf_desc}]")
+
             # 工作流执行 + 进度显示
             def on_start(name: str) -> None:
                 print(f"  ⠹ {name}...", end="\r", flush=True)
@@ -652,23 +677,45 @@ def _run_mommy_repl(
             # 建议
             print("💡 继续问我，或输入 q 退出\n")
         else:
+            # 未命中预设工作流
+            if verbose:
+                reason = getattr(route, "fallback_reason", "")
+                print(f"  [未命中预设工作流{f': {reason}' if reason else ''}]")
+            print("  [转交 AI 助手处理]\n")
+
             # Fallback: 通用 LLM agent
             if agent is None:
                 print(
-                    "⚠️ 这个问题需要 AI 助手回答，但未配置 API key。\n"
-                    "   请在 .env 文件中设置 DEEPSEEK_API_KEY 或 ZAI_API_KEY。\n"
+                    "⚠️ AI 助手不可用（未配置 API key）。\n"
+                    "   运行 mommy --setup 进行配置，或在 .env 文件中设置 API key。\n"
+                    "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
                 )
                 continue
 
-            print("\n🤔 让我想想...\n")
+            print("🤔 让我想想...\n")
             try:
-                resp = agent.chat(user_input)
-                print(f"{resp.text}\n")
-                if resp.tool_calls:
+                def _on_tool(name: str, a: dict[str, object]) -> None:
+                    if verbose:
+                        args_str = ", ".join(f"{k}={v}" for k, v in a.items())
+                        print(f"  🔧 {name}({args_str})")
+                    else:
+                        print(f"  🔧 调用: {name}...")
+
+                resp = agent.chat(user_input, on_tool_call=_on_tool)
+                print(f"\n{resp.text}\n")
+                if resp.tool_calls and not verbose:
                     tool_names = ", ".join(tc.name for tc in resp.tool_calls)
                     print(f"[调用了 {len(resp.tool_calls)} 个工具: {tool_names}]\n")
             except Exception as e:
-                print(f"⚠️ 出错了: {e}\n")
+                err_msg = str(e)
+                if "rate_limit" in err_msg.lower() or "429" in err_msg:
+                    print("⚠️ API 调用频率超限，请稍后重试。\n")
+                elif "quota" in err_msg.lower() or "insufficient" in err_msg.lower():
+                    print("⚠️ API 额度已用完，请检查账户余额。\n")
+                elif "authentication" in err_msg.lower() or "401" in err_msg:
+                    print("⚠️ API key 无效，请检查 .env 配置。\n")
+                else:
+                    print(f"⚠️ 出错了: {e}\n")
 
 
 def _print_workflow_result(result: object) -> None:
@@ -721,52 +768,76 @@ def main_mommy() -> NoReturn:
 
     无参数 → 进入交互式 REPL
     带参数 → 单次自然语言查询
-    --raw <subcommand> → 透传到底层 CLI
+    <子命令> [参数] → 透传到底层 CLI（如 mommy watchlist list）
+    --raw <子命令> [参数] → 同上（向后兼容）
     """
-    # --raw 模式：透传到底层 CLI 子命令
+    # 子命令 → 对应 main_* 函数 / entry point 的分发表
+    # mommy watchlist list / mommy --raw watchlist list 共用同一张表
+    dispatch: dict[str, tuple[str, object]] = {
+        "watchlist": ("mommy-watchlist", main_watchlist),
+        "monitor": ("mommy-monitor", main_monitor),
+        "cache": ("mommy-cache", main_cache),
+        "semicon": ("mommy-semicon", main_semicon),
+        "flows": ("mommy-flows", main_flows),
+        "report": ("mommy-report", main_report),
+        "agent": ("mommy-agent", main_agent),
+        "memory": ("mommy-memory", main_memory),
+        "web": ("mommy-web", main_web),
+        "tui": ("mommy-tui", None),
+    }
+
+    # 直接子命令模式：mommy watchlist list
+    if len(sys.argv) > 1 and sys.argv[1] in dispatch:
+        subcmd = sys.argv[1]
+        prog_name, func = dispatch[subcmd]
+        sys.argv = [prog_name, *sys.argv[2:]]
+        if func is not None:
+            func()
+        else:
+            # tui: 独立 entry point，直接导入调用
+            from mommy_chaogu.tui.app import main as _tui_main
+
+            _tui_main()
+        return
+
+    # --raw 模式：透传到底层 CLI 子命令（向后兼容）
     if len(sys.argv) > 1 and sys.argv[1] in ("--raw", "--advanced"):
-        # 移除 --raw，让底层命令解析剩余参数
         remaining = sys.argv[2:]
         if not remaining:
             print("用法: mommy --raw <子命令> [参数]")
-            print("可用子命令: watchlist, monitor, cache, semicon, flows, report, agent")
+            print("可用子命令: " + ", ".join(dispatch.keys()))
             sys.exit(1)
         subcmd = remaining[0]
         sub_args = remaining[1:]
 
-        cmd_map: dict[str, str] = {
-            "watchlist": "mommy-watchlist",
-            "monitor": "mommy-monitor",
-            "cache": "mommy-cache",
-            "semicon": "mommy-semicon",
-            "flows": "mommy-flows",
-            "report": "mommy-report",
-            "agent": "mommy-agent",
-        }
-        if subcmd not in cmd_map:
+        if subcmd not in dispatch:
             print(f"未知子命令: {subcmd}")
-            print(f"可用: {', '.join(cmd_map.keys())}")
+            print(f"可用: {', '.join(dispatch.keys())}")
             sys.exit(1)
 
-        # 转交控制权给对应的 main_* 函数
-        sys.argv = [cmd_map[subcmd], *sub_args]
-        dispatch = {
-            "watchlist": main_watchlist,
-            "monitor": main_monitor,
-            "cache": main_cache,
-            "semicon": main_semicon,
-            "flows": main_flows,
-            "report": main_report,
-            "agent": main_agent,
-        }
-        dispatch[subcmd]()
+        prog_name, func = dispatch[subcmd]
+        sys.argv = [prog_name, *sub_args]
+        if func is not None:
+            func()
+        else:
+            from mommy_chaogu.tui.app import main as _tui_main
+
+            _tui_main()
         return
 
     # 正常自然语言模式
     parser = argparse.ArgumentParser(
         prog="mommy",
         description="妈妈炒股 - 自然语言投资助手",
-        epilog="输入自然语言开始对话，或用 --raw 访问高级命令。",
+        epilog=(
+            "用法示例：\n"
+            "  mommy \"今天怎么样\"        AI 自然语言对话\n"
+            "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
+            "  mommy                      进入交互式 REPL\n"
+            "\n"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, web, tui"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "query",
@@ -776,10 +847,31 @@ def main_mommy() -> NoReturn:
     parser.add_argument(
         "--raw",
         action="store_true",
-        help="访问底层 CLI 子命令（高级用户）",
+        help="访问底层 CLI 子命令（高级用户，可直接用子命令名替代）",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="显示详细的路由决策和工具调用信息",
+    )
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="运行首次配置引导（选择 LLM provider + 填入 API key）",
     )
     # 解析已知参数，剩余的忽略（避免 argparse 报错）
     args, _unknown = parser.parse_known_args()
+
+    # --setup 模式：运行首次配置引导
+    if args.setup:
+        from mommy_chaogu.setup import run_setup_wizard
+
+        if run_setup_wizard():
+            print("\n✅ 配置完成！现在可以开始使用了：")
+            print("  mommy              # 进入交互式对话")
+            print("  mommy \"今天怎么样\"  # 单次查询")
+        sys.exit(0)
 
     # 构建工具链
     from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
@@ -845,6 +937,13 @@ def main_mommy() -> NoReturn:
     if query:
         route = router.route(query)
         if route.matched:
+            if args.verbose:
+                wf = route.workflow  # type: ignore[attr-defined]
+                print(f"  [匹配工作流: {wf.description}]")
+                print(f"  [工作流 ID: {wf.id}]")
+            else:
+                wf_desc = route.workflow.description  # type: ignore[attr-defined]
+                print(f"  [匹配: {wf_desc}]")
             print()
             result = router.execute_route(
                 route,
@@ -858,17 +957,47 @@ def main_mommy() -> NoReturn:
             else:
                 _print_workflow_result(result)
         else:
+            # 未命中预设工作流
+            if args.verbose:
+                reason = getattr(route, "fallback_reason", "")
+                print(f"  [未命中预设工作流{f': {reason}' if reason else ''}]")
+            print("  [转交 AI 助手处理]")
+
             # Fallback to agent
             if agent is None:
-                print("⚠️ 未配置 API key，无法处理这个问题的回答。")
-                print("   请在 .env 文件中设置 API key。")
+                print(
+                    "⚠️ AI 助手不可用（未配置 API key）。\n"
+                    "   运行 mommy --setup 进行配置，或在 .env 文件中设置 API key。\n"
+                    "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
+                )
             else:
-                resp = agent.chat(query)
-                print(resp.text)
+                def _on_tool(name: str, a: dict[str, object]) -> None:
+                    if args.verbose:
+                        args_str = ", ".join(f"{k}={v}" for k, v in a.items())
+                        print(f"  🔧 {name}({args_str})")
+                    else:
+                        print(f"  🔧 调用: {name}...")
+
+                try:
+                    resp = agent.chat(query, on_tool_call=_on_tool)
+                    print(f"\n{resp.text}\n")
+                    if resp.tool_calls and not args.verbose:
+                        tool_names = ", ".join(tc.name for tc in resp.tool_calls)
+                        print(f"[调用了 {len(resp.tool_calls)} 个工具: {tool_names}]")
+                except Exception as e:
+                    err_msg = str(e)
+                    if "rate_limit" in err_msg.lower() or "429" in err_msg:
+                        print("\n⚠️ API 调用频率超限，请稍后重试。\n")
+                    elif "quota" in err_msg.lower() or "insufficient" in err_msg.lower():
+                        print("\n⚠️ API 额度已用完，请检查账户余额。\n")
+                    elif "authentication" in err_msg.lower() or "401" in err_msg:
+                        print("\n⚠️ API key 无效，请检查 .env 配置。\n")
+                    else:
+                        print(f"\n⚠️ 出错了: {e}\n")
         sys.exit(0)
 
     # 交互式 REPL
-    _run_mommy_repl(router, executor, agent)
+    _run_mommy_repl(router, executor, agent, verbose=args.verbose)
 
 
 def main() -> int:
@@ -1033,6 +1162,13 @@ def build_cache_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-cache",
         description="妈妈炒股 - 行情缓存管理",
+        epilog=(
+            "example:\n"
+            "  mommy cache warmup\n"
+            "  mommy cache refresh --code 600519\n"
+            "  mommy cache stats"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--db",
@@ -1265,6 +1401,13 @@ def build_semicon_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-semicon",
         description="妈妈炒股 - 半导体产业链参考库（A 股，按位置/产品分组）",
+        epilog=(
+            "example:\n"
+            "  mommy semicon seed\n"
+            "  mommy semicon list --chain 上游\n"
+            "  mommy semicon search 存储"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--db",
@@ -1561,6 +1704,13 @@ def build_flows_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-flows",
         description="妈妈炒股 - 资金流拉新 / 排行 / 监控（按股票池）",
+        epilog=(
+            "example:\n"
+            "  mommy flows pull\n"
+            "  mommy flows top --direction in\n"
+            "  mommy flows run --interval 300"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     # ---- 全局参数 ----
     p.add_argument(
@@ -1760,6 +1910,13 @@ def build_report_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-report",
         description="把 .md 资金流报告渲染成独立 HTML 网页",
+        epilog=(
+            "example:\n"
+            "  mommy report render\n"
+            "  mommy report index\n"
+            "  mommy report serve --port 8787"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -1796,6 +1953,203 @@ def build_report_parser() -> argparse.ArgumentParser:
 def main_report() -> NoReturn:
     parser = build_report_parser()
     args = parser.parse_args()
+    rc = args.func(args)
+    sys.exit(rc)
+
+
+# ============================================================
+# memory 子命令（记忆系统可见性）
+# ============================================================
+
+
+def _truncate(text: str, width: int) -> str:
+    """把文本截断到 *width* 个字符，超出则加省略号。"""
+    text = text.replace("\n", " ").strip()
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def cmd_memory_stats(args: argparse.Namespace) -> int:
+    """显示记忆系统汇总统计。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.memory import ConversationMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    db_path = Path(args.db)
+    conv = ConversationMemory(db_path).summary()
+    ep = EpisodicMemory(db_path).summary()
+    pred = PredictionTracker(db_path).stats()
+    sem = SemanticMemory(db_path).summary()
+
+    print("🧠 记忆系统统计")
+    print("─" * 60)
+    print(f"  数据库: {db_path}")
+    print()
+    print("对话记忆 (agent_memory):")
+    print(f"  总条数: {conv['total']}  (user {conv['user']} / assistant {conv['assistant']})")
+    print()
+    print("事件记忆 (episodic_events):")
+    print(f"  总条数: {ep['total']}")
+    if ep.get("earliest"):
+        print(f"  时间跨度: {ep['earliest'][:10]} ~ {ep['latest'][:10]}")
+    if ep["by_type"]:
+        print("  按类型:")
+        for t, n in sorted(ep["by_type"].items(), key=lambda x: -x[1]):
+            print(f"    {t}: {n}")
+    print()
+    print("预测追踪 (predictions):")
+    print(
+        f"  总数: {pred['total']}  "
+        f"命中 {pred['hit']}  未中 {pred['missed']}  待验证 {pred['pending']}"
+    )
+    if pred["hit"] + pred["missed"] > 0:
+        print(f"  命中率: {pred['hit_rate']:.1%}")
+    print()
+    print("知识记忆 (semantic_knowledge):")
+    print(f"  总条数: {sem['total']}  (active {sem['active']} / superseded {sem['superseded']})")
+    return 0
+
+
+def cmd_memory_events(args: argparse.Namespace) -> int:
+    """显示最近的结构化事件。"""
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    em = EpisodicMemory(Path(args.db))
+    events = em.recent(days=args.days, limit=args.limit)
+    if not events:
+        print("（暂无事件）")
+        return 0
+    print(f"📋 最近事件（{len(events)} 条）")
+    print("─" * 80)
+    print(f"{'时间':<21} {'类型':<18} {'代码':<8} {'摘要'}")
+    print("─" * 80)
+    for e in events:
+        ts = str(e["timestamp"])[:19]
+        etype = _truncate(e["event_type"], 18)
+        code = e.get("code") or "—"
+        summary = _truncate(e["summary"], 40)
+        print(f"{ts:<21} {etype:<18} {code:<8} {summary}")
+    return 0
+
+
+def cmd_memory_predictions(args: argparse.Namespace) -> int:
+    """显示最近的预测。"""
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    tracker = PredictionTracker(Path(args.db))
+    preds = tracker.all(limit=args.limit, status=args.status)
+    if not preds:
+        print("（暂无预测）")
+        return 0
+    print(f"🎯 预测记录（{len(preds)} 条）")
+    print("─" * 90)
+    print(f"{'时间':<21} {'代码':<8} {'方向':<6} {'状态':<10} {'周期':<6} {'预测内容'}")
+    print("─" * 90)
+    for p in preds:
+        ts = str(p.get("created_at", ""))[:19]
+        code = p.get("code") or "—"
+        direction = p.get("direction") or "—"
+        status = p.get("status") or "—"
+        timeframe = p.get("timeframe") or "—"
+        prediction = _truncate(p.get("prediction") or "", 30)
+        print(f"{ts:<21} {code:<8} {direction:<6} {status:<10} {timeframe:<6} {prediction}")
+    return 0
+
+
+def cmd_memory_knowledge(args: argparse.Namespace) -> int:
+    """显示语义知识条目。"""
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    sm = SemanticMemory(Path(args.db))
+    entries = sm.get_active(limit=args.limit)
+    if not entries:
+        print("（暂无知识条目）")
+        return 0
+    print(f"💡 知识记忆（{len(entries)} 条 active）")
+    print("─" * 80)
+    for e in entries:
+        ktype = e.get("knowledge_type") or "—"
+        scope = e.get("scope") or "—"
+        content = _truncate(e.get("content") or "", 60)
+        confidence = e.get("confidence", 0.0)
+        print(f"  [{ktype}] {scope}")
+        print(f"    {content}  (置信度 {confidence:.0%})")
+    return 0
+
+
+def cmd_memory_history(args: argparse.Namespace) -> int:
+    """显示最近对话历史。"""
+    from mommy_chaogu.agent.memory import ConversationMemory
+
+    mem = ConversationMemory(Path(args.db))
+    msgs = mem.recent(limit=args.limit)
+    if not msgs:
+        print("（暂无对话历史）")
+        return 0
+    print(f"💬 对话历史（最近 {len(msgs)} 条）")
+    print("─" * 80)
+    for m in msgs:
+        ts = m["timestamp"]
+        ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if hasattr(ts, "strftime") else str(ts)[:19]
+        role = m["role"]
+        content = _truncate(m["content"], 60)
+        print(f"{ts_str}  [{role}] {content}")
+    return 0
+
+
+def build_memory_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="mommy-memory",
+        description="妈妈炒股 - 记忆系统查看（对话 / 事件 / 预测 / 知识）",
+    )
+    p.add_argument(
+        "--db",
+        default=str(AGENT_DB),
+        help=f"记忆数据库路径 (默认 {AGENT_DB})",
+    )
+
+    sub = p.add_subparsers(dest="cmd")
+
+    # stats（默认）
+    p_stats = sub.add_parser("stats", help="汇总统计")
+    p_stats.set_defaults(func=cmd_memory_stats)
+
+    # events
+    p_ev = sub.add_parser("events", help="最近结构化事件")
+    p_ev.add_argument("--limit", "-n", type=int, default=20, help="最多显示 N 条 (默认 20)")
+    p_ev.add_argument("--days", type=int, default=90, help="只看最近 N 天 (默认 90)")
+    p_ev.set_defaults(func=cmd_memory_events)
+
+    # predictions
+    p_pr = sub.add_parser("predictions", help="预测记录")
+    p_pr.add_argument("--limit", "-n", type=int, default=20, help="最多显示 N 条 (默认 20)")
+    p_pr.add_argument(
+        "--status",
+        choices=["pending", "hit", "missed", "expired", "unverifiable"],
+        default=None,
+        help="按状态过滤",
+    )
+    p_pr.set_defaults(func=cmd_memory_predictions)
+
+    # knowledge
+    p_kn = sub.add_parser("knowledge", help="语义知识条目")
+    p_kn.add_argument("--limit", "-n", type=int, default=20, help="最多显示 N 条 (默认 20)")
+    p_kn.set_defaults(func=cmd_memory_knowledge)
+
+    # history
+    p_hi = sub.add_parser("history", help="最近对话历史")
+    p_hi.add_argument("--limit", "-n", type=int, default=20, help="最多显示 N 条 (默认 20)")
+    p_hi.set_defaults(func=cmd_memory_history)
+
+    return p
+
+
+def main_memory() -> NoReturn:
+    parser = build_memory_parser()
+    args = parser.parse_args()
+    # 无子命令时默认 stats
+    if not getattr(args, "func", None):
+        args.func = cmd_memory_stats
     rc = args.func(args)
     sys.exit(rc)
 
