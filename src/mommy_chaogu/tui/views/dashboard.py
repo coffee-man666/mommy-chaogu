@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, ClassVar
@@ -13,6 +14,7 @@ from typing import Any, ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.coordinate import Coordinate
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import (
@@ -38,6 +40,9 @@ _log = logging.getLogger(__name__)
 
 _SIGNALS_LOG = Path("data/signals.log")
 
+_REFRESH_TRADING = int(os.environ.get("MOMMY_TUI_REFRESH", "5"))
+_REFRESH_LUNCH = int(os.environ.get("MOMMY_TUI_REFRESH_LUNCH", "60"))
+
 _EMPTY_WATCH = """[dim]
 还没有自选股
 
@@ -59,6 +64,10 @@ class WatchTable(DataTable[Any]):
         Binding("a", "add_stock", "加自选"),
         Binding("x", "remove_stock", "移除"),
         Binding("enter", "show_detail", "详情"),
+        Binding("j", "cursor_down", "下移"),
+        Binding("k", "cursor_up", "上移"),
+        Binding("g", "jump_top", "顶部"),
+        Binding("G", "jump_bottom", "底部"),
     ]
 
     _sort_key: int = 0  # 0=涨跌幅, 1=主力净流入, 2=代码
@@ -66,6 +75,7 @@ class WatchTable(DataTable[Any]):
     def __init__(self) -> None:
         super().__init__(id="watch-table")
         self._rows_data: list[dict[str, Any]] = []
+        self._row_keys: list[str] = []  # 跟踪当前行的 code 序列，用于 diff 更新
 
     def on_mount(self) -> None:
         self.cursor_type = "row"
@@ -76,25 +86,50 @@ class WatchTable(DataTable[Any]):
         self.add_column("主力", width=10)
 
     def update_data(self, rows: list[dict[str, Any]]) -> None:
-        """更新表格数据（全量重建，P1 优化为 cell 级 diff）。"""
+        """更新表格数据。
+
+        如果行集（code 序列）与上次相同，则原地更新单元格值以避免闪烁；
+        否则全量 clear + add_row 重建。
+        """
         self._rows_data = self._sort_rows(rows)
+        new_keys = [r.get("code", "") for r in self._rows_data]
+
+        if new_keys == self._row_keys and new_keys:
+            self._update_cells_in_place()
+        else:
+            self._rebuild()
+        self._row_keys = new_keys
+
+    def _row_values(self, r: dict[str, Any]) -> list[str]:
+        """计算单行的各列显示值。"""
+        code = r.get("code", "")
+        name = r.get("name", code)
+        price = format_price(r.get("price"))
+        chg = r.get("change_pct")
+        chg_str = f"{change_arrow(chg)} {format_change_pct(chg)}"
+        chg_color = change_color(chg)
+        flow_str = format_flow(r.get("main_flow"))
+        flow_color = change_color(r.get("main_flow"))
+        return [
+            code,
+            name,
+            price,
+            f"[{chg_color}]{chg_str}[/{chg_color}]",
+            f"[{flow_color}]{flow_str}[/{flow_color}]",
+        ]
+
+    def _update_cells_in_place(self) -> None:
+        """行集不变时，原地更新单元格值。"""
+        for row_idx, r in enumerate(self._rows_data):
+            values = self._row_values(r)
+            for col_idx, val in enumerate(values):
+                self.update_cell_at(Coordinate(row_idx, col_idx), val)
+
+    def _rebuild(self) -> None:
+        """全量重建表格。"""
         self.clear()
         for r in self._rows_data:
-            code = r.get("code", "")
-            name = r.get("name", code)
-            price = format_price(r.get("price"))
-            chg = r.get("change_pct")
-            chg_str = f"{change_arrow(chg)} {format_change_pct(chg)}"
-            chg_color = change_color(chg)
-            flow_str = format_flow(r.get("main_flow"))
-            flow_color = change_color(r.get("main_flow"))
-            self.add_row(
-                code,
-                name,
-                price,
-                f"[{chg_color}]{chg_str}[/{chg_color}]",
-                f"[{flow_color}]{flow_str}[/{flow_color}]",
-            )
+            self.add_row(*self._row_values(r))
 
     def _sort_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if self._sort_key == 0:
@@ -162,6 +197,15 @@ class WatchTable(DataTable[Any]):
         code = self._rows_data[self.cursor_row].get("code", "")
         self.app.open_stock_detail(code)  # type: ignore[attr-defined]
 
+    def action_jump_top(self) -> None:
+        """g — 跳到第一行。"""
+        self.move_cursor(row=0)
+
+    def action_jump_bottom(self) -> None:
+        """G — 跳到最后一行。"""
+        if self.row_count > 0:
+            self.move_cursor(row=self.row_count - 1)
+
 
 class SummaryCard(Static):
     """持仓摘要卡片。"""
@@ -172,8 +216,8 @@ class SummaryCards(Horizontal):
 
     def compose(self) -> ComposeResult:
         yield SummaryCard("总市值\n—", id="card-value")
-        yield SummaryCard("当日盈亏\n—", id="card-day-pnl")
-        yield SummaryCard("累计盈亏\n—", id="card-total-pnl")
+        yield SummaryCard("总盈亏\n—", id="card-day-pnl")
+        yield SummaryCard("盈亏比例\n—", id="card-total-pnl")
 
     def update_summary(self, summary: dict[str, Any]) -> None:
         mv = summary.get("total_market_value")
@@ -187,13 +231,13 @@ class SummaryCards(Horizontal):
         if pnl is not None:
             color = change_color(float(pnl))
             day_str = f"[{color}]{format_flow(pnl)}[/{color}]"
-        self.query_one("#card-day-pnl", SummaryCard).update(f"当日盈亏\n{day_str}")
+        self.query_one("#card-day-pnl", SummaryCard).update(f"总盈亏\n{day_str}")
 
         total_str = "—"
-        if pnl is not None and pnl_pct is not None:
-            color = change_color(float(pnl))
-            total_str = f"[{color}]{format_flow(pnl)} ({format_change_pct(pnl_pct)})[/{color}]"
-        self.query_one("#card-total-pnl", SummaryCard).update(f"累计盈亏\n{total_str}")
+        if pnl_pct is not None:
+            color = change_color(float(pnl) if pnl is not None else None)
+            total_str = f"[{color}]{format_change_pct(pnl_pct)}[/{color}]"
+        self.query_one("#card-total-pnl", SummaryCard).update(f"盈亏比例\n{total_str}")
 
 
 class HoldTable(DataTable[Any]):
@@ -201,6 +245,10 @@ class HoldTable(DataTable[Any]):
 
     BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
         Binding("enter", "show_detail", "详情"),
+        Binding("j", "cursor_down", "下移"),
+        Binding("k", "cursor_up", "上移"),
+        Binding("g", "jump_top", "顶部"),
+        Binding("G", "jump_bottom", "底部"),
     ]
 
     def __init__(self) -> None:
@@ -248,6 +296,15 @@ class HoldTable(DataTable[Any]):
             return
         code = str(row_data[0])
         self.app.open_stock_detail(code)  # type: ignore[attr-defined]
+
+    def action_jump_top(self) -> None:
+        """g — 跳到第一行。"""
+        self.move_cursor(row=0)
+
+    def action_jump_bottom(self) -> None:
+        """G — 跳到最后一行。"""
+        if self.row_count > 0:
+            self.move_cursor(row=self.row_count - 1)
 
 
 class ThemeListWidget(DataTable[Any]):
@@ -388,15 +445,15 @@ class DashboardView(Vertical):
     def _tick(self) -> None:
         """心跳：根据市场阶段决定刷新间隔。
 
-        - 交易中（9:30-11:30 / 13:00-15:00）→ 每 5 秒
-        - 午休（11:30-13:00）→ 每 60 秒
+        - 交易中（9:30-11:30 / 13:00-15:00）→ 每 MOMMY_TUI_REFRESH 秒（默认 5）
+        - 午休（11:30-13:00）→ 每 MOMMY_TUI_REFRESH_LUNCH 秒（默认 60）
         - 已收盘 / 集合竞价 / 周末 → 不刷新
         """
         phase = market_phase()
         if phase == "交易中":
-            interval = 5.0
+            interval = float(_REFRESH_TRADING)
         elif phase == "午休":
-            interval = 60.0
+            interval = float(_REFRESH_LUNCH)
         else:
             return  # 收盘/竞价/周末 — 不刷新
 

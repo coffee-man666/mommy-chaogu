@@ -13,7 +13,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import Input, Static
+from textual.widgets import Collapsible, Input, Markdown, Static
 
 from mommy_chaogu.tui.messages import StepStatus
 
@@ -209,7 +209,7 @@ class ChatView(Vertical):
     def append_assistant(self, text: str) -> None:
         """追加 Agent 回复。"""
         log = self.query_one("#chat-log", VerticalScroll)
-        log.mount(Static(f"[bold]mommy ›[/] {text}", classes="assistant-msg"))
+        log.mount(Markdown(f"**mommy ›**\n\n{text}", classes="assistant-msg"))
         log.scroll_end(animate=False)
 
     def append_workflow_match(self, title: str, steps: list[str]) -> None:
@@ -226,7 +226,14 @@ class ChatView(Vertical):
         """追加工具调用记录。"""
         log = self.query_one("#chat-log", VerticalScroll)
         suffix = f"({args_summary})" if args_summary else "()"
-        log.mount(Static(f"  [dim]🔧 {name}{suffix}[/]", classes="tool-call"))
+        details = Static(f"🔧 {name}{suffix}", classes="tool-call")
+        log.mount(
+            Collapsible(
+                details,
+                title=f"🔧 {name}({args_summary})",
+                classes="tool-call",
+            )
+        )
         log.scroll_end(animate=False)
 
     def append_hint(self, text: str) -> None:

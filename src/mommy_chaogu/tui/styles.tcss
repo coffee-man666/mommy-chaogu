@@ -1,5 +1,20 @@
 /* ---- design tokens ---- */
 /* A股约定：红涨绿跌 */
+$up: #e5484d;
+$down: #2f9e6e;
+$flat: #8a8f98;
+$warning: #f5a524;
+$danger: #e5484d;
+
+/* light theme (P4): uncomment to enable
+$up: #dc2626;
+$down: #16a34a;
+*/
+
+/* colorblind theme: red→red, green→blue
+$up: #e5484d;
+$down: #3b82f6;
+*/
 
 TopBar {
     dock: top;
@@ -33,6 +48,10 @@ ChatInput:focus {
     border: round $primary-darken-2;
     margin: 0 0 1 0;
     padding: 0 1;
+}
+
+Collapsible > CollapsibleTitle {
+    color: $accent;
 }
 
 .hint-card {
@@ -94,5 +113,15 @@ SummaryCard {
 
 /* 信号页 */
 #signal-log {
+    padding: 0 1;
+}
+
+/* 个股详情页三栏布局 */
+StockDetailScreen Horizontal {
+    height: auto;
+}
+
+StockDetailScreen Vertical {
+    width: 1fr;
     padding: 0 1;
 }

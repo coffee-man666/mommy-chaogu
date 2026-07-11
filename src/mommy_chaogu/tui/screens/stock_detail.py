@@ -12,7 +12,7 @@ from typing import Any, ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -66,6 +66,12 @@ class StockDetailScreen(ModalScreen[None]):
         padding-top: 1;
         border-top: dashed $panel;
     }
+    #stock-detail-cols {
+        height: auto;
+    }
+    #stock-detail-cols > Vertical {
+        width: 1fr;
+    }
     """
 
     def __init__(self, code: str) -> None:
@@ -84,18 +90,17 @@ class StockDetailScreen(ModalScreen[None]):
             with Vertical(classes="stock-section", id="kline-section"):
                 yield Static("K 线图（即将上线）", classes="section-title")
                 yield Static("加载中…", id="kline-area")
-            # 资金流（近 5 日）
-            with Vertical(classes="stock-section", id="flow-section"):
-                yield Static("资金流（近5日）", classes="section-title")
-                yield Static("加载中…", id="flow-area")
-            # 基本面
-            with Vertical(classes="stock-section", id="fundamentals-section"):
-                yield Static("基本面", classes="section-title")
-                yield Static("加载中…", id="fundamentals-area")
-            # 近期公告
-            with Vertical(classes="stock-section", id="announcements-section"):
-                yield Static("近期公告", classes="section-title")
-                yield Static("加载中…", id="announcements-area")
+            # 资金流 / 基本面 / 公告 — 三栏并排（窄终端下 Textual 自动换行）
+            with Horizontal(id="stock-detail-cols"):
+                with Vertical(classes="stock-section", id="flow-section"):
+                    yield Static("资金流（近5日）", classes="section-title")
+                    yield Static("加载中…", id="flow-area")
+                with Vertical(classes="stock-section", id="fundamentals-section"):
+                    yield Static("基本面", classes="section-title")
+                    yield Static("加载中…", id="fundamentals-area")
+                with Vertical(classes="stock-section", id="announcements-section"):
+                    yield Static("近期公告", classes="section-title")
+                    yield Static("加载中…", id="announcements-area")
 
     def _header_placeholder(self) -> str:
         """加载完成前展示的最小头部。"""

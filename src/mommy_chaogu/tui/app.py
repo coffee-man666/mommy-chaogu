@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from typing import Any, ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.command import DiscoveryHit, Hit, Hits, Provider
+from textual.reactive import reactive
 from textual.widgets import ContentSwitcher, Input
 
 from mommy_chaogu.tui.messages import StepStatus
@@ -106,12 +108,15 @@ class MommyTuiApp(App[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("tab", "toggle_mode", "切换模式", priority=True),
         Binding("ctrl+p", "app.command_palette", "命令面板"),
+        Binding("ctrl+t", "cycle_theme", "主题", show=False),
         Binding("ctrl+q", "quit", "退出"),
         Binding("r", "refresh", "刷新"),
         Binding("question_mark", "help", "帮助", show=False),
     ]
 
     services: Services
+    ui_theme: reactive[str] = reactive("dark")
+    _THEMES: ClassVar[list[str]] = ["dark", "light", "colorblind"]
 
     def __init__(self, services: Services | None = None) -> None:
         super().__init__()
@@ -123,6 +128,8 @@ class MommyTuiApp(App[None]):
 
     def on_mount(self) -> None:
         """主屏已由 compose 挂载；此处触发首次数据拉取。"""
+        self.ui_theme = os.environ.get("MOMMY_TUI_THEME", "dark")
+        self._apply_theme()
         self._refresh_data()
 
     # ------------------------------------------------------------------
@@ -150,6 +157,34 @@ class MommyTuiApp(App[None]):
     def action_help(self) -> None:
         """弹出帮助。"""
         self.push_screen(HelpScreen())
+
+    # ------------------------------------------------------------------
+    # 主题切换
+    # ------------------------------------------------------------------
+
+    def action_cycle_theme(self) -> None:
+        """Ctrl+T：在 dark / light / colorblind 之间循环。"""
+        try:
+            idx = self._THEMES.index(self.ui_theme)
+        except ValueError:
+            idx = -1
+        self.ui_theme = self._THEMES[(idx + 1) % len(self._THEMES)]
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        """应用当前主题：dark → Textual 深色；light → 浅色；colorblind → 通知。
+
+        colorblind 模式下 Textual 没有原生自定义调色板，
+        实际颜色重映射由 formatting.change_color() 检查 theme 后处理。
+        """
+        theme = self.ui_theme
+        if theme == "light":
+            self.dark = False
+        else:
+            self.dark = True
+        labels = {"dark": "深色", "light": "浅色", "colorblind": "色盲友好"}
+        label = labels.get(theme, theme)
+        self.notify(f"主题已切换：{label}", timeout=3)
 
     # ------------------------------------------------------------------
     # 对话入口（ChatView 委托）
