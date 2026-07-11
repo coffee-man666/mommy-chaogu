@@ -65,6 +65,17 @@ function dirSign(val: string | number | null | undefined): string {
   return Number(val) >= 0 ? '+' : ''
 }
 
+/** 相对昨收的方向 class */
+function dirClassRef(val: string | number | null | undefined, ref: string | number | null | undefined): string {
+  if (val == null || ref == null) return ''
+  const n = Number(val)
+  const r = Number(ref)
+  if (isNaN(n) || isNaN(r)) return ''
+  const diff = n - r
+  if (diff === 0) return 'text-muted-foreground'
+  return diff > 0 ? 'text-up' : 'text-down'
+}
+
 /** 万/亿金额格式化 */
 function fmtFlowWan(s: string | null | undefined): string {
   if (!s) return '-'
@@ -383,9 +394,9 @@ onUnmounted(() => {
                 </TableRow>
                 <TableRow>
                   <TableCell class="py-2 text-xs text-muted-foreground">最高</TableCell>
-                  <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClass(quote.high))">{{ fmtPrice(quote.high) }}</TableCell>
+                  <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClassRef(quote.high, quote.prev_close))">{{ fmtPrice(quote.high) }}</TableCell>
                   <TableCell class="py-2 text-xs text-muted-foreground">最低</TableCell>
-                  <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClass(quote.low))">{{ fmtPrice(quote.low) }}</TableCell>
+                  <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClassRef(quote.low, quote.prev_close))">{{ fmtPrice(quote.low) }}</TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell class="py-2 text-xs text-muted-foreground">成交量</TableCell>

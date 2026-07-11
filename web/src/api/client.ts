@@ -2,7 +2,7 @@
 // 开发：走 Vite/Taro proxy（/api/*, /ws/*）
 // 生产：用环境变量 VITE_API_BASE
 
-const API_BASE = (typeof process !== 'undefined' && process.env?.TARO_APP_API_BASE) || ''
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || ''
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`)

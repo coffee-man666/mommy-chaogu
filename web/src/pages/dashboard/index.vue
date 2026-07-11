@@ -34,6 +34,7 @@ const recentSignals = ref<Signal[]>([])
 const watchCodes = ref<string[]>([])
 const dataAge = ref(0)
 const loading = ref(false)
+const errorCount = ref(0) // number of API calls that failed in last cycle
 
 let refreshTimer: number | null = null
 let ageTimer: number | null = null
@@ -52,24 +53,28 @@ async function loadAll() {
   loading.value = true
   // 先拿到自选股代码，再拉行情（保证 quote 覆盖自选股）
   if (watchCodes.value.length === 0) await loadWatchlist()
+  let failures = 0
+  let successes = 0
   await Promise.all([
     apiGet<IndexQuote[]>('/api/market/indexes')
-      .then((d) => (indexes.value = d))
-      .catch(() => {}),
+      .then((d) => { indexes.value = d; successes++ })
+      .catch(() => { failures++ }),
     apiGet<SnapshotResponse>('/api/quotes')
-      .then((d) => (quotes.value = d.quotes ?? []))
-      .catch(() => {}),
+      .then((d) => { quotes.value = d.quotes ?? []; successes++ })
+      .catch(() => { failures++ }),
     apiGet<PortfolioSummary>('/api/portfolio')
-      .then((d) => (portfolio.value = d))
-      .catch(() => {}),
+      .then((d) => { portfolio.value = d; successes++ })
+      .catch(() => { failures++ }),
     apiGet<Signal[]>('/api/signals/recent')
-      .then((d) => (recentSignals.value = d.slice(0, 5)))
-      .catch(() => {}),
+      .then((d) => { recentSignals.value = d.slice(0, 5); successes++ })
+      .catch(() => { failures++ }),
     apiGet<SectorQuote[]>('/api/market/sectors?limit=12')
-      .then((d) => (sectors.value = d))
-      .catch(() => {}),
+      .then((d) => { sectors.value = d; successes++ })
+      .catch(() => { failures++ }),
   ])
-  dataAge.value = 0
+  errorCount.value = failures
+  // Only reset age if at least one call succeeded
+  if (successes > 0) dataAge.value = 0
   loading.value = false
 }
 
@@ -86,6 +91,7 @@ onUnmounted(() => {
 
 // ---------- 派生 ----------
 const dataDescription = computed(() => {
+  if (errorCount.value >= 5) return '离线'
   if (dataAge.value < 30) return '实时'
   if (dataAge.value < 120) return `${dataAge.value}秒前`
   return `${Math.floor(dataAge.value / 60)}分钟前`
@@ -145,7 +151,7 @@ const severityDot: Record<Signal['severity'], string> = {
       <div class="flex items-center gap-2 text-xs text-muted-foreground">
         <span
           class="inline-block size-2 rounded-full"
-          :class="loading ? 'animate-pulse bg-yellow-500' : 'bg-up'"
+          :class="loading ? 'animate-pulse bg-yellow-500' : errorCount >= 5 ? 'bg-red-500' : errorCount > 0 ? 'bg-yellow-500' : 'bg-up'"
         />
         {{ dataDescription }}
       </div>
@@ -204,8 +210,10 @@ const severityDot: Record<Signal['severity'], string> = {
               <TableRow
                 v-for="q in watchlistQuotes"
                 :key="q.code"
-                class="cursor-pointer"
+                class="cursor-pointer focus-visible:ring-2 focus-visible:ring-primary outline-none"
+                tabindex="0"
                 @click="goDetail(q.code)"
+                @keydown.enter="goDetail(q.code)"
               >
                 <TableCell class="pl-6 font-mono text-xs text-muted-foreground">
                   {{ q.code }}

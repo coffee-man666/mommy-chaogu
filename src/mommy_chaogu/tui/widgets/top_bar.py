@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from textual.reactive import reactive
 from textual.widgets import Static
 
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
+
 
 def market_phase() -> str:
-    """判断当前市场阶段（Asia/Shanghai）。"""
-    now = datetime.now()
+    """判断当前市场阶段（Asia/Shanghai 时区）。"""
+    now = datetime.now(_SHANGHAI)
     h, m = now.hour, now.minute
     wd = now.weekday()
     if wd >= 5:
@@ -41,7 +44,7 @@ class TopBar(Static):
         self.set_interval(1.0, self._tick)
 
     def _tick(self) -> None:
-        self._clock = datetime.now().strftime("%H:%M:%S")
+        self._clock = datetime.now(_SHANGHAI).strftime("%H:%M:%S")
         self.market_phase = market_phase()
         self._refresh_display()
 

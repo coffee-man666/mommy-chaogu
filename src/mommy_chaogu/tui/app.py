@@ -137,14 +137,42 @@ class MommyTuiApp(App[None]):
     # ------------------------------------------------------------------
 
     def action_toggle_mode(self) -> None:
-        """Tab 切换：对话 ⇄ 看板。"""
+        """Tab 切换：对话 ⇄ 看板。
+
+        在对话模式中如果输入框有斜杠补全建议，优先接受补全而非切换。
+        """
         switcher = self.query_one("#main", ContentSwitcher)
-        if switcher.current == "dashboard":
+        if switcher.current == "chat":
+            if self._try_accept_slash_suggestion():
+                return
+            switcher.current = "dashboard"
+        else:
             switcher.current = "chat"
             with contextlib.suppress(Exception):
                 self.query_one("#prompt", Input).focus()
-        else:
-            switcher.current = "dashboard"
+
+    def _try_accept_slash_suggestion(self) -> bool:
+        """如果对话输入框当前是斜杠前缀且有匹配命令，执行补全。"""
+        try:
+            prompt = self.query_one("#prompt", Input)
+        except Exception:
+            return False
+        value = prompt.value
+        if not value.startswith("/"):
+            return False
+        from mommy_chaogu.tui.views.chat import SLASH_COMMANDS
+
+        typed = value[1:].split(None, 1)[0].casefold() if len(value) > 1 else ""
+        for name, cmd in SLASH_COMMANDS.items():
+            if name.startswith(typed):
+                suffix = " " if cmd.has_args else ""
+                suggestion = f"/{name}{suffix}"
+                if suggestion != value:
+                    prompt.value = suggestion
+                    prompt.cursor_position = len(suggestion)
+                    return True
+                break
+        return False
 
     # ------------------------------------------------------------------
     # 全局动作

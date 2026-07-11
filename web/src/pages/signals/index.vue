@@ -15,18 +15,22 @@ const router = useRouter()
 const recentSignals = ref<Signal[]>([])
 const history = ref<Signal[]>([])
 const loading = ref(true)
+const errorCount = ref(0)
 const activeTab = ref('recent')
 
 let timer: number | null = null
 
 async function load() {
   try {
+    let failures = 0
+    let successes = 0
     const [r, h] = await Promise.all([
-      apiGet<Signal[]>('/api/signals/recent').catch(() => [] as Signal[]),
-      apiGet<Signal[]>('/api/signals/history?limit=50').catch(() => [] as Signal[]),
+      apiGet<Signal[]>('/api/signals/recent').then((v) => { successes++; return v }).catch(() => { failures++; return [] as Signal[] }),
+      apiGet<Signal[]>('/api/signals/history?limit=50').then((v) => { successes++; return v }).catch(() => { failures++; return [] as Signal[] }),
     ])
     recentSignals.value = r
     history.value = h
+    errorCount.value = failures
   } catch (e) {
     console.error(e)
   } finally {
@@ -97,7 +101,10 @@ onUnmounted(() => {
     <!-- 页头 -->
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-bold tracking-tight">🔔 信号中心</h1>
-      <span class="font-mono text-xs text-muted-foreground">30秒刷新</span>
+      <div class="flex items-center gap-2">
+        <span class="font-mono text-xs text-muted-foreground">30秒刷新</span>
+        <span v-if="errorCount >= 2" class="text-xs text-destructive">⚠ 数据加载失败</span>
+      </div>
     </div>
 
     <Tabs v-model="activeTab" default-value="recent" class="w-full">
@@ -138,9 +145,11 @@ onUnmounted(() => {
           <Card
             v-for="s in recentSignals"
             :key="`${s.timestamp}-${s.code}-${s.rule_id}`"
-            class="cursor-pointer border-l-4 transition-transform active:scale-[0.98]"
+            class="cursor-pointer border-l-4 transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary outline-none"
+            tabindex="0"
             :class="severityConfig[s.severity].border"
             @click="goDetail(s)"
+            @keydown.enter="goDetail(s)"
           >
             <CardContent class="space-y-2">
               <!-- 头部：严重度 + 代码 + 时间 -->
@@ -174,9 +183,16 @@ onUnmounted(() => {
         <!-- 空状态 -->
         <Card v-else>
           <CardContent class="flex flex-col items-center gap-2 py-16 text-center">
-            <span class="text-5xl">🌤️</span>
-            <p class="text-base font-semibold text-muted-foreground">本次轮询未触发信号</p>
-            <p class="text-sm text-muted-foreground">行情平稳，妈妈放心 ✨</p>
+            <template v-if="errorCount >= 2">
+              <span class="text-5xl">⚠️</span>
+              <p class="text-base font-semibold text-destructive">数据加载失败</p>
+              <p class="text-sm text-muted-foreground">行情服务暂时不可用，请稍后重试</p>
+            </template>
+            <template v-else>
+              <span class="text-5xl">🌤️</span>
+              <p class="text-base font-semibold text-muted-foreground">本次轮询未触发信号</p>
+              <p class="text-sm text-muted-foreground">行情平稳，妈妈放心 ✨</p>
+            </template>
           </CardContent>
         </Card>
       </TabsContent>

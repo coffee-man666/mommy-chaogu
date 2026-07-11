@@ -18,7 +18,7 @@ export function fmtPct(s: string | number | null | undefined): string {
 
 /** 大金额智能转 万/亿 */
 export function fmtWan(s: string | number | null | undefined): string {
-  if (!s) return '-'
+  if (s == null || s === '') return '-'
   const n = Number(s)
   if (isNaN(n)) return String(s)
   if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
@@ -31,7 +31,7 @@ export function fmtMoney(
   s: string | number | null | undefined,
   unit: 'yuan' | 'wan' | 'yi' = 'yuan'
 ): string {
-  if (!s) return '-'
+  if (s == null || s === '') return '-'
   const n = Number(s)
   if (isNaN(n)) return String(s)
   if (unit === 'yi') return `${(n / 1e8).toFixed(2)}亿`
@@ -59,12 +59,12 @@ export function changeColor(changePct: string | number | null | undefined): stri
 
 /** 盈亏颜色（使用 CSS 变量） */
 export function pnlColor(pnl: string | number | null | undefined): string {
-  if (!pnl) return '#999'
+  if (pnl == null || pnl === '') return '#999'
   return Number(pnl) >= 0 ? 'var(--color-primary)' : 'var(--color-down)'
 }
 
 /** 盈亏正负号 */
 export function pnlSign(pnl: string | number | null | undefined): string {
-  if (!pnl) return ''
+  if (pnl == null || pnl === '') return ''
   return Number(pnl) >= 0 ? '+' : ''
 }

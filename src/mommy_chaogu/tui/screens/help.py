@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from textual.app import ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
@@ -54,7 +54,7 @@ _HELP_TEXT = """\
 class HelpScreen(ModalScreen[None]):
     """帮助弹窗。"""
 
-    BINDING: ClassVar[list[Binding | tuple[str, str, str]]] = [("escape", "dismiss", "关闭")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "dismiss", "关闭")]
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="help-scroll"):

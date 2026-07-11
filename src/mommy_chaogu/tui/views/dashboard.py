@@ -102,14 +102,15 @@ class WatchTable(DataTable[Any]):
 
     def _row_values(self, r: dict[str, Any]) -> list[str]:
         """计算单行的各列显示值。"""
+        theme = self.app.ui_theme  # type: ignore[attr-defined]
         code = r.get("code", "")
         name = r.get("name", code)
         price = format_price(r.get("price"))
         chg = r.get("change_pct")
         chg_str = f"{change_arrow(chg)} {format_change_pct(chg)}"
-        chg_color = change_color(chg)
+        chg_color = change_color(chg, theme)
         flow_str = format_flow(r.get("main_flow"))
-        flow_color = change_color(r.get("main_flow"))
+        flow_color = change_color(r.get("main_flow"), theme)
         return [
             code,
             name,
@@ -220,6 +221,7 @@ class SummaryCards(Horizontal):
         yield SummaryCard("盈亏比例\n—", id="card-total-pnl")
 
     def update_summary(self, summary: dict[str, Any]) -> None:
+        theme = self.app.ui_theme  # type: ignore[attr-defined]
         mv = summary.get("total_market_value")
         pnl = summary.get("total_unrealized_pnl")
         pnl_pct = summary.get("total_unrealized_pnl_pct")
@@ -229,13 +231,13 @@ class SummaryCards(Horizontal):
         )
         day_str = "—"
         if pnl is not None:
-            color = change_color(float(pnl))
+            color = change_color(float(pnl), theme)
             day_str = f"[{color}]{format_flow(pnl)}[/{color}]"
         self.query_one("#card-day-pnl", SummaryCard).update(f"总盈亏\n{day_str}")
 
         total_str = "—"
         if pnl_pct is not None:
-            color = change_color(float(pnl) if pnl is not None else None)
+            color = change_color(float(pnl) if pnl is not None else None, theme)
             total_str = f"[{color}]{format_change_pct(pnl_pct)}[/{color}]"
         self.query_one("#card-total-pnl", SummaryCard).update(f"盈亏比例\n{total_str}")
 
@@ -281,7 +283,7 @@ class HoldTable(DataTable[Any]):
                 price = format_price(getattr(p, "current_price", None))
                 pnl = getattr(p, "unrealized_pnl", None)
             pnl_str = format_flow(pnl)
-            color = change_color(float(pnl) if pnl else None)
+            color = change_color(float(pnl) if pnl else None, self.app.ui_theme)  # type: ignore[attr-defined]
             self.add_row(code, name, str(shares), cost, price, f"[{color}]{pnl_str}[/{color}]")
 
     def action_show_detail(self) -> None:
@@ -570,10 +572,11 @@ class DashboardView(Vertical):
     # ------------------------------------------------------------------
 
     def update_watchlist(self, rows: list[dict[str, Any]]) -> None:
-        """更新自选股表。"""
+        """更新自选股表。
+
+        空列表也会正常传递给 table.update_data，以便清空旧行。
+        """
         table = self.query_one("#watch-table", WatchTable)
-        if not rows:
-            return
         table.update_data(rows)
 
     def update_portfolio(self, summary: dict[str, Any]) -> None:

@@ -28,6 +28,7 @@ const portfolio = ref<PortfolioSummary | null>(null)
 
 const loading = ref(true)
 const dataAge = ref(0)
+const errorCount = ref(0)
 const activeTab = ref('gainers')
 
 let refreshTimer: number | null = null
@@ -35,19 +36,22 @@ let ageTimer: number | null = null
 
 async function load() {
   try {
+    let failures = 0
+    let successes = 0
     const [idx, g, l, sec, pf] = await Promise.all([
-      getIndexes().catch(() => []),
-      getGainers(20).catch(() => []),
-      getLosers(20).catch(() => []),
-      getSectors(20).catch(() => []),
-      getPortfolio().catch(() => null),
+      getIndexes().then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
+      getGainers(20).then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
+      getLosers(20).then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
+      getSectors(20).then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
+      getPortfolio().then((v) => { successes++; return v }).catch(() => { failures++; return null }),
     ])
     indexes.value = idx
     gainers.value = g
     losers.value = l
     sectors.value = sec
     portfolio.value = pf
-    dataAge.value = 0
+    errorCount.value = failures
+    if (successes > 0) dataAge.value = 0
   } catch (e) {
     console.error(e)
   } finally {
@@ -74,6 +78,7 @@ function pctClass(pct: string | number | null | undefined): string {
 }
 
 const dataDescription = computed(() => {
+  if (errorCount.value >= 5) return '离线'
   if (dataAge.value < 30) return '实时'
   if (dataAge.value < 120) return `${dataAge.value}秒前`
   return `${Math.floor(dataAge.value / 60)}分钟前`
@@ -99,9 +104,12 @@ onUnmounted(() => {
     >
       <div class="flex items-baseline justify-between mb-3">
         <h1 class="text-2xl font-bold">📊 盘面</h1>
-        <span class="text-xs font-mono opacity-85">
-          {{ dataDescription }} · 30秒刷新
-        </span>
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full" :class="errorCount >= 5 ? 'bg-red-500' : errorCount > 0 ? 'bg-yellow-500' : 'bg-green-500'" />
+          <span class="text-xs font-mono opacity-85">
+            {{ dataDescription }} · 30秒刷新
+          </span>
+        </div>
       </div>
 
       <!-- 持仓快览条 -->

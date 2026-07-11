@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { marked } from 'marked'
 import { agentStream, agentRoute } from '@/api/agent'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { Bot, Send, User, Wrench, CheckCircle2, Zap, RotateCcw } from 'lucide-vue-next'
+import { Bot, Send, User, Wrench, CheckCircle2, Zap, RotateCcw, Square } from 'lucide-vue-next'
+
+marked.setOptions({ breaks: true, gfm: true })
 
 interface Message {
   role: 'user' | 'assistant'
@@ -24,14 +26,19 @@ const route = useRoute()
 const messages = ref<Message[]>([])
 const input = ref('')
 const loading = ref(false)
-const bottomRef = ref<HTMLElement>()
+const scrollContainerRef = ref<HTMLElement>()
+const userScrolledUp = ref(false)
 const stream = ref<ReturnType<typeof agentStream> | null>(null)
 const lastFailedMessage = ref('')
 
 // WebSocket 连接状态指示
+const wsConnected = ref(false)
+const wsConnecting = ref(true)
+
 const wsStatus = computed<'connected' | 'connecting' | 'disconnected'>(() => {
-  if (lastFailedMessage.value) return 'disconnected'
-  if (loading.value) return 'connected'
+  if (lastFailedMessage.value && !wsConnected.value) return 'disconnected'
+  if (wsConnected.value) return 'connected'
+  if (loading.value) return 'connecting'
   return 'connecting'
 })
 
@@ -49,11 +56,11 @@ const wsDotColor = computed(() => {
 const wsStatusText = computed(() => {
   switch (wsStatus.value) {
     case 'connected':
-      return '已连接'
+      return loading.value ? '回答中…' : '已连接'
     case 'disconnected':
       return '已断开'
     default:
-      return '待命'
+      return '连接中…'
   }
 })
 
@@ -70,8 +77,39 @@ const quickQuestions = [
 
 function scrollToBottom() {
   nextTick(() => {
-    bottomRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    if (userScrolledUp.value) return
+    scrollContainerRef.value?.scrollTo({
+      top: scrollContainerRef.value.scrollHeight,
+      behavior: 'smooth',
+    })
   })
+}
+
+function onScroll(e: Event) {
+  const target = e.target as HTMLElement
+  if (!target) return
+  const distFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  userScrolledUp.value = distFromBottom > 100
+}
+
+function renderMarkdown(text: string): string {
+  return marked.parse(text) as string
+}
+
+function stopGeneration() {
+  if (stream.value) {
+    stream.value.close()
+    stream.value = null
+  }
+  loading.value = false
+  // Mark last assistant message as stopped
+  const last = messages.value[messages.value.length - 1]
+  if (last && last.role === 'assistant' && last.streaming) {
+    last.streaming = false
+    if (!last.content) {
+      last.content = '（已停止）'
+    }
+  }
 }
 
 async function send(message: string) {
@@ -125,6 +163,7 @@ async function send(message: string) {
     (chunk: string) => {
       currentText += chunk
       messages.value[assistantIdx].content = currentText
+      wsConnected.value = true
       scrollToBottom()
     },
     (toolsUsed: string[], _rounds: number) => {
@@ -136,12 +175,14 @@ async function send(message: string) {
     () => {
       // thinking — 清空占位文案，进入"打字中"状态
       messages.value[assistantIdx].content = ''
+      wsConnected.value = true
     },
     (msg: string) => {
       messages.value[assistantIdx].content = msg
       messages.value[assistantIdx].error = true
       messages.value[assistantIdx].streaming = false
       loading.value = false
+      wsConnected.value = false
       lastFailedMessage.value = text
       scrollToBottom()
     },
@@ -219,7 +260,7 @@ onUnmounted(() => {
     </header>
 
     <!-- 对话消息区 -->
-    <ScrollArea class="min-h-0 flex-1">
+    <div ref="scrollContainerRef" class="min-h-0 flex-1 overflow-y-auto" @scroll="onScroll">
       <div class="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
         <div
           v-for="(msg, i) in messages"
@@ -269,7 +310,8 @@ onUnmounted(() => {
             <div
               :class="
                 cn(
-                  'whitespace-pre-wrap break-words px-4 py-2.5 text-sm leading-relaxed shadow-sm',
+                  'break-words px-4 py-2.5 text-sm leading-relaxed shadow-sm',
+                  msg.role === 'user' && 'whitespace-pre-wrap',
                   msg.role === 'user'
                     ? 'rounded-2xl rounded-tr-sm bg-primary text-primary-foreground'
                     : msg.error
@@ -291,7 +333,7 @@ onUnmounted(() => {
                 />
                 <span class="size-2 animate-bounce rounded-full bg-muted-foreground/50" />
               </span>
-              <template v-else>{{ msg.content }}</template>
+              <div v-else class="markdown-body" v-html="renderMarkdown(msg.content)" />
             </div>
 
             <!-- 工作流步骤标签 -->
@@ -338,10 +380,8 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 滚动锚点 -->
-        <div ref="bottomRef" />
       </div>
-    </ScrollArea>
+    </div>
 
     <!-- 底部：快捷问题 + 输入区 -->
     <div class="shrink-0 border-t bg-card">
@@ -373,9 +413,19 @@ onUnmounted(() => {
             @keydown.enter="handleSend"
           />
           <Button
+            v-if="loading && !lastFailedMessage"
+            variant="destructive"
+            size="icon"
+            aria-label="停止生成"
+            @click="stopGeneration"
+          >
+            <Square class="size-4" />
+          </Button>
+          <Button
             v-if="lastFailedMessage"
             variant="outline"
             size="icon"
+            aria-label="重试"
             @click="retry"
           >
             <RotateCcw class="size-4" />
@@ -383,6 +433,7 @@ onUnmounted(() => {
           <Button
             :disabled="loading || !input.trim()"
             size="icon"
+            aria-label="发送"
             @click="handleSend"
           >
             <Send class="size-4" />
@@ -392,3 +443,80 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style>
+/* v-html 内容不受 scoped 样式影响，用全局样式 */
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+.markdown-body p {
+  margin: 0.5em 0;
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+.markdown-body li {
+  margin: 0.25em 0;
+}
+.markdown-body code {
+  background: hsl(var(--muted));
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+  font-size: 0.875em;
+  font-family: ui-monospace, monospace;
+}
+.markdown-body pre {
+  background: hsl(var(--muted));
+  border-radius: 0.5rem;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+}
+.markdown-body blockquote {
+  border-left: 3px solid hsl(var(--border));
+  margin: 0.5em 0;
+  padding: 0.25em 0 0.25em 1em;
+  color: hsl(var(--muted-foreground));
+}
+.markdown-body a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+.markdown-body strong {
+  font-weight: 600;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  font-weight: 600;
+  margin: 0.75em 0 0.25em;
+}
+.markdown-body h1 {
+  font-size: 1.25em;
+}
+.markdown-body h2 {
+  font-size: 1.125em;
+}
+.markdown-body h3 {
+  font-size: 1em;
+}
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.875em;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.25em 0.5em;
+}
+</style>
