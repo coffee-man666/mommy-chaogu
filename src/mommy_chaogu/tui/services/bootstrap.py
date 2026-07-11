@@ -46,9 +46,9 @@ class DataService:
                     continue
                 flow_val = None
                 try:
-                    flow = self.adapter.get_today_money_flow(code)
-                    if flow and hasattr(flow, "main_net"):
-                        flow_val = flow.main_net
+                    flows = self.adapter.get_today_money_flow(code)
+                    if flows:
+                        flow_val = getattr(flows[-1], "main_net", None)
                 except Exception:
                     pass
                 rows.append({

@@ -29,20 +29,20 @@ ChatInput:focus {
     border: round $accent;
 }
 
-ToolPanel {
+.tool-call {
     border: round $primary-darken-2;
     margin: 0 0 1 0;
     padding: 0 1;
 }
 
-HintCard {
+.hint-card {
     border: round $warning;
     color: $text-muted;
     padding: 1 2;
     margin: 1 0;
 }
 
-WorkflowCard {
+.workflow-card {
     border-left: thick $accent;
     padding: 0 0 0 1;
     margin: 0 0 1 0;
@@ -74,13 +74,13 @@ SummaryCard {
 }
 
 /* 对话消息 */
-UserMsg {
+.user-msg {
     padding: 0 1;
     margin: 0 0 0 4;
     color: $text;
 }
 
-AssistantMsg {
+.assistant-msg {
     padding: 0 1;
     margin: 0 4 0 0;
 }
@@ -93,6 +93,6 @@ AssistantMsg {
 }
 
 /* 信号页 */
-SignalLog {
+#signal-log {
     padding: 0 1;
 }

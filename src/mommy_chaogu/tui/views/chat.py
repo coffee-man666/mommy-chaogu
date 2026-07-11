@@ -182,8 +182,10 @@ class ChatView(Vertical):
     # 消息处理
     # ------------------------------------------------------------------
 
-    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         """发送消息。"""
+        if event.input.id != "prompt":
+            return
         text = event.value.strip()
         if not text:
             return

@@ -8,7 +8,7 @@ from textual.reactive import reactive
 from textual.widgets import Static
 
 
-def _market_phase() -> str:
+def market_phase() -> str:
     """判断当前市场阶段（Asia/Shanghai）。"""
     now = datetime.now()
     h, m = now.hour, now.minute
@@ -37,12 +37,12 @@ class TopBar(Static):
         self._clock = ""
 
     def on_mount(self) -> None:
-        self.market_phase = _market_phase()
+        self.market_phase = market_phase()
         self.set_interval(1.0, self._tick)
 
     def _tick(self) -> None:
         self._clock = datetime.now().strftime("%H:%M:%S")
-        self.market_phase = _market_phase()
+        self.market_phase = market_phase()
         self._refresh_display()
 
     def watch_connection_level(self, _level: str) -> None:
@@ -64,5 +64,3 @@ class TopBar(Static):
         ]
         self.update("  ".join(parts))
 
-    def on_mount_mount(self) -> None:
-        """兼容 Textual on_mount 调用。"""

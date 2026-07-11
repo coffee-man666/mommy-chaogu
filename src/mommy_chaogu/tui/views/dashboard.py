@@ -32,7 +32,7 @@ from mommy_chaogu.tui.services.formatting import (
     format_flow,
     format_price,
 )
-from mommy_chaogu.tui.widgets.top_bar import _market_phase
+from mommy_chaogu.tui.widgets.top_bar import market_phase
 
 _log = logging.getLogger(__name__)
 
@@ -218,12 +218,20 @@ class HoldTable(DataTable[Any]):
     def update_data(self, positions: list[Any]) -> None:
         self.clear()
         for p in positions:
-            code = getattr(p, "code", "")
-            name = getattr(p, "name", code)
-            shares = getattr(p, "shares", 0)
-            cost = format_price(getattr(p, "cost_price", None))
-            price = format_price(getattr(p, "current_price", None))
-            pnl = getattr(p, "unrealized_pnl", None)
+            if isinstance(p, dict):
+                code = p.get("code", "")
+                name = p.get("name", code)
+                shares = p.get("shares", 0)
+                cost = format_price(p.get("avg_cost") or p.get("cost_price"))
+                price = format_price(p.get("current_price") or p.get("price"))
+                pnl = p.get("unrealized_pnl")
+            else:
+                code = getattr(p, "code", "")
+                name = getattr(p, "name", code)
+                shares = getattr(p, "shares", 0)
+                cost = format_price(getattr(p, "cost_price", None))
+                price = format_price(getattr(p, "current_price", None))
+                pnl = getattr(p, "unrealized_pnl", None)
             pnl_str = format_flow(pnl)
             color = change_color(float(pnl) if pnl else None)
             self.add_row(code, name, str(shares), cost, price, f"[{color}]{pnl_str}[/{color}]")
@@ -384,7 +392,7 @@ class DashboardView(Vertical):
         - 午休（11:30-13:00）→ 每 60 秒
         - 已收盘 / 集合竞价 / 周末 → 不刷新
         """
-        phase = _market_phase()
+        phase = market_phase()
         if phase == "交易中":
             interval = 5.0
         elif phase == "午休":
@@ -404,7 +412,13 @@ class DashboardView(Vertical):
             and now - self._last_signal_scan >= 30.0
         ):
             self._last_signal_scan = now
-            self.run_worker(self._do_signal_scan, name="signal-scan", thread=True)
+            self.run_worker(
+                self._do_signal_scan,
+                name="signal-scan",
+                group="signal-scan",
+                exclusive=True,
+                thread=True,
+            )
 
     def watch_signal_scan_on(self, value: bool) -> None:
         """响应信号扫描开关。"""

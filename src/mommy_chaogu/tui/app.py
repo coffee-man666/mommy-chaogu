@@ -191,8 +191,10 @@ class MommyTuiApp(App[None]):
         )
 
     def open_stock_detail(self, code: str) -> None:
-        """打开个股详情屏（P1 实现）。"""
-        self.notify(f"个股详情（{code}）开发中", timeout=2)
+        """打开个股详情屏。"""
+        from mommy_chaogu.tui.screens.stock_detail import StockDetailScreen
+
+        self.push_screen(StockDetailScreen(code=code))
 
     # ------------------------------------------------------------------
     # 工作流执行（worker 线程）
@@ -303,10 +305,22 @@ class MommyTuiApp(App[None]):
 
     def _do_refresh(self) -> None:
         """worker 线程内执行：调数据服务，回主线程应用。"""
-        svc = self.services.data
-        rows = svc.watchlist_quotes()
-        summary = svc.portfolio_snapshot()
+        try:
+            svc = self.services.data
+            rows = svc.watchlist_quotes()
+            summary = svc.portfolio_snapshot()
+        except Exception as e:
+            _log.warning("数据刷新失败: %s", e)
+            self.call_from_thread(
+                self._on_refresh_error, f"数据刷新失败: {e}"
+            )
+            return
         self.call_from_thread(self._apply_data, rows, summary)
+
+    def _on_refresh_error(self, error: str) -> None:
+        """主线程：数据刷新出错。"""
+        with contextlib.suppress(Exception):
+            self.notify(error, severity="error", timeout=5)
 
     def _apply_data(self, rows: list[dict[str, Any]], summary: dict[str, Any]) -> None:
         """主线程：更新看板 + 顶栏。"""
