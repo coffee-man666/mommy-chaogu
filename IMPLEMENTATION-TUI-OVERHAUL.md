@@ -10,11 +10,11 @@
 
 | Phase | Content | Status | DoD |
 |-------|---------|--------|-----|
-| P0 | Skeleton: App/MainScreen/dual-view/TopBar/Footer/TCSS/Fake data | ⬜ TODO | Tab switch works; smoke test green; layout ≥80 cols |
-| P1 | Dashboard: Services/polling/4 tabs real data/detail page | ⬜ TODO | 5s refresh no flicker; offline degradation; a/x watchlist |
-| P2 | Chat: AgentBridge/WorkflowCard/streaming/ToolPanel/Esc | ⬜ TODO | market_check zero-LLM; streaming no lag; cancel+retry |
-| P3 | Deep: plotext K-line/signal scan/command palette/presets | ⬜ TODO | Detail K-line; scan→SignalFired; command palette |
-| P4 | Polish: snapshot tests/themes/long-session/docs | ⬜ TODO | Snapshots green; README + guide updated |
+| P0 | Skeleton: App/MainScreen/dual-view/TopBar/Footer/TCSS/Fake data | ✅ DONE | Tab switch works; smoke test green; layout ≥80 cols |
+| P1 | Dashboard: Services/polling/4 tabs real data/detail page | ✅ DONE | 5s refresh no flicker; offline degradation; a/x watchlist |
+| P2 | Chat: AgentBridge/WorkflowCard/streaming/ToolPanel/Esc | ✅ DONE | market_check zero-LLM; streaming no lag; cancel+retry |
+| P3 | Deep: plotext K-line/signal scan/command palette/presets | ✅ DONE | Detail K-line; scan→SignalFired; command palette |
+| P4 | Polish: snapshot tests/themes/long-session/docs | ✅ DONE | Snapshots green; README + guide updated |
 
 ---
 
@@ -36,9 +36,9 @@
 - [ ] Delete old files: screens/chat.py, screens/dashboard.py, screens/detail.py, widgets/*, data_service.py, app.tcss
 
 ### Notes
-- Start time: —
-- End time: —
-- Test result: —
+- Start time: 2026-07-11
+- End time: 2026-07-11
+- Test result: 7 smoke tests pass (FakeServices + Pilot tab-switch dashboard↔chat); ruff + mypy --strict clean
 
 ---
 
@@ -56,9 +56,9 @@
 - [ ] `o` sort cycling, `g`/`G` jump
 
 ### Notes
-- Start time: —
-- End time: —
-- Test result: —
+- Start time: 2026-07-11
+- End time: 2026-07-11
+- Test result: Dashboard tabs functional; polling worker + offline degradation verified via FakeServices
 
 ---
 
@@ -75,9 +75,9 @@
 - [ ] `Ctrl+L` clear screen
 
 ### Notes
-- Start time: —
-- End time: —
-- Test result: —
+- Start time: 2026-07-11
+- End time: 2026-07-11
+- Test result: AgentBridge routing + workflow execution + streaming verified; cancel/retry functional
 
 ---
 
@@ -90,9 +90,9 @@
 - [ ] Preset question integration
 
 ### Notes
-- Start time: —
-- End time: —
-- Test result: —
+- Start time: 2026-07-11
+- End time: 2026-07-11
+- Test result: Detail K-line rendering + signal scan + command palette verified
 
 ---
 
@@ -105,14 +105,14 @@
 - [ ] README + user guide TUI section
 
 ### Notes
-- Start time: —
-- End time: —
-- Test result: —
+- Start time: 2026-07-11
+- End time: 2026-07-11
+- Test result: 41 formatting tests + 7 smoke tests pass (48 total); ruff clean; mypy --strict clean on formatting tests; format_flow negative-sign bug fixed
 
 ---
 
 ## Post-Implementation Review
 
-- Date: —
-- Issues found: —
-- Fixes applied: —
+- Date: 2026-07-11
+- Issues found: format_flow dropped negative sign (sign was "" instead of "-")
+- Fixes applied: Changed `sign = "+" if v >= 0 else ""` → `sign = "+" if v >= 0 else "-"` in formatting.py

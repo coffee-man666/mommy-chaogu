@@ -13,6 +13,7 @@ from typing import Any, ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
@@ -344,16 +345,21 @@ class _AddStockModal(ModalScreen[str | None]):
 class DashboardView(Vertical):
     """数据看板视图。"""
 
+    signal_scan_on: reactive[bool] = reactive(False)
+
     BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
         Binding("1", "switch_tab('watch')", "自选"),
         Binding("2", "switch_tab('hold')", "持仓"),
         Binding("3", "switch_tab('theme')", "主题"),
         Binding("4", "switch_tab('signal')", "信号"),
+        Binding("s", "toggle_signal_scan", "信号扫描"),
     ]
 
     def __init__(self, id: str = "dashboard") -> None:
         super().__init__(id=id)
         self._last_refresh: float = 0.0
+        self._last_signal_scan: float = 0.0
+        self._signal_scan_id: int = 0
 
     def compose(self) -> ComposeResult:
         with TabbedContent(id="dashboard-tabs", initial="watch"):
@@ -390,6 +396,103 @@ class DashboardView(Vertical):
         if now - self._last_refresh >= interval:
             self._last_refresh = now
             self.app._refresh_data()  # type: ignore[attr-defined]
+
+        # 信号扫描：仅交易中，每 30 秒
+        if (
+            self.signal_scan_on
+            and phase == "交易中"
+            and now - self._last_signal_scan >= 30.0
+        ):
+            self._last_signal_scan = now
+            self.run_worker(self._do_signal_scan, name="signal-scan", thread=True)
+
+    def watch_signal_scan_on(self, value: bool) -> None:
+        """响应信号扫描开关。"""
+        if value:
+            self._last_signal_scan = 0.0  # 下一次 tick 立即触发
+            self.app.notify("信号扫描已开启（盘中每30秒）", timeout=3)
+        else:
+            self.app.notify("信号扫描已关闭", timeout=2)
+
+    def action_toggle_signal_scan(self) -> None:
+        """s 键切换信号扫描开关。"""
+        self.signal_scan_on = not self.signal_scan_on
+
+    def _do_signal_scan(self) -> None:
+        """worker 线程：构建快照 → 跑 Alerter → 回主线程显示。"""
+        services: Any = self.app.services  # type: ignore[attr-defined]
+        data_svc: Any = services.data
+        adapter: Any = getattr(data_svc, "adapter", None)
+        store: Any = getattr(data_svc, "watchlist_store", None)
+        if adapter is None or store is None:
+            return
+
+        from mommy_chaogu.monitor.poller import Snapshot, SnapshotRow
+        from mommy_chaogu.signals import Alerter
+
+        # 构建 SnapshotRow（按 code 去重，同 code 取第一个 group）
+        seen: set[str] = set()
+        rows: list[Any] = []
+        try:
+            by_group = store.list_entries_by_group()
+        except Exception as e:
+            _log.debug("信号扫描读取自选股失败: %s", e)
+            return
+
+        for group_name, entries in by_group.items():
+            for entry in entries:
+                code = getattr(entry, "code", "")
+                if code in seen:
+                    continue
+                seen.add(code)
+                try:
+                    quote = adapter.get_quote(code)
+                except Exception as e:
+                    _log.debug("信号扫描 get_quote(%s) 失败: %s", code, e)
+                    continue
+                if quote is None:
+                    continue
+                flow: Any = None
+                try:
+                    flows = adapter.get_today_money_flow(code)
+                    if flows:
+                        flow = flows[-1]
+                except Exception:
+                    pass
+                rows.append(
+                    SnapshotRow(
+                        entry=entry,
+                        group_name=group_name,
+                        quote=quote,
+                        latest_flow=flow,
+                    )
+                )
+
+        if not rows:
+            return
+
+        self._signal_scan_id += 1
+        snapshot = Snapshot.build(rows, self._signal_scan_id)
+        alerter = Alerter.default(log_path=_SIGNALS_LOG)
+        signals = alerter.evaluate(snapshot)
+        if signals:
+            alerter.write_signals_log(signals)
+            formatted = [s.format() for s in signals]
+            self.app.call_from_thread(self._display_signals, formatted)
+
+    def _display_signals(self, formatted: list[str]) -> None:
+        """主线程：向 signal-log 写入信号并弹通知。"""
+        try:
+            log_widget = self.query_one("#signal-log", RichLog)
+        except Exception:
+            return
+        for line in formatted:
+            log_widget.write(line)
+        self.app.notify(
+            f"触发 {len(formatted)} 条信号（信号页查看详情）",
+            severity="warning",
+            timeout=5,
+        )
 
     # ------------------------------------------------------------------
     # 数据更新接口（由 app / polling worker 调用）

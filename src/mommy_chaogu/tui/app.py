@@ -15,6 +15,7 @@ from typing import Any, ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
+from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.widgets import ContentSwitcher, Input
 
 from mommy_chaogu.tui.messages import StepStatus
@@ -41,6 +42,54 @@ def _format_tool_args(args: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def _switch_mode(app: Any, mode: str) -> None:
+    """切换 ContentSwitcher 到 chat / dashboard。"""
+    switcher = app.query_one("#main", ContentSwitcher)
+    switcher.current = mode
+
+
+def _switch_tab(app: Any, tab_id: str) -> None:
+    """切换看板到指定 tab。"""
+    _switch_mode(app, "dashboard")
+    from textual.widgets import TabbedContent
+
+    dashboard = app.query_one(DashboardView)
+    dashboard.query_one("#dashboard-tabs", TabbedContent).active = tab_id
+
+
+class _MommyCommandProvider(Provider):
+    """命令面板 Provider：refresh / 切模式 / 切 tab / 帮助。"""
+
+    def _commands(self) -> list[tuple[str, Any]]:
+        app: Any = self.app
+        return [
+            ("刷新数据", app.action_refresh),
+            ("切换到 AI 对话", lambda: _switch_mode(app, "chat")),
+            ("切换到数据看板", lambda: _switch_mode(app, "dashboard")),
+            ("看板 · 自选股", lambda: _switch_tab(app, "watch")),
+            ("看板 · 持仓", lambda: _switch_tab(app, "hold")),
+            ("看板 · 主题", lambda: _switch_tab(app, "theme")),
+            ("看板 · 信号", lambda: _switch_tab(app, "signal")),
+            ("帮助", app.action_help),
+        ]
+
+    async def search(self, query: str) -> Hits:
+        matcher = self.matcher(query)
+        for prompt, callback in self._commands():
+            score = matcher.match(prompt)
+            if score > 0:
+                yield Hit(
+                    float(score),
+                    prompt,
+                    callback,
+                    help=prompt,
+                )
+
+    async def discover(self) -> Hits:
+        for prompt, callback in self._commands():
+            yield DiscoveryHit(prompt, callback, help=prompt)
+
+
 class MommyTuiApp(App[None]):
     """Mommy Chaogu TUI 主应用。
 
@@ -52,8 +101,11 @@ class MommyTuiApp(App[None]):
     TITLE = "Mommy Chaogu"
     CSS_PATH = "styles.tcss"
 
+    COMMANDS: ClassVar[set[type[Provider] | Any]] = {_MommyCommandProvider}
+
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("tab", "toggle_mode", "切换模式", priority=True),
+        Binding("ctrl+p", "app.command_palette", "命令面板"),
         Binding("ctrl+q", "quit", "退出"),
         Binding("r", "refresh", "刷新"),
         Binding("question_mark", "help", "帮助", show=False),

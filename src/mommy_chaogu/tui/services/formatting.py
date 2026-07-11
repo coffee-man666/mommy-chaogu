@@ -40,7 +40,7 @@ def format_flow(val: Decimal | float | None) -> str:
     if val is None:
         return "—"
     v = float(val)
-    sign = "+" if v >= 0 else ""
+    sign = "+" if v >= 0 else "-"
     return f"{sign}{format_amount(abs(v))}"
 
 
