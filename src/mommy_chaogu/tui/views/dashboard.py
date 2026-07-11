@@ -6,13 +6,18 @@
 from __future__ import annotations
 
 import logging
+import time
+from pathlib import Path
 from typing import Any, ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
+    Input,
+    RichLog,
     Static,
     TabbedContent,
     TabPane,
@@ -26,8 +31,11 @@ from mommy_chaogu.tui.services.formatting import (
     format_flow,
     format_price,
 )
+from mommy_chaogu.tui.widgets.top_bar import _market_phase
 
 _log = logging.getLogger(__name__)
+
+_SIGNALS_LOG = Path("data/signals.log")
 
 _EMPTY_WATCH = """[dim]
 还没有自选股
@@ -39,12 +47,6 @@ _EMPTY_PORTFOLIO = """[dim]
 还没有持仓记录
 
   mommy portfolio add-position ...
-[/]"""
-
-_EMPTY_SIGNALS = """[dim]
-暂无信号记录
-
-  按 s 开启盘中信号扫描
 [/]"""
 
 
@@ -108,13 +110,50 @@ class WatchTable(DataTable[Any]):
         self.app.notify(f"排序: {labels[self._sort_key]}", timeout=1)
 
     def action_add_stock(self) -> None:
-        self.app.notify("添加自选请使用: mommy watchlist add <code> --group <组名>", timeout=3)
+        self.app.push_screen(_AddStockModal(), self._do_add_stock)
+
+    def _do_add_stock(self, code: str | None) -> None:
+        """Modal 回调：添加自选股。"""
+        if not code:
+            return
+        app = self.app
+        store = app.services.data.watchlist_store  # type: ignore[attr-defined]
+        if store is None:
+            app.notify("数据服务未就绪", timeout=2)
+            return
+        try:
+            # 确保默认分组存在，然后添加
+            store.get_or_create_group("默认")
+            store.add_entry(code, "默认")
+            app.notify(f"已添加 {code} 到「默认」分组", timeout=2)
+            app._refresh_data()  # type: ignore[attr-defined]
+        except Exception as e:
+            app.notify(f"添加失败: {e}", timeout=3)
 
     def action_remove_stock(self) -> None:
         if self.cursor_row < 0 or self.cursor_row >= len(self._rows_data):
             return
         code = self._rows_data[self.cursor_row].get("code", "")
-        self.app.notify(f"移除请使用: mommy watchlist remove {code}", timeout=3)
+        app = self.app
+        store = app.services.data.watchlist_store  # type: ignore[attr-defined]
+        if store is None:
+            app.notify("数据服务未就绪", timeout=2)
+            return
+        # 从所有包含该 code 的分组中移除
+        removed_any = False
+        try:
+            by_group = store.list_entries_by_group()
+            for group_name, entries in by_group.items():
+                if any(getattr(e, "code", None) == code for e in entries):
+                    store.remove_entry(code, group_name)
+                    removed_any = True
+            if removed_any:
+                app.notify(f"已移除 {code}", timeout=2)
+                app._refresh_data()  # type: ignore[attr-defined]
+            else:
+                app.notify(f"{code} 不在自选股中", timeout=2)
+        except Exception as e:
+            app.notify(f"移除失败: {e}", timeout=3)
 
     def action_show_detail(self) -> None:
         if self.cursor_row < 0 or self.cursor_row >= len(self._rows_data):
@@ -191,15 +230,115 @@ class HoldTable(DataTable[Any]):
     def action_show_detail(self) -> None:
         if self.cursor_row < 0:
             return
-        self.app.notify("详情页开发中", timeout=2)
+        # HoldTable 没有缓存 row data，用 query 拿当前行的 code 列
+        try:
+            row_data = self.get_row_at(self.cursor_row)
+        except Exception:
+            return
+        if not row_data:
+            return
+        code = str(row_data[0])
+        self.app.open_stock_detail(code)  # type: ignore[attr-defined]
 
 
-class ThemeListWidget(Static):
-    """主题列表占位（P1 完善）。"""
+class ThemeListWidget(DataTable[Any]):
+    """主题列表 — 半导体产业链参考库。"""
+
+    def __init__(self) -> None:
+        super().__init__(id="theme-table")
+
+    def on_mount(self) -> None:
+        self.cursor_type = "row"
+        self.add_column("代码", width=8)
+        self.add_column("名称", width=12)
+        self.add_column("产业链位置", width=10)
+        self._load_data()
+
+    def _load_data(self) -> None:
+        """从 reference.db 读取半导体产业链股票。"""
+        try:
+            from mommy_chaogu.db_paths import REFERENCE_DB
+            from mommy_chaogu.semicon.store import SemiconStore
+
+            store = SemiconStore(REFERENCE_DB)
+            stocks = store.list_all()
+            if not stocks:
+                return
+            for s in stocks:
+                self.add_row(
+                    s.code,
+                    getattr(s, "name", s.code),
+                    getattr(s, "chain_position", ""),
+                )
+        except Exception as e:
+            _log.warning("加载半导体产业链失败: %s", e)
 
 
-class SignalLogWidget(Static):
-    """信号日志占位（P1 完善）。"""
+class SignalLogWidget(RichLog):
+    """信号历史日志。"""
+
+    def __init__(self) -> None:
+        super().__init__(id="signal-log", markup=True)
+
+    def on_mount(self) -> None:
+        self._load_log()
+
+    def _load_log(self) -> None:
+        """读取 data/signals.log（如果存在），否则显示空态。"""
+        if not _SIGNALS_LOG.exists():
+            self.write("[dim]暂无信号记录\n\n  按 s 开启盘中信号扫描[/]")
+            return
+        try:
+            text = _SIGNALS_LOG.read_text(encoding="utf-8").rstrip()
+            if not text:
+                self.write("[dim]暂无信号记录[/]")
+                return
+            lines = text.split("\n")
+            # 只显示最后 200 行，避免大量历史日志卡顿
+            for line in lines[-200:]:
+                self.write(line)
+        except Exception as e:
+            _log.warning("读取信号日志失败: %s", e)
+            self.write(f"[red]读取信号日志失败: {e}[/]")
+
+
+class _AddStockModal(ModalScreen[str | None]):
+    """添加自选股的简单输入弹窗。"""
+
+    BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
+        Binding("escape", "cancel", "取消"),
+    ]
+
+    DEFAULT_CSS = """
+    _AddStockModal {
+        align: center middle;
+    }
+    #add-stock-box {
+        width: 50;
+        height: 7;
+        border: round $primary;
+        padding: 1 2;
+    }
+    #add-stock-prompt {
+        margin-bottom: 1;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="add-stock-box"):
+            yield Static("输入股票代码添加到「默认」分组：", id="add-stock-prompt")
+            yield Input(placeholder="如 688981", id="add-stock-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#add-stock-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "add-stock-input":
+            code = event.value.strip()
+            self.dismiss(code if code else None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class DashboardView(Vertical):
@@ -214,6 +353,7 @@ class DashboardView(Vertical):
 
     def __init__(self, id: str = "dashboard") -> None:
         super().__init__(id=id)
+        self._last_refresh: float = 0.0
 
     def compose(self) -> ComposeResult:
         with TabbedContent(id="dashboard-tabs", initial="watch"):
@@ -223,9 +363,33 @@ class DashboardView(Vertical):
                 yield SummaryCards(id="summary-cards")
                 yield HoldTable()
             with TabPane("主题", id="theme"):
-                yield Static(_EMPTY_WATCH, classes="empty-state")  # P1 填充
+                yield ThemeListWidget()
             with TabPane("信号", id="signal"):
-                yield Static(_EMPTY_SIGNALS, classes="empty-state")
+                yield SignalLogWidget()
+
+    def on_mount(self) -> None:
+        """设置 1 秒心跳，按市场阶段自适应刷新。"""
+        self.set_interval(1.0, self._tick)
+
+    def _tick(self) -> None:
+        """心跳：根据市场阶段决定刷新间隔。
+
+        - 交易中（9:30-11:30 / 13:00-15:00）→ 每 5 秒
+        - 午休（11:30-13:00）→ 每 60 秒
+        - 已收盘 / 集合竞价 / 周末 → 不刷新
+        """
+        phase = _market_phase()
+        if phase == "交易中":
+            interval = 5.0
+        elif phase == "午休":
+            interval = 60.0
+        else:
+            return  # 收盘/竞价/周末 — 不刷新
+
+        now = time.monotonic()
+        if now - self._last_refresh >= interval:
+            self._last_refresh = now
+            self.app._refresh_data()  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # 数据更新接口（由 app / polling worker 调用）

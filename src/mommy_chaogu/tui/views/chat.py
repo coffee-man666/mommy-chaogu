@@ -9,10 +9,13 @@ import contextlib
 import logging
 from typing import ClassVar
 
+from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Input, Static
+
+from mommy_chaogu.tui.messages import StepStatus
 
 _log = logging.getLogger(__name__)
 
@@ -27,19 +30,59 @@ PRESET_QUESTIONS = [
     "收盘报告",
 ]
 
-_WELCOME = """\
-[dim]╭───────────────────────────────────╮
-│  mommy-chaogu · AI 对话            │
-│                                   │
-│  输入消息开始对话                  │
-│  Tab 切换看板 · Ctrl+Q 退出        │
-╰───────────────────────────────────╯[/]
 
-"""
+def _build_welcome() -> str:
+    """构建欢迎页文本（含预设问题列表）。"""
+    lines = [
+        "[bold cyan]mommy-chaogu · AI 对话[/]",
+        "",
+        "[dim]输入消息开始对话，或按数字键快捷提问：[/]",
+        "",
+    ]
+    for i, q in enumerate(PRESET_QUESTIONS, 1):
+        lines.append(f"  [bold]{i}[/]  {q}")
+    lines.append("")
+    lines.append("[dim]↑↓ 历史记录 · Esc 取消 · Tab 切换看板 · Ctrl+Q 退出[/]")
+    lines.append("")
+    return "\n".join(lines)
 
 
 class ChatInput(Input):
-    """聊天输入框。"""
+    """聊天输入框（支持 ↑↓ 历史导航 + 数字快捷提问）。"""
+
+    def on_key(self, event: events.Key) -> None:
+        """拦截 ↑↓（历史导航）和 1-7（预设问题，仅欢迎页可见时）。
+
+        on_key 在 Input._on_key 之前调用（MRO 顺序），
+        对需要拦截的按键调用 prevent_default() 阻止 Input._on_key。
+        """
+        # ↑/↓: 历史导航
+        if event.key == "up":
+            chat = self._chat_view()
+            if chat is not None:
+                chat.history_prev()
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key == "down":
+            chat = self._chat_view()
+            if chat is not None:
+                chat.history_next()
+            event.prevent_default()
+            event.stop()
+            return
+        # 1-7: 预设问题（仅欢迎页可见且输入为空时触发）
+        if event.key in ("1", "2", "3", "4", "5", "6", "7") and not self.value:
+            chat = self._chat_view()
+            if chat is not None and chat.welcome_visible():
+                chat.send_preset(int(event.key) - 1)
+                event.prevent_default()
+                event.stop()
+                return
+
+    def _chat_view(self) -> ChatView | None:
+        parent = self.parent
+        return parent if isinstance(parent, ChatView) else None
 
 
 class ChatView(Vertical):
@@ -47,18 +90,93 @@ class ChatView(Vertical):
 
     BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
         Binding("ctrl+l", "clear_log", "清屏", show=False),
+        Binding("escape", "cancel_chat", "取消", show=False),
     ]
 
     def __init__(self, id: str = "chat") -> None:
         super().__init__(id=id)
+        self._history: list[str] = []
+        self._history_idx: int = -1  # -1 表示在"新输入"位置
+        self._busy: bool = False
+        self._cancelled: bool = False
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-log"):
-            yield Static(_WELCOME, id="chat-welcome")
-        yield ChatInput(placeholder="输入消息... (Tab→看板, Ctrl+Q退出)", id="prompt")
+            yield Static(_build_welcome(), id="chat-welcome")
+        yield ChatInput(placeholder="输入消息... (Tab→看板, Esc→取消)", id="prompt")
 
     def on_mount(self) -> None:
         self.query_one("#prompt", ChatInput).focus()
+
+    # ------------------------------------------------------------------
+    # 状态管理
+    # ------------------------------------------------------------------
+
+    def set_busy(self, busy: bool) -> None:
+        """标记是否正在处理消息。"""
+        self._busy = busy
+        if busy:
+            self._cancelled = False
+
+    def is_cancelled(self) -> bool:
+        """检查当前对话是否被取消。"""
+        return self._cancelled
+
+    def clear_cancelled(self) -> None:
+        """重置取消标记。"""
+        self._cancelled = False
+
+    def welcome_visible(self) -> bool:
+        """欢迎页是否可见。"""
+        try:
+            self.query_one("#chat-welcome")
+        except Exception:
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # 输入历史
+    # ------------------------------------------------------------------
+
+    def history_prev(self) -> None:
+        """导航到上一条历史消息。"""
+        if not self._history:
+            return
+        if self._history_idx == -1:
+            self._history_idx = len(self._history) - 1
+        elif self._history_idx > 0:
+            self._history_idx -= 1
+        else:
+            return
+        prompt = self.query_one("#prompt", ChatInput)
+        prompt.value = self._history[self._history_idx]
+        prompt.cursor_position = len(prompt.value)
+
+    def history_next(self) -> None:
+        """导航到下一条历史消息。"""
+        if self._history_idx == -1:
+            return
+        prompt = self.query_one("#prompt", ChatInput)
+        if self._history_idx < len(self._history) - 1:
+            self._history_idx += 1
+            prompt.value = self._history[self._history_idx]
+        else:
+            self._history_idx = -1
+            prompt.value = ""
+        prompt.cursor_position = len(prompt.value)
+
+    # ------------------------------------------------------------------
+    # 预设问题
+    # ------------------------------------------------------------------
+
+    def send_preset(self, idx: int) -> None:
+        """发送预设问题。"""
+        if idx < 0 or idx >= len(PRESET_QUESTIONS):
+            return
+        text = PRESET_QUESTIONS[idx]
+        self._history.append(text)
+        self._history_idx = -1
+        self.app.handle_chat_message(text)  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # 消息处理
@@ -69,14 +187,18 @@ class ChatView(Vertical):
         text = event.value.strip()
         if not text:
             return
-        # 委托给 app 处理（app 有 services 上下文）
+        self._history.append(text)
+        self._history_idx = -1
         self.app.handle_chat_message(text)  # type: ignore[attr-defined]
         event.input.value = ""
+
+    # ------------------------------------------------------------------
+    # 消息追加
+    # ------------------------------------------------------------------
 
     def append_user(self, text: str) -> None:
         """追加用户消息。"""
         log = self.query_one("#chat-log", VerticalScroll)
-        # 移除欢迎语
         with contextlib.suppress(Exception):
             log.query_one("#chat-welcome").remove()
         log.mount(Static(f"[bold]你 ›[/] {text}", classes="user-msg"))
@@ -98,32 +220,56 @@ class ChatView(Vertical):
         ))
         log.scroll_end(animate=False)
 
+    def append_tool_call(self, name: str, args_summary: str) -> None:
+        """追加工具调用记录。"""
+        log = self.query_one("#chat-log", VerticalScroll)
+        suffix = f"({args_summary})" if args_summary else "()"
+        log.mount(Static(f"  [dim]🔧 {name}{suffix}[/]", classes="tool-call"))
+        log.scroll_end(animate=False)
+
     def append_hint(self, text: str) -> None:
         """追加提示卡片。"""
         log = self.query_one("#chat-log", VerticalScroll)
         log.mount(Static(f"[yellow]⚠[/] {text}", classes="hint-card"))
         log.scroll_end(animate=False)
 
-    def update_step_status(self, idx: int, state: str, detail: str = "") -> None:
-        """更新步骤状态（简化版：在日志中追加状态行）。"""
-        mark = {"ok": "✓", "fail": "✗", "running": "⠹"}.get(state, "?")
+    # ------------------------------------------------------------------
+    # 工作流步骤进度（StepStatus 消息驱动）
+    # ------------------------------------------------------------------
+
+    def on_step_status(self, msg: StepStatus) -> None:
+        """接收 StepStatus 消息并显示步骤进度。"""
+        mark = {"ok": "✓", "fail": "✗", "running": "⠹"}.get(msg.state, "?")
+        color = {"ok": "green", "fail": "red", "running": "yellow"}.get(
+            msg.state, "white"
+        )
         log = self.query_one("#chat-log", VerticalScroll)
-        log.mount(Static(f"  {mark} {detail}", classes="step-status"))
+        log.mount(
+            Static(
+                f"  [{color}]{mark}[/{color}] {msg.detail}",
+                classes="step-status",
+            )
+        )
         log.scroll_end(animate=False)
+
+    # ------------------------------------------------------------------
+    # 清屏 / 取消
+    # ------------------------------------------------------------------
 
     def clear_messages(self) -> None:
         """清空对话区。"""
         log = self.query_one("#chat-log", VerticalScroll)
         log.query("*").remove()
-        log.mount(Static(_WELCOME, id="chat-welcome"))
+        log.mount(Static(_build_welcome(), id="chat-welcome"))
 
     def action_clear_log(self) -> None:
         """Ctrl+L 清屏。"""
         self.clear_messages()
 
-    # ------------------------------------------------------------------
-    # 流式消息接收（P2 实现）
-    # ------------------------------------------------------------------
-
-    # def on_agent_chunk(self, msg: AgentChunk) -> None: ...
-    # def on_agent_done(self, msg: AgentDone) -> None: ...
+    def action_cancel_chat(self) -> None:
+        """Esc 取消当前对话。"""
+        if not self._busy:
+            return
+        self._cancelled = True
+        self._busy = False
+        self.append_hint("已取消当前对话")

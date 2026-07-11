@@ -17,6 +17,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.widgets import ContentSwitcher, Input
 
+from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.screens.help import HelpScreen
 from mommy_chaogu.tui.screens.main import MainScreen
 from mommy_chaogu.tui.services.bootstrap import Services
@@ -25,6 +26,19 @@ from mommy_chaogu.tui.views.dashboard import DashboardView
 from mommy_chaogu.tui.widgets.top_bar import TopBar
 
 _log = logging.getLogger(__name__)
+
+
+def _format_tool_args(args: dict[str, Any]) -> str:
+    """Compact display of tool arguments for chat log."""
+    parts: list[str] = []
+    for v in args.values():
+        if isinstance(v, str) and len(v) <= 30:
+            parts.append(v)
+        elif isinstance(v, (int, float)):
+            parts.append(str(v))
+        elif isinstance(v, str):
+            parts.append(v[:27] + "…")
+    return ", ".join(parts)
 
 
 class MommyTuiApp(App[None]):
@@ -90,15 +104,136 @@ class MommyTuiApp(App[None]):
     # ------------------------------------------------------------------
 
     def handle_chat_message(self, text: str) -> None:
-        """处理用户输入的消息。"""
+        """处理用户输入的消息：路由 → 工作流 / Agent / 提示。"""
         chat = self.query_one(ChatView)
         chat.append_user(text)
-        # stub：agent 接入后替换为流式调用
-        chat.append_assistant("（stub）Agent 接入中…")
+        chat.set_busy(True)
+
+        # 1. 尝试工作流路由
+        route = self.services.agent.route(text)
+        if route is not None and getattr(route, "matched", False):
+            workflow = getattr(route, "workflow", None)
+            if workflow is not None:
+                step_names = [s.display_name for s in workflow.steps]
+                chat.append_workflow_match(workflow.description, step_names)
+
+                def _run_workflow() -> None:
+                    self._do_workflow(route, text)
+
+                self.run_worker(_run_workflow, name="workflow", thread=True)
+                return
+
+        # 2. 无工作流匹配 → 走 Agent
+        if self.services.agent.has_agent():
+            def _run_agent() -> None:
+                self._do_agent_chat(text)
+
+            self.run_worker(_run_agent, name="agent-chat", thread=True)
+            return
+
+        # 3. 无 Agent → 提示配置
+        chat.set_busy(False)
+        chat.append_hint(
+            "未配置 AI agent。请在 .env 中设置 API key"
+            "（如 DEEPSEEK_API_KEY），或运行 `mommy --setup` 进行配置。"
+        )
 
     def open_stock_detail(self, code: str) -> None:
         """打开个股详情屏（P1 实现）。"""
         self.notify(f"个股详情（{code}）开发中", timeout=2)
+
+    # ------------------------------------------------------------------
+    # 工作流执行（worker 线程）
+    # ------------------------------------------------------------------
+
+    def _do_workflow(self, route: Any, text: str) -> None:
+        """worker 线程内执行工作流，通过 call_from_thread 回主线程更新 UI。"""
+        step_idx = 0
+
+        def on_step_start(display_name: str) -> None:
+            nonlocal step_idx
+            idx = step_idx
+            step_idx += 1
+            self.call_from_thread(self._post_step, idx, "running", display_name)
+
+        def on_step_done(display_name: str, success: bool) -> None:
+            idx = step_idx - 1
+            state = "ok" if success else "fail"
+            self.call_from_thread(self._post_step, idx, state, display_name)
+
+        try:
+            result = self.services.agent.execute_workflow(
+                route, text, on_step_start, on_step_done
+            )
+        except Exception as e:
+            _log.warning("工作流执行失败: %s", e)
+            self.call_from_thread(self._on_chat_error, f"工作流出错：{e}")
+            return
+
+        summary = ""
+        if result is not None:
+            summary = getattr(result, "summary", "") or ""
+        self.call_from_thread(self._on_workflow_done, summary)
+
+    def _post_step(self, idx: int, state: str, detail: str) -> None:
+        """主线程：向 ChatView 发送 StepStatus 消息。"""
+        chat = self.query_one(ChatView)
+        chat.post_message(StepStatus(idx=idx, state=state, detail=detail))
+
+    def _on_workflow_done(self, summary: str) -> None:
+        """主线程：工作流执行完成。"""
+        chat = self.query_one(ChatView)
+        if chat.is_cancelled():
+            chat.clear_cancelled()
+            chat.set_busy(False)
+            return
+        text = summary if summary else "工作流执行完成。"
+        chat.append_assistant(text)
+        chat.set_busy(False)
+
+    # ------------------------------------------------------------------
+    # Agent 对话（worker 线程）
+    # ------------------------------------------------------------------
+
+    def _do_agent_chat(self, text: str) -> None:
+        """worker 线程内调用 agent.chat，工具调用实时回传 UI。"""
+        def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
+            args_str = _format_tool_args(fn_args)
+            self.call_from_thread(self._post_tool_call, fn_name, args_str)
+
+        try:
+            resp = self.services.agent.chat(text, on_tool_call=on_tool_call)
+        except Exception as e:
+            _log.warning("Agent chat 失败: %s", e)
+            self.call_from_thread(self._on_chat_error, f"Agent 出错：{e}")
+            return
+
+        reply = ""
+        if resp is not None:
+            reply = getattr(resp, "text", "") or ""
+        self.call_from_thread(self._on_agent_done, reply)
+
+    def _post_tool_call(self, name: str, args_summary: str) -> None:
+        """主线程：在对话流中追加工具调用记录。"""
+        chat = self.query_one(ChatView)
+        chat.append_tool_call(name, args_summary)
+
+    def _on_agent_done(self, reply: str) -> None:
+        """主线程：Agent 回复完成。"""
+        chat = self.query_one(ChatView)
+        if chat.is_cancelled():
+            chat.clear_cancelled()
+            chat.set_busy(False)
+            return
+        text = reply if reply else "（无回复）"
+        chat.append_assistant(text)
+        chat.set_busy(False)
+
+    def _on_chat_error(self, error: str) -> None:
+        """主线程：对话出错。"""
+        chat = self.query_one(ChatView)
+        chat.append_hint(error)
+        chat.set_busy(False)
 
     # ------------------------------------------------------------------
     # 数据刷新
