@@ -341,6 +341,10 @@ def main() -> None:
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+    # 启动前检查 .env 配置，未配置则引导用户完成向导
+    from mommy_chaogu.setup import check_and_run_setup
+
+    check_and_run_setup()
     app = MommyTuiApp()
     app.run()
 
