@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from anyio import to_thread
+from dotenv import load_dotenv
 
 if TYPE_CHECKING:
     from mommy_chaogu.agent.service import AgentService
@@ -28,6 +29,8 @@ class TUIDataService:
     """TUI 专用数据服务，直接调项目内部 adapter/store。"""
 
     def __init__(self) -> None:
+        load_dotenv()
+
         from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
         from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
         from mommy_chaogu.market_data import (
@@ -69,6 +72,7 @@ class TUIDataService:
             os.environ.get("DEEPSEEK_API_KEY")
             or os.environ.get("OPENAI_API_KEY")
             or os.environ.get("ZAI_API_KEY")
+            or os.environ.get("MOONSHOT_API_KEY")
         )
         if not api_key:
             _log.info("未配置 API key，Agent 功能不可用")
@@ -267,9 +271,9 @@ class TUIDataService:
         return await to_thread.run_sync(_chat)
 
     # ------------------------------------------------------------------
-    # 辅助：数据年龄
+    # 辅助：当前时间
     # ------------------------------------------------------------------
 
-    def get_cache_age(self) -> str:
-        """获取缓存数据年龄描述。"""
+    def get_current_time(self) -> str:
+        """获取当前时间。"""
         return datetime.now().strftime("%H:%M:%S")

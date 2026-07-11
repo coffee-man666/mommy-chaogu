@@ -1,6 +1,6 @@
 """实时行情表（DataTable + 定时刷新）。
 
-列：代码/名称/现价/涨跌幅/主力。
+列：代码/名称/现价/涨跌幅。
 选中行回车 → push 详情屏。
 红涨绿跌（A 股习惯）。
 """
@@ -80,11 +80,15 @@ class QuoteTable(Vertical):
         table.add_column("名称", width=10)
         table.add_column("现价", width=10)
         table.add_column("涨跌幅", width=10)
-        table.add_column("主力", width=10)
 
-        # 加载自选股代码
-        self._refresh_task = asyncio.get_event_loop().create_task(self._load_and_refresh())
-        self.set_interval(5, self._refresh_quotes)
+        # 加载自选股代码（set_interval 在初始加载完成后启动）
+        self._refresh_task = asyncio.create_task(self._load_and_refresh())
+
+    def on_unmount(self) -> None:
+        """卸载时取消正在进行的刷新任务。"""
+        task = self._refresh_task
+        if isinstance(task, asyncio.Task) and not task.done():
+            task.cancel()
 
     async def _load_and_refresh(self) -> None:
         """启动时加载全部自选股代码。"""
@@ -114,6 +118,7 @@ class QuoteTable(Vertical):
             self._code_name.setdefault(c, c)
 
         await self._refresh_quotes()
+        self.set_interval(5, self._refresh_quotes)
 
     async def _refresh_quotes(self) -> None:
         """从 data_service 拉取行情并更新表格。"""
@@ -151,24 +156,22 @@ class QuoteTable(Vertical):
                 pct_color = COLOR_FLAT
                 price_color = COLOR_FLAT
 
-            # 主力净流入暂不可用
-            flow_str = "—"
-
             table.add_row(
                 code,
                 name,
                 (price_str, price_color),
                 (pct_str, pct_color),
-                flow_str,
             )
 
     def action_activate_row(self) -> None:
         """回车：推送详情屏。"""
         table = self.query_one("#quote-grid", DataTable)
-        if table.cursor_row is None or table.cursor_row < 0:
-            return
         with contextlib.suppress(Exception):
-            row_key = table.coordinate_to_cell_key(Coordinate(table.cursor_row, 0)).row_key
+            if table.cursor_row < 0:
+                return
+            row_key = table.coordinate_to_cell_key(
+                Coordinate(table.cursor_row, 0)
+            ).row_key
             code = str(row_key.value)
             name = self._code_name.get(code, code)
             self.post_message(self.QuoteRowActivated(code=code, name=name))

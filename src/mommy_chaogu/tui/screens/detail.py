@@ -20,6 +20,8 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Sparkline, Static
 
+from mommy_chaogu.market_data.types import Quote
+
 _log = logging.getLogger(__name__)
 
 COLOR_UP = "red"
@@ -36,7 +38,8 @@ class DetailScreen(Screen[object]):
     """
 
     BINDINGS: ClassVar[_Bindings] = [
-        Binding("escape,q", "pop_screen", "返回", show=True),
+        Binding("escape", "pop_screen", "返回"),
+        Binding("q", "pop_screen", "返回", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -83,7 +86,7 @@ class DetailScreen(Screen[object]):
             with Vertical():
                 yield Static("加载中…", id="detail-quote-info", classes="detail-quote")
                 yield Static("📈 近 20 日走势", id="detail-spark-title")
-                yield Sparkline(id="detail-spark", data=[0.0])
+                yield Sparkline(id="detail-spark")
             with Vertical(classes="detail-kline"):
                 yield Static("📊 近 10 日 K 线", classes="detail-title")
                 yield DataTable(id="detail-kline-table")
@@ -98,7 +101,13 @@ class DetailScreen(Screen[object]):
         table.add_column("量", width=14)
         table.add_column("涨跌", width=10)
 
-        asyncio.get_event_loop().create_task(self._load_detail())
+        self._load_task = asyncio.create_task(self._load_detail())
+
+    def on_unmount(self) -> None:
+        """卸载时取消未完成的加载任务，避免操作已销毁的 widget。"""
+        task = getattr(self, "_load_task", None)
+        if task is not None and not task.done():
+            task.cancel()
 
     async def _load_detail(self) -> None:
         """加载详情数据：报价 + 走势 + K 线。"""
@@ -144,17 +153,17 @@ class DetailScreen(Screen[object]):
         # K 线表（最近 10 天）
         self._render_klines(bars[-10:])
 
-    def _render_quote(self, quote: object) -> None:
+    def _render_quote(self, quote: Quote) -> None:
         """渲染报价信息卡。"""
         try:
-            price = quote.price  # type: ignore[attr-defined]
-            change = quote.change  # type: ignore[attr-defined]
-            change_pct = quote.change_pct  # type: ignore[attr-defined]
-            volume = quote.volume  # type: ignore[attr-defined]
-            turnover = quote.turnover.amount  # type: ignore[attr-defined]
-            turnover_rate = getattr(quote, "turnover_rate", None)
-            pe = getattr(quote, "pe_dynamic", None)
-            prev_close = quote.prev_close  # type: ignore[attr-defined]
+            price = quote.price
+            change = quote.change
+            change_pct = quote.change_pct
+            volume = quote.volume
+            turnover = quote.turnover.amount
+            turnover_rate = quote.turnover_rate
+            pe = quote.pe_dynamic
+            prev_close = quote.prev_close
 
             pct_val = float(change_pct)
             color = COLOR_UP if pct_val > 0 else (COLOR_DOWN if pct_val < 0 else "white")
@@ -190,7 +199,7 @@ class DetailScreen(Screen[object]):
         table.clear()
         for b in reversed(bars):  # 最新在上
             date = str(b.get("date", ""))
-            close = b.get("close", 0)
+            close = b.get("close")
             change_pct = b.get("change_pct")
 
             pct_val = float(change_pct) if change_pct else 0.0
@@ -200,12 +209,16 @@ class DetailScreen(Screen[object]):
             vol = int(b.get("volume", 0))
             vol_wan = vol / 10000
 
+            open_v = b.get("open")
+            high_v = b.get("high")
+            low_v = b.get("low")
+
             table.add_row(
                 date,
-                f"{float(b.get('open', 0)):.2f}",
-                f"{float(b.get('high', 0)):.2f}",
-                f"{float(b.get('low', 0)):.2f}",
-                f"{float(close):.2f}",
+                f"{float(open_v):.2f}" if open_v is not None else "—",
+                f"{float(high_v):.2f}" if high_v is not None else "—",
+                f"{float(low_v):.2f}" if low_v is not None else "—",
+                f"{float(close):.2f}" if close is not None else "—",
                 f"{vol_wan:,.1f}万",
                 pct_str,
             )

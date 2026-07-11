@@ -35,21 +35,29 @@ class MommyTUIApp(App[None]):
         super().__init__()
         self.data_service = TUIDataService()
         self._mode = "chat"
+        self._chat_screen: ChatScreen | None = None
+        self._dashboard_screen: DashboardScreen | None = None
 
     def on_mount(self) -> None:
         """挂载默认主屏（沉浸式对话）。"""
-        self.push_screen(ChatScreen())
+        if self._chat_screen is None:
+            self._chat_screen = ChatScreen()
+        self.push_screen(self._chat_screen)
 
     def action_cycle_screen(self) -> None:
         """Tab 切换模式：对话 ↔ 看板。"""
         if self._mode == "chat":
             self._mode = "dashboard"
             self.pop_screen()
-            self.push_screen(DashboardScreen())
+            if self._dashboard_screen is None:
+                self._dashboard_screen = DashboardScreen()
+            self.push_screen(self._dashboard_screen)
         else:
             self._mode = "chat"
             self.pop_screen()
-            self.push_screen(ChatScreen())
+            if self._chat_screen is None:
+                self._chat_screen = ChatScreen()
+            self.push_screen(self._chat_screen)
 
 
 def main() -> None:

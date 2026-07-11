@@ -10,16 +10,21 @@ Widget {
     scrollbar-size: 1 1;
 }
 
-/* Markdown 渲染样式 */
+/* Markdown 渲染样式
+   Textual 8.x 的 Markdown widget 内部不使用 .markdown--code / .markdown--block
+   这类 class；它拆成 MarkdownBlock / MarkdownFence / MarkdownParagraph 等
+   子 widget。用 widget 类型选择器更稳定。 */
 Markdown {
     padding: 0 1;
 }
 
-Markdown > .markdown--code {
+/* 围栏代码块（```）——对应旧 .markdown--code */
+MarkdownFence {
     background: $boost;
     color: $text;
 }
 
-Markdown > .markdown--block {
+/* 每个 Markdown 块底部留白——对应旧 .markdown--block */
+MarkdownBlock {
     margin: 0 0 1 0;
 }

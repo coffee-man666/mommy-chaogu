@@ -8,7 +8,6 @@ Tab → 切换回对话。
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 from typing import ClassVar
@@ -17,6 +16,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
+from textual.timer import Timer
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
 from mommy_chaogu.tui.widgets.quote_table import QuoteTable
@@ -59,13 +59,13 @@ class HoldingsTable(Vertical):
 
     def __init__(self, id: str | None = None) -> None:
         super().__init__(id=id)
-        self._refresh_task: object = None
+        self._refresh_task: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("💰 持仓", classes="title")
         yield DataTable(id="holdings-grid", cursor_type="row")
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         table = self.query_one("#holdings-grid", DataTable)
         table.add_column("代码", width=8)
         table.add_column("名称", width=10)
@@ -74,8 +74,12 @@ class HoldingsTable(Vertical):
         table.add_column("现价", width=10)
         table.add_column("盈亏", width=14)
 
-        self._refresh_task = asyncio.get_event_loop().create_task(self._refresh())
-        self.set_interval(10, self._refresh)
+        self._refresh_task = self.set_interval(10, self._refresh)
+        await self._refresh()
+
+    def on_unmount(self) -> None:
+        if self._refresh_task is not None:
+            self._refresh_task.stop()
 
     async def _refresh(self) -> None:
         data_service = getattr(self.app, "data_service", None)
@@ -147,20 +151,24 @@ class ThemeBrowser(Vertical):
 
     def __init__(self, id: str | None = None) -> None:
         super().__init__(id=id)
-        self._load_task: object = None
+        self._load_task: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("🏭 半导体产业链", classes="title")
         yield DataTable(id="theme-grid", cursor_type="row", zebra_stripes=True)
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         table = self.query_one("#theme-grid", DataTable)
         table.add_column("链条", width=16)
         table.add_column("环节", width=14)
         table.add_column("代码", width=8)
         table.add_column("名称", width=14)
 
-        self._load_task = asyncio.get_event_loop().create_task(self._load())
+        await self._load()
+
+    def on_unmount(self) -> None:
+        if self._load_task is not None:
+            self._load_task.stop()
 
     async def _load(self) -> None:
         from anyio import to_thread
@@ -174,7 +182,7 @@ class ThemeBrowser(Vertical):
                 rows: list[tuple[str, str, str, str]] = []
                 all_stocks = store.list_all()
                 for s in all_stocks:
-                    chain = getattr(s, "chain", "") or ""
+                    chain = getattr(s, "chain_position", "") or ""
                     sub = getattr(s, "subcategory", "") or ""
                     code = getattr(s, "code", "") or ""
                     name = getattr(s, "name", "") or ""
@@ -220,20 +228,24 @@ class SignalList(Vertical):
 
     def __init__(self, id: str | None = None) -> None:
         super().__init__(id=id)
-        self._eval_task: object = None
+        self._eval_task: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("🔔 信号监控", classes="title")
         yield DataTable(id="signal-grid", cursor_type="row")
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         table = self.query_one("#signal-grid", DataTable)
         table.add_column("规则", width=24)
         table.add_column("描述", width=40)
 
         self._load_rules()
-        self._eval_task = asyncio.get_event_loop().create_task(self._evaluate())
-        self.set_interval(15, self._evaluate)
+        self._eval_task = self.set_interval(15, self._evaluate)
+        await self._evaluate()
+
+    def on_unmount(self) -> None:
+        if self._eval_task is not None:
+            self._eval_task.stop()
 
     def _load_rules(self) -> None:
         """加载内置告警规则列表。"""

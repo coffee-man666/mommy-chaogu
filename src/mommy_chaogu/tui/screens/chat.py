@@ -74,7 +74,7 @@ class ChatScreen(Screen[object]):
         super().__init__()
         self._history: list[dict[str, str]] = []
         self._busy = False
-        self._chat_task: object = None
+        self._chat_task: asyncio.Task[None] | None = None
 
     def compose(self) -> ComposeResult:
         yield IndexStrip()
@@ -102,6 +102,12 @@ class ChatScreen(Screen[object]):
                     "ZAI_API_KEY 后可用"
                 )
 
+    def on_unmount(self) -> None:
+        """卸载时取消正在进行的对话任务，避免悬空 task。"""
+        task = self._chat_task
+        if isinstance(task, asyncio.Task) and not task.done():
+            task.cancel()
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """回车发送消息。"""
         if self._busy:
@@ -111,54 +117,64 @@ class ChatScreen(Screen[object]):
             return
 
         event.input.clear()
-        self._chat_task = asyncio.get_event_loop().create_task(self._handle_chat(text))
+        self._chat_task = asyncio.create_task(self._handle_chat(text))
 
     async def _handle_chat(self, text: str) -> None:
         """处理一次对话：显示用户消息 → 调 agent → 显示回复。"""
         self._busy = True
+        try:
+            scroll = self.query_one("#chat-scroll", VerticalScroll)
 
-        scroll = self.query_one("#chat-scroll", VerticalScroll)
+            # 移除欢迎语
+            with contextlib.suppress(Exception):
+                welcome = self.query_one("#chat-welcome")
+                welcome.remove()
 
-        # 移除欢迎语
-        with contextlib.suppress(Exception):
-            welcome = self.query_one("#chat-welcome")
-            welcome.remove()
+            # 1. 追加用户消息
+            user_msg = ChatMessage(role="user", content=text)
+            await scroll.mount(user_msg)
 
-        # 1. 追加用户消息
-        user_msg = ChatMessage(role="user", content=text)
-        await scroll.mount(user_msg)
+            # 2. 创建 assistant Markdown 占位
+            assistant_msg = ChatMessage(role="assistant", content="*思考中…*")
+            await scroll.mount(assistant_msg)
 
-        # 2. 创建 assistant Markdown 占位
-        assistant_msg = ChatMessage(role="assistant", content="*思考中…*")
-        await scroll.mount(assistant_msg)
+            # 滚动到底部
+            scroll.scroll_end(animate=False)
 
-        # 滚动到底部
-        scroll.scroll_end(animate=False)
+            data_service = getattr(self.app, "data_service", None)
 
-        data_service = getattr(self.app, "data_service", None)
+            # 3. 调 data_service.chat(message)
+            # TODO: data_service.chat() 尚不支持 on_tool_call 回调，
+            #       待支持后可在调用时传入回调，用 ToolIndicator 展示工具调用过程。
+            if data_service is None:
+                await assistant_msg.update_content("❌ 数据服务未就绪")
+            else:
+                try:
+                    reply = await data_service.chat(text, history=self._history)
+                except Exception as e:
+                    _log.warning("agent chat 失败: %s", e)
+                    reply = f"❌ Agent 调用失败: {e}"
 
-        # 3. 调 data_service.chat(message)
-        if data_service is None:
-            await assistant_msg.update_content("❌ 数据服务未就绪")
-        else:
-            try:
-                reply = await data_service.chat(text, history=self._history)
-            except Exception as e:
-                _log.warning("agent chat 失败: %s", e)
-                reply = f"❌ Agent 调用失败: {e}"
+                # 记录历史（只保留最近 20 轮（40 条消息））
+                self._history.append({"role": "user", "content": text})
+                self._history.append({"role": "assistant", "content": reply})
+                if len(self._history) > 40:
+                    self._history = self._history[-40:]
 
-            # 记录历史（只保留最近 20 轮）
-            self._history.append({"role": "user", "content": text})
-            self._history.append({"role": "assistant", "content": reply})
-            if len(self._history) > 40:
-                self._history = self._history[-40:]
+                # 4. 结果用 Markdown widget 渲染
+                await assistant_msg.update_content(reply)
 
-            # 4. 结果用 Markdown widget 渲染
-            await assistant_msg.update_content(reply)
-
-        scroll.scroll_end(animate=False)
-        self._busy = False
-
-        # 重新聚焦到输入框
-        with contextlib.suppress(Exception):
-            self.query_one("#chat-input", Input).focus()
+            scroll.scroll_end(animate=False)
+        except Exception as e:
+            _log.exception("chat 处理失败")
+            # 向用户展示错误（UI 中没有专门的错误区，用 ChatMessage 展示）
+            with contextlib.suppress(Exception):
+                scroll = self.query_one("#chat-scroll", VerticalScroll)
+                err_msg = ChatMessage(role="assistant", content=f"⚠️ 出错了: {e}")
+                await scroll.mount(err_msg)
+                scroll.scroll_end(animate=False)
+        finally:
+            self._busy = False
+            # 重新聚焦到输入框
+            with contextlib.suppress(Exception):
+                self.query_one("#chat-input", Input).focus()

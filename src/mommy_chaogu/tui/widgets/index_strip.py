@@ -40,14 +40,17 @@ class IndexStrip(Horizontal):
 
     def __init__(self, id: str | None = None) -> None:
         super().__init__(id=id)
-        self._refresh_task: object = None
+        self._refresh_task: asyncio.Task[None] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("加载指数中…", id="index-text")
 
     def on_mount(self) -> None:
-        self._refresh_task = asyncio.get_event_loop().create_task(self._refresh())
         self.set_interval(30, self._refresh)
+
+    def on_unmount(self) -> None:
+        if self._refresh_task is not None:
+            self._refresh_task.cancel()
 
     async def _refresh(self) -> None:
         data_service = getattr(self.app, "data_service", None)

@@ -45,7 +45,7 @@ class StatusBar(Horizontal):
 
     def __init__(self, id: str | None = None) -> None:
         super().__init__(id=id)
-        self._portfolio_task: object = None
+        self._portfolio_task: asyncio.Task[None] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("📊 Efinance+Tencent", id="status-source", classes="status-left")
@@ -54,7 +54,11 @@ class StatusBar(Horizontal):
 
     def on_mount(self) -> None:
         self.set_interval(10, self._refresh_portfolio)
-        self._portfolio_task = asyncio.get_event_loop().create_task(self._refresh_portfolio_async())
+        self._refresh_portfolio()
+
+    def on_unmount(self) -> None:
+        if self._portfolio_task is not None:
+            self._portfolio_task.cancel()
 
     def _update_time(self) -> None:
         with contextlib.suppress(Exception):
@@ -62,7 +66,7 @@ class StatusBar(Horizontal):
             time_label.update(f"刷新: {datetime.now():%H:%M:%S}")
 
     def _refresh_portfolio(self) -> None:
-        self._portfolio_task = asyncio.get_event_loop().create_task(self._refresh_portfolio_async())
+        self._portfolio_task = asyncio.create_task(self._refresh_portfolio_async())
 
     async def _refresh_portfolio_async(self) -> None:
         data_service = getattr(self.app, "data_service", None)
