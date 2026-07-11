@@ -1,18 +1,21 @@
 """ChatView — AI 对话视图（§6.6）。
 
 模式 A：对话流 + 输入框。Tab 键切换到看板。
+支持 Claude Code 风格的 /command 斜杠命令（内联补全）。
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
+from dataclasses import dataclass
 from typing import ClassVar
 
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
+from textual.suggester import Suggester
 from textual.widgets import Collapsible, Input, Markdown, Static
 
 from mommy_chaogu.tui.messages import StepStatus
@@ -31,6 +34,56 @@ PRESET_QUESTIONS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Slash 命令注册表
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SlashCommand:
+    """一条斜杠命令定义。"""
+
+    name: str  # 不含 /，如 "refresh"
+    description: str  # 中文说明
+    has_args: bool = False  # 是否接受参数
+
+
+SLASH_COMMANDS: dict[str, SlashCommand] = {
+    cmd.name: cmd
+    for cmd in [
+        SlashCommand("help", "按键速查"),
+        SlashCommand("refresh", "刷新行情数据"),
+        SlashCommand("clear", "清空对话区"),
+        SlashCommand("dashboard", "切换到看板"),
+        SlashCommand("chat", "切换到对话"),
+        SlashCommand("theme", "切换主题"),
+        SlashCommand("watch", "查看个股详情 (如 /watch 688981)", has_args=True),
+        SlashCommand("flows", "查看资金流 (如 /flows 688981)", has_args=True),
+        SlashCommand("memory", "查看记忆系统"),
+        SlashCommand("quit", "退出"),
+    ]
+}
+
+
+class SlashSuggester(Suggester):
+    """输入 / 时提供内联补全建议（灰色文字）。"""
+
+    def __init__(self) -> None:
+        super().__init__(use_cache=False, case_sensitive=True)
+
+    async def get_suggestion(self, value: str) -> str | None:
+        """根据当前输入返回补全建议。"""
+        if not value.startswith("/"):
+            return None
+        # 提取 / 后的命令前缀（casefold 以支持大小写不敏感）
+        typed = value[1:].split(None, 1)[0].casefold() if len(value) > 1 else ""
+        for name, cmd in SLASH_COMMANDS.items():
+            if name.startswith(typed):
+                suffix = " " if cmd.has_args else ""
+                return f"/{name}{suffix}"
+        return None
+
+
 def _build_welcome() -> str:
     """构建欢迎页文本（含预设问题列表）。"""
     lines = [
@@ -42,13 +95,16 @@ def _build_welcome() -> str:
     for i, q in enumerate(PRESET_QUESTIONS, 1):
         lines.append(f"  [bold]{i}[/]  {q}")
     lines.append("")
-    lines.append("[dim]↑↓ 历史记录 · Esc 取消 · Tab 切换看板 · Ctrl+Q 退出[/]")
+    lines.append("[dim]↑↓ 历史记录 · / 命令 · Esc 取消 · Tab 切换看板 · Ctrl+Q 退出[/]")
     lines.append("")
     return "\n".join(lines)
 
 
 class ChatInput(Input):
-    """聊天输入框（支持 ↑↓ 历史导航 + 数字快捷提问）。"""
+    """聊天输入框（支持 ↑↓ 历史导航 + 数字快捷提问 + / 斜杠补全）。"""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, suggester=SlashSuggester(), **kwargs)  # type: ignore[arg-type]
 
     def on_key(self, event: events.Key) -> None:
         """拦截 ↑↓（历史导航）和 1-7（预设问题，仅欢迎页可见时）。
@@ -183,20 +239,73 @@ class ChatView(Vertical):
     # ------------------------------------------------------------------
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """发送消息。"""
+        """发送消息或执行斜杠命令。"""
         if event.input.id != "prompt":
             return
         text = event.value.strip()
         if not text:
             return
+        # 斜杠命令拦截
+        if text.startswith("/"):
+            parts = text[1:].split(None, 1)
+            cmd = parts[0].lower() if parts else ""
+            args = parts[1].strip() if len(parts) > 1 else ""
+            event.input.value = ""
+            self._dispatch_slash(cmd, args)
+            return
+        # 正常 AI 对话
         self._history.append(text)
         self._history_idx = -1
         self.app.handle_chat_message(text)  # type: ignore[attr-defined]
         event.input.value = ""
 
     # ------------------------------------------------------------------
-    # 消息追加
+    # 斜杠命令分发
     # ------------------------------------------------------------------
+
+    def _dispatch_slash(self, cmd: str, args: str) -> None:
+        """执行斜杠命令。"""
+        app = self.app
+        if cmd not in SLASH_COMMANDS:
+            available = ", ".join(f"/{name}" for name in SLASH_COMMANDS)
+            self.append_hint(f"未知命令 /{cmd}。可用命令: {available}")
+            return
+
+        if cmd == "help":
+            app.action_help()  # type: ignore[attr-defined]
+        elif cmd == "refresh":
+            app.action_refresh()  # type: ignore[attr-defined]
+            self.append_hint("数据已刷新")
+        elif cmd == "clear":
+            self.clear_messages()
+        elif cmd == "dashboard":
+            from textual.widgets import ContentSwitcher
+
+            switcher = app.query_one("#main", ContentSwitcher)
+            switcher.current = "dashboard"
+        elif cmd == "chat":
+            from textual.widgets import ContentSwitcher
+
+            switcher = app.query_one("#main", ContentSwitcher)
+            switcher.current = "chat"
+        elif cmd == "theme":
+            app.action_cycle_theme()  # type: ignore[attr-defined]
+        elif cmd == "watch":
+            if not args:
+                self.append_hint("用法: /watch <股票代码>，如 /watch 688981")
+            else:
+                app.open_stock_detail(args)  # type: ignore[attr-defined]
+        elif cmd == "flows":
+            if not args:
+                self.append_hint("用法: /flows <股票代码>，如 /flows 688981")
+            else:
+                self.append_hint(
+                    f"查看 {args} 资金流请在终端运行: mommy flows show {args}"
+                )
+        elif cmd == "memory":
+            self.append_hint("查看记忆请在终端运行: mommy memory stats")
+        elif cmd == "quit":
+            app.quit()  # type: ignore[attr-defined]
 
     def append_user(self, text: str) -> None:
         """追加用户消息。"""

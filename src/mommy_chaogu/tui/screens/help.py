@@ -26,6 +26,19 @@ _HELP_TEXT = """\
   ↑ ↓        输入历史
   1-7        发送预设问题（空态时）
   Ctrl+L     清屏
+  /          斜杠命令（输入 / 后 Tab 补全）
+
+## 斜杠命令
+  /help        按键速查
+  /refresh     刷新行情
+  /clear       清空对话
+  /dashboard   切换看板
+  /chat        切换对话
+  /theme       切换主题
+  /watch code  个股详情
+  /flows code  资金流
+  /memory      记忆系统
+  /quit        退出
 
 ## 看板模式
   1-4        切换 自选/持仓/主题/信号
