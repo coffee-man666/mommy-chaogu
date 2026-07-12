@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { getIndexes, getGainers, getLosers, getSectors } from '@/api/market'
 import { getPortfolio } from '@/api/portfolio'
@@ -27,36 +27,52 @@ const sectors = ref<SectorQuote[]>([])
 const portfolio = ref<PortfolioSummary | null>(null)
 
 const loading = ref(true)
-const dataAge = ref(0)
-const errorCount = ref(0)
 const activeTab = ref('gainers')
+const ageNow = ref(Date.now())
+
+type ResourceKey = 'indexes' | 'gainers' | 'losers' | 'sectors' | 'portfolio'
+interface ResourceStatus {
+  error: boolean
+  updatedAt: number | null
+}
+
+const resourceStatus = reactive<Record<ResourceKey, ResourceStatus>>({
+  indexes: { error: false, updatedAt: null },
+  gainers: { error: false, updatedAt: null },
+  losers: { error: false, updatedAt: null },
+  sectors: { error: false, updatedAt: null },
+  portfolio: { error: false, updatedAt: null },
+})
 
 let refreshTimer: number | null = null
 let ageTimer: number | null = null
 
-async function load() {
+async function refreshResource<T>(
+  key: ResourceKey,
+  request: () => Promise<T>,
+  apply: (value: T) => void,
+) {
   try {
-    let failures = 0
-    let successes = 0
-    const [idx, g, l, sec, pf] = await Promise.all([
-      getIndexes().then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
-      getGainers(20).then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
-      getLosers(20).then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
-      getSectors(20).then((v) => { successes++; return v }).catch(() => { failures++; return [] }),
-      getPortfolio().then((v) => { successes++; return v }).catch(() => { failures++; return null }),
-    ])
-    indexes.value = idx
-    gainers.value = g
-    losers.value = l
-    sectors.value = sec
-    portfolio.value = pf
-    errorCount.value = failures
-    if (successes > 0) dataAge.value = 0
-  } catch (e) {
-    console.error(e)
-  } finally {
-    loading.value = false
+    const value = await request()
+    apply(value)
+    resourceStatus[key].error = false
+    resourceStatus[key].updatedAt = Date.now()
+  } catch {
+    resourceStatus[key].error = true
   }
+}
+
+async function load() {
+  loading.value = true
+  await Promise.all([
+    refreshResource('indexes', getIndexes, (value) => { indexes.value = value }),
+    refreshResource('gainers', () => getGainers(20), (value) => { gainers.value = value }),
+    refreshResource('losers', () => getLosers(20), (value) => { losers.value = value }),
+    refreshResource('sectors', () => getSectors(20), (value) => { sectors.value = value }),
+    refreshResource('portfolio', getPortfolio, (value) => { portfolio.value = value }),
+  ])
+  ageNow.value = Date.now()
+  loading.value = false
 }
 
 function goDetail(code: string) {
@@ -77,17 +93,45 @@ function pctClass(pct: string | number | null | undefined): string {
   return n > 0 ? 'text-up' : 'text-down'
 }
 
-const dataDescription = computed(() => {
+const errorCount = computed(() =>
+  Object.values(resourceStatus).filter((status) => status.error).length,
+)
+
+const pageStatusText = computed(() => {
   if (errorCount.value >= 5) return '离线'
-  if (dataAge.value < 30) return '实时'
-  if (dataAge.value < 120) return `${dataAge.value}秒前`
-  return `${Math.floor(dataAge.value / 60)}分钟前`
+  if (errorCount.value > 0) return `${5 - errorCount.value}/5 数据源正常`
+  if (Object.values(resourceStatus).some((status) => status.updatedAt == null)) return '加载中…'
+  return '全部数据源正常'
 })
+
+const activeRankingKey = computed<ResourceKey>(() => {
+  if (activeTab.value === 'losers') return 'losers'
+  if (activeTab.value === 'sectors') return 'sectors'
+  return 'gainers'
+})
+
+function resourceStatusText(key: ResourceKey): string {
+  const status = resourceStatus[key]
+  if (status.updatedAt == null) return status.error ? '加载失败' : '加载中…'
+
+  const age = Math.max(0, Math.floor((ageNow.value - status.updatedAt) / 1000))
+  let freshness = '实时'
+  if (age >= 120) freshness = `${Math.floor(age / 60)}分钟前`
+  else if (age >= 30) freshness = `${age}秒前`
+
+  return status.error ? `刷新失败 · ${freshness}` : freshness
+}
+
+function resourceStatusClass(key: ResourceKey): string {
+  const status = resourceStatus[key]
+  if (!status.error) return 'text-muted-foreground'
+  return status.updatedAt == null ? 'text-destructive' : 'text-yellow-600 dark:text-yellow-300'
+}
 
 onMounted(() => {
   load()
   refreshTimer = window.setInterval(load, 30_000)
-  ageTimer = window.setInterval(() => dataAge.value++, 1000)
+  ageTimer = window.setInterval(() => { ageNow.value = Date.now() }, 1000)
 })
 
 onUnmounted(() => {
@@ -105,9 +149,9 @@ onUnmounted(() => {
       <div class="flex items-baseline justify-between mb-3">
         <h1 class="text-2xl font-bold">📊 盘面</h1>
         <div class="flex items-center gap-1.5">
-          <span class="inline-block w-2 h-2 rounded-full" :class="errorCount >= 5 ? 'bg-red-500' : errorCount > 0 ? 'bg-yellow-500' : 'bg-green-500'" />
+          <span class="inline-block w-2 h-2 rounded-full" :class="loading ? 'animate-pulse bg-yellow-500' : errorCount >= 5 ? 'bg-red-500' : errorCount > 0 ? 'bg-yellow-500' : 'bg-green-500'" />
           <span class="text-xs font-mono opacity-85">
-            {{ dataDescription }} · 30秒刷新
+            {{ pageStatusText }} · 30秒刷新
           </span>
         </div>
       </div>
@@ -122,6 +166,12 @@ onUnmounted(() => {
           <span class="text-base">💰</span>
           <span class="text-sm">持仓</span>
           <Badge variant="secondary" class="text-xs">{{ portfolio.n_positions }}</Badge>
+          <span
+            v-if="resourceStatus.portfolio.error"
+            class="text-xs text-yellow-200"
+          >
+            {{ resourceStatusText('portfolio') }}
+          </span>
         </div>
         <div class="flex items-center gap-2">
           <span class="text-sm font-bold font-mono text-primary-foreground">
@@ -142,7 +192,12 @@ onUnmounted(() => {
 
     <!-- 大盘指数卡片 -->
     <section class="p-3">
-      <h2 class="text-sm font-bold text-muted-foreground mb-2 px-1">📈 大盘指数</h2>
+      <div class="mb-2 flex items-center justify-between px-1">
+        <h2 class="text-sm font-bold text-muted-foreground">📈 大盘指数</h2>
+        <span class="text-xs font-mono" :class="resourceStatusClass('indexes')">
+          {{ resourceStatusText('indexes') }}
+        </span>
+      </div>
 
       <!-- Skeleton 加载态 -->
       <div v-if="loading && indexes.length === 0" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -204,6 +259,10 @@ onUnmounted(() => {
           <TabsTrigger value="sectors" class="text-xs">🏭 板块榜</TabsTrigger>
         </TabsList>
 
+        <div class="mt-2 text-right text-xs font-mono" :class="resourceStatusClass(activeRankingKey)">
+          {{ resourceStatusText(activeRankingKey) }}
+        </div>
+
         <!-- 涨幅榜 -->
         <TabsContent value="gainers">
           <Card>
@@ -251,7 +310,7 @@ onUnmounted(() => {
               </TableBody>
             </Table>
             <div v-if="!loading && gainers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
-              暂无数据
+              {{ resourceStatus.gainers.error ? '涨幅榜加载失败' : '暂无数据' }}
             </div>
           </Card>
         </TabsContent>
@@ -303,7 +362,7 @@ onUnmounted(() => {
               </TableBody>
             </Table>
             <div v-if="!loading && losers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
-              暂无数据
+              {{ resourceStatus.losers.error ? '跌幅榜加载失败' : '暂无数据' }}
             </div>
           </Card>
         </TabsContent>
@@ -354,7 +413,7 @@ onUnmounted(() => {
               </TableBody>
             </Table>
             <div v-if="!loading && sectors.length === 0" class="py-8 text-center text-sm text-muted-foreground">
-              暂无数据
+              {{ resourceStatus.sectors.error ? '板块榜加载失败' : '暂无数据' }}
             </div>
           </Card>
         </TabsContent>
@@ -363,7 +422,7 @@ onUnmounted(() => {
 
     <!-- 加载占位 -->
     <div v-if="loading && indexes.length === 0" class="py-10 text-center text-sm text-muted-foreground">
-      盘面加载中...
+      盘面加载中…
     </div>
   </div>
 </template>

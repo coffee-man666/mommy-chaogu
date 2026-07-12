@@ -77,6 +77,9 @@ class StockDetailScreen(ModalScreen[None]):
     def __init__(self, code: str) -> None:
         super().__init__()
         self.code = code
+        self._stock_name = code
+        self._price_text = "—"
+        self._change_pct: Any = None
 
     # ------------------------------------------------------------------
     # UI 构建
@@ -123,7 +126,7 @@ class StockDetailScreen(ModalScreen[None]):
         # --- 行情头部 ---
         name = self.code
         price_text = "—"
-        change_text = "—"
+        pct: Any = None
         if adapter is not None:
             try:
                 quote = adapter.get_quote(self.code)
@@ -131,13 +134,9 @@ class StockDetailScreen(ModalScreen[None]):
                     name = getattr(quote, "name", self.code) or self.code
                     price_text = format_price(getattr(quote, "price", None))
                     pct = getattr(quote, "change_pct", None)
-                    arrow = change_arrow(pct)
-                    color = change_color(pct)
-                    change_text = f"[{color}]{arrow} {format_change_pct(pct)}[/{color}]"
             except Exception as e:
                 _log.debug("拉取行情 %s 失败: %s", self.code, e)
-        header = f"#{self.code}  {name}    {price_text}  {change_text}"
-        self.app.call_from_thread(self._update_widget, "#stock-header", header)
+        self.app.call_from_thread(self._update_header, name, price_text, pct)
 
         # --- K 线 ---
         if adapter is not None:
@@ -223,6 +222,28 @@ class StockDetailScreen(ModalScreen[None]):
             widget.update(text)
         except Exception as e:  # widget 可能已随弹窗关闭而销毁
             _log.debug("更新 %s 失败: %s", selector, e)
+
+    def _update_header(self, name: str, price_text: str, pct: Any) -> None:
+        """缓存行情头部数据，并按当前主题渲染。"""
+        self._stock_name = name
+        self._price_text = price_text
+        self._change_pct = pct
+        self.refresh_theme()
+
+    def refresh_theme(self) -> None:
+        """主题切换后使用缓存数据立即重绘涨跌颜色。"""
+        change_text = "—"
+        if self._change_pct is not None:
+            theme = getattr(self.app, "ui_theme", "dark")
+            arrow = change_arrow(self._change_pct)
+            color = change_color(self._change_pct, theme)
+            change_text = (
+                f"[{color}]{arrow} {format_change_pct(self._change_pct)}[/{color}]"
+            )
+        header = (
+            f"#{self.code}  {self._stock_name}    {self._price_text}  {change_text}"
+        )
+        self._update_widget("#stock-header", header)
 
     # ------------------------------------------------------------------
     # 按键动作

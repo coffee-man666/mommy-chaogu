@@ -198,6 +198,12 @@ class MommyTuiApp(App[None]):
             idx = -1
         self.ui_theme = self._THEMES[(idx + 1) % len(self._THEMES)]
         self._apply_theme()
+        with contextlib.suppress(Exception):
+            from mommy_chaogu.tui.screens.stock_detail import StockDetailScreen
+
+            screen = self.screen
+            if isinstance(screen, StockDetailScreen):
+                screen.refresh_theme()
 
     def _apply_theme(self) -> None:
         """应用当前主题：dark → Textual 深色；light → 浅色；colorblind → 通知。

@@ -106,6 +106,35 @@ class TestColorblindTheme:
         assert change_color(None, theme="dark") == "dim"
         assert change_color(None, theme="colorblind") == "dim"
 
+    def test_open_stock_detail_recolors_when_theme_changes(self) -> None:
+        """An already-open detail screen should immediately adopt colorblind colors."""
+        from textual.widgets import Static
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.screens.stock_detail import StockDetailScreen
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())
+            async with app.run_test() as pilot:
+                screen = StockDetailScreen("000001")
+                screen._load_detail = lambda: None  # type: ignore[method-assign]
+                app.push_screen(screen)
+                await pilot.pause()
+
+                app.ui_theme = "dark"
+                screen._update_header("平安银行", "10.00", -1.5)
+                header = screen.query_one("#stock-header", Static)
+                assert "[green]" in str(header.content)
+
+                app.ui_theme = "light"
+                app.action_cycle_theme()
+                assert app.ui_theme == "colorblind"
+                assert "[blue]" in str(header.content)
+                assert "[green]" not in str(header.content)
+
+        asyncio.run(_test())
+
 
 # ---------------------------------------------------------------------------
 # Finding 4: Empty watchlist should clear stale rows

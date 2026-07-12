@@ -15,27 +15,33 @@ const router = useRouter()
 const recentSignals = ref<Signal[]>([])
 const history = ref<Signal[]>([])
 const loading = ref(true)
-const errorCount = ref(0)
+const recentError = ref(false)
+const historyError = ref(false)
 const activeTab = ref('recent')
 
 let timer: number | null = null
 
 async function load() {
-  try {
-    let failures = 0
-    let successes = 0
-    const [r, h] = await Promise.all([
-      apiGet<Signal[]>('/api/signals/recent').then((v) => { successes++; return v }).catch(() => { failures++; return [] as Signal[] }),
-      apiGet<Signal[]>('/api/signals/history?limit=50').then((v) => { successes++; return v }).catch(() => { failures++; return [] as Signal[] }),
-    ])
-    recentSignals.value = r
-    history.value = h
-    errorCount.value = failures
-  } catch (e) {
-    console.error(e)
-  } finally {
-    loading.value = false
+  const [recentResult, historyResult] = await Promise.allSettled([
+    apiGet<Signal[]>('/api/signals/recent'),
+    apiGet<Signal[]>('/api/signals/history?limit=50'),
+  ])
+
+  if (recentResult.status === 'fulfilled') {
+    recentSignals.value = recentResult.value
+    recentError.value = false
+  } else {
+    recentError.value = true
   }
+
+  if (historyResult.status === 'fulfilled') {
+    history.value = historyResult.value
+    historyError.value = false
+  } else {
+    historyError.value = true
+  }
+
+  loading.value = false
 }
 
 function isStockCode(code: string): boolean {
@@ -85,6 +91,12 @@ const severityConfig: Record<
 const currentList = computed(() =>
   activeTab.value === 'recent' ? recentSignals.value : history.value,
 )
+const currentError = computed(() =>
+  activeTab.value === 'recent' ? recentError.value : historyError.value,
+)
+const errorCount = computed(
+  () => Number(recentError.value) + Number(historyError.value),
+)
 
 onMounted(() => {
   load()
@@ -103,7 +115,9 @@ onUnmounted(() => {
       <h1 class="text-xl font-bold tracking-tight">🔔 信号中心</h1>
       <div class="flex items-center gap-2">
         <span class="font-mono text-xs text-muted-foreground">30秒刷新</span>
-        <span v-if="errorCount >= 2" class="text-xs text-destructive">⚠ 数据加载失败</span>
+        <span v-if="errorCount > 0" class="text-xs text-destructive" aria-live="polite">
+          ⚠ {{ errorCount === 2 ? '数据加载失败' : '部分数据加载失败' }}
+        </span>
       </div>
     </div>
 
@@ -122,6 +136,14 @@ onUnmounted(() => {
           </Badge>
         </TabsTrigger>
       </TabsList>
+
+      <div
+        v-if="!loading && currentError && currentList.length"
+        class="rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-700 dark:text-yellow-300"
+        role="status"
+      >
+        刷新失败，正在显示上次成功数据
+      </div>
 
       <!-- 本次触发 -->
       <TabsContent value="recent" class="space-y-3">
@@ -183,7 +205,7 @@ onUnmounted(() => {
         <!-- 空状态 -->
         <Card v-else>
           <CardContent class="flex flex-col items-center gap-2 py-16 text-center">
-            <template v-if="errorCount >= 2">
+            <template v-if="recentError">
               <span class="text-5xl">⚠️</span>
               <p class="text-base font-semibold text-destructive">数据加载失败</p>
               <p class="text-sm text-muted-foreground">行情服务暂时不可用，请稍后重试</p>
@@ -251,8 +273,15 @@ onUnmounted(() => {
         <!-- 空状态 -->
         <Card v-else>
           <CardContent class="flex flex-col items-center gap-2 py-16 text-center">
-            <span class="text-5xl">📭</span>
-            <p class="text-base font-semibold text-muted-foreground">暂无历史信号</p>
+            <template v-if="historyError">
+              <span class="text-5xl">⚠️</span>
+              <p class="text-base font-semibold text-destructive">历史信号加载失败</p>
+              <p class="text-sm text-muted-foreground">信号服务暂时不可用，请稍后重试</p>
+            </template>
+            <template v-else>
+              <span class="text-5xl">📭</span>
+              <p class="text-base font-semibold text-muted-foreground">暂无历史信号</p>
+            </template>
           </CardContent>
         </Card>
       </TabsContent>

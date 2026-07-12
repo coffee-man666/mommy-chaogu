@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { agentStream, agentRoute } from '@/api/agent'
 import { Input } from '@/components/ui/input'
@@ -30,10 +31,12 @@ const scrollContainerRef = ref<HTMLElement>()
 const userScrolledUp = ref(false)
 const stream = ref<ReturnType<typeof agentStream> | null>(null)
 const lastFailedMessage = ref('')
+let activeRequestId = 0
+let activeAssistantIdx: number | null = null
+let routeAbortController: AbortController | null = null
 
 // WebSocket 连接状态指示
 const wsConnected = ref(false)
-const wsConnecting = ref(true)
 
 const wsStatus = computed<'connected' | 'connecting' | 'disconnected'>(() => {
   if (lastFailedMessage.value && !wsConnected.value) return 'disconnected'
@@ -93,21 +96,31 @@ function onScroll(e: Event) {
 }
 
 function renderMarkdown(text: string): string {
-  return marked.parse(text) as string
+  const html = marked.parse(text) as string
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
 }
 
 function stopGeneration() {
+  const assistantIdx = activeAssistantIdx
+  activeRequestId += 1
+  routeAbortController?.abort()
+  routeAbortController = null
+
   if (stream.value) {
     stream.value.close()
     stream.value = null
   }
+  wsConnected.value = false
   loading.value = false
-  // Mark last assistant message as stopped
-  const last = messages.value[messages.value.length - 1]
-  if (last && last.role === 'assistant' && last.streaming) {
-    last.streaming = false
-    if (!last.content) {
-      last.content = '（已停止）'
+  activeAssistantIdx = null
+
+  if (assistantIdx != null) {
+    const assistant = messages.value[assistantIdx]
+    if (assistant?.role === 'assistant' && assistant.streaming) {
+      assistant.streaming = false
+      if (!assistant.content) {
+        assistant.content = '（已停止）'
+      }
     }
   }
 }
@@ -115,9 +128,18 @@ function stopGeneration() {
 async function send(message: string) {
   const text = message.trim()
   if (!text || loading.value) return
+  const requestId = ++activeRequestId
 
   // 清除上次的错误状态
   lastFailedMessage.value = ''
+
+  routeAbortController?.abort()
+  routeAbortController = null
+  if (stream.value) {
+    stream.value.close()
+    stream.value = null
+  }
+  wsConnected.value = false
 
   // 显示用户消息
   messages.value.push({ role: 'user', content: text })
@@ -127,11 +149,15 @@ async function send(message: string) {
   // 创建 assistant 占位
   const assistantIdx = messages.value.length
   messages.value.push({ role: 'assistant', content: '', streaming: true })
+  activeAssistantIdx = assistantIdx
   scrollToBottom()
 
   // 先尝试工作流路由（快速路径）
+  const routeController = new AbortController()
+  routeAbortController = routeController
   try {
-    const res = await agentRoute(text)
+    const res = await agentRoute(text, routeController.signal)
+    if (requestId !== activeRequestId) return
     if (res.matched && res.reply) {
       messages.value[assistantIdx] = {
         role: 'assistant',
@@ -141,12 +167,20 @@ async function send(message: string) {
         streaming: false,
       }
       loading.value = false
+      activeAssistantIdx = null
       scrollToBottom()
       return
     }
   } catch {
+    if (requestId !== activeRequestId) return
     // 路由失败，继续走 LLM 对话
+  } finally {
+    if (routeAbortController === routeController) {
+      routeAbortController = null
+    }
   }
+
+  if (requestId !== activeRequestId) return
 
   // Fallback: WebSocket 流式对话
   // 构造 history（最近 10 轮，排除当前用户/助手占位）
@@ -154,36 +188,38 @@ async function send(message: string) {
     .slice(Math.max(0, messages.value.length - 22), -2)
     .map((m) => ({ role: m.role, content: m.content }))
 
-  if (stream.value) {
-    stream.value.close()
-  }
-
   let currentText = ''
   stream.value = agentStream(
     (chunk: string) => {
+      if (requestId !== activeRequestId) return
       currentText += chunk
       messages.value[assistantIdx].content = currentText
       wsConnected.value = true
       scrollToBottom()
     },
     (toolsUsed: string[], _rounds: number) => {
+      if (requestId !== activeRequestId) return
       messages.value[assistantIdx].toolsUsed = toolsUsed
       messages.value[assistantIdx].streaming = false
       loading.value = false
+      activeAssistantIdx = null
       scrollToBottom()
     },
     () => {
+      if (requestId !== activeRequestId) return
       // thinking — 清空占位文案，进入"打字中"状态
       messages.value[assistantIdx].content = ''
       wsConnected.value = true
     },
     (msg: string) => {
+      if (requestId !== activeRequestId) return
       messages.value[assistantIdx].content = msg
       messages.value[assistantIdx].error = true
       messages.value[assistantIdx].streaming = false
       loading.value = false
       wsConnected.value = false
       lastFailedMessage.value = text
+      activeAssistantIdx = null
       scrollToBottom()
     },
   )
@@ -224,8 +260,12 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  activeRequestId += 1
+  routeAbortController?.abort()
+  routeAbortController = null
   if (stream.value) {
     stream.value.close()
+    stream.value = null
   }
 })
 </script>
@@ -333,6 +373,7 @@ onUnmounted(() => {
                 />
                 <span class="size-2 animate-bounce rounded-full bg-muted-foreground/50" />
               </span>
+              <template v-else-if="msg.role === 'user'">{{ msg.content }}</template>
               <div v-else class="markdown-body" v-html="renderMarkdown(msg.content)" />
             </div>
 

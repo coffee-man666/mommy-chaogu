@@ -27,8 +27,11 @@ export async function agentChat(
   return apiPost<ChatResponse>('/api/agent/chat', { message, history })
 }
 
-export async function agentRoute(message: string): Promise<RouteResponse> {
-  return apiPost<RouteResponse>('/api/agent/route', { message })
+export async function agentRoute(
+  message: string,
+  signal?: AbortSignal,
+): Promise<RouteResponse> {
+  return apiPost<RouteResponse>('/api/agent/route', { message }, signal)
 }
 
 // WebSocket 流式对话
@@ -45,10 +48,16 @@ export function agentStream(
   let pendingMessage: { message: string; history?: Array<{ role: string; content: string }> } | null = null
   // 初始连接失败时，最多重试一次
   let retried = false
+  let closedByClient = false
+  let retryTimer: number | null = null
   let ws = new WebSocket(wsUrl('/ws/agent'))
 
   function attachHandlers(socket: WebSocket) {
     socket.onopen = () => {
+      if (closedByClient) {
+        socket.close()
+        return
+      }
       if (pendingMessage) {
         socket.send(JSON.stringify(pendingMessage))
         pendingMessage = null
@@ -56,6 +65,7 @@ export function agentStream(
     }
 
     socket.onmessage = (event) => {
+      if (closedByClient) return
       try {
         const msg = JSON.parse(event.data)
         if (msg.type === 'chunk') {
@@ -73,11 +83,14 @@ export function agentStream(
     }
 
     socket.onerror = () => {
+      if (closedByClient) return
       if (socket.readyState === WebSocket.CONNECTING && !retried) {
         // 初始连接失败，2 秒后重连一次
         retried = true
         socket.close()
-        setTimeout(() => {
+        retryTimer = window.setTimeout(() => {
+          retryTimer = null
+          if (closedByClient) return
           ws = new WebSocket(wsUrl('/ws/agent'))
           attachHandlers(ws)
         }, 2000)
@@ -93,6 +106,10 @@ export function agentStream(
 
   return {
     send(message: string, history?: Array<{ role: string; content: string }>) {
+      if (closedByClient) {
+        onError('WebSocket 连接已关闭，请重新发送消息')
+        return
+      }
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ message, history }))
       } else if (ws.readyState === WebSocket.CONNECTING) {
@@ -104,6 +121,15 @@ export function agentStream(
       }
     },
     close() {
+      closedByClient = true
+      pendingMessage = null
+      if (retryTimer != null) {
+        window.clearTimeout(retryTimer)
+        retryTimer = null
+      }
+      ws.onopen = null
+      ws.onmessage = null
+      ws.onerror = null
       ws.close()
     },
   }

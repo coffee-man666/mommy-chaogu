@@ -1,7 +1,20 @@
 <script setup lang="ts">
-import { RouterView, RouterLink } from 'vue-router'
-import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Settings } from 'lucide-vue-next'
-import { cn } from '@/lib/utils'
+import { computed, ref } from 'vue'
+import { RouterView, RouterLink, useRoute } from 'vue-router'
+import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Settings, ChevronRight } from 'lucide-vue-next'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+
+const route = useRoute()
+const moreOpen = ref(false)
+const moreActive = computed(
+  () => route.path.startsWith('/themes') || route.path.startsWith('/settings'),
+)
 </script>
 
 <template>
@@ -54,9 +67,47 @@ import { cn } from '@/lib/utils'
       <RouterLink to="/signals" title="信号" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
         <Bell class="size-5" /><span>信号</span>
       </RouterLink>
-      <RouterLink to="/settings" title="更多" class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground" active-class="!text-primary font-medium">
-        <Settings class="size-5" /><span>更多</span>
-      </RouterLink>
+      <Dialog v-model:open="moreOpen">
+        <DialogTrigger as-child>
+          <button
+            type="button"
+            class="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+            :class="moreActive ? 'font-medium text-primary' : 'text-muted-foreground'"
+            aria-label="打开更多导航"
+          >
+            <Settings class="size-5" aria-hidden="true" />
+            <span>更多</span>
+          </button>
+        </DialogTrigger>
+        <DialogContent
+          class="top-auto bottom-16 translate-y-0 gap-2 p-4 md:hidden"
+        >
+          <DialogTitle class="text-base">更多</DialogTitle>
+          <DialogDescription class="sr-only">
+            前往主题研究或应用设置
+          </DialogDescription>
+          <nav aria-label="更多导航" class="grid gap-2">
+            <RouterLink
+              to="/themes"
+              class="flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              @click="moreOpen = false"
+            >
+              <Microscope class="size-5 text-primary" aria-hidden="true" />
+              <span class="flex-1">主题研究</span>
+              <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
+            </RouterLink>
+            <RouterLink
+              to="/settings"
+              class="flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              @click="moreOpen = false"
+            >
+              <Settings class="size-5 text-primary" aria-hidden="true" />
+              <span class="flex-1">应用设置</span>
+              <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
+            </RouterLink>
+          </nav>
+        </DialogContent>
+      </Dialog>
     </nav>
   </div>
 </template>
