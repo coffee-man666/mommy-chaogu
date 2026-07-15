@@ -196,6 +196,10 @@ def close_cached_dependencies() -> None:
     Only dependencies that were actually constructed are evaluated, so
     shutdown never creates a resource merely to close it.
     """
+    from mommy_chaogu.web.routes.agent import _get_router
+
+    _get_router.cache_clear()
+
     resource_factories = (
         get_adapter,
         get_watchlist_store,

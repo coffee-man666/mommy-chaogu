@@ -191,6 +191,7 @@ class Services:
         # 尝试初始化 router
         try:
             from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+            from mommy_chaogu.workflow.definitions import get_default_registry
             from mommy_chaogu.workflow.engine import WorkflowExecutor
             from mommy_chaogu.workflow.router import NLRouter
 
@@ -217,7 +218,7 @@ class Services:
                 llm_summarizer = _Adapter(agent_bridge._agent)
 
             executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
-            agent_bridge._router = NLRouter(executor=executor)
+            agent_bridge._router = NLRouter(get_default_registry(), executor=executor)
         except Exception as e:
             _log.warning("NLRouter 初始化失败: %s", e)
 

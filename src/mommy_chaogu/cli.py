@@ -323,6 +323,7 @@ def main_mommy() -> NoReturn:
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
     from mommy_chaogu.workflow.engine import WorkflowExecutor
+    from mommy_chaogu.workflow.definitions import get_default_registry
     from mommy_chaogu.workflow.router import NLRouter
 
     base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
@@ -372,7 +373,7 @@ def main_mommy() -> NoReturn:
         pass
 
     executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)  # type: ignore[arg-type]
-    router = NLRouter(executor=executor)
+    router = NLRouter(get_default_registry(), executor=executor)
 
     # 单次查询模式
     query = " ".join(args.query).strip() if args.query else ""

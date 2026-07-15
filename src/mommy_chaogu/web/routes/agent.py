@@ -10,12 +10,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import lru_cache
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
+from mommy_chaogu.web.deps import (
+    get_adapter,
+    get_agent_memory,
+    get_agent_service,
+    get_portfolio_store,
+    get_watchlist_store,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -51,49 +58,40 @@ class RouteResponse(BaseModel):
 # ---------- REST 端点 ----------
 
 
+@lru_cache(maxsize=1)
 def _get_router() -> Any:
-    """懒加载 NLRouter（避免 app 启动时构建 adapter）。"""
-    from functools import lru_cache
+    """Build the process-wide router from explicit application dependencies."""
+    from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+    from mommy_chaogu.db_paths import AGENT_DB
+    from mommy_chaogu.workflow.definitions import get_default_registry
+    from mommy_chaogu.workflow.engine import WorkflowExecutor
+    from mommy_chaogu.workflow.router import NLRouter
 
-    @lru_cache(maxsize=1)
-    def _build() -> Any:
-        from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
-        from mommy_chaogu.db_paths import AGENT_DB, PORTFOLIO_DB
-        from mommy_chaogu.portfolio.store import PortfolioStore
-        from mommy_chaogu.watchlist.store import WatchlistStore
-        from mommy_chaogu.web.deps import get_adapter
-        from mommy_chaogu.workflow.engine import WorkflowExecutor
-        from mommy_chaogu.workflow.router import NLRouter
+    ctx = ToolContext(
+        adapter=get_adapter(),
+        watchlist_store=get_watchlist_store(),
+        portfolio_store=get_portfolio_store(),
+        db_path=AGENT_DB,
+    )
+    tool_registry = ToolRegistry(ctx)
 
-        adapter = get_adapter()
-        ctx = ToolContext(
-            adapter=adapter,
-            watchlist_store=WatchlistStore(PORTFOLIO_DB),
-            portfolio_store=PortfolioStore(PORTFOLIO_DB),
-            db_path=AGENT_DB,
-        )
-        tool_registry = ToolRegistry(ctx)
+    llm_summarizer = None
+    agent = get_agent_service()
+    if agent is not None:
 
-        # 尝试构建 LLM summarizer
-        llm_summarizer = None
-        agent = get_agent_service()
-        if agent is not None:
+        class _AgentSummarizer:
+            def __init__(self, svc: Any) -> None:
+                self._svc = svc
 
-            class _AgentSummarizer:
-                def __init__(self, svc: Any) -> None:
-                    self._svc = svc
+            def summarize(self, template: str, context: str) -> str:
+                prompt = template.format(context=context)
+                resp = self._svc.chat_raw([{"role": "user", "content": prompt}])
+                return resp.text
 
-                def summarize(self, template: str, context: str) -> str:
-                    prompt = template.format(context=context)
-                    resp = self._svc.chat_raw([{"role": "user", "content": prompt}])
-                    return resp.text
+        llm_summarizer = _AgentSummarizer(agent)
 
-            llm_summarizer = _AgentSummarizer(agent)
-
-        executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
-        return NLRouter(executor=executor)
-
-    return _build()
+    executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
+    return NLRouter(get_default_registry(), executor=executor)
 
 
 @router.post("/route", response_model=RouteResponse)
