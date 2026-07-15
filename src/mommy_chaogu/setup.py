@@ -36,6 +36,11 @@ _PROVIDERS: dict[str, dict[str, str]] = {
         "env_key": "ZAI_API_KEY",
         "hint": "去 open.bigmodel.cn 注册获取",
     },
+    "nova": {
+        "label": "Nova Bridge (本地)",
+        "env_key": "NOVA_API_KEY",
+        "hint": "先启动 localhost:9999 的 Nova Bridge，key 可为任意非空值",
+    },
 }
 
 
@@ -82,7 +87,7 @@ def run_setup_wizard(
         print(f"  {idx}. {_PROVIDERS[name]['label']}")
     print()
 
-    choice = _safe_input(input_func, "请输入序号 (1-4)，或 Ctrl-C 跳过：")
+    choice = _safe_input(input_func, f"请输入序号 (1-{len(provider_keys)})，或 Ctrl-C 跳过：")
     if choice is None:
         return False
     try:

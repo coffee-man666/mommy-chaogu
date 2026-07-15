@@ -11,6 +11,7 @@
     OPENAI_API_KEY    → agent.api_key（provider=openai 时）
     MOONSHOT_API_KEY  → agent.api_key（provider=kimi 时）
     ZAI_API_KEY       → agent.api_key（provider=zai 时）
+    NOVA_API_KEY      → agent.api_key（provider=nova 时）
     SERVER_CHAN_KEY   → push.server_chan_key
     AGENT_PROVIDER    → agent.provider
 """
@@ -35,6 +36,7 @@ _PROVIDER_ENV_KEYS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "kimi": "MOONSHOT_API_KEY",
     "zai": "ZAI_API_KEY",
+    "nova": "NOVA_API_KEY",
 }
 
 
@@ -105,7 +107,7 @@ def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
 
     根据 provider 自动选择对应的 env var 读 key：
     deepseek → DEEPSEEK_API_KEY, openai → OPENAI_API_KEY,
-    kimi → MOONSHOT_API_KEY, zai → ZAI_API_KEY。
+    kimi → MOONSHOT_API_KEY, zai → ZAI_API_KEY, nova → NOVA_API_KEY。
     """
     env_provider = os.environ.get("AGENT_PROVIDER")
     if env_provider:
@@ -167,13 +169,14 @@ _CONFIG_TEMPLATE = """\
 #   OPENAI_API_KEY    (provider=openai)
 #   MOONSHOT_API_KEY  (provider=kimi)
 #   ZAI_API_KEY       (provider=zai)
+#   NOVA_API_KEY      (provider=nova)
 #   SERVER_CHAN_KEY   → push.server_chan_key
 #   AGENT_PROVIDER    → agent.provider
 
 db_path = "{market_db}"
 
 [agent]
-provider = "deepseek"          # deepseek / openai / kimi / zai
+provider = "deepseek"          # deepseek / openai / kimi / zai / nova
 model = "deepseek-chat"        # 留空则用 provider 默认模型
 api_key = ""                   # 建议用 .env 或环境变量
 max_tool_calls = 10

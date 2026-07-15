@@ -18,6 +18,7 @@ _ENV_KEYS = (
     "OPENAI_API_KEY",
     "MOONSHOT_API_KEY",
     "ZAI_API_KEY",
+    "NOVA_API_KEY",
     "SERVER_CHAN_KEY",
     "AGENT_PROVIDER",
 )
@@ -120,6 +121,15 @@ def test_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     cfg = load_config(tmp_path / "missing.toml")
     assert cfg.agent.api_key == "kimi_env_key"
     assert cfg.agent.provider == "kimi"
+
+
+def test_nova_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """provider=nova 时从 NOVA_API_KEY 读取 bridge key。"""
+    monkeypatch.setenv("NOVA_API_KEY", "dummy")
+    monkeypatch.setenv("AGENT_PROVIDER", "nova")
+    cfg = load_config(tmp_path / "missing.toml")
+    assert cfg.agent.api_key == "dummy"
+    assert cfg.agent.provider == "nova"
 
 
 # ---------- create_default_config ----------

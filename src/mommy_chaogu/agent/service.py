@@ -40,14 +40,19 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "env_key": "OPENAI_API_KEY",
     },
     "kimi": {
-        "base_url": "https://api.moonshot.cn/v1",
-        "default_model": "moonshot-v1-8k",
+        "base_url": "https://api.kimi.com/coding/v1",
+        "default_model": "kimi-k2.6",
         "env_key": "MOONSHOT_API_KEY",
     },
     "zai": {
         "base_url": "https://api.z.ai/api/coding/paas/v4",
         "default_model": "glm-4.7",
         "env_key": "ZAI_API_KEY",
+    },
+    "nova": {
+        "base_url": "http://127.0.0.1:9999/v1",
+        "default_model": "nova-bridge",
+        "env_key": "NOVA_API_KEY",
     },
 }
 
@@ -218,7 +223,7 @@ class AgentService:
                 model=self._model,
                 messages=messages,
                 tools=self._tools.definitions(),
-                temperature=0.3,  # 偏低温度，减少幻觉
+                temperature=1,  # Kimi K2.6 only accepts 1
             )
 
             msg = response.choices[0].message

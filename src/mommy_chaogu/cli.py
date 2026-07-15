@@ -488,7 +488,7 @@ def build_agent_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--provider",
         default=None,
-        help="LLM provider（deepseek / openai / kimi / zai，默认读 .env）",
+        help="LLM provider（deepseek / openai / kimi / zai / nova，默认读 .env）",
     )
     p.add_argument(
         "--model",
@@ -694,6 +694,7 @@ def _run_mommy_repl(
 
             print("🤔 让我想想...\n")
             try:
+
                 def _on_tool(name: str, a: dict[str, object]) -> None:
                     if verbose:
                         args_str = ", ".join(f"{k}={v}" for k, v in a.items())
@@ -831,7 +832,7 @@ def main_mommy() -> NoReturn:
         description="妈妈炒股 - 自然语言投资助手",
         epilog=(
             "用法示例：\n"
-            "  mommy \"今天怎么样\"        AI 自然语言对话\n"
+            '  mommy "今天怎么样"        AI 自然语言对话\n'
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
@@ -870,7 +871,7 @@ def main_mommy() -> NoReturn:
         if run_setup_wizard():
             print("\n✅ 配置完成！现在可以开始使用了：")
             print("  mommy              # 进入交互式对话")
-            print("  mommy \"今天怎么样\"  # 单次查询")
+            print('  mommy "今天怎么样"  # 单次查询')
         sys.exit(0)
 
     # 构建工具链
@@ -971,6 +972,7 @@ def main_mommy() -> NoReturn:
                     "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
                 )
             else:
+
                 def _on_tool(name: str, a: dict[str, object]) -> None:
                     if args.verbose:
                         args_str = ", ".join(f"{k}={v}" for k, v in a.items())
