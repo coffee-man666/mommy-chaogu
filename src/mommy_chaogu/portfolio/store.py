@@ -191,23 +191,34 @@ class PortfolioStore(EngineOwner):
         - sell 减少股数但不改变总成本（已实现盈亏在卖出时锁定）
         - dividend 减少总成本（分红返还）
         """
-        total_cost = Decimal(position.buy_price) * position.shares
-        total_shares = position.shares
+        # ``position.shares`` is the current balance because add_adjustment
+        # updates it eagerly. Reconstruct the original lot before replaying
+        # adjustments, otherwise buys are counted twice.
+        original_shares = position.shares
+        for adj in position.adjustments:
+            if adj.action == "buy":
+                original_shares -= adj.shares
+            elif adj.action == "sell":
+                original_shares += adj.shares
+
+        total_shares = max(0, original_shares)
+        total_cost = Decimal(position.buy_price) * total_shares
 
         for adj in position.adjustments:
             adj_price = Decimal(adj.price)
             if adj.action == "buy":
                 total_cost += adj_price * adj.shares
-                # total_shares 已在 add_adjustment 同步
+                total_shares += adj.shares
             elif adj.action == "sell":
                 # 减仓：按比例减少成本
                 if total_shares > 0:
                     cost_per_share = total_cost / total_shares
-                    total_cost -= cost_per_share * adj.shares
+                    sold = min(adj.shares, total_shares)
+                    total_cost -= cost_per_share * sold
+                    total_shares -= sold
             elif adj.action == "dividend":
                 total_cost -= adj_price * adj.shares
 
-        # total_shares 从 position 拿（已同步）
         if total_shares <= 0:
             return Decimal("0"), 0
 

@@ -20,6 +20,9 @@ env/
 .coverage
 .coverage.*
 htmlcov/
+coverage.json
+coverage.xml
+output/playwright/
 .mypy_cache/
 .ruff_cache/
 
