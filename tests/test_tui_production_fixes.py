@@ -203,9 +203,7 @@ class TestTabSlashCompletion:
                 await pilot.press("tab")
                 await pilot.pause()
 
-                assert prompt.value == "/refresh", (
-                    f"Expected '/refresh', got '{prompt.value}'"
-                )
+                assert prompt.value == "/refresh", f"Expected '/refresh', got '{prompt.value}'"
                 assert switcher.current == "chat", "Should still be in chat mode"
 
         asyncio.run(_test())

@@ -52,6 +52,12 @@ uv run pytest -m "not network"   # 离线测试（必须 100% 通过）
 
 CI 会在 PR 时自动跑这些检查。
 
+本地可用一条命令复现完整质量门（包含 Web typecheck + build）：
+
+```bash
+./scripts/quality.sh
+```
+
 ### 4. Commit 规范
 
 用 [Conventional Commits](https://www.conventionalcommits.org/) 格式：

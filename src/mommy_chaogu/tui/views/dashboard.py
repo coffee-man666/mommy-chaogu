@@ -226,9 +226,7 @@ class SummaryCards(Horizontal):
         pnl = summary.get("total_unrealized_pnl")
         pnl_pct = summary.get("total_unrealized_pnl_pct")
 
-        self.query_one("#card-value", SummaryCard).update(
-            f"总市值\n[bold]{format_amount(mv)}[/]"
-        )
+        self.query_one("#card-value", SummaryCard).update(f"总市值\n[bold]{format_amount(mv)}[/]")
         day_str = "—"
         if pnl is not None:
             color = change_color(float(pnl), theme)
@@ -465,11 +463,7 @@ class DashboardView(Vertical):
             self.app._refresh_data()  # type: ignore[attr-defined]
 
         # 信号扫描：仅交易中，每 30 秒
-        if (
-            self.signal_scan_on
-            and phase == "交易中"
-            and now - self._last_signal_scan >= 30.0
-        ):
+        if self.signal_scan_on and phase == "交易中" and now - self._last_signal_scan >= 30.0:
             self._last_signal_scan = now
             self.run_worker(
                 self._do_signal_scan,

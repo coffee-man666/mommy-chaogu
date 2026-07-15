@@ -246,6 +246,7 @@ class MommyTuiApp(App[None]):
 
         # 2. 无工作流匹配 → 走 Agent
         if self.services.agent.has_agent():
+
             def _run_agent() -> None:
                 self._do_agent_chat(text)
 
@@ -285,9 +286,7 @@ class MommyTuiApp(App[None]):
             self.call_from_thread(self._post_step, idx, state, display_name)
 
         try:
-            result = self.services.agent.execute_workflow(
-                route, text, on_step_start, on_step_done
-            )
+            result = self.services.agent.execute_workflow(route, text, on_step_start, on_step_done)
         except Exception as e:
             _log.warning("工作流执行失败: %s", e)
             self.call_from_thread(self._on_chat_error, f"工作流出错：{e}")
@@ -320,6 +319,7 @@ class MommyTuiApp(App[None]):
 
     def _do_agent_chat(self, text: str) -> None:
         """worker 线程内调用 agent.chat，工具调用实时回传 UI。"""
+
         def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
             args_str = _format_tool_args(fn_args)
             self.call_from_thread(self._post_tool_call, fn_name, args_str)
@@ -380,9 +380,7 @@ class MommyTuiApp(App[None]):
             summary = svc.portfolio_snapshot()
         except Exception as e:
             _log.warning("数据刷新失败: %s", e)
-            self.call_from_thread(
-                self._on_refresh_error, f"数据刷新失败: {e}"
-            )
+            self.call_from_thread(self._on_refresh_error, f"数据刷新失败: {e}")
             return
         self.call_from_thread(self._apply_data, rows, summary)
 

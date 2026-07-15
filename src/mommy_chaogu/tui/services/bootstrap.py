@@ -51,18 +51,24 @@ class DataService:
                         flow_val = getattr(flows[-1], "main_net", None)
                 except Exception:
                     pass
-                rows.append({
-                    "code": code,
-                    "name": getattr(q, "name", code),
-                    "price": q.price,
-                    "change_pct": getattr(q, "change_pct", None),
-                    "change_amount": getattr(q, "change", None),
-                    "main_flow": flow_val,
-                })
+                rows.append(
+                    {
+                        "code": code,
+                        "name": getattr(q, "name", code),
+                        "price": q.price,
+                        "change_pct": getattr(q, "change_pct", None),
+                        "change_amount": getattr(q, "change", None),
+                        "main_flow": flow_val,
+                    }
+                )
             except Exception as e:
                 _log.debug("拉取 %s 失败: %s", code, e)
 
-        self._source_label = self.adapter.format_source_label() if hasattr(self.adapter, "format_source_label") else ""
+        self._source_label = (
+            self.adapter.format_source_label()
+            if hasattr(self.adapter, "format_source_label")
+            else ""
+        )
         return rows
 
     def portfolio_snapshot(self) -> dict[str, Any]:
@@ -105,15 +111,21 @@ class AgentBridge:
             return None
         return self._router.route(text)
 
-    def execute_workflow(self, route_result: Any, text: str, on_step_start: Any = None, on_step_done: Any = None) -> Any:
+    def execute_workflow(
+        self, route_result: Any, text: str, on_step_start: Any = None, on_step_done: Any = None
+    ) -> Any:
         if self._router is None:
             return None
-        return self._router.execute_route(route_result, text, on_step_start=on_step_start, on_step_done=on_step_done)
+        return self._router.execute_route(
+            route_result, text, on_step_start=on_step_start, on_step_done=on_step_done
+        )
 
     def has_agent(self) -> bool:
         return self._agent is not None
 
-    def chat(self, message: str, history: list[dict[str, str]] | None = None, on_tool_call: Any = None) -> Any:
+    def chat(
+        self, message: str, history: list[dict[str, str]] | None = None, on_tool_call: Any = None
+    ) -> Any:
         if self._agent is None:
             return None
         return self._agent.chat(message, history=history, on_tool_call=on_tool_call)
@@ -192,6 +204,7 @@ class Services:
 
             llm_summarizer = None
             if agent_bridge._agent is not None:
+
                 class _Adapter:
                     def __init__(self, svc: Any) -> None:
                         self._svc = svc
@@ -222,20 +235,43 @@ class FakeServices:
     def create(cls) -> FakeServices:
         """创建带假数据的 Services。"""
         fake_rows = [
-            {"code": "688981", "name": "中芯国际", "price": Decimal("87.45"), "change_pct": 2.31, "change_amount": 1.98, "main_flow": Decimal("230000000")},
-            {"code": "600519", "name": "贵州茅台", "price": Decimal("1680.00"), "change_pct": -0.52, "change_amount": -8.80, "main_flow": Decimal("-80000000")},
-            {"code": "002129", "name": "TCL中环", "price": Decimal("12.34"), "change_pct": 5.23, "change_amount": 0.61, "main_flow": Decimal("150000000")},
+            {
+                "code": "688981",
+                "name": "中芯国际",
+                "price": Decimal("87.45"),
+                "change_pct": 2.31,
+                "change_amount": 1.98,
+                "main_flow": Decimal("230000000"),
+            },
+            {
+                "code": "600519",
+                "name": "贵州茅台",
+                "price": Decimal("1680.00"),
+                "change_pct": -0.52,
+                "change_amount": -8.80,
+                "main_flow": Decimal("-80000000"),
+            },
+            {
+                "code": "002129",
+                "name": "TCL中环",
+                "price": Decimal("12.34"),
+                "change_pct": 5.23,
+                "change_amount": 0.61,
+                "main_flow": Decimal("150000000"),
+            },
         ]
         data = DataService()
         data._source_label = "东方财富 实时"
 
         # Monkey-patch for fake data
         data.watchlist_quotes = lambda: fake_rows  # type: ignore[method-assign]
-        data.portfolio_snapshot = lambda: {  # type: ignore[method-assign]
-            "positions": fake_rows[:2],
-            "total_market_value": Decimal("50000"),
-            "total_unrealized_pnl": Decimal("1200"),
-            "total_unrealized_pnl_pct": 2.4,
-            "total_cost": Decimal("48800"),
-        }
+        data.portfolio_snapshot = (  # type: ignore[method-assign]
+            lambda: {
+                "positions": fake_rows[:2],
+                "total_market_value": Decimal("50000"),
+                "total_unrealized_pnl": Decimal("1200"),
+                "total_unrealized_pnl_pct": 2.4,
+                "total_cost": Decimal("48800"),
+            }
+        )
         return cls(data=data, agent=AgentBridge())

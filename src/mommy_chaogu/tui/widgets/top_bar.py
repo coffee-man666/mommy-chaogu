@@ -66,4 +66,3 @@ class TopBar(Static):
             f"[dim]{self._clock}[/]",
         ]
         self.update("  ".join(parts))
-
