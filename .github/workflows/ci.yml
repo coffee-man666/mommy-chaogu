@@ -35,7 +35,7 @@ jobs:
       - name: Type check
         run: uv run mypy --strict src
       - name: Offline tests
-        run: uv run pytest -m "not network" --tb=short --cov=mommy_chaogu --cov-report=xml
+        run: uv run pytest -m "not network" --tb=short --cov=mommy_chaogu --cov-report=xml --cov-fail-under=65
       - name: Resource lifecycle gate
         run: uv run pytest tests/test_db_lifecycle.py -W error::ResourceWarning
       - name: Upload coverage
@@ -61,8 +61,14 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npm run typecheck
+      - name: Unit tests
+        run: npm test
       - name: Production build
         run: npm run build
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser smoke
+        run: npm run test:e2e
 
   migration:
     name: Database migration fixture
@@ -131,17 +137,17 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Python vulnerabilities
-        continue-on-error: true
-        run: uvx --from pip-audit pip-audit --locked
+        run: |
+          uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file /tmp/mommy-requirements.txt
+          uvx --from pip-audit pip-audit --disable-pip --no-deps --requirement /tmp/mommy-requirements.txt
       - name: Frontend vulnerabilities
-        continue-on-error: true
         working-directory: web
         run: npm audit --audit-level=high
 
   release-gate:
     name: Release gate
     if: always()
-    needs: [backend, frontend, migration, cli, docker]
+    needs: [backend, frontend, migration, cli, docker, dependency-audit]
     runs-on: ubuntu-latest
     steps:
       - name: Require every gate
