@@ -1,6 +1,7 @@
 services:
   mommy-web:
     build: .
+    image: mommy-chaogu:local
     container_name: mommy-chaogu
     ports:
       - "127.0.0.1:8000:8000"

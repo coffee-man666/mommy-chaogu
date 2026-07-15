@@ -10,8 +10,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker compose build mommy-web
-docker compose up -d mommy-web
+if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+    docker compose build mommy-web
+fi
+docker compose up -d --no-build mommy-web
 
 for _ in $(seq 1 45); do
     if curl --fail --silent http://127.0.0.1:8000/api/health >/tmp/mommy-health.json; then

@@ -6,59 +6,87 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  quality:
-    name: Quality Gates
+  backend:
+    name: Backend (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.12"]
-
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Sync dependencies
-        run: uv sync --extra dev
-
-      - name: Ruff format check
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --frozen --extra dev
+      - name: Format
         run: uv run ruff format --check .
-
-      - name: Ruff lint
+      - name: Lint
         run: uv run ruff check .
-
-      - name: Mypy type check
+      - name: Type check
         run: uv run mypy --strict src
+      - name: Offline tests
+        run: uv run pytest -m "not network" --tb=short --cov=mommy_chaogu --cov-report=xml
+      - name: Resource lifecycle gate
+        run: uv run pytest tests/test_db_lifecycle.py -W error::ResourceWarning
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage.xml
 
-      - name: Pytest (offline)
-        run: uv run pytest -m "not network" -v --tb=short
-
-      - name: Show summary
-        if: always()
-        run: |
-          echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Python: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- OS: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Date: $(date -u)" >> $GITHUB_STEP_SUMMARY
-
-  build:
-    name: Build check
+  frontend:
+    name: Frontend
     runs-on: ubuntu-latest
-    needs: quality
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-      - name: Sync dependencies
-        run: uv sync --extra dev
-      - name: Verify CLI commands
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+
+  migration:
+    name: Database migration fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run python scripts/smoke_migration.py
+
+  cli:
+    name: CLI entry points
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: Verify commands
         run: |
           uv run mommy-watchlist --help
           uv run mommy-monitor --help
@@ -71,3 +99,58 @@ jobs:
           uv run mommy-mcp --help
           uv run mommy-tui --help
           uv run mommy --help
+
+  docker:
+    name: Docker build and smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: mommy-chaogu:local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container health and permissions
+        run: SKIP_BUILD=1 ./scripts/smoke_docker.sh
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Python vulnerabilities
+        continue-on-error: true
+        run: uvx --from pip-audit pip-audit --locked
+      - name: Frontend vulnerabilities
+        continue-on-error: true
+        working-directory: web
+        run: npm audit --audit-level=high
+
+  release-gate:
+    name: Release gate
+    if: always()
+    needs: [backend, frontend, migration, cli, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every gate
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          results = {name: job["result"] for name, job in json.loads(os.environ["NEEDS_JSON"]).items()}
+          print(results)
+          sys.exit(0 if all(result == "success" for result in results.values()) else 1)
+          PY
