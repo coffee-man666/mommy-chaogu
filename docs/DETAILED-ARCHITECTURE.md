@@ -330,6 +330,8 @@ Conventional Commits：`feat / fix / docs / refactor / chore`
 | [MEMORY-SYSTEM-PLAN.md](MEMORY-SYSTEM-PLAN.md) | 记忆系统设计（5 层架构 + MemoryPipeline） |
 | [BACKTEST-REPORT.md](BACKTEST-REPORT.md) | 回测报告（多模型横向对比） |
 | [EVALUATION-2026-07-05.md](EVALUATION-2026-07-05.md) | 记忆系统 + 回测系统评估报告 |
+| [EVALUATION-2026-07-14.md](EVALUATION-2026-07-14.md) | 当前项目生产就绪度评估 |
+| [ENHANCEMENT-PLAN-2026-07-14.md](ENHANCEMENT-PLAN-2026-07-14.md) | 可执行的强化计划 + 验收标准 |
 | [EARNINGS-HANDBOOK.md](EARNINGS-HANDBOOK.md) | 财报窗口实战手册 |
 | [KLINE-SPEC.md](KLINE-SPEC.md) | K 线组件规范 |
 | [AGENT-INTERACTION-GUIDE.md](AGENT-INTERACTION-GUIDE.md) | Agent 交互指导 |
