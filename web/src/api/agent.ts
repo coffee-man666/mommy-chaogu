@@ -1,5 +1,5 @@
 // Agent API client
-import { apiPost, authenticatedWsUrl } from './client'
+import { apiPost, authenticatedWsUrl, getChatSessionId } from './client'
 
 export interface ChatResponse {
   reply: string
@@ -24,7 +24,11 @@ export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
 ): Promise<ChatResponse> {
-  return apiPost<ChatResponse>('/api/agent/chat', { message, history })
+  return apiPost<ChatResponse>('/api/agent/chat', {
+    message,
+    history,
+    session_id: getChatSessionId(),
+  })
 }
 
 export async function agentRoute(
@@ -45,7 +49,11 @@ export function agentStream(
   close: () => void
 } {
   // 连接建立前的待发消息缓冲
-  let pendingMessage: { message: string; history?: Array<{ role: string; content: string }> } | null = null
+  let pendingMessage: {
+    message: string
+    history?: Array<{ role: string; content: string }>
+    session_id: string
+  } | null = null
   // 初始连接失败时，最多重试一次
   let retried = false
   let closedByClient = false
@@ -123,10 +131,10 @@ export function agentStream(
         return
       }
       if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ message, history }))
+        ws.send(JSON.stringify({ message, history, session_id: getChatSessionId() }))
       } else if (ws == null || ws.readyState === WebSocket.CONNECTING) {
         // 连接还没建立，缓冲等 onopen
-        pendingMessage = { message, history }
+        pendingMessage = { message, history, session_id: getChatSessionId() }
       } else {
         // CLOSING / CLOSED
         onError('WebSocket 连接已关闭，请刷新页面重试')

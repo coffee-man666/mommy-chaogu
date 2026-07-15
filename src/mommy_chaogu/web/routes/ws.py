@@ -129,6 +129,13 @@ async def ws_agent(websocket: WebSocket) -> None:
             if not user_message:
                 continue
 
+            session_id = msg.get("session_id", "web-default")
+            try:
+                session_memory = memory.for_session(session_id)
+            except (TypeError, ValueError):
+                await websocket.send_json({"type": "error", "message": "无效的会话 ID"})
+                continue
+
             if agent is None:
                 await websocket.send_json(
                     {
@@ -149,7 +156,7 @@ async def ws_agent(websocket: WebSocket) -> None:
                 continue
             try:
                 # agent.chat 是同步的，用 to_thread 包装
-                resp = await asyncio.to_thread(agent.chat, user_message, None, None, memory)
+                resp = await asyncio.to_thread(agent.chat, user_message, None, None, session_memory)
             finally:
                 await security.release_agent()
 

@@ -1275,6 +1275,7 @@ def cmd_web_serve(args: argparse.Namespace) -> int:
         cors_origins=args.cors_origin if args.cors_origin is not None else cfg.web.cors_origins,
         ws_ticket_ttl_seconds=cfg.web.ws_ticket_ttl_seconds,
         agent_max_concurrency=cfg.web.agent_max_concurrency,
+        session_retention_days=cfg.web.session_retention_days,
     )
     uvicorn.run(
         app,

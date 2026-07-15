@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy import text
 
 from mommy_chaogu.agent.memory import ConversationMemory
 from mommy_chaogu.agent.service import AgentService
@@ -106,6 +108,72 @@ class TestMemoryPersistence:
         recent = mem2.recent()
         assert len(recent) == 2
         assert recent[0]["content"] == "persisted"
+
+    def test_migrates_legacy_rows_into_default_session(self, tmp_path: Path) -> None:
+        db = tmp_path / "legacy.db"
+        conn = sqlite3.connect(db)
+        conn.execute(
+            "CREATE TABLE agent_memory ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, "
+            "content TEXT NOT NULL, timestamp TIMESTAMP NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO agent_memory(role, content, timestamp) VALUES (?, ?, ?)",
+            ("user", "legacy", "2026-07-14T00:00:00+00:00"),
+        )
+        conn.commit()
+        conn.close()
+
+        memory = ConversationMemory(db)
+        assert [row["content"] for row in memory.recent()] == ["legacy"]
+
+
+class TestConversationSessions:
+    def test_sessions_are_isolated(self, memory: ConversationMemory) -> None:
+        alpha = memory.for_session("alpha")
+        beta = memory.for_session("beta")
+        alpha.add("user", "only alpha")
+        beta.add("user", "only beta")
+
+        assert [row["content"] for row in alpha.recent()] == ["only alpha"]
+        assert [row["content"] for row in beta.recent()] == ["only beta"]
+        assert memory.recent() == []
+
+    def test_clear_and_summary_are_session_scoped(self, memory: ConversationMemory) -> None:
+        alpha = memory.for_session("alpha")
+        beta = memory.for_session("beta")
+        alpha.add("user", "a")
+        alpha.add("assistant", "b")
+        beta.add("user", "c")
+
+        assert alpha.summary() == {"total": 2, "user": 1, "assistant": 1}
+        assert alpha.clear() == 2
+        assert alpha.recent() == []
+        assert len(beta.recent()) == 1
+
+    @pytest.mark.parametrize("session_id", ["", "space here", "../escape", "x" * 65])
+    def test_invalid_session_ids_rejected(
+        self, memory: ConversationMemory, session_id: str
+    ) -> None:
+        with pytest.raises(ValueError, match="session_id"):
+            memory.for_session(session_id)
+
+    def test_prunes_only_inactive_non_default_sessions(self, memory: ConversationMemory) -> None:
+        memory.add("user", "keep default")
+        memory.add("user", "remove old", session_id="old-web")
+        memory.add("user", "keep recent", session_id="recent-web")
+        with memory.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE agent_memory SET timestamp = '2000-01-01T00:00:00+00:00' "
+                    "WHERE session_id = 'old-web'"
+                )
+            )
+
+        assert memory.prune_inactive_sessions(30) == 1
+        assert memory.recent(session_id="old-web") == []
+        assert len(memory.recent(session_id="recent-web")) == 1
+        assert len(memory.recent()) == 1
 
 
 class TestAgentServiceWithMemory:

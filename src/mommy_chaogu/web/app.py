@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from mommy_chaogu.db_paths import PORTFOLIO_DB
 from mommy_chaogu.web.background import BackgroundService, set_service
-from mommy_chaogu.web.deps import get_adapter, get_alerter, get_watchlist_store
+from mommy_chaogu.web.deps import get_adapter, get_agent_memory, get_alerter, get_watchlist_store
 from mommy_chaogu.web.routes import (
     agent,
     cache,
@@ -49,6 +49,7 @@ def create_app(
     cors_origins: list[str] | None = None,
     ws_ticket_ttl_seconds: int = 60,
     agent_max_concurrency: int = 2,
+    session_retention_days: int = 30,
 ) -> FastAPI:
     """FastAPI app 工厂。
 
@@ -77,6 +78,11 @@ def create_app(
         adapter = get_adapter()
         watchlist_store = get_watchlist_store()
         alerter = get_alerter()
+        if session_retention_days > 0:
+            memory = get_agent_memory()
+            pruned = memory.prune_inactive_sessions(session_retention_days)  # type: ignore[attr-defined]
+            if pruned:
+                _log.info("pruned %d inactive conversation messages", pruned)
 
         # 初始化推送（如果配置了 Server酱 SendKey）
         notifier = None

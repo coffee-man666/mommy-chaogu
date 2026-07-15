@@ -12,8 +12,8 @@ import asyncio
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
 from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
 
@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] | None = None
+    session_id: str = Field(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class ChatResponse(BaseModel):
@@ -150,7 +151,7 @@ async def chat(
         req.message,
         None,  # history 不单独传，由 memory 提供上下文
         None,  # system_override
-        memory,
+        memory.for_session(req.session_id),
     )
 
     return ChatResponse(
@@ -164,11 +165,14 @@ async def chat(
 
 
 @router.get("/history")
-async def get_history(limit: int = 50) -> dict[str, Any]:
+async def get_history(
+    session_id: str = Query(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$"),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, Any]:
     """获取对话历史（从 agent_memory 表）。"""
     memory = get_agent_memory()
     try:
-        rows = memory.recent(limit=limit)
+        rows = memory.recent(limit=limit, session_id=session_id)
         return {"messages": rows, "total": len(rows)}
     except Exception:
         return {"messages": [], "total": 0}

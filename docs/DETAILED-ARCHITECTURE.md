@@ -228,6 +228,8 @@ mommy flows pull --pool semicon --days 30
 - REST API 使用 Bearer token；WebSocket 使用 60 秒有效的 HMAC 签名 ticket。
 - `MOMMY_CORS_ORIGINS` 用逗号分隔可信前端 origin；默认不允许跨域。
 - Agent REST/WebSocket 共用有界并发槽，防止意外消耗 LLM 配额。
+- Web 对话按浏览器会话 ID 隔离；旧数据自动迁移到 `default` 会话。
+- 非默认 Web 会话保留 30 天，可用 `[web].session_retention_days` 调整。
 
 ### Cron 定时任务
 

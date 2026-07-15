@@ -86,6 +86,7 @@ class WebConfig:
     cors_origins: list[str] = field(default_factory=list)
     ws_ticket_ttl_seconds: int = 60
     agent_max_concurrency: int = 2
+    session_retention_days: int = 30
 
 
 @dataclass
@@ -224,6 +225,7 @@ api_token = ""                         # 远程访问必填；建议使用 MOMMY
 cors_origins = []                     # 例如 ["https://stocks.example.com"]
 ws_ticket_ttl_seconds = 60
 agent_max_concurrency = 2
+session_retention_days = 30
 """
 
 

@@ -114,6 +114,8 @@ class TestAgentWebSocket:
             rounds=2,
         )
         memory = MagicMock()
+        session_memory = MagicMock()
+        memory.for_session.return_value = session_memory
         monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
         monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
 
@@ -128,4 +130,18 @@ class TestAgentWebSocket:
                 "rounds": 2,
             }
 
-        agent.chat.assert_called_once_with("hello", None, None, memory)
+        memory.for_session.assert_called_once_with("web-default")
+        agent.chat.assert_called_once_with("hello", None, None, session_memory)
+
+    def test_rejects_invalid_session_id(self, client: TestClient, monkeypatch: object) -> None:
+        from mommy_chaogu.web import deps
+
+        agent = MagicMock()
+        memory = MagicMock()
+        memory.for_session.side_effect = ValueError("bad session")
+        monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+
+        with client.websocket_connect("/ws/agent") as ws:
+            ws.send_json({"message": "hello", "session_id": "../bad"})
+            assert ws.receive_json() == {"type": "error", "message": "无效的会话 ID"}

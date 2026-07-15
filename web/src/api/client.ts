@@ -4,6 +4,7 @@
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || ''
 const TOKEN_KEY = 'mommy-owner-token'
+const CHAT_SESSION_KEY = 'mommy-chat-session'
 
 export function getApiToken(): string {
   if (typeof window === 'undefined') return ''
@@ -15,6 +16,15 @@ export function setApiToken(token: string): void {
   const normalized = token.trim()
   if (normalized) window.sessionStorage.setItem(TOKEN_KEY, normalized)
   else window.sessionStorage.removeItem(TOKEN_KEY)
+}
+
+export function getChatSessionId(): string {
+  if (typeof window === 'undefined') return 'web-default'
+  const existing = window.sessionStorage.getItem(CHAT_SESSION_KEY)
+  if (existing) return existing
+  const generated = `web-${crypto.randomUUID()}`
+  window.sessionStorage.setItem(CHAT_SESSION_KEY, generated)
+  return generated
 }
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {

@@ -17,15 +17,23 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
-from mommy_chaogu.agent.memory import ConversationMemory
 from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
 from mommy_chaogu.agent.memory_service import MemoryService
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
 _log = logging.getLogger(__name__)
+
+
+class ConversationMemoryLike(Protocol):
+    """Minimal conversation-memory interface consumed by AgentService."""
+
+    def recent(self, limit: int = 20) -> list[dict[str, Any]]: ...
+
+    def add(self, role: str, content: str) -> int: ...
+
 
 # 支持的 provider 配置
 SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
@@ -146,7 +154,7 @@ class AgentService:
         user_message: str,
         history: list[dict[str, str]] | None = None,
         system_override: str | None = None,
-        memory: ConversationMemory | None = None,
+        memory: ConversationMemoryLike | None = None,
         on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
