@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from mommy_chaogu import __version__
 from mommy_chaogu.db_paths import PORTFOLIO_DB
 from mommy_chaogu.web.background import BackgroundService, set_service
 from mommy_chaogu.web.deps import (
@@ -142,7 +143,7 @@ def create_app(
     app = FastAPI(
         title="mommy-chaogu API",
         description="妈妈炒股的 Web 后端",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
@@ -214,7 +215,7 @@ def create_app(
         def root() -> dict[str, str]:
             return {
                 "name": "mommy-chaogu",
-                "version": "0.1.0",
+                "version": __version__,
                 "docs": "/docs",
                 "health": "/api/health",
             }

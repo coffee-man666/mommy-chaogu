@@ -1,5 +1,9 @@
 # Executable Enhancement Plan — 2026-07-14
 
+> **Status: implemented for v0.2.0.** WP-0 through WP-8 were completed on the
+> `codex/production-hardening` branch. Acceptance gates are maintained in CI and
+> `scripts/quality.sh`.
+
 > Implementation plan derived from [Project Evaluation — 2026-07-14](EVALUATION-2026-07-14.md).
 > Target: a secure and reliable **single-user production release**.
 

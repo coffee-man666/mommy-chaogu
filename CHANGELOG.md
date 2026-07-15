@@ -5,6 +5,34 @@
 
 ---
 
+## [0.2.0] - 2026-07-14
+
+### 新增
+
+- Kimi K2.6 和 Nova Bridge provider，并校验 provider 配置。
+- 单用户 Bearer 鉴权、短期 WebSocket ticket、受限 CORS、安全监听默认值和 agent 并发上限。
+- 浏览器会话级对话隔离、非活跃会话清理、Vitest 和 Playwright 行为测试。
+- Docker、迁移、依赖审计、覆盖率和定时数据源探针等发布门禁。
+
+### 改进
+
+- Docker 可复现构建 Vue/Python 产物并以非 root 用户运行。
+- SQLite owner 统一显式生命周期、WAL、外键和 busy timeout。
+- CLI 拆分为有边界的命令族模块，入口保持兼容。
+- Workflow registry/router 改为进程级缓存和显式依赖。
+- CI 覆盖 Python 3.12/3.13、前端、Docker、依赖审计和 65% 分支覆盖率。
+
+### 修复
+
+- Quote/signal WebSocket 订阅注册和清理。
+- 持仓调整后的成本基础重复计算。
+- 报告解析中 `万亿` 被较短的 `亿` 后缀抢先匹配。
+
+详见 [基线评估](docs/EVALUATION-2026-07-14.md) 和已完成的
+[增强计划](docs/ENHANCEMENT-PLAN-2026-07-14.md)。
+
+---
+
 ## [未发布] - 2026-07-02
 
 ### 新增 ⭐

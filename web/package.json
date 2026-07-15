@@ -1,6 +1,6 @@
 {
   "name": "mommy-chaogu-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "妈妈炒股 Web 前端（Vite + Vue 3）",
   "scripts": {

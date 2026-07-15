@@ -1,5 +1,9 @@
 # Project Evaluation — 2026-07-14
 
+> **Baseline evaluation (remediated in v0.2.0).** Findings E-001 through E-012 drove the
+> completed [enhancement plan](ENHANCEMENT-PLAN-2026-07-14.md). See [CHANGELOG.md](../CHANGELOG.md)
+> for shipped changes; scores below describe the pre-hardening baseline.
+
 > Repository-wide evaluation of `mommy-chaogu` on branch `tui-overhaul`, after commit
 > `d84c8ca` added Kimi K2.6 and Nova Bridge support.
 
