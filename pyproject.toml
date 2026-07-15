@@ -113,7 +113,8 @@ module = [
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["mommy_chaogu.cli"]
+# argparse namespaces and dynamically registered callbacks form the CLI boundary.
+module = ["mommy_chaogu.cli", "mommy_chaogu.cli_commands.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
