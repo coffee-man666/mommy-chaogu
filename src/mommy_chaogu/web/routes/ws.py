@@ -45,7 +45,7 @@ async def ws_quotes(
 ) -> None:
     """报价快照推送。"""
     await websocket.accept()
-    service.add_quote_subscriber(websocket)  # type: ignore[arg-type]
+    await service.add_quote_subscriber(websocket)  # type: ignore[arg-type]
     try:
         # 保持连接，接收客户端心跳（无业务消息，只是 keep-alive）
         while True:
@@ -66,7 +66,7 @@ async def ws_signals(
 ) -> None:
     """信号推送。"""
     await websocket.accept()
-    service.add_signal_subscriber(websocket)  # type: ignore[arg-type]
+    await service.add_signal_subscriber(websocket)  # type: ignore[arg-type]
     try:
         while True:
             msg = await websocket.receive_text()
