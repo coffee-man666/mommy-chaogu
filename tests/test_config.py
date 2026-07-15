@@ -21,6 +21,8 @@ _ENV_KEYS = (
     "NOVA_API_KEY",
     "SERVER_CHAN_KEY",
     "AGENT_PROVIDER",
+    "MOMMY_API_TOKEN",
+    "MOMMY_CORS_ORIGINS",
 )
 
 
@@ -130,6 +132,14 @@ def test_nova_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_pat
     cfg = load_config(tmp_path / "missing.toml")
     assert cfg.agent.api_key == "dummy"
     assert cfg.agent.provider == "nova"
+
+
+def test_web_security_env_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setenv("MOMMY_API_TOKEN", "owner-secret")
+    monkeypatch.setenv("MOMMY_CORS_ORIGINS", "https://one.example.com, https://two.example.com")
+    cfg = load_config(tmp_path / "missing.toml")
+    assert cfg.web.api_token == "owner-secret"
+    assert cfg.web.cors_origins == ["https://one.example.com", "https://two.example.com"]
 
 
 # ---------- create_default_config ----------

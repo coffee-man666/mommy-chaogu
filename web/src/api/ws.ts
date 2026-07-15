@@ -1,5 +1,5 @@
 // WebSocket 客户端
-import { wsUrl } from './client'
+import { authenticatedWsUrl } from './client'
 import type { Snapshot, Signal } from './types'
 
 type SnapshotHandler = (snap: Snapshot) => void
@@ -9,14 +9,23 @@ export class QuotesWS {
   private ws: WebSocket | null = null
   private handler: SnapshotHandler | null = null
   private reconnectTimer: number | null = null
+  private pingTimer: number | null = null
 
   connect(handler: SnapshotHandler) {
     this.handler = handler
-    this.open()
+    void this.open()
   }
 
-  private open() {
-    const url = wsUrl('/ws/quotes')
+  private async open() {
+    let url: string
+    try {
+      url = await authenticatedWsUrl('/ws/quotes')
+    } catch (error) {
+      console.error('[ws] authentication failed', error)
+      this.scheduleReconnect()
+      return
+    }
+    if (!this.handler) return
     console.log('[ws] connecting to', url)
     this.ws = new WebSocket(url)
     this.ws.onopen = () => {
@@ -36,13 +45,22 @@ export class QuotesWS {
     }
     this.ws.onclose = () => {
       console.log('[ws] disconnected, reconnecting in 3s')
-      this.reconnectTimer = window.setTimeout(() => this.open(), 3000)
+      this.scheduleReconnect()
     }
     this.ws.onerror = (e) => console.error('[ws] error', e)
   }
 
+  private scheduleReconnect() {
+    if (!this.handler || this.reconnectTimer != null) return
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null
+      void this.open()
+    }, 3000)
+  }
+
   private ping() {
-    setInterval(() => {
+    if (this.pingTimer != null) window.clearInterval(this.pingTimer)
+    this.pingTimer = window.setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.send('ping')
       }
@@ -51,6 +69,10 @@ export class QuotesWS {
 
   disconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    if (this.pingTimer) clearInterval(this.pingTimer)
+    this.handler = null
+    this.reconnectTimer = null
+    this.pingTimer = null
     this.ws?.close()
     this.ws = null
   }
@@ -59,10 +81,23 @@ export class QuotesWS {
 export class SignalsWS {
   private ws: WebSocket | null = null
   private handler: SignalHandler | null = null
+  private closed = false
 
   connect(handler: SignalHandler) {
     this.handler = handler
-    const url = wsUrl('/ws/signals')
+    this.closed = false
+    void this.open()
+  }
+
+  private async open() {
+    let url: string
+    try {
+      url = await authenticatedWsUrl('/ws/signals')
+    } catch (error) {
+      console.error('[signals-ws] authentication failed', error)
+      return
+    }
+    if (this.closed) return
     this.ws = new WebSocket(url)
     this.ws.onmessage = (e) => {
       if (e.data === 'pong') return
@@ -79,6 +114,8 @@ export class SignalsWS {
   }
 
   disconnect() {
+    this.closed = true
+    this.handler = null
     this.ws?.close()
     this.ws = null
   }

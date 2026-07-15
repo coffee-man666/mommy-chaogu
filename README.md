@@ -134,6 +134,15 @@ uv run mommy web --port 8765
 
 移动端底部 Tab 导航（首页/行情/持仓/AI对话/信号），AI 对话页含 WebSocket 连接状态指示器 + 失败重试。
 
+Web 服务默认只监听 `127.0.0.1`。需要在局域网或公网访问时，必须配置业主令牌：
+
+```bash
+export MOMMY_API_TOKEN="$(openssl rand -hex 32)"
+uv run mommy web --host 0.0.0.0 --port 8765
+```
+
+浏览器打开「设置 → 访问令牌」后输入同一令牌。令牌仅保存在当前浏览器会话；WebSocket 使用短期签名 ticket，不会把长期令牌放在 URL 中。
+
 > 📖 更多功能：[场景化使用指南](docs/USER-GUIDE.md) | [CLI 速查](docs/DETAILED-ARCHITECTURE.md#cli-速查) | [记忆系统](docs/DETAILED-ARCHITECTURE.md#自进化记忆系统) | [回测引擎](docs/DETAILED-ARCHITECTURE.md#回测引擎)
 > 🔧 无 API key？行情查询和资金流等工作流仍可正常使用，AI 分析功能需要配置 key。
 

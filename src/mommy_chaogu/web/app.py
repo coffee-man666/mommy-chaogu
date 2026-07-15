@@ -35,6 +35,7 @@ from mommy_chaogu.web.routes import (
     ws,
 )
 from mommy_chaogu.web.schemas import HealthOut
+from mommy_chaogu.web.security import OwnerAuthMiddleware, WebSecurity
 
 _log = logging.getLogger(__name__)
 
@@ -44,6 +45,10 @@ def create_app(
     poll_interval_seconds: float = 5.0,
     server_chan_key: str | None = None,
     web_base_url: str = "",
+    api_token: str = "",
+    cors_origins: list[str] | None = None,
+    ws_ticket_ttl_seconds: int = 60,
+    agent_max_concurrency: int = 2,
 ) -> FastAPI:
     """FastAPI app 工厂。
 
@@ -128,14 +133,23 @@ def create_app(
         lifespan=lifespan,
     )
 
-    # CORS（开发期 H5 跨域）
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    security = WebSecurity(
+        api_token=api_token,
+        ticket_ttl_seconds=ws_ticket_ttl_seconds,
+        agent_max_concurrency=agent_max_concurrency,
     )
+    app.state.web_security = security
+    app.add_middleware(OwnerAuthMiddleware, security=security)
+
+    # CORS（开发期 H5 跨域）
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
 
     # 路由
     app.include_router(quotes.router)
@@ -149,18 +163,21 @@ def create_app(
     app.include_router(themes.router)
     app.include_router(ws.router)
 
+    @app.post("/api/auth/ws-ticket")
+    def issue_ws_ticket() -> dict[str, str | int]:
+        ticket, expires_at = security.issue_ws_ticket()
+        return {"ticket": ticket, "expires_at": expires_at}
+
     # 健康检查
     @app.get("/api/health")
     def health() -> HealthOut:
         from mommy_chaogu.web.background import get_service
-        from mommy_chaogu.web.deps import get_db_path
 
         svc = get_service()
         adapter = get_adapter()
         return HealthOut(
             ok=True,
             adapter_name=adapter.name,
-            db_path=str(get_db_path()),
             uptime_seconds=svc.uptime_seconds(),
             last_snapshot_at=svc.last_poll_at(),
         )

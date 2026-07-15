@@ -38,12 +38,22 @@ async def push_signals(ws: WebSocket, signals: list[Any]) -> None:
 # ---------- 端点 ----------
 
 
+async def _authorize(websocket: WebSocket) -> bool:
+    security = websocket.app.state.web_security
+    if security.validate_ws_ticket(websocket.query_params.get("ticket")):
+        return True
+    await websocket.close(code=1008, reason="Missing or invalid WebSocket ticket")
+    return False
+
+
 @router.websocket("/ws/quotes")
 async def ws_quotes(
     websocket: WebSocket,
     service: Annotated[BackgroundService, Depends(get_service)],
 ) -> None:
     """报价快照推送。"""
+    if not await _authorize(websocket):
+        return
     await websocket.accept()
     await service.add_quote_subscriber(websocket)  # type: ignore[arg-type]
     try:
@@ -65,6 +75,8 @@ async def ws_signals(
     service: Annotated[BackgroundService, Depends(get_service)],
 ) -> None:
     """信号推送。"""
+    if not await _authorize(websocket):
+        return
     await websocket.accept()
     await service.add_signal_subscriber(websocket)  # type: ignore[arg-type]
     try:
@@ -94,6 +106,8 @@ async def ws_agent(websocket: WebSocket) -> None:
     import asyncio
     import json
 
+    if not await _authorize(websocket):
+        return
     await websocket.accept()
 
     from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
@@ -129,8 +143,15 @@ async def ws_agent(websocket: WebSocket) -> None:
             # thinking 状态
             await websocket.send_json({"type": "thinking"})
 
-            # agent.chat 是同步的，用 to_thread 包装
-            resp = await asyncio.to_thread(agent.chat, user_message, None, None, memory)
+            security = websocket.app.state.web_security
+            if not await security.try_acquire_agent():
+                await websocket.send_json({"type": "error", "message": "AI 助手忙，请稍后重试"})
+                continue
+            try:
+                # agent.chat 是同步的，用 to_thread 包装
+                resp = await asyncio.to_thread(agent.chat, user_message, None, None, memory)
+            finally:
+                await security.release_agent()
 
             # 分段发送（小段快发）
             text = resp.text

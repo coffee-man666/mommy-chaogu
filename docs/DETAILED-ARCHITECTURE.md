@@ -221,6 +221,14 @@ mommy flows pull --pool semicon --days 30
 
 ## 自动化
 
+### Web 安全边界
+
+- 默认监听 `127.0.0.1`，本机使用无需令牌。
+- 非本机监听必须设置 `MOMMY_API_TOKEN`。
+- REST API 使用 Bearer token；WebSocket 使用 60 秒有效的 HMAC 签名 ticket。
+- `MOMMY_CORS_ORIGINS` 用逗号分隔可信前端 origin；默认不允许跨域。
+- Agent REST/WebSocket 共用有界并发槽，防止意外消耗 LLM 配额。
+
 ### Cron 定时任务
 
 | 脚本 | 时间 | 功能 |

@@ -1,5 +1,5 @@
 // Agent API client
-import { apiPost, wsUrl } from './client'
+import { apiPost, authenticatedWsUrl } from './client'
 
 export interface ChatResponse {
   reply: string
@@ -50,7 +50,20 @@ export function agentStream(
   let retried = false
   let closedByClient = false
   let retryTimer: number | null = null
-  let ws = new WebSocket(wsUrl('/ws/agent'))
+  let ws: WebSocket | null = null
+
+  async function openSocket() {
+    try {
+      const url = await authenticatedWsUrl('/ws/agent')
+      if (closedByClient) return
+      ws = new WebSocket(url)
+      attachHandlers(ws)
+    } catch (error) {
+      if (!closedByClient) {
+        onError(error instanceof Error ? error.message : 'WebSocket 认证失败')
+      }
+    }
+  }
 
   function attachHandlers(socket: WebSocket) {
     socket.onopen = () => {
@@ -91,8 +104,7 @@ export function agentStream(
         retryTimer = window.setTimeout(() => {
           retryTimer = null
           if (closedByClient) return
-          ws = new WebSocket(wsUrl('/ws/agent'))
-          attachHandlers(ws)
+          void openSocket()
         }, 2000)
       } else if (socket.readyState === WebSocket.CONNECTING) {
         onError('WebSocket 连接失败，请检查服务是否正常运行')
@@ -102,7 +114,7 @@ export function agentStream(
     }
   }
 
-  attachHandlers(ws)
+  void openSocket()
 
   return {
     send(message: string, history?: Array<{ role: string; content: string }>) {
@@ -110,9 +122,9 @@ export function agentStream(
         onError('WebSocket 连接已关闭，请重新发送消息')
         return
       }
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ message, history }))
-      } else if (ws.readyState === WebSocket.CONNECTING) {
+      } else if (ws == null || ws.readyState === WebSocket.CONNECTING) {
         // 连接还没建立，缓冲等 onopen
         pendingMessage = { message, history }
       } else {
@@ -127,10 +139,12 @@ export function agentStream(
         window.clearTimeout(retryTimer)
         retryTimer = null
       }
-      ws.onopen = null
-      ws.onmessage = null
-      ws.onerror = null
-      ws.close()
+      if (ws) {
+        ws.onopen = null
+        ws.onmessage = null
+        ws.onerror = null
+        ws.close()
+      }
     },
   }
 }

@@ -126,7 +126,6 @@ class CacheStatsOut(BaseModel):
 class HealthOut(BaseModel):
     ok: bool
     adapter_name: str
-    db_path: str
     uptime_seconds: float
     last_snapshot_at: datetime | None = None
 

@@ -14,6 +14,8 @@
     NOVA_API_KEY      → agent.api_key（provider=nova 时）
     SERVER_CHAN_KEY   → push.server_chan_key
     AGENT_PROVIDER    → agent.provider
+    MOMMY_API_TOKEN   → web.api_token
+    MOMMY_CORS_ORIGINS → web.cors_origins（逗号分隔）
 """
 
 from __future__ import annotations
@@ -77,6 +79,16 @@ class MonitorConfig:
 
 
 @dataclass
+class WebConfig:
+    """Web security and browser-access configuration."""
+
+    api_token: str = ""
+    cors_origins: list[str] = field(default_factory=list)
+    ws_ticket_ttl_seconds: int = 60
+    agent_max_concurrency: int = 2
+
+
+@dataclass
 class AppConfig:
     """顶层配置，聚合所有子配置。"""
 
@@ -85,6 +97,7 @@ class AppConfig:
     push: PushConfig = field(default_factory=PushConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
+    web: WebConfig = field(default_factory=WebConfig)
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -124,6 +137,14 @@ def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
     if env_sck:
         cfg.push.server_chan_key = env_sck
 
+    env_api_token = os.environ.get("MOMMY_API_TOKEN")
+    if env_api_token:
+        cfg.web.api_token = env_api_token
+
+    env_cors = os.environ.get("MOMMY_CORS_ORIGINS")
+    if env_cors is not None:
+        cfg.web.cors_origins = [origin.strip() for origin in env_cors.split(",") if origin.strip()]
+
     return cfg
 
 
@@ -147,6 +168,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     push = _build_section(PushConfig, data.get("push", {}))
     cache = _build_section(CacheConfig, data.get("cache", {}))
     monitor = _build_section(MonitorConfig, data.get("monitor", {}))
+    web = _build_section(WebConfig, data.get("web", {}))
 
     cfg = AppConfig(
         db_path=data.get("db_path", str(MARKET_DB)),
@@ -154,6 +176,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         push=push,  # type: ignore[arg-type]
         cache=cache,  # type: ignore[arg-type]
         monitor=monitor,  # type: ignore[arg-type]
+        web=web,  # type: ignore[arg-type]
     )
     return _apply_env_overrides(cfg)
 
@@ -172,6 +195,8 @@ _CONFIG_TEMPLATE = """\
 #   NOVA_API_KEY      (provider=nova)
 #   SERVER_CHAN_KEY   → push.server_chan_key
 #   AGENT_PROVIDER    → agent.provider
+#   MOMMY_API_TOKEN   → web.api_token
+#   MOMMY_CORS_ORIGINS → web.cors_origins
 
 db_path = "{market_db}"
 
@@ -193,6 +218,12 @@ market_snapshot_fetch_interval_seconds = 3600  # 全市场快照（1 小时）
 [monitor]
 interval_seconds = 30.0        # 监控轮询间隔
 with_signals = true            # 同时评估告警信号
+
+[web]
+api_token = ""                         # 远程访问必填；建议使用 MOMMY_API_TOKEN
+cors_origins = []                     # 例如 ["https://stocks.example.com"]
+ws_ticket_ttl_seconds = 60
+agent_max_concurrency = 2
 """
 
 
