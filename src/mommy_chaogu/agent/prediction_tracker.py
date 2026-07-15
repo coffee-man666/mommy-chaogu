@@ -13,9 +13,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
+
+from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS predictions (
@@ -85,7 +87,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     return {col: row._mapping[col] for col in cols}
 
 
-class PredictionTracker:
+class PredictionTracker(EngineOwner):
     """预测追踪：SQLite 持久化的 agent 预测记录与验证状态。
 
     用法::
@@ -101,11 +103,8 @@ class PredictionTracker:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine: Engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            future=True,
-        )
+        self.engine: Engine = create_sqlite_engine(db_path)
+        self._manage_engine()
         with self.engine.begin() as conn:
             for stmt in _SCHEMA_SQL.strip().split(";"):
                 stmt = stmt.strip()

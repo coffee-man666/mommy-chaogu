@@ -11,10 +11,11 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 from mommy_chaogu.portfolio.models import (
     PortfolioBase,
     Position,
@@ -30,7 +31,7 @@ class PositionNotFoundError(PortfolioError):
     """持仓不存在。"""
 
 
-class PortfolioStore:
+class PortfolioStore(EngineOwner):
     """SQLite-backed 持仓存储。
 
     用法：
@@ -42,15 +43,8 @@ class PortfolioStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine: Engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            future=True,
-        )
-        with self.engine.begin() as conn:
-            from sqlalchemy import text
-
-            conn.execute(text("PRAGMA foreign_keys = ON"))
+        self.engine: Engine = create_sqlite_engine(db_path)
+        self._manage_engine()
         PortfolioBase.metadata.create_all(self.engine)
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
 

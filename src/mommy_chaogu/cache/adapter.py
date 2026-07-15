@@ -72,6 +72,10 @@ class CachedMarketDataAdapter:
             ""  # "network", "cache", "stale_cache", "snapshot", "stale_snapshot", ""
         )
 
+    def close(self) -> None:
+        """Release the cache store owned by this adapter."""
+        self.store.close()
+
     # ============================================================
     # 内部：拉新节流判断
     # ============================================================

@@ -21,7 +21,13 @@ from fastapi.staticfiles import StaticFiles
 
 from mommy_chaogu.db_paths import PORTFOLIO_DB
 from mommy_chaogu.web.background import BackgroundService, set_service
-from mommy_chaogu.web.deps import get_adapter, get_agent_memory, get_alerter, get_watchlist_store
+from mommy_chaogu.web.deps import (
+    close_cached_dependencies,
+    get_adapter,
+    get_agent_memory,
+    get_alerter,
+    get_watchlist_store,
+)
 from mommy_chaogu.web.routes import (
     agent,
     cache,
@@ -131,6 +137,7 @@ def create_app(
             yield
         finally:
             await service.stop()
+            close_cached_dependencies()
 
     app = FastAPI(
         title="mommy-chaogu API",

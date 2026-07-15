@@ -18,10 +18,11 @@ from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 from mommy_chaogu.semicon.models import SemiconBase, SemiconStock
 
 # ---------- 常量集合 ----------
@@ -83,7 +84,7 @@ class StockAlreadyExistsError(SemiconError):
 # ---------- Store ----------
 
 
-class SemiconStore:
+class SemiconStore(EngineOwner):
     """SQLite-backed 半导体产业链参考库。
 
     用法：
@@ -96,11 +97,8 @@ class SemiconStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine: Engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            future=True,
-        )
+        self.engine: Engine = create_sqlite_engine(db_path)
+        self._manage_engine()
         SemiconBase.metadata.create_all(self.engine)
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
 

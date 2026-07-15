@@ -15,10 +15,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, joinedload, sessionmaker
 
+from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 from mommy_chaogu.watchlist.models import Group, StockEntry, WatchlistBase
 
 #: JSON 导出 schema 版本。破坏性变更时 +1。
@@ -41,7 +42,7 @@ class StockEntryNotFoundError(WatchlistError):
     """自选股不存在。"""
 
 
-class WatchlistStore:
+class WatchlistStore(EngineOwner):
     """SQLite-backed 自选池存储。
 
     用法：
@@ -55,16 +56,8 @@ class WatchlistStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine: Engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            future=True,
-        )
-        # SQLite 外键默认关，开一下
-        with self.engine.begin() as conn:
-            from sqlalchemy import text
-
-            conn.execute(text("PRAGMA foreign_keys = ON"))
+        self.engine: Engine = create_sqlite_engine(db_path)
+        self._manage_engine()
         # 创建表
         WatchlistBase.metadata.create_all(self.engine)
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
