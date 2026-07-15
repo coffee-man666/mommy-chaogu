@@ -15,7 +15,7 @@ import json
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -122,7 +122,7 @@ class SemanticMemory(EngineOwner):
         self._vec_model = model
         self._vec_dim = dim
         try:
-            import sqlite_vec
+            import sqlite_vec  # type: ignore[import-untyped]
 
             with self.engine.raw_connection() as raw_conn:
                 raw_conn.enable_load_extension(True)
@@ -156,7 +156,7 @@ class SemanticMemory(EngineOwner):
                 model=self._vec_model,
                 input=text_content[:2000],
             )
-            return response.data[0].embedding
+            return cast(list[float], response.data[0].embedding)
         except Exception:
             return None
 

@@ -40,6 +40,16 @@ _PROVIDER_ENV_KEYS: dict[str, str] = {
     "zai": "ZAI_API_KEY",
     "nova": "NOVA_API_KEY",
 }
+SUPPORTED_AGENT_PROVIDERS = tuple(_PROVIDER_ENV_KEYS)
+
+
+def validate_agent_provider(provider: str) -> str:
+    """Return a normalized provider name or fail with an actionable message."""
+    normalized = provider.strip().lower()
+    if normalized not in _PROVIDER_ENV_KEYS:
+        supported = ", ".join(SUPPORTED_AGENT_PROVIDERS)
+        raise ValueError(f"Unsupported agent provider {provider!r}; choose one of: {supported}")
+    return normalized
 
 
 @dataclass
@@ -126,6 +136,8 @@ def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
     env_provider = os.environ.get("AGENT_PROVIDER")
     if env_provider:
         cfg.agent.provider = env_provider
+
+    cfg.agent.provider = validate_agent_provider(cfg.agent.provider)
 
     # 根据当前 provider 取对应 key
     env_key = _PROVIDER_ENV_KEYS.get(cfg.agent.provider, "")

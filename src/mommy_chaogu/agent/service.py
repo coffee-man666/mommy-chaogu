@@ -41,26 +41,31 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "base_url": "https://api.deepseek.com",
         "default_model": "deepseek-chat",
         "env_key": "DEEPSEEK_API_KEY",
+        "temperature": 0.2,
     },
     "openai": {
         "base_url": None,  # OpenAI 默认
         "default_model": "gpt-4o-mini",
         "env_key": "OPENAI_API_KEY",
+        "temperature": 0.2,
     },
     "kimi": {
         "base_url": "https://api.kimi.com/coding/v1",
         "default_model": "kimi-k2.6",
         "env_key": "MOONSHOT_API_KEY",
+        "temperature": 1.0,
     },
     "zai": {
         "base_url": "https://api.z.ai/api/coding/paas/v4",
         "default_model": "glm-4.7",
         "env_key": "ZAI_API_KEY",
+        "temperature": 0.2,
     },
     "nova": {
         "base_url": "http://127.0.0.1:9999/v1",
         "default_model": "nova-bridge",
         "env_key": "NOVA_API_KEY",
+        "temperature": None,
     },
 }
 
@@ -112,7 +117,15 @@ class AgentService:
 
         # 解析 provider 配置
         provider = provider or os.environ.get("AGENT_PROVIDER", "deepseek")
-        config = SUPPORTED_PROVIDERS.get(provider, SUPPORTED_PROVIDERS["deepseek"])
+        provider = provider.strip().lower()
+        if provider not in SUPPORTED_PROVIDERS:
+            supported = ", ".join(SUPPORTED_PROVIDERS)
+            raise ValueError(f"Unsupported agent provider {provider!r}; choose one of: {supported}")
+        config = SUPPORTED_PROVIDERS[provider]
+        self._provider = provider
+        self._completion_options = (
+            {"temperature": config["temperature"]} if config["temperature"] is not None else {}
+        )
 
         self._model = model or config["default_model"]
 
@@ -231,7 +244,7 @@ class AgentService:
                 model=self._model,
                 messages=messages,
                 tools=self._tools.definitions(),
-                temperature=1,  # Kimi K2.6 only accepts 1
+                **self._completion_options,
             )
 
             msg = response.choices[0].message

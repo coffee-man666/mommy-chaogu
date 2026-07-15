@@ -38,7 +38,12 @@ class TestProviderConfig:
             "base_url": "http://127.0.0.1:9999/v1",
             "default_model": "nova-bridge",
             "env_key": "NOVA_API_KEY",
+            "temperature": None,
         }
+
+    def test_temperatures_are_provider_aware(self) -> None:
+        assert SUPPORTED_PROVIDERS["kimi"]["temperature"] == 1.0
+        assert SUPPORTED_PROVIDERS["openai"]["temperature"] == 0.2
 
 
 class TestAgentServiceInit:
@@ -48,6 +53,10 @@ class TestAgentServiceInit:
             pytest.raises(ValueError, match="未找到 API key"),
         ):
             AgentService(mock_ctx)
+
+    def test_invalid_provider_raises(self, mock_ctx: ToolContext) -> None:
+        with pytest.raises(ValueError, match="Unsupported agent provider"):
+            AgentService(mock_ctx, provider="mystery", api_key="sk-test")
 
     @patch("openai.OpenAI")
     def test_init_with_explicit_key(self, _mock_openai: MagicMock, mock_ctx: ToolContext) -> None:

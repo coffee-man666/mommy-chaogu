@@ -94,7 +94,22 @@ ignore_errors = true
 
 # web 模块涉及 FastAPI 依赖注入和 Pydantic，类型相对弱
 [[tool.mypy.overrides]]
-module = ["mommy_chaogu.web.*", "mommy_chaogu.agent.*", "mommy_chaogu.backtest.*"]
+module = ["mommy_chaogu.web.*", "mommy_chaogu.backtest.*"]
+ignore_errors = true
+
+# Agent integrations depend on dynamic OpenAI/MCP response objects. Keep the
+# exclusions scoped to those boundaries; core memory and tracking stay strict.
+[[tool.mypy.overrides]]
+module = [
+    "mommy_chaogu.agent.service",
+    "mommy_chaogu.agent.tools",
+    "mommy_chaogu.agent.mcp_server",
+    "mommy_chaogu.agent.extractor",
+    "mommy_chaogu.agent.consolidator",
+    "mommy_chaogu.agent.monitor",
+    "mommy_chaogu.agent.narrative",
+    "mommy_chaogu.agent.vector_search",
+]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -111,3 +126,12 @@ addopts = "-ra -q"
 markers = [
     "network: requires live efinance API access (东财接口)",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["mommy_chaogu"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+precision = 1

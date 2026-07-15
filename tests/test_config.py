@@ -134,6 +134,12 @@ def test_nova_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert cfg.agent.provider == "nova"
 
 
+def test_invalid_provider_fails_fast(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setenv("AGENT_PROVIDER", "typo-provider")
+    with pytest.raises(ValueError, match="Unsupported agent provider"):
+        load_config(tmp_path / "missing.toml")
+
+
 def test_web_security_env_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("MOMMY_API_TOKEN", "owner-secret")
     monkeypatch.setenv("MOMMY_CORS_ORIGINS", "https://one.example.com, https://two.example.com")
