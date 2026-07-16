@@ -78,7 +78,7 @@ onMounted(async () => {
         <Card
           v-for="t in themes"
           :key="t.id"
-          class="cursor-pointer transition-all hover:shadow-md hover:border-primary/50"
+          class="cursor-pointer transition-[border-color,box-shadow,transform] hover:border-primary/50 hover:shadow-md"
           @click="router.push(`/themes/${t.id}`)"
         >
           <CardContent class="p-4">

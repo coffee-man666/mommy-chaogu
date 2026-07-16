@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { agentStream, agentRoute } from '@/api/agent'
+import type { AgentStreamState } from '@/api/agent'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { Bot, Send, User, Wrench, CheckCircle2, Zap, RotateCcw, Square } from 'lucide-vue-next'
+import { ArrowDown, Bot, Send, User, Wrench, CheckCircle2, Zap, RotateCcw, Square } from 'lucide-vue-next'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -24,6 +25,7 @@ interface Message {
 }
 
 const route = useRoute()
+const router = useRouter()
 const messages = ref<Message[]>([])
 const input = ref('')
 const loading = ref(false)
@@ -35,15 +37,11 @@ let activeRequestId = 0
 let activeAssistantIdx: number | null = null
 let routeAbortController: AbortController | null = null
 
-// WebSocket 连接状态指示
-const wsConnected = ref(false)
+const CHAT_STORAGE_KEY = 'mommy_chat_messages_v1'
+const CHAT_DRAFT_KEY = 'mommy_chat_draft_v1'
+const connectionState = ref<AgentStreamState | 'idle'>('idle')
 
-const wsStatus = computed<'connected' | 'connecting' | 'disconnected'>(() => {
-  if (lastFailedMessage.value && !wsConnected.value) return 'disconnected'
-  if (wsConnected.value) return 'connected'
-  if (loading.value) return 'connecting'
-  return 'connecting'
-})
+const wsStatus = computed(() => connectionState.value)
 
 const wsDotColor = computed(() => {
   switch (wsStatus.value) {
@@ -51,6 +49,8 @@ const wsDotColor = computed(() => {
       return 'bg-green-500'
     case 'disconnected':
       return 'bg-red-500'
+    case 'idle':
+      return 'bg-muted-foreground/60'
     default:
       return 'bg-yellow-500'
   }
@@ -62,6 +62,8 @@ const wsStatusText = computed(() => {
       return loading.value ? '回答中…' : '已连接'
     case 'disconnected':
       return '已断开'
+    case 'idle':
+      return '就绪'
     default:
       return '连接中…'
   }
@@ -81,6 +83,16 @@ const quickQuestions = [
 function scrollToBottom() {
   nextTick(() => {
     if (userScrolledUp.value) return
+    scrollContainerRef.value?.scrollTo({
+      top: scrollContainerRef.value.scrollHeight,
+      behavior: 'smooth',
+    })
+  })
+}
+
+function jumpToLatest() {
+  userScrolledUp.value = false
+  nextTick(() => {
     scrollContainerRef.value?.scrollTo({
       top: scrollContainerRef.value.scrollHeight,
       behavior: 'smooth',
@@ -110,7 +122,7 @@ function stopGeneration() {
     stream.value.close()
     stream.value = null
   }
-  wsConnected.value = false
+  connectionState.value = 'idle'
   loading.value = false
   activeAssistantIdx = null
 
@@ -139,7 +151,7 @@ async function send(message: string) {
     stream.value.close()
     stream.value = null
   }
-  wsConnected.value = false
+  connectionState.value = 'idle'
 
   // 显示用户消息
   messages.value.push({ role: 'user', content: text })
@@ -167,6 +179,7 @@ async function send(message: string) {
         streaming: false,
       }
       loading.value = false
+      connectionState.value = 'idle'
       activeAssistantIdx = null
       scrollToBottom()
       return
@@ -194,7 +207,6 @@ async function send(message: string) {
       if (requestId !== activeRequestId) return
       currentText += chunk
       messages.value[assistantIdx].content = currentText
-      wsConnected.value = true
       scrollToBottom()
     },
     (toolsUsed: string[], _rounds: number) => {
@@ -209,7 +221,6 @@ async function send(message: string) {
       if (requestId !== activeRequestId) return
       // thinking — 清空占位文案，进入"打字中"状态
       messages.value[assistantIdx].content = ''
-      wsConnected.value = true
     },
     (msg: string) => {
       if (requestId !== activeRequestId) return
@@ -217,10 +228,13 @@ async function send(message: string) {
       messages.value[assistantIdx].error = true
       messages.value[assistantIdx].streaming = false
       loading.value = false
-      wsConnected.value = false
+      connectionState.value = 'disconnected'
       lastFailedMessage.value = text
       activeAssistantIdx = null
       scrollToBottom()
+    },
+    (state) => {
+      if (requestId === activeRequestId) connectionState.value = state
     },
   )
 
@@ -245,16 +259,70 @@ function retry() {
   send(lastFailedMessage.value)
 }
 
+function restoreConversation() {
+  try {
+    const saved = window.sessionStorage.getItem(CHAT_STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved) as unknown
+      if (Array.isArray(parsed)) {
+        messages.value = parsed
+          .filter(
+            (item): item is Message =>
+              typeof item === 'object' &&
+              item !== null &&
+              ((item as Message).role === 'user' || (item as Message).role === 'assistant') &&
+              typeof (item as Message).content === 'string',
+          )
+          .slice(-40)
+          .map((item) => ({ ...item, streaming: false }))
+      }
+    }
+    input.value = window.sessionStorage.getItem(CHAT_DRAFT_KEY) ?? ''
+  } catch {
+    // Ignore invalid or unavailable session storage and start a fresh view.
+  }
+}
+
+watch(
+  messages,
+  (value) => {
+    try {
+      const snapshot = value.slice(-40).map((message) => ({
+        ...message,
+        content: message.content.slice(0, 20_000),
+        streaming: false,
+      }))
+      window.sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(snapshot))
+    } catch {
+      // Storage may be unavailable or full; chat remains usable in memory.
+    }
+  },
+  { deep: true },
+)
+
+watch(input, (value) => {
+  try {
+    if (value) window.sessionStorage.setItem(CHAT_DRAFT_KEY, value)
+    else window.sessionStorage.removeItem(CHAT_DRAFT_KEY)
+  } catch {
+    // Storage may be unavailable; the live draft remains intact.
+  }
+})
+
 onMounted(() => {
-  // 欢迎消息
-  messages.value.push({
-    role: 'assistant',
-    content:
-      '你好！我是妈妈的行情助手 📋\n\n我可以帮你：\n· 看行情 — "今天怎么样"\n· 分析股票 — "分析比亚迪"\n· 看板块 — "半导体板块怎么样"\n· 看资金 — "主力在买什么"\n· 看持仓 — "我的持仓怎么样"\n· 写报告 — "今日总结"\n\n试试下面的快捷按钮，或者直接问我！',
-  })
+  restoreConversation()
+  if (messages.value.length === 0) {
+    messages.value.push({
+      role: 'assistant',
+      content:
+        '你好！我是妈妈的行情助手 📋\n\n我可以帮你：\n· 看行情 — "今天怎么样"\n· 分析股票 — "分析比亚迪"\n· 看板块 — "半导体板块怎么样"\n· 看资金 — "主力在买什么"\n· 看持仓 — "我的持仓怎么样"\n· 写报告 — "今日总结"\n\n试试下面的快捷按钮，或者直接问我！',
+    })
+  }
   // dashboard 跳转带 q 参数 → 自动发送
   const q = route.query.q
   if (typeof q === 'string' && q.trim()) {
+    const { q: _q, ...remainingQuery } = route.query
+    void router.replace({ query: remainingQuery })
     nextTick(() => send(q))
   }
 })
@@ -271,7 +339,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-4rem)] flex-col bg-muted/30 md:h-dvh">
+  <div class="flex h-[calc(100dvh-var(--mobile-nav-height))] flex-col bg-muted/30 md:h-dvh">
     <!-- 顶栏 -->
     <header
       class="flex shrink-0 items-center gap-2 border-b bg-card px-4 py-3"
@@ -279,12 +347,14 @@ onUnmounted(() => {
       <div
         class="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary"
       >
-        <Bot class="size-5" />
+        <Bot class="size-5" aria-hidden="true" />
       </div>
       <h1 class="text-base font-semibold tracking-tight">AI 对话</h1>
       <span
         class="inline-flex items-center gap-1 text-xs text-muted-foreground"
         :title="wsStatusText"
+        role="status"
+        aria-live="polite"
       >
         <span class="inline-block w-2 h-2 rounded-full" :class="wsDotColor" />
         {{ wsStatusText }}
@@ -300,8 +370,9 @@ onUnmounted(() => {
     </header>
 
     <!-- 对话消息区 -->
-    <div ref="scrollContainerRef" class="min-h-0 flex-1 overflow-y-auto" @scroll="onScroll">
-      <div class="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
+    <div class="relative min-h-0 flex-1">
+      <div ref="scrollContainerRef" class="h-full overflow-y-auto" :aria-busy="loading" @scroll="onScroll">
+        <div class="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
         <div
           v-for="(msg, i) in messages"
           :key="i"
@@ -323,8 +394,8 @@ onUnmounted(() => {
               )
             "
           >
-            <User v-if="msg.role === 'user'" class="size-4" />
-            <Bot v-else class="size-4" />
+            <User v-if="msg.role === 'user'" class="size-4" aria-hidden="true" />
+            <Bot v-else class="size-4" aria-hidden="true" />
           </div>
 
           <!-- 气泡 + 元信息 -->
@@ -342,7 +413,7 @@ onUnmounted(() => {
               variant="outline"
               class="gap-1 text-up"
             >
-              <Zap class="size-3" />
+              <Zap class="size-3" aria-hidden="true" />
               {{ msg.workflowId }}
             </Badge>
 
@@ -388,7 +459,7 @@ onUnmounted(() => {
                 variant="outline"
                 class="gap-1 text-up"
               >
-                <CheckCircle2 class="size-3" />
+                <CheckCircle2 class="size-3" aria-hidden="true" />
                 {{ s }}
               </Badge>
             </div>
@@ -401,7 +472,7 @@ onUnmounted(() => {
               <summary
                 class="inline-flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
-                <Wrench class="size-3" />
+                <Wrench class="size-3" aria-hidden="true" />
                 <span>
                   工具调用 ({{ msg.toolsUsed.length }})
                 </span>
@@ -421,7 +492,19 @@ onUnmounted(() => {
           </div>
         </div>
 
+        </div>
       </div>
+      <Button
+        v-if="userScrolledUp"
+        variant="secondary"
+        size="sm"
+        class="absolute bottom-4 left-1/2 -translate-x-1/2 gap-1 rounded-full shadow-lg"
+        aria-label="跳到最新消息"
+        @click="jumpToLatest"
+      >
+        <ArrowDown class="size-4" aria-hidden="true" />
+        最新消息
+      </Button>
     </div>
 
     <!-- 底部：快捷问题 + 输入区 -->
@@ -434,7 +517,7 @@ onUnmounted(() => {
             :key="q"
             variant="outline"
             size="sm"
-            class="shrink-0 rounded-full"
+            class="min-h-11 shrink-0 rounded-full"
             :disabled="loading"
             @click="handleQuick(q)"
           >
@@ -445,12 +528,17 @@ onUnmounted(() => {
         <Separator />
 
         <!-- 输入区 -->
-        <div class="flex items-center gap-2 px-4 py-3">
+        <div class="mobile-safe-input flex items-center gap-2 px-4 pt-3">
           <Input
+            id="agent-prompt"
             v-model="input"
-            placeholder="问点什么..."
+            name="message"
+            autocomplete="off"
+            aria-label="给 AI 助手的消息"
+            placeholder="例如：分析一下比亚迪…"
             :disabled="loading"
             class="flex-1"
+            enterkeyhint="send"
             @keydown.enter="handleSend"
           />
           <Button
@@ -460,7 +548,7 @@ onUnmounted(() => {
             aria-label="停止生成"
             @click="stopGeneration"
           >
-            <Square class="size-4" />
+            <Square class="size-4" aria-hidden="true" />
           </Button>
           <Button
             v-if="lastFailedMessage"
@@ -469,7 +557,7 @@ onUnmounted(() => {
             aria-label="重试"
             @click="retry"
           >
-            <RotateCcw class="size-4" />
+            <RotateCcw class="size-4" aria-hidden="true" />
           </Button>
           <Button
             :disabled="loading || !input.trim()"
@@ -477,7 +565,7 @@ onUnmounted(() => {
             aria-label="发送"
             @click="handleSend"
           >
-            <Send class="size-4" />
+            <Send class="size-4" aria-hidden="true" />
           </Button>
         </div>
       </div>

@@ -433,7 +433,7 @@ onUnmounted(() => {
         <DialogFooter>
           <Button variant="outline" @click="showAddGroup = false">取消</Button>
           <Button :disabled="addingGroup || !groupForm.name.trim()" @click="submitAddGroup">
-            {{ addingGroup ? '创建中...' : '创建分组' }}
+            {{ addingGroup ? '创建中…' : '创建分组' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -479,7 +479,7 @@ onUnmounted(() => {
             :disabled="addingStock || !stockForm.code.trim() || !stockForm.group.trim()"
             @click="submitAddStock"
           >
-            {{ addingStock ? '添加中...' : '保存' }}
+            {{ addingStock ? '添加中…' : '保存' }}
           </Button>
         </DialogFooter>
       </DialogContent>

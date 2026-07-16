@@ -222,7 +222,7 @@ function goDetail(code: string) {
       </Button>
       <h1 class="text-xl font-bold">
         {{ themeIcons[themeId] || '📈' }}
-        {{ theme?.name || (loading ? '加载中...' : '主题不存在') }}
+        {{ theme?.name || (loading ? '加载中…' : '主题不存在') }}
       </h1>
       <p v-if="theme" class="mt-1 text-xs opacity-85 leading-relaxed">
         {{ theme.description }}
@@ -323,7 +323,7 @@ function goDetail(code: string) {
         <Card>
           <!-- 加载中 -->
           <div v-if="loadingQuotes" class="py-10 text-center text-sm text-muted-foreground">
-            拉取行情中...
+            拉取行情中…
           </div>
 
           <!-- 空状态 -->

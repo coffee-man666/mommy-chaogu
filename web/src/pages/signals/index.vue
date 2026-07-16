@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { apiGet } from '@/api/client'
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,13 +11,20 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { Signal } from '@/api/types'
 
 const router = useRouter()
+const route = useRoute()
 
 const recentSignals = ref<Signal[]>([])
 const history = ref<Signal[]>([])
 const loading = ref(true)
 const recentError = ref(false)
 const historyError = ref(false)
-const activeTab = ref('recent')
+type SignalTab = 'recent' | 'history'
+
+function signalTab(value: unknown): SignalTab {
+  return value === 'history' ? 'history' : 'recent'
+}
+
+const activeTab = ref<SignalTab>(signalTab(route.query.tab))
 
 let timer: number | null = null
 
@@ -58,10 +65,26 @@ function fmtTime(iso: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
   const now = new Date()
-  if (d.toDateString() === now.toDateString()) {
-    return d.toTimeString().slice(0, 8)
+  const dayFormatter = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  if (dayFormatter.format(d) === dayFormatter.format(now)) {
+    return new Intl.DateTimeFormat('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d)
   }
-  return `${d.getMonth() + 1}/${d.getDate()} ${d.toTimeString().slice(0, 5)}`
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d)
 }
 
 const severityConfig: Record<
@@ -96,6 +119,20 @@ const currentError = computed(() =>
 )
 const errorCount = computed(
   () => Number(recentError.value) + Number(historyError.value),
+)
+
+watch(activeTab, (tab) => {
+  const query = { ...route.query }
+  if (tab === 'history') query.tab = tab
+  else delete query.tab
+  void router.replace({ query })
+})
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    activeTab.value = signalTab(tab)
+  },
 )
 
 onMounted(() => {
@@ -167,11 +204,18 @@ onUnmounted(() => {
           <Card
             v-for="s in recentSignals"
             :key="`${s.timestamp}-${s.code}-${s.rule_id}`"
-            class="cursor-pointer border-l-4 transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary outline-none"
-            tabindex="0"
-            :class="severityConfig[s.severity].border"
+            class="border-l-4 outline-none"
+            :class="[
+              severityConfig[s.severity].border,
+              isStockCode(s.code)
+                ? 'cursor-pointer transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary'
+                : '',
+            ]"
+            :tabindex="isStockCode(s.code) ? 0 : undefined"
+            :role="isStockCode(s.code) ? 'link' : undefined"
             @click="goDetail(s)"
             @keydown.enter="goDetail(s)"
+            @keydown.space.prevent="goDetail(s)"
           >
             <CardContent class="space-y-2">
               <!-- 头部：严重度 + 代码 + 时间 -->
@@ -241,9 +285,18 @@ onUnmounted(() => {
           <Card
             v-for="s in history"
             :key="`${s.timestamp}-${s.code}-${s.rule_id}`"
-            class="cursor-pointer border-l-4 transition-transform active:scale-[0.98]"
-            :class="severityConfig[s.severity].border"
+            class="border-l-4 outline-none"
+            :class="[
+              severityConfig[s.severity].border,
+              isStockCode(s.code)
+                ? 'cursor-pointer transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary'
+                : '',
+            ]"
+            :tabindex="isStockCode(s.code) ? 0 : undefined"
+            :role="isStockCode(s.code) ? 'link' : undefined"
             @click="goDetail(s)"
+            @keydown.enter="goDetail(s)"
+            @keydown.space.prevent="goDetail(s)"
           >
             <CardContent class="space-y-2">
               <!-- 头部 -->

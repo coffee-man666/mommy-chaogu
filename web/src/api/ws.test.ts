@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./client', () => ({
-  authenticatedWsUrl: vi.fn().mockResolvedValue('ws://localhost/ws/quotes'),
+  authenticatedWsUrl: () => Promise.resolve('ws://localhost/ws/quotes'),
 }))
 
 import { QuotesWS } from './ws'
