@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -45,6 +46,32 @@ from mommy_chaogu.web.schemas import HealthOut
 from mommy_chaogu.web.security import OwnerAuthMiddleware, WebSecurity
 
 _log = logging.getLogger(__name__)
+
+
+def _frontend_dist_candidates() -> tuple[Path, ...]:
+    """Return frontend build locations in deployment-first order."""
+    candidates: list[Path] = []
+    configured = os.environ.get("MOMMY_WEB_DIST", "").strip()
+    if configured:
+        candidates.append(Path(configured).expanduser())
+
+    roots = (Path.cwd(), Path(__file__).resolve().parents[3])
+    for root in roots:
+        candidates.extend((root / "web" / "dist", root / "frontend" / "dist"))
+
+    return tuple(dict.fromkeys(candidates))
+
+
+def _resolve_frontend_dist() -> Path | None:
+    """Find a complete frontend build rather than accepting an empty directory."""
+    return next(
+        (
+            candidate
+            for candidate in _frontend_dist_candidates()
+            if (candidate / "index.html").is_file()
+        ),
+        None,
+    )
 
 
 def create_app(
@@ -197,18 +224,16 @@ def create_app(
         )
 
     # 静态文件（构建后的前端）
-    # 优先用 Vite 输出的 web/dist（H5 更快）；如果有 frontend/dist（Taro 输出）也可以
-    static_candidates = [
-        Path(__file__).parent.parent.parent.parent / "web" / "dist",
-        Path(__file__).parent.parent.parent.parent / "frontend" / "dist",
-    ]
-    static_dir = next((d for d in static_candidates if d.exists()), static_candidates[0])
-    if static_dir.exists():
+    static_dir = _resolve_frontend_dist()
+    if static_dir is not None:
         # 静态文件优先（挂载在根），API 路由已在上面注册
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
         _log.info("static files mounted at %s", static_dir)
     else:
-        _log.info("frontend dist not found at %s — API only", static_dir)
+        _log.info(
+            "frontend dist not found in %s — API only",
+            ", ".join(str(path) for path in _frontend_dist_candidates()),
+        )
 
         # 没有静态文件时保留 API 根信息
         @app.get("/")

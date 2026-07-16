@@ -20,6 +20,7 @@ def test_runtime_user_can_write_efinance_cache() -> None:
 
 def test_web_process_and_healthcheck_use_platform_port() -> None:
     assert "os.environ.get('PORT', '8000')" in DOCKERFILE
+    assert "MOMMY_WEB_DIST=/app/web/dist" in DOCKERFILE
     assert 'CMD ["mommy-web", "--host", "0.0.0.0"]' in DOCKERFILE
     assert "${PORT" not in DOCKERFILE
 

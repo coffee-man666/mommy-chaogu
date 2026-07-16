@@ -44,7 +44,8 @@ COPY data/earnings_preview.json /app/data-seed/earnings_preview.json
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/mommy-entrypoint
 
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    MOMMY_WEB_DIST=/app/web/dist
 
 RUN mkdir -p \
         /app/data \
