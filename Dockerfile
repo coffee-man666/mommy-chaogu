@@ -44,7 +44,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 RUN mkdir -p /app/data && chown -R mommy:mommy /app/data
 
-VOLUME ["/app/data"]
 EXPOSE 8000
 
 USER mommy
