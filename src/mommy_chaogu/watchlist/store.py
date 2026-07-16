@@ -13,6 +13,7 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from sqlalchemy import select
@@ -24,6 +25,11 @@ from mommy_chaogu.watchlist.models import Group, StockEntry, WatchlistBase
 
 #: JSON 导出 schema 版本。破坏性变更时 +1。
 EXPORT_SCHEMA_VERSION = "1.0"
+
+# SQLAlchemy's create_all() checks table existence before issuing CREATE TABLE.
+# Multiple store instances pointed at a brand-new SQLite file can race between
+# those two operations, so schema initialization must be serialized per process.
+_SCHEMA_INIT_LOCK = Lock()
 
 
 class WatchlistError(Exception):
@@ -58,8 +64,9 @@ class WatchlistStore(EngineOwner):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.engine: Engine = create_sqlite_engine(db_path)
         self._manage_engine()
-        # 创建表
-        WatchlistBase.metadata.create_all(self.engine)
+        # 创建表；并发首次打开同一数据库时避免重复 CREATE TABLE。
+        with _SCHEMA_INIT_LOCK:
+            WatchlistBase.metadata.create_all(self.engine)
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
 
     @contextmanager

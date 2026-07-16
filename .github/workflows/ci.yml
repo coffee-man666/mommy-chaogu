@@ -53,12 +53,19 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - name: Install browser-smoke backend
+        working-directory: .
+        run: uv sync --frozen
       - name: Type check
         run: npm run typecheck
       - name: Unit tests
@@ -85,6 +92,7 @@ jobs:
   cli:
     name: CLI entry points
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -94,17 +102,17 @@ jobs:
       - run: uv sync --frozen
       - name: Verify commands
         run: |
-          uv run mommy-watchlist --help
-          uv run mommy-monitor --help
-          uv run mommy-cache --help
-          uv run mommy-earnings --help
-          uv run mommy-flows --help
-          uv run mommy-semicon --help
-          uv run mommy-report --help
-          uv run mommy-agent --help
-          uv run mommy-mcp --help
-          uv run mommy-tui --help
-          uv run mommy --help
+          timeout 30s uv run mommy-watchlist --help
+          timeout 30s uv run mommy-monitor --help
+          timeout 30s uv run mommy-cache --help
+          timeout 30s uv run mommy-earnings --help
+          timeout 30s uv run mommy-flows --help
+          timeout 30s uv run mommy-semicon --help
+          timeout 30s uv run mommy-report --help
+          timeout 30s uv run mommy-agent --help
+          timeout 30s uv run mommy-mcp --help
+          timeout 30s uv run mommy-tui --help
+          timeout 30s uv run mommy --help
 
   docker:
     name: Docker build and smoke

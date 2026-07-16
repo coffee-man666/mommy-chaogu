@@ -9,6 +9,7 @@ MommyTuiApp — 类 Claude Code CLI 的沉浸式体验。
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import logging
 import os
@@ -29,6 +30,22 @@ from mommy_chaogu.tui.views.dashboard import DashboardView
 from mommy_chaogu.tui.widgets.top_bar import TopBar
 
 _log = logging.getLogger(__name__)
+
+
+def build_tui_parser() -> argparse.ArgumentParser:
+    """Build the lightweight CLI parser without starting Textual or setup."""
+    from mommy_chaogu import __version__
+
+    parser = argparse.ArgumentParser(
+        prog="mommy-tui",
+        description="启动 mommy-chaogu 的沉浸式终端界面。",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    return parser
 
 
 def _format_tool_args(args: dict[str, Any]) -> str:
@@ -404,6 +421,9 @@ class MommyTuiApp(App[None]):
 
 def main() -> None:
     """命令行入口：mommy-tui。"""
+    # Parse before setup/importing services so --help and --version are
+    # guaranteed to be non-interactive CLI operations.
+    build_tui_parser().parse_args()
     logging.basicConfig(
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
