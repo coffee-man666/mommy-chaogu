@@ -43,8 +43,8 @@ RAILWAY_RUN_UID=0
 ## Railway 设置
 
 - Builder：`Dockerfile`
-- Healthcheck path：`/api/health`
-- Restart policy：`ON_FAILURE`
+- Healthcheck path：`/api/health`（已由 `railway.toml` 固化）
+- Restart policy：`ON_FAILURE`（已由 `railway.toml` 固化）
 - Public domain：为服务生成一个 Railway domain
 
 部署完成后检查：
