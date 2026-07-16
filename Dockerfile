@@ -31,13 +31,17 @@ FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
-RUN groupadd --gid 1000 mommy \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 mommy \
     && useradd --uid 1000 --gid mommy --create-home mommy
 
 COPY --from=python-builder /app/.venv /app/.venv
 COPY --from=web-builder /web/dist /app/web/dist
-COPY --chown=mommy:mommy data/supply_chains/ /app/data/supply_chains/
-COPY --chown=mommy:mommy data/earnings_preview.json /app/data/earnings_preview.json
+COPY data/supply_chains/ /app/data-seed/supply_chains/
+COPY data/earnings_preview.json /app/data-seed/earnings_preview.json
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/mommy-entrypoint
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
@@ -56,4 +60,5 @@ USER mommy
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://localhost:{os.environ.get('PORT', '8000')}/api/health\", timeout=5)" || exit 1
 
-CMD ["sh", "-c", "exec mommy-web --host 0.0.0.0 --port \"${PORT:-8000}\""]
+ENTRYPOINT ["mommy-entrypoint"]
+CMD ["mommy-web", "--host", "0.0.0.0"]

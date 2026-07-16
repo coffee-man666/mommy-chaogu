@@ -11,13 +11,27 @@ from mommy_chaogu.cli_support import *
 # ============================================================
 
 
+def _default_web_port() -> int:
+    """Use a valid platform-provided port, otherwise keep the local default."""
+    try:
+        port = int(os.environ.get("PORT", "8000"))
+    except ValueError:
+        return 8000
+    return port if 1 <= port <= 65535 else 8000
+
+
 def build_web_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-web",
         description="妈妈炒股 - Web 后端服务（FastAPI + WebSocket）",
     )
     p.add_argument("--host", default="127.0.0.1", help="监听地址 (默认 127.0.0.1)")
-    p.add_argument("--port", type=int, default=8000, help="监听端口 (默认 8000)")
+    p.add_argument(
+        "--port",
+        type=int,
+        default=_default_web_port(),
+        help="监听端口 (默认读取 $PORT，否则 8000)",
+    )
     p.add_argument(
         "--db", default=str(DEFAULT_DB_PATH), help=f"数据库路径 (默认 {DEFAULT_DB_PATH})"
     )

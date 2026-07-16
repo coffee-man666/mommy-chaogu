@@ -17,4 +17,6 @@
 - [ ] `CHANGELOG.md` matches the release tag
 - [ ] `.env` and runtime databases are absent from the commit
 - [ ] Remote deployments set `MOMMY_API_TOKEN` and explicit CORS origins
+- [ ] SQLite deployments mount persistent storage at `/app/data`
+- [ ] Railway volume deployments set `RAILWAY_RUN_UID=0` and verify the app drops to UID 1000
 - [ ] Database layout migration is checked before upgrading an existing installation

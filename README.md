@@ -78,6 +78,9 @@ docker compose up -d
 
 不需要安装 Python、Node.js 或 uv——Docker 会在独立构建阶段编译 Vue 前端并安装 Python 依赖。
 
+部署到 Railway 时还需要配置公网令牌和持久化卷，见
+[Railway 部署指南](docs/RAILWAY-DEPLOYMENT.md)。
+
 ### 本地安装
 
 <details>
