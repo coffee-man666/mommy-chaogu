@@ -22,12 +22,12 @@
 
 ## 发布与质量
 
-- [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) — v0.2.0 发布门禁清单
+- [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) — v1.0.0 发布门禁清单
 - [TECH-DEBT.md](TECH-DEBT.md) — 技术债台账（mypy 豁免清单、测试告警、待决策项）
 
 ## 历史档案（archive/）
 
-[archive/](archive/) 保留 25 份一次性工程记录：v0.2.0 强化计划与基线评估
+[archive/](archive/) 保留 25 份一次性工程记录：v1.0.0 强化计划与基线评估
 （ENHANCEMENT-PLAN / EVALUATION-2026-07-14）、2026-07-06 系列评估（EVAL-*）、
 回测报告（BACKTEST-REPORT）、commit 级台账（LEDGER）、进度快照（PROGRESS）、
 项目总览（PROJECT-LOG）、合并分析（BRANCH-MERGE-ANALYSIS）、TUI 重写实施记录、

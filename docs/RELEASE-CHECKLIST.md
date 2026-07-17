@@ -1,4 +1,4 @@
-# v0.2.0 release checklist
+# v1.0.0 release checklist
 
 ## Required gates
 
@@ -13,7 +13,7 @@
 
 ## Release hygiene
 
-- [ ] Package metadata and FastAPI report `0.2.0`
+- [ ] Package metadata and FastAPI report `1.0.0`
 - [ ] `CHANGELOG.md` matches the release tag
 - [ ] `.env` and runtime databases are absent from the commit
 - [ ] Remote deployments set `MOMMY_API_TOKEN` and explicit CORS origins
