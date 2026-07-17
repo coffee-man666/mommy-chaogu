@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1%2C088-brightgreen.svg)](#项目数据)
+[![Tests](https://img.shields.io/badge/tests-1%2C103-brightgreen.svg)](#项目数据)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Type check: mypy strict](https://img.shields.io/badge/mypy--strict-0%20errors-blue.svg)](https://mypy-lang.org/)
+[![Type check: mypy strict (core)](https://img.shields.io/badge/mypy-strict%20%E6%A0%B8%E5%BF%83%E6%A8%A1%E5%9D%97-blue.svg)](docs/TECH-DEBT.md)
 
 </div>
 
@@ -202,9 +202,9 @@ Cache   Agent    Data Sources
 
 | 指标 | 值 |
 |---|---|
-| 代码量 | ~38,000 行（src ~25,000 + tests ~10,000 + web ~3,000） |
-| 测试 | 1,088 collected；1,075 个确定性离线测试 + 13 个定时网络探针 |
-| CLI 入口 | `mommy` 统一入口 + 13 个子命令（watchlist / monitor / cache / flows / agent / memory / web / tui …） |
+| 代码量 | ~51,000 行（src ~27,000 + tests ~16,000 + web ~7,000） |
+| 测试 | 1,103 collected；1,090 个确定性离线测试 + 13 个定时网络探针 |
+| CLI 入口 | `mommy` 统一入口 + 10 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
 | Agent 工具 | 24 个 function-calling tools |
 | 数据库 | 4 个（market / portfolio / agent / reference） |
 | LLM Provider | 5 个（deepseek / openai / kimi / z.ai / Nova Bridge） |
@@ -214,9 +214,8 @@ Cache   Agent    Data Sources
 
 ## 文档
 
-完整索引见 [docs/README.md](docs/README.md)。当前评估与已执行计划分别见
-[项目评估](docs/EVALUATION-2026-07-14.md) 和
-[增强计划](docs/ENHANCEMENT-PLAN-2026-07-14.md)。
+完整索引见 [docs/README.md](docs/README.md)。技术债与质量门真实覆盖范围见
+[docs/TECH-DEBT.md](docs/TECH-DEBT.md)。
 
 ---
 

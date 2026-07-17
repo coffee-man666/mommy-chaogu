@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（796 个）
+uv run pytest -m "not network"   # 跑测试（1,090 个离线用例，另有 13 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -28,6 +28,7 @@ cp .env.example .env       # 复制模板
 | openai | `OPENAI_API_KEY` | OpenAI / 兼容接口 |
 | kimi | `MOONSHOT_API_KEY` | Moonshot / Kimi |
 | zai | `ZAI_API_KEY` | z.ai / GLM-4.7 |
+| nova | `NOVA_API_KEY` | Nova Bridge（本地桥接） |
 | — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
 
@@ -76,7 +77,7 @@ src/mommy_chaogu/
 ├── services/        # 统一数据服务层（工具层和 API 层共用）
 ├── push/            # Server酱微信推送
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个子命令）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 10 个透传子命令）
 ```
 
 ## 自然语言入口
@@ -130,7 +131,7 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 
 - **Python 3.12+**，用 `uv` 管理依赖
 - **ruff format + ruff check** — 代码风格
-- **mypy --strict** — 类型检查
+- **mypy --strict** — 类型检查（豁免模块清单与收敛方向见 `docs/TECH-DEBT.md`）
 - **Conventional Commits** — `feat / fix / docs / refactor / chore`
 - 数据金额一律 `Decimal`，不用 `float`
 - 数据源走 `MarketDataAdapter` Protocol，加新源只实现 Protocol

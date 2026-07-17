@@ -42,6 +42,7 @@ output/playwright/
 data/cache/
 data/*.db
 data/*.db-journal
+data/*.bak
 data/*.sqlite
 data/monitor.log
 data/.flow_monitor_state.json

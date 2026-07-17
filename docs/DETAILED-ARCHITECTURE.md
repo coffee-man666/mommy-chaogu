@@ -335,13 +335,15 @@ Conventional Commits：`feat / fix / docs / refactor / chore`
 
 | 文档 | 用途 |
 |---|---|
-| [PROGRESS.md](PROGRESS.md) | 当前进度 + 里程碑 |
-| [DESIGN.md](DESIGN.md) | 架构设计 + ADR |
+| [DESIGN.md](DESIGN.md) | 架构设计 + 关键决策 |
 | [MEMORY-SYSTEM-PLAN.md](MEMORY-SYSTEM-PLAN.md) | 记忆系统设计（5 层架构 + MemoryPipeline） |
-| [BACKTEST-REPORT.md](BACKTEST-REPORT.md) | 回测报告（多模型横向对比） |
-| [EVALUATION-2026-07-05.md](EVALUATION-2026-07-05.md) | 记忆系统 + 回测系统评估报告 |
-| [EVALUATION-2026-07-14.md](EVALUATION-2026-07-14.md) | 当前项目生产就绪度评估 |
-| [ENHANCEMENT-PLAN-2026-07-14.md](ENHANCEMENT-PLAN-2026-07-14.md) | 可执行的强化计划 + 验收标准 |
+| [USER-GUIDE.md](USER-GUIDE.md) | 场景化使用指南 |
 | [EARNINGS-HANDBOOK.md](EARNINGS-HANDBOOK.md) | 财报窗口实战手册 |
 | [KLINE-SPEC.md](KLINE-SPEC.md) | K 线组件规范 |
 | [AGENT-INTERACTION-GUIDE.md](AGENT-INTERACTION-GUIDE.md) | Agent 交互指导 |
+| [AGENT-INTERFACE-EVOLUTION.md](AGENT-INTERFACE-EVOLUTION.md) | Agent 接口演进与设计教训 |
+| [DATABASE-LIFECYCLE.md](DATABASE-LIFECYCLE.md) | 数据库句柄所有权与生命周期 |
+| [RAILWAY-DEPLOYMENT.md](RAILWAY-DEPLOYMENT.md) | Railway 部署指南 |
+| [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) | 发布门禁清单 |
+| [TECH-DEBT.md](TECH-DEBT.md) | 技术债台账 |
+| [archive/](archive/) | 历史计划 / 评估 / 实施记录（日期快照） |

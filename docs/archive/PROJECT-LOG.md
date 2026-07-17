@@ -546,10 +546,10 @@ agentTurn prompt 提取关键指标 → 微信推送
 | 文档 | 用途 | 何时看 |
 |---|---|---|
 | **本文件 PROJECT-LOG.md** | 一站式总览 | 第一次接触项目 / 想看全貌 |
-| [DESIGN.md](DESIGN.md) | 架构 + 5 份 ADR | 设计讨论 / 改架构前 |
+| [DESIGN.md](../DESIGN.md) | 架构 + 5 份 ADR | 设计讨论 / 改架构前 |
 | [LEDGER.md](LEDGER.md) | commit 级时间线 | 想知道某次 commit 干了啥 |
 | [PROGRESS.md](PROGRESS.md) | 当前状态 + 下一步 | 每个 sprint 开始 |
-| [KLINE-SPEC.md](KLINE-SPEC.md) | K 线组件规范 | 改 K 线 UI 时 |
+| [KLINE-SPEC.md](../KLINE-SPEC.md) | K 线组件规范 | 改 K 线 UI 时 |
 | [DISCUSSION-NOTES.md](DISCUSSION-NOTES.md) | 讨论笔记 | 找回历史决策上下文 |
 | [WEB-UI-PROPOSAL.md](WEB-UI-PROPOSAL.md) | Web UI 设计提案 | 改 UI 设计时 |
 | [README.md](../README.md) | 快速上手 + CLI 速查 | 第一次跑命令 |
