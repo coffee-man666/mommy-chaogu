@@ -14,7 +14,7 @@ COPY web/ ./
 RUN npm run typecheck && npm run build
 
 # ---- Python dependency builder ----
-FROM python:3.12-slim AS python-builder
+FROM python:3.14-slim AS python-builder
 
 WORKDIR /app
 COPY --from=uv-bin /uv /usr/local/bin/uv
@@ -27,7 +27,7 @@ COPY src/ ./src/
 RUN uv sync --frozen --no-dev --no-editable
 
 # ---- runtime ----
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 WORKDIR /app
 
