@@ -429,9 +429,11 @@ class DashboardView(Vertical):
     def compose(self) -> ComposeResult:
         with TabbedContent(id="dashboard-tabs", initial="watch"):
             with TabPane("自选股", id="watch"):
+                yield Static(_EMPTY_WATCH, id="watch-empty", classes="empty-state")
                 yield WatchTable()
             with TabPane("持仓", id="hold"):
                 yield SummaryCards(id="summary-cards")
+                yield Static(_EMPTY_PORTFOLIO, id="hold-empty", classes="empty-state")
                 yield HoldTable()
             with TabPane("主题", id="theme"):
                 yield ThemeListWidget()
@@ -440,6 +442,9 @@ class DashboardView(Vertical):
 
     def on_mount(self) -> None:
         """设置 1 秒心跳，按市场阶段自适应刷新。"""
+        # 空态引导默认隐藏，等首次数据确认确实为空后再显示
+        self.query_one("#watch-empty", Static).display = False
+        self.query_one("#hold-empty", Static).display = False
         self.set_interval(1.0, self._tick)
 
     def _tick(self) -> None:
@@ -568,10 +573,14 @@ class DashboardView(Vertical):
     def update_watchlist(self, rows: list[dict[str, Any]]) -> None:
         """更新自选股表。
 
-        空列表也会正常传递给 table.update_data，以便清空旧行。
+        空列表也会正常传递给 table.update_data，以便清空旧行；
+        同时切换空态引导的显示。
         """
         table = self.query_one("#watch-table", WatchTable)
         table.update_data(rows)
+        has_rows = bool(rows)
+        self.query_one("#watch-empty", Static).display = not has_rows
+        table.display = has_rows
 
     def update_portfolio(self, summary: dict[str, Any]) -> None:
         """更新持仓页。"""
@@ -580,6 +589,9 @@ class DashboardView(Vertical):
         hold = self.query_one("#hold-table", HoldTable)
         positions = summary.get("positions", [])
         hold.update_data(positions)
+        has_rows = bool(positions)
+        self.query_one("#hold-empty", Static).display = not has_rows
+        hold.display = has_rows
 
     def action_switch_tab(self, tab_id: str) -> None:
         """切换看板 tab。"""

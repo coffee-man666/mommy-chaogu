@@ -1,7 +1,8 @@
 """ChatView — AI 对话视图（§6.6）。
 
 模式 A：对话流 + 输入框。Tab 键切换到看板。
-支持 Claude Code 风格的 /command 斜杠命令（内联补全）。
+支持 Claude Code 风格的 /command 斜杠命令（内联补全 + 候选列表）。
+工具调用/思考状态采用 dexter 风格的 ⏺/⎿ 实时渲染。
 """
 
 from __future__ import annotations
@@ -9,16 +10,23 @@ from __future__ import annotations
 import contextlib
 import logging
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.suggester import Suggester
-from textual.widgets import Collapsible, Input, Markdown, Static
+from textual.widgets import Input, Markdown, Static
 
 from mommy_chaogu.tui.messages import StepStatus
+from mommy_chaogu.tui.widgets.hint_bar import HintBar
+from mommy_chaogu.tui.widgets.tool_indicator import (
+    ToolIndicator,
+    format_elapsed,
+    format_tool_args,
+)
+from mommy_chaogu.tui.widgets.working_indicator import WorkingIndicator
 
 _log = logging.getLogger(__name__)
 
@@ -75,13 +83,20 @@ class SlashSuggester(Suggester):
         """根据当前输入返回补全建议。"""
         if not value.startswith("/"):
             return None
-        # 提取 / 后的命令前缀（casefold 以支持大小写不敏感）
-        typed = value[1:].split(None, 1)[0].casefold() if len(value) > 1 else ""
-        for name, cmd in SLASH_COMMANDS.items():
-            if name.startswith(typed):
-                suffix = " " if cmd.has_args else ""
-                return f"/{name}{suffix}"
-        return None
+        matches = match_slash_commands(value)
+        if not matches:
+            return None
+        cmd = matches[0]
+        suffix = " " if cmd.has_args else ""
+        return f"/{cmd.name}{suffix}"
+
+
+def match_slash_commands(value: str) -> list[SlashCommand]:
+    """按输入前缀匹配斜杠命令（供补全 + HintBar 候选列表共用）。"""
+    if not value.startswith("/"):
+        return []
+    typed = value[1:].split(None, 1)[0].casefold() if len(value) > 1 else ""
+    return [cmd for name, cmd in SLASH_COMMANDS.items() if name.startswith(typed)]
 
 
 def _build_welcome() -> str:
@@ -95,7 +110,7 @@ def _build_welcome() -> str:
     for i, q in enumerate(PRESET_QUESTIONS, 1):
         lines.append(f"  [bold]{i}[/]  {q}")
     lines.append("")
-    lines.append("[dim]↑↓ 历史记录 · / 命令 · Esc 取消 · Tab 切换看板 · Ctrl+Q 退出[/]")
+    lines.append("[dim]↑↓ 历史记录 · / 命令 · Esc 中断 · Tab 切换看板 · Ctrl+Q 退出[/]")
     lines.append("")
     return "\n".join(lines)
 
@@ -155,11 +170,15 @@ class ChatView(Vertical):
         self._history_idx: int = -1  # -1 表示在"新输入"位置
         self._busy: bool = False
         self._cancelled: bool = False
+        self._working: WorkingIndicator | None = None
+        self._tool_widgets: dict[int, ToolIndicator] = {}
+        self._step_widgets: dict[int, Static] = {}
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-log"):
             yield Static(_build_welcome(), id="chat-welcome")
-        yield ChatInput(placeholder="输入消息... (Tab→看板, Esc→取消)", id="prompt")
+        yield HintBar()
+        yield ChatInput(placeholder="输入消息... (Tab→看板, Esc→中断)", id="prompt")
 
     def on_mount(self) -> None:
         self.query_one("#prompt", ChatInput).focus()
@@ -169,10 +188,20 @@ class ChatView(Vertical):
     # ------------------------------------------------------------------
 
     def set_busy(self, busy: bool) -> None:
-        """标记是否正在处理消息。"""
+        """标记是否正在处理消息（驱动 WorkingIndicator + HintBar）。"""
         self._busy = busy
         if busy:
             self._cancelled = False
+            if self._working is None:
+                self._working = WorkingIndicator()
+                self.query_one("#chat-log", VerticalScroll).mount(self._working)
+            self.query_one(HintBar).show_busy()
+        else:
+            if self._working is not None:
+                self._working.stop_timer()
+                self._working.remove()
+                self._working = None
+            self._refresh_hint_bar()
 
     def is_cancelled(self) -> bool:
         """检查当前对话是否被取消。"""
@@ -181,6 +210,25 @@ class ChatView(Vertical):
     def clear_cancelled(self) -> None:
         """重置取消标记。"""
         self._cancelled = False
+
+    def _refresh_hint_bar(self) -> None:
+        """根据当前输入内容刷新 HintBar（slash 候选 or 默认提示）。"""
+        hint = self.query_one(HintBar)
+        if self._busy:
+            hint.show_busy()
+            return
+        value = self.query_one("#prompt", ChatInput).value
+        if value.startswith("/"):
+            matches = match_slash_commands(value)
+            if matches:
+                hint.show_suggestions([(c.name, c.description) for c in matches])
+                return
+        hint.show_default()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """输入变化时更新 HintBar（slash 候选列表）。"""
+        if event.input.id == "prompt":
+            self._refresh_hint_bar()
 
     def welcome_visible(self) -> bool:
         """欢迎页是否可见。"""
@@ -306,17 +354,18 @@ class ChatView(Vertical):
             app.quit()  # type: ignore[attr-defined]
 
     def append_user(self, text: str) -> None:
-        """追加用户消息。"""
+        """追加用户消息（❯ 前缀，dexter user-query 风格）。"""
         log = self.query_one("#chat-log", VerticalScroll)
         with contextlib.suppress(Exception):
             log.query_one("#chat-welcome").remove()
-        log.mount(Static(f"[bold]你 ›[/] {text}", classes="user-msg"))
+        log.mount(Static(f"[bold]❯ {text}[/]", classes="user-msg"))
         log.scroll_end(animate=False)
 
     def append_assistant(self, text: str) -> None:
-        """追加 Agent 回复。"""
+        """追加 Agent 回复（⏺ 前缀 + Markdown，dexter answer-box 风格）。"""
         log = self.query_one("#chat-log", VerticalScroll)
-        log.mount(Markdown(f"**mommy ›**\n\n{text}", classes="assistant-msg"))
+        normalized = text.lstrip("\n")
+        log.mount(Markdown(f"⏺ {normalized}", classes="assistant-msg"))
         log.scroll_end(animate=False)
 
     def append_workflow_match(self, title: str, steps: list[str]) -> None:
@@ -331,18 +380,31 @@ class ChatView(Vertical):
         )
         log.scroll_end(animate=False)
 
-    def append_tool_call(self, name: str, args_summary: str) -> None:
-        """追加工具调用记录。"""
+    def tool_call_started(self, call_id: int, name: str, args: dict[str, Any]) -> None:
+        """工具调用开始：挂载呼吸闪烁的 ToolIndicator。"""
         log = self.query_one("#chat-log", VerticalScroll)
-        suffix = f"({args_summary})" if args_summary else "()"
-        details = Static(f"🔧 {name}{suffix}", classes="tool-call")
-        log.mount(
-            Collapsible(
-                details,
-                title=f"🔧 {name}({args_summary})",
-                classes="tool-call",
-            )
-        )
+        indicator = ToolIndicator(name, format_tool_args(args))
+        self._tool_widgets[call_id] = indicator
+        log.mount(indicator)
+        log.scroll_end(animate=False)
+
+    def tool_call_finished(self, call_id: int, ok: bool, elapsed_ms: int, digest: str) -> None:
+        """工具调用完成/失败：更新对应 ToolIndicator。"""
+        indicator = self._tool_widgets.pop(call_id, None)
+        if indicator is None:
+            return
+        if ok:
+            indicator.set_complete(digest, elapsed_ms)
+        else:
+            indicator.set_error(digest, elapsed_ms)
+        self.query_one("#chat-log", VerticalScroll).scroll_end(animate=False)
+
+    def finish_turn(self, elapsed_ms: int, interrupted: bool = False) -> None:
+        """一轮对话收尾：✻ 总耗时（dexter performance-stats 风格）。"""
+        if interrupted:
+            return
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(Static(f"[#8a8f98]✻ {format_elapsed(elapsed_ms)}[/]", classes="turn-stats"))
         log.scroll_end(animate=False)
 
     def append_hint(self, text: str) -> None:
@@ -356,16 +418,18 @@ class ChatView(Vertical):
     # ------------------------------------------------------------------
 
     def on_step_status(self, msg: StepStatus) -> None:
-        """接收 StepStatus 消息并显示步骤进度。"""
+        """接收 StepStatus 消息并原地更新步骤进度行。"""
         mark = {"ok": "✓", "fail": "✗", "running": "⠹"}.get(msg.state, "?")
         color = {"ok": "green", "fail": "red", "running": "yellow"}.get(msg.state, "white")
+        content = f"  [{color}]{mark}[/{color}] {msg.detail}"
+        existing = self._step_widgets.get(msg.idx)
+        if existing is not None:
+            existing.update(content)
+            return
         log = self.query_one("#chat-log", VerticalScroll)
-        log.mount(
-            Static(
-                f"  [{color}]{mark}[/{color}] {msg.detail}",
-                classes="step-status",
-            )
-        )
+        widget = Static(content, classes="step-status")
+        self._step_widgets[msg.idx] = widget
+        log.mount(widget)
         log.scroll_end(animate=False)
 
     # ------------------------------------------------------------------
@@ -374,6 +438,11 @@ class ChatView(Vertical):
 
     def clear_messages(self) -> None:
         """清空对话区。"""
+        if self._working is not None:
+            self._working.stop_timer()
+            self._working = None
+        self._tool_widgets.clear()
+        self._step_widgets.clear()
         log = self.query_one("#chat-log", VerticalScroll)
         log.query("*").remove()
         log.mount(Static(_build_welcome(), id="chat-welcome"))
@@ -383,9 +452,16 @@ class ChatView(Vertical):
         self.clear_messages()
 
     def action_cancel_chat(self) -> None:
-        """Esc 取消当前对话。"""
+        """Esc 中断当前对话（后台任务自然收尾，结果不再展示）。"""
         if not self._busy:
             return
         self._cancelled = True
-        self._busy = False
-        self.append_hint("已取消当前对话")
+        self.set_busy(False)
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(
+            Static(
+                "[#8a8f98]⎿  已中断 · 想换个问法吗？[/]",
+                classes="interrupted-line",
+            )
+        )
+        log.scroll_end(animate=False)

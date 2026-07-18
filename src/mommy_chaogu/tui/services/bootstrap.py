@@ -124,11 +124,17 @@ class AgentBridge:
         return self._agent is not None
 
     def chat(
-        self, message: str, history: list[dict[str, str]] | None = None, on_tool_call: Any = None
+        self,
+        message: str,
+        history: list[dict[str, str]] | None = None,
+        on_tool_call: Any = None,
+        on_tool_result: Any = None,
     ) -> Any:
         if self._agent is None:
             return None
-        return self._agent.chat(message, history=history, on_tool_call=on_tool_call)
+        return self._agent.chat(
+            message, history=history, on_tool_call=on_tool_call, on_tool_result=on_tool_result
+        )
 
 
 @dataclass

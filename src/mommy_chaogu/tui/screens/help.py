@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Static
+from textual.widgets import Markdown
 
 _HELP_TEXT = """\
 # 按键速查
@@ -58,7 +58,7 @@ class HelpScreen(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="help-scroll"):
-            yield Static(_HELP_TEXT, id="help-text")
+            yield Markdown(_HELP_TEXT, id="help-text")
 
     def on_mount(self) -> None:
         self.query_one("#help-scroll").border_title = "按键速查"

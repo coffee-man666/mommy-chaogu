@@ -44,14 +44,45 @@ ChatInput:focus {
     border: round $accent;
 }
 
-.tool-call {
-    border: round $primary-darken-2;
-    margin: 0 0 1 0;
+/* HintBar：输入框上方的上下文提示 */
+HintBar {
+    height: auto;
+    max-height: 6;
+    padding: 0 2;
+    color: $text-muted;
+}
+
+/* ToolIndicator：dexter 风格工具调用指示 */
+ToolIndicator {
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 0 0;
+}
+
+ToolIndicator .ti-header {
+    height: 1;
+}
+
+ToolIndicator .ti-detail {
+    height: 1;
+    padding-left: 2;
+    color: $text-muted;
+}
+
+/* WorkingIndicator：思考中 spinner */
+WorkingIndicator {
+    height: 1;
     padding: 0 1;
 }
 
-Collapsible > CollapsibleTitle {
-    color: $accent;
+.turn-stats {
+    height: 1;
+    padding: 0 1;
+}
+
+.interrupted-line {
+    height: 1;
+    padding: 0 1;
 }
 
 .hint-card {

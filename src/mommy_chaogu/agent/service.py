@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -169,6 +171,7 @@ class AgentService:
         system_override: str | None = None,
         memory: ConversationMemoryLike | None = None,
         on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
+        on_tool_result: Callable[[str, bool, int, str], None] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
@@ -204,7 +207,7 @@ class AgentService:
 
         messages.append({"role": "user", "content": user_message})
 
-        resp = self._run_loop(messages, on_tool_call=on_tool_call)
+        resp = self._run_loop(messages, on_tool_call=on_tool_call, on_tool_result=on_tool_result)
 
         # 3. 对话后记录 + 提取
         adapter = self._ctx.adapter if self._ctx else None
@@ -224,16 +227,23 @@ class AgentService:
         self,
         messages: list[dict[str, Any]],
         on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
+        on_tool_result: Callable[[str, bool, int, str], None] | None = None,
     ) -> AgentResponse:
         """直接传入完整 messages 列表（灵活但需自己构造格式）。"""
-        return self._run_loop(messages, on_tool_call=on_tool_call)
+        return self._run_loop(messages, on_tool_call=on_tool_call, on_tool_result=on_tool_result)
 
     def _run_loop(
         self,
         messages: list[dict[str, Any]],
         on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
+        on_tool_result: Callable[[str, bool, int, str], None] | None = None,
     ) -> AgentResponse:
-        """核心 agent 循环：LLM → tool_calls → execute → LLM → ..."""
+        """核心 agent 循环：LLM → tool_calls → execute → LLM → ...
+
+        on_tool_call 在每次工具执行前触发；on_tool_result 在执行后触发，
+        签名为 (fn_name, ok, elapsed_ms, result_or_error)——TUI 用它做
+        dexter 风格的 tool_start/tool_end 实时渲染。
+        """
         all_tool_calls: list[ToolCallRecord] = []
         rounds = 0
 
@@ -273,7 +283,24 @@ class AgentService:
                 if on_tool_call is not None:
                     on_tool_call(fn_name, fn_args)
 
-                result = self._tools.call(fn_name, fn_args)
+                started = time.monotonic()
+                try:
+                    result = self._tools.call(fn_name, fn_args)
+                except Exception as exc:
+                    if on_tool_result is not None:
+                        elapsed_ms = int((time.monotonic() - started) * 1000)
+                        with contextlib.suppress(Exception):
+                            on_tool_result(fn_name, False, elapsed_ms, str(exc))
+                    raise
+                if on_tool_result is not None:
+                    elapsed_ms = int((time.monotonic() - started) * 1000)
+                    with contextlib.suppress(Exception):
+                        on_tool_result(
+                            fn_name,
+                            True,
+                            elapsed_ms,
+                            result if isinstance(result, str) else str(result),
+                        )
                 all_tool_calls.append(ToolCallRecord(fn_name, fn_args, result))
 
                 messages.append(

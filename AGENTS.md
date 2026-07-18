@@ -110,12 +110,12 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 - **模式 A：AI 对话** — Markdown 流式渲染 + 工具调用折叠 + 底部输入框
 - **模式 B：数据看板** — TabbedContent（自选股/持仓/主题/信号）+ 状态栏
 
-- `src/mommy_chaogu/tui/app.py` — App 主类（双 Screen 模式）+ `main()` 入口
-- `tui/data_service.py` — 异步数据层（直接调内部 adapter/store，不走 HTTP）
-- `tui/screens/chat.py` — 沉浸式 AI 对话屏
-- `tui/screens/dashboard.py` — 数据看板屏（TabbedContent）
-- `tui/screens/detail.py` — 个股详情屏（报价 + Sparkline + K 线表）
-- `tui/widgets/` — ChatMessage / ToolIndicator / IndexStrip / QuoteTable / StatusBar
+- `src/mommy_chaogu/tui/app.py` — App 主类（ContentSwitcher 双模式）+ `main()` 入口
+- `tui/services/bootstrap.py` — Services 容器（DataService / AgentBridge / FakeServices）
+- `tui/views/chat.py` — AI 对话视图（dexter 风格工具指示 + slash 命令 + HintBar）
+- `tui/views/dashboard.py` — 数据看板视图（TabbedContent：自选/持仓/主题/信号）
+- `tui/screens/stock_detail.py` — 个股详情屏（报价 + K 线表）
+- `tui/widgets/` — TopBar / ToolIndicator / WorkingIndicator / HintBar
 
 ## Web 前端
 

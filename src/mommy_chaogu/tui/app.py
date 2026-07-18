@@ -13,6 +13,8 @@ import argparse
 import contextlib
 import logging
 import os
+import time
+from collections import defaultdict, deque
 from typing import Any, ClassVar
 
 from textual.app import App, ComposeResult
@@ -46,19 +48,6 @@ def build_tui_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {__version__}",
     )
     return parser
-
-
-def _format_tool_args(args: dict[str, Any]) -> str:
-    """Compact display of tool arguments for chat log."""
-    parts: list[str] = []
-    for v in args.values():
-        if isinstance(v, str) and len(v) <= 30:
-            parts.append(v)
-        elif isinstance(v, (int, float)):
-            parts.append(str(v))
-        elif isinstance(v, str):
-            parts.append(v[:27] + "…")
-    return ", ".join(parts)
 
 
 def _switch_mode(app: Any, mode: str) -> None:
@@ -138,6 +127,9 @@ class MommyTuiApp(App[None]):
     def __init__(self, services: Services | None = None) -> None:
         super().__init__()
         self.services = services or Services.bootstrap()
+        self._turn_started: float = 0.0
+        self._tool_seq: int = 0
+        self._pending_tool_ids: dict[str, deque[int]] = defaultdict(deque)
 
     def compose(self) -> ComposeResult:
         """挂载主屏。"""
@@ -223,16 +215,16 @@ class MommyTuiApp(App[None]):
                 screen.refresh_theme()
 
     def _apply_theme(self) -> None:
-        """应用当前主题：dark → Textual 深色；light → 浅色；colorblind → 通知。
+        """应用当前主题：dark → textual-dark；light → textual-light。
 
-        colorblind 模式下 Textual 没有原生自定义调色板，
-        实际颜色重映射由 formatting.change_color() 检查 theme 后处理。
+        colorblind 模式下保留深色底，实际颜色重映射由
+        formatting.change_color() 检查 ui_theme 后处理。
         """
         theme = self.ui_theme
         if theme == "light":
-            self.dark = False
+            self.theme = "textual-light"
         else:
-            self.dark = True
+            self.theme = "textual-dark"
         labels = {"dark": "深色", "light": "浅色", "colorblind": "色盲友好"}
         label = labels.get(theme, theme)
         self.notify(f"主题已切换：{label}", timeout=3)
@@ -246,6 +238,7 @@ class MommyTuiApp(App[None]):
         chat = self.query_one(ChatView)
         chat.append_user(text)
         chat.set_busy(True)
+        self._turn_started = time.monotonic()
 
         # 1. 尝试工作流路由
         route = self.services.agent.route(text)
@@ -329,20 +322,25 @@ class MommyTuiApp(App[None]):
         text = summary if summary else "工作流执行完成。"
         chat.append_assistant(text)
         chat.set_busy(False)
+        chat.finish_turn(self._turn_elapsed_ms())
 
     # ------------------------------------------------------------------
     # Agent 对话（worker 线程）
     # ------------------------------------------------------------------
 
     def _do_agent_chat(self, text: str) -> None:
-        """worker 线程内调用 agent.chat，工具调用实时回传 UI。"""
+        """worker 线程内调用 agent.chat，工具调用/结果实时回传 UI。"""
 
         def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
-            args_str = _format_tool_args(fn_args)
-            self.call_from_thread(self._post_tool_call, fn_name, args_str)
+            self.call_from_thread(self._post_tool_started, fn_name, fn_args)
+
+        def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None:
+            self.call_from_thread(self._post_tool_result, fn_name, ok, elapsed_ms, result)
 
         try:
-            resp = self.services.agent.chat(text, on_tool_call=on_tool_call)
+            resp = self.services.agent.chat(
+                text, on_tool_call=on_tool_call, on_tool_result=on_tool_result
+            )
         except Exception as e:
             _log.warning("Agent chat 失败: %s", e)
             self.call_from_thread(self._on_chat_error, f"Agent 出错：{e}")
@@ -353,10 +351,27 @@ class MommyTuiApp(App[None]):
             reply = getattr(resp, "text", "") or ""
         self.call_from_thread(self._on_agent_done, reply)
 
-    def _post_tool_call(self, name: str, args_summary: str) -> None:
-        """主线程：在对话流中追加工具调用记录。"""
+    def _post_tool_started(self, name: str, args: dict[str, Any]) -> None:
+        """主线程：分配 call_id 并通知 ChatView 挂载 ToolIndicator。"""
+        self._tool_seq += 1
+        self._pending_tool_ids[name].append(self._tool_seq)
         chat = self.query_one(ChatView)
-        chat.append_tool_call(name, args_summary)
+        chat.tool_call_started(self._tool_seq, name, args)
+
+    def _post_tool_result(self, name: str, ok: bool, elapsed_ms: int, result: str) -> None:
+        """主线程：按 FIFO 匹配同名 call_id，通知 ChatView 更新指示器。
+
+        agent 循环单线程顺序执行工具，同名调用按先来先完成匹配。
+        """
+        queue = self._pending_tool_ids.get(name)
+        call_id = queue.popleft() if queue else 0
+        chat = self.query_one(ChatView)
+        chat.tool_call_finished(call_id, ok, elapsed_ms, result)
+
+    def _turn_elapsed_ms(self) -> int:
+        if self._turn_started <= 0:
+            return 0
+        return int((time.monotonic() - self._turn_started) * 1000)
 
     def _on_agent_done(self, reply: str) -> None:
         """主线程：Agent 回复完成。"""
@@ -368,6 +383,7 @@ class MommyTuiApp(App[None]):
         text = reply if reply else "（无回复）"
         chat.append_assistant(text)
         chat.set_busy(False)
+        chat.finish_turn(self._turn_elapsed_ms())
 
     def _on_chat_error(self, error: str) -> None:
         """主线程：对话出错。"""
