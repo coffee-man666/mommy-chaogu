@@ -5,6 +5,45 @@
 
 ---
 
+## [0.2.0] - 2026-07-16
+
+### 新增
+
+- Kimi K2.6 和 Nova Bridge provider，并校验 provider 配置。
+- 单用户 Bearer 鉴权、短期 WebSocket ticket、受限 CORS、安全监听默认值和 agent 并发上限。
+- 浏览器会话级对话隔离、非活跃会话清理、Vitest 和 Playwright 行为测试。
+- Docker、迁移、依赖审计、覆盖率和定时数据源探针等发布门禁。
+
+### 改进
+
+- Docker 可复现构建 Vue/Python 产物并以非 root 用户运行。
+- SQLite owner 统一显式生命周期、WAL、外键和 busy timeout。
+- CLI 拆分为有边界的命令族模块，入口保持兼容。
+- Workflow registry/router 改为进程级缓存和显式依赖。
+- CI 覆盖 Python 3.12/3.13、前端、Docker、依赖审计和 65% 分支覆盖率。
+- 移动端体验与 AI 对话韧性（连接状态指示、失败重试）。
+
+### 修复
+
+- Quote/signal WebSocket 订阅注册和清理。
+- 持仓调整后的成本基础重复计算。
+- 报告解析中 `万亿` 被较短的 `亿` 后缀抢先匹配。
+- Docker 镜像直接服务打包后的前端产物。
+- Railway 部署：运行时约束适配、数据持久化安全、健康检查版本化。
+- 移除不支持的 Docker volume 指令。
+- 发布门禁检查加固。
+
+### 文档
+
+- docs/ 收敛：25 份一次性计划 / 评估 / 实施记录归档至 `docs/archive/`，索引重写。
+- 新增 `docs/TECH-DEBT.md`：mypy 豁免清单与已知告警如实台账化。
+- README / AGENTS.md 数字与实测对齐（1,103 测试、10 个透传子命令等）。
+
+详见 [基线评估](docs/archive/EVALUATION-2026-07-14.md) 和已完成的
+[增强计划](docs/archive/ENHANCEMENT-PLAN-2026-07-14.md)。
+
+---
+
 ## [未发布] - 2026-07-02
 
 ### 新增 ⭐
@@ -102,7 +141,7 @@
   - M2 — 时间戳驱动缓存 + 装饰器
   - M2.5 — TencentAdapter + FallbackAdapter（凌晨实战）
 - **CLI** — `mommy-watchlist` / `mommy-monitor` / `mommy-cache` 4 子应用
-- **设计文档** — `docs/DESIGN.md` / `LEDGER.md` / `PROGRESS.md`
+- **设计文档** — `docs/DESIGN.md` / `docs/archive/LEDGER.md` / `docs/archive/PROGRESS.md`
 
 ---
 

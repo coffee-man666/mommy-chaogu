@@ -10,12 +10,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import lru_cache
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
-from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
+from mommy_chaogu.web.deps import (
+    get_adapter,
+    get_agent_memory,
+    get_agent_service,
+    get_portfolio_store,
+    get_watchlist_store,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -28,6 +35,7 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] | None = None
+    session_id: str = Field(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class ChatResponse(BaseModel):
@@ -50,49 +58,40 @@ class RouteResponse(BaseModel):
 # ---------- REST 端点 ----------
 
 
+@lru_cache(maxsize=1)
 def _get_router() -> Any:
-    """懒加载 NLRouter（避免 app 启动时构建 adapter）。"""
-    from functools import lru_cache
+    """Build the process-wide router from explicit application dependencies."""
+    from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+    from mommy_chaogu.db_paths import AGENT_DB
+    from mommy_chaogu.workflow.definitions import get_default_registry
+    from mommy_chaogu.workflow.engine import WorkflowExecutor
+    from mommy_chaogu.workflow.router import NLRouter
 
-    @lru_cache(maxsize=1)
-    def _build() -> Any:
-        from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
-        from mommy_chaogu.db_paths import AGENT_DB, PORTFOLIO_DB
-        from mommy_chaogu.portfolio.store import PortfolioStore
-        from mommy_chaogu.watchlist.store import WatchlistStore
-        from mommy_chaogu.web.deps import get_adapter
-        from mommy_chaogu.workflow.engine import WorkflowExecutor
-        from mommy_chaogu.workflow.router import NLRouter
+    ctx = ToolContext(
+        adapter=get_adapter(),
+        watchlist_store=get_watchlist_store(),
+        portfolio_store=get_portfolio_store(),
+        db_path=AGENT_DB,
+    )
+    tool_registry = ToolRegistry(ctx)
 
-        adapter = get_adapter()
-        ctx = ToolContext(
-            adapter=adapter,
-            watchlist_store=WatchlistStore(PORTFOLIO_DB),
-            portfolio_store=PortfolioStore(PORTFOLIO_DB),
-            db_path=AGENT_DB,
-        )
-        tool_registry = ToolRegistry(ctx)
+    llm_summarizer = None
+    agent = get_agent_service()
+    if agent is not None:
 
-        # 尝试构建 LLM summarizer
-        llm_summarizer = None
-        agent = get_agent_service()
-        if agent is not None:
+        class _AgentSummarizer:
+            def __init__(self, svc: Any) -> None:
+                self._svc = svc
 
-            class _AgentSummarizer:
-                def __init__(self, svc: Any) -> None:
-                    self._svc = svc
+            def summarize(self, template: str, context: str) -> str:
+                prompt = template.format(context=context)
+                resp = self._svc.chat_raw([{"role": "user", "content": prompt}])
+                return resp.text
 
-                def summarize(self, template: str, context: str) -> str:
-                    prompt = template.format(context=context)
-                    resp = self._svc.chat_raw([{"role": "user", "content": prompt}])
-                    return resp.text
+        llm_summarizer = _AgentSummarizer(agent)
 
-            llm_summarizer = _AgentSummarizer(agent)
-
-        executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
-        return NLRouter(executor=executor)
-
-    return _build()
+    executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
+    return NLRouter(get_default_registry(), executor=executor)
 
 
 @router.post("/route", response_model=RouteResponse)
@@ -150,7 +149,7 @@ async def chat(
         req.message,
         None,  # history 不单独传，由 memory 提供上下文
         None,  # system_override
-        memory,
+        memory.for_session(req.session_id),
     )
 
     return ChatResponse(
@@ -164,11 +163,14 @@ async def chat(
 
 
 @router.get("/history")
-async def get_history(limit: int = 50) -> dict[str, Any]:
+async def get_history(
+    session_id: str = Query(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$"),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, Any]:
     """获取对话历史（从 agent_memory 表）。"""
     memory = get_agent_memory()
     try:
-        rows = memory.recent(limit=limit)
+        rows = memory.recent(limit=limit, session_id=session_id)
         return {"messages": rows, "total": len(rows)}
     except Exception:
         return {"messages": [], "total": 0}

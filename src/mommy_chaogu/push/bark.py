@@ -109,12 +109,8 @@ class BarkPusher:
             f"- **详情**：{signal.detail}",
         ]
         if signal.trigger_value is not None and signal.threshold_value is not None:
-            lines.append(
-                f"- **触发值**：{signal.trigger_value}（阈值 {signal.threshold_value}）"
-            )
+            lines.append(f"- **触发值**：{signal.trigger_value}（阈值 {signal.threshold_value}）")
         if self.web_base_url and signal.code and len(signal.code) == 6:
             lines.append("")
-            lines.append(
-                f"[**📈 查看 K 线 →**]({self.web_base_url}/#/detail/{signal.code})"
-            )
+            lines.append(f"[**📈 查看 K 线 →**]({self.web_base_url}/#/detail/{signal.code})")
         return "\n".join(lines)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { apiGet, apiPost, apiDelete } from '@/api/client'
+import { apiGet, apiPost, apiDelete, getApiToken, setApiToken } from '@/api/client'
 import { useTheme } from '@/composables/useTheme'
 import { useWatchlistStore } from '@/stores/watchlist'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -35,6 +35,15 @@ const healthInfo = ref<Health | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 const lastRefresh = ref(new Date())
+const apiToken = ref(getApiToken())
+const tokenSaved = ref(false)
+
+async function saveApiToken() {
+  setApiToken(apiToken.value)
+  tokenSaved.value = true
+  window.setTimeout(() => (tokenSaved.value = false), 2000)
+  await load()
+}
 
 // ---------- 添加自选股 ----------
 const showAddStock = ref(false)
@@ -228,6 +237,33 @@ onUnmounted(() => {
       </CardContent>
     </Card>
 
+    <!-- 访问令牌 -->
+    <Card>
+      <CardHeader>
+        <CardTitle class="text-base">🔐 访问令牌</CardTitle>
+        <CardDescription>
+          仅保存在当前浏览器会话，关闭标签页后自动清除
+        </CardDescription>
+      </CardHeader>
+      <Separator />
+      <CardContent class="space-y-3 pt-4">
+        <Input
+          v-model="apiToken"
+          type="password"
+          autocomplete="current-password"
+          placeholder="MOMMY_API_TOKEN（本机无认证时可留空）"
+          aria-label="Web 访问令牌"
+          @keyup.enter="saveApiToken"
+        />
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-muted-foreground">
+            {{ tokenSaved ? '已保存并重新连接' : '令牌不会写入项目文件' }}
+          </span>
+          <Button size="sm" @click="saveApiToken">保存令牌</Button>
+        </div>
+      </CardContent>
+    </Card>
+
     <!-- 服务状态 -->
     <Card v-if="healthInfo">
       <CardHeader>
@@ -397,7 +433,7 @@ onUnmounted(() => {
         <DialogFooter>
           <Button variant="outline" @click="showAddGroup = false">取消</Button>
           <Button :disabled="addingGroup || !groupForm.name.trim()" @click="submitAddGroup">
-            {{ addingGroup ? '创建中...' : '创建分组' }}
+            {{ addingGroup ? '创建中…' : '创建分组' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -443,7 +479,7 @@ onUnmounted(() => {
             :disabled="addingStock || !stockForm.code.trim() || !stockForm.group.trim()"
             @click="submitAddStock"
           >
-            {{ addingStock ? '添加中...' : '保存' }}
+            {{ addingStock ? '添加中…' : '保存' }}
           </Button>
         </DialogFooter>
       </DialogContent>

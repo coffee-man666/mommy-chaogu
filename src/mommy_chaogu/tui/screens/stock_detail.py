@@ -237,12 +237,8 @@ class StockDetailScreen(ModalScreen[None]):
             theme = getattr(self.app, "ui_theme", "dark")
             arrow = change_arrow(self._change_pct)
             color = change_color(self._change_pct, theme)
-            change_text = (
-                f"[{color}]{arrow} {format_change_pct(self._change_pct)}[/{color}]"
-            )
-        header = (
-            f"#{self.code}  {self._stock_name}    {self._price_text}  {change_text}"
-        )
+            change_text = f"[{color}]{arrow} {format_change_pct(self._change_pct)}[/{color}]"
+        header = f"#{self.code}  {self._stock_name}    {self._price_text}  {change_text}"
         self._update_widget("#stock-header", header)
 
     # ------------------------------------------------------------------

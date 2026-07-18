@@ -221,6 +221,16 @@ mommy flows pull --pool semicon --days 30
 
 ## 自动化
 
+### Web 安全边界
+
+- 默认监听 `127.0.0.1`，本机使用无需令牌。
+- 非本机监听必须设置 `MOMMY_API_TOKEN`。
+- REST API 使用 Bearer token；WebSocket 使用 60 秒有效的 HMAC 签名 ticket。
+- `MOMMY_CORS_ORIGINS` 用逗号分隔可信前端 origin；默认不允许跨域。
+- Agent REST/WebSocket 共用有界并发槽，防止意外消耗 LLM 配额。
+- Web 对话按浏览器会话 ID 隔离；旧数据自动迁移到 `default` 会话。
+- 非默认 Web 会话保留 30 天，可用 `[web].session_retention_days` 调整。
+
 ### Cron 定时任务
 
 | 脚本 | 时间 | 功能 |
@@ -325,11 +335,15 @@ Conventional Commits：`feat / fix / docs / refactor / chore`
 
 | 文档 | 用途 |
 |---|---|
-| [PROGRESS.md](PROGRESS.md) | 当前进度 + 里程碑 |
-| [DESIGN.md](DESIGN.md) | 架构设计 + ADR |
+| [DESIGN.md](DESIGN.md) | 架构设计 + 关键决策 |
 | [MEMORY-SYSTEM-PLAN.md](MEMORY-SYSTEM-PLAN.md) | 记忆系统设计（5 层架构 + MemoryPipeline） |
-| [BACKTEST-REPORT.md](BACKTEST-REPORT.md) | 回测报告（多模型横向对比） |
-| [EVALUATION-2026-07-05.md](EVALUATION-2026-07-05.md) | 记忆系统 + 回测系统评估报告 |
+| [USER-GUIDE.md](USER-GUIDE.md) | 场景化使用指南 |
 | [EARNINGS-HANDBOOK.md](EARNINGS-HANDBOOK.md) | 财报窗口实战手册 |
 | [KLINE-SPEC.md](KLINE-SPEC.md) | K 线组件规范 |
 | [AGENT-INTERACTION-GUIDE.md](AGENT-INTERACTION-GUIDE.md) | Agent 交互指导 |
+| [AGENT-INTERFACE-EVOLUTION.md](AGENT-INTERFACE-EVOLUTION.md) | Agent 接口演进与设计教训 |
+| [DATABASE-LIFECYCLE.md](DATABASE-LIFECYCLE.md) | 数据库句柄所有权与生命周期 |
+| [RAILWAY-DEPLOYMENT.md](RAILWAY-DEPLOYMENT.md) | Railway 部署指南 |
+| [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) | 发布门禁清单 |
+| [TECH-DEBT.md](TECH-DEBT.md) | 技术债台账 |
+| [archive/](archive/) | 历史计划 / 评估 / 实施记录（日期快照） |

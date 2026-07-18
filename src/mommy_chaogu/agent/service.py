@@ -17,9 +17,8 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
-from mommy_chaogu.agent.memory import ConversationMemory
 from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
 from mommy_chaogu.agent.memory_service import MemoryService
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
@@ -27,27 +26,46 @@ from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
 _log = logging.getLogger(__name__)
 
+
+class ConversationMemoryLike(Protocol):
+    """Minimal conversation-memory interface consumed by AgentService."""
+
+    def recent(self, limit: int = 20) -> list[dict[str, Any]]: ...
+
+    def add(self, role: str, content: str) -> int: ...
+
+
 # 支持的 provider 配置
 SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
     "deepseek": {
         "base_url": "https://api.deepseek.com",
         "default_model": "deepseek-chat",
         "env_key": "DEEPSEEK_API_KEY",
+        "temperature": 0.2,
     },
     "openai": {
         "base_url": None,  # OpenAI 默认
         "default_model": "gpt-4o-mini",
         "env_key": "OPENAI_API_KEY",
+        "temperature": 0.2,
     },
     "kimi": {
-        "base_url": "https://api.moonshot.cn/v1",
-        "default_model": "moonshot-v1-8k",
+        "base_url": "https://api.kimi.com/coding/v1",
+        "default_model": "kimi-k2.6",
         "env_key": "MOONSHOT_API_KEY",
+        "temperature": 1.0,
     },
     "zai": {
         "base_url": "https://api.z.ai/api/coding/paas/v4",
         "default_model": "glm-4.7",
         "env_key": "ZAI_API_KEY",
+        "temperature": 0.2,
+    },
+    "nova": {
+        "base_url": "http://127.0.0.1:9999/v1",
+        "default_model": "nova-bridge",
+        "env_key": "NOVA_API_KEY",
+        "temperature": None,
     },
 }
 
@@ -99,7 +117,15 @@ class AgentService:
 
         # 解析 provider 配置
         provider = provider or os.environ.get("AGENT_PROVIDER", "deepseek")
-        config = SUPPORTED_PROVIDERS.get(provider, SUPPORTED_PROVIDERS["deepseek"])
+        provider = provider.strip().lower()
+        if provider not in SUPPORTED_PROVIDERS:
+            supported = ", ".join(SUPPORTED_PROVIDERS)
+            raise ValueError(f"Unsupported agent provider {provider!r}; choose one of: {supported}")
+        config = SUPPORTED_PROVIDERS[provider]
+        self._provider = provider
+        self._completion_options = (
+            {"temperature": config["temperature"]} if config["temperature"] is not None else {}
+        )
 
         self._model = model or config["default_model"]
 
@@ -141,7 +167,7 @@ class AgentService:
         user_message: str,
         history: list[dict[str, str]] | None = None,
         system_override: str | None = None,
-        memory: ConversationMemory | None = None,
+        memory: ConversationMemoryLike | None = None,
         on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
@@ -218,7 +244,7 @@ class AgentService:
                 model=self._model,
                 messages=messages,
                 tools=self._tools.definitions(),
-                temperature=0.3,  # 偏低温度，减少幻觉
+                **self._completion_options,
             )
 
             msg = response.choices[0].message

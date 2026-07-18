@@ -102,7 +102,7 @@ class MarketNarrative:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.5,
+                temperature=1,
             )
             return response.choices[0].message.content or ""
         except Exception as e:
@@ -151,7 +151,7 @@ class MarketNarrative:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.3,
+                temperature=1,
             )
             return response.choices[0].message.content or ""
         except Exception as e:

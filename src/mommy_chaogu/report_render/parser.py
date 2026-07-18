@@ -75,15 +75,15 @@ def _decimal(s: str) -> Decimal:
             break
     # 处理后缀单位
     mult = Decimal(1)
-    if s.endswith("亿"):
+    if s.endswith("万亿"):
+        mult = Decimal("1e12")
+        s = s[:-2]
+    elif s.endswith("亿"):
         mult = Decimal("1e8")
         s = s[:-1]
     elif s.endswith("万"):
         mult = Decimal("1e4")
         s = s[:-1]
-    elif s.endswith("万亿"):
-        mult = Decimal("1e12")
-        s = s[:-2]
     elif s.endswith("bp"):
         s = s[:-2]
         mult = Decimal("1")

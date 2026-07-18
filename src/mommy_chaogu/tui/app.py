@@ -9,6 +9,7 @@ MommyTuiApp — 类 Claude Code CLI 的沉浸式体验。
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import logging
 import os
@@ -29,6 +30,22 @@ from mommy_chaogu.tui.views.dashboard import DashboardView
 from mommy_chaogu.tui.widgets.top_bar import TopBar
 
 _log = logging.getLogger(__name__)
+
+
+def build_tui_parser() -> argparse.ArgumentParser:
+    """Build the lightweight CLI parser without starting Textual or setup."""
+    from mommy_chaogu import __version__
+
+    parser = argparse.ArgumentParser(
+        prog="mommy-tui",
+        description="启动 mommy-chaogu 的沉浸式终端界面。",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    return parser
 
 
 def _format_tool_args(args: dict[str, Any]) -> str:
@@ -246,6 +263,7 @@ class MommyTuiApp(App[None]):
 
         # 2. 无工作流匹配 → 走 Agent
         if self.services.agent.has_agent():
+
             def _run_agent() -> None:
                 self._do_agent_chat(text)
 
@@ -285,9 +303,7 @@ class MommyTuiApp(App[None]):
             self.call_from_thread(self._post_step, idx, state, display_name)
 
         try:
-            result = self.services.agent.execute_workflow(
-                route, text, on_step_start, on_step_done
-            )
+            result = self.services.agent.execute_workflow(route, text, on_step_start, on_step_done)
         except Exception as e:
             _log.warning("工作流执行失败: %s", e)
             self.call_from_thread(self._on_chat_error, f"工作流出错：{e}")
@@ -320,6 +336,7 @@ class MommyTuiApp(App[None]):
 
     def _do_agent_chat(self, text: str) -> None:
         """worker 线程内调用 agent.chat，工具调用实时回传 UI。"""
+
         def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
             args_str = _format_tool_args(fn_args)
             self.call_from_thread(self._post_tool_call, fn_name, args_str)
@@ -380,9 +397,7 @@ class MommyTuiApp(App[None]):
             summary = svc.portfolio_snapshot()
         except Exception as e:
             _log.warning("数据刷新失败: %s", e)
-            self.call_from_thread(
-                self._on_refresh_error, f"数据刷新失败: {e}"
-            )
+            self.call_from_thread(self._on_refresh_error, f"数据刷新失败: {e}")
             return
         self.call_from_thread(self._apply_data, rows, summary)
 
@@ -406,6 +421,9 @@ class MommyTuiApp(App[None]):
 
 def main() -> None:
     """命令行入口：mommy-tui。"""
+    # Parse before setup/importing services so --help and --version are
+    # guaranteed to be non-interactive CLI operations.
+    build_tui_parser().parse_args()
     logging.basicConfig(
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",

@@ -52,13 +52,9 @@ class NLRouter:
 
     def __init__(
         self,
-        registry: WorkflowRegistry | None = None,
+        registry: WorkflowRegistry,
         executor: WorkflowExecutor | None = None,
     ) -> None:
-        if registry is None:
-            from mommy_chaogu.workflow.definitions import get_default_registry
-
-            registry = get_default_registry()
         self._registry = registry
         self._executor = executor
 

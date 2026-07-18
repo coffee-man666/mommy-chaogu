@@ -104,6 +104,18 @@ def test_wizard_writes_env_zai(tmp_path: Path):
     assert "AGENT_PROVIDER=zai" in content
 
 
+def test_wizard_writes_env_nova(tmp_path: Path):
+    env = tmp_path / ".env"
+    result = run_setup_wizard(
+        env,
+        input_func=make_input(["5", "dummy", "n"]),
+    )
+    assert result is True
+    content = env.read_text(encoding="utf-8")
+    assert "NOVA_API_KEY=dummy" in content
+    assert "AGENT_PROVIDER=nova" in content
+
+
 def test_wizard_with_server_chan(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
@@ -191,7 +203,9 @@ def test_check_and_run_setup_skips_when_env_exists(tmp_path: Path, monkeypatch: 
     from mommy_chaogu import setup
 
     # 向导不应该被调用——用会失败的 mock 验证
-    monkeypatch.setattr(setup, "run_setup_wizard", lambda *a, **kw: pytest.fail("wizard should not run"))
+    monkeypatch.setattr(
+        setup, "run_setup_wizard", lambda *a, **kw: pytest.fail("wizard should not run")
+    )
 
     assert setup.check_and_run_setup() is True
 

@@ -29,6 +29,22 @@ class TestProviderConfig:
             assert "default_model" in config, f"{name} missing default_model"
             assert "base_url" in config, f"{name} missing base_url"
 
+    def test_kimi_k26_configuration(self) -> None:
+        assert SUPPORTED_PROVIDERS["kimi"]["base_url"] == "https://api.kimi.com/coding/v1"
+        assert SUPPORTED_PROVIDERS["kimi"]["default_model"] == "kimi-k2.6"
+
+    def test_nova_bridge_configuration(self) -> None:
+        assert SUPPORTED_PROVIDERS["nova"] == {
+            "base_url": "http://127.0.0.1:9999/v1",
+            "default_model": "nova-bridge",
+            "env_key": "NOVA_API_KEY",
+            "temperature": None,
+        }
+
+    def test_temperatures_are_provider_aware(self) -> None:
+        assert SUPPORTED_PROVIDERS["kimi"]["temperature"] == 1.0
+        assert SUPPORTED_PROVIDERS["openai"]["temperature"] == 0.2
+
 
 class TestAgentServiceInit:
     def test_missing_api_key_raises(self, mock_ctx: ToolContext) -> None:
@@ -37,6 +53,10 @@ class TestAgentServiceInit:
             pytest.raises(ValueError, match="未找到 API key"),
         ):
             AgentService(mock_ctx)
+
+    def test_invalid_provider_raises(self, mock_ctx: ToolContext) -> None:
+        with pytest.raises(ValueError, match="Unsupported agent provider"):
+            AgentService(mock_ctx, provider="mystery", api_key="sk-test")
 
     @patch("openai.OpenAI")
     def test_init_with_explicit_key(self, _mock_openai: MagicMock, mock_ctx: ToolContext) -> None:

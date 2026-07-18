@@ -1,51 +1,65 @@
-# ---- builder stage: install dependencies ----
-FROM python:3.12-slim AS builder
+# syntax=docker/dockerfile:1
+
+# ---- pinned tool image ----
+FROM ghcr.io/astral-sh/uv:0.7.19 AS uv-bin
+
+# ---- frontend builder ----
+FROM node:22-bookworm-slim AS web-builder
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/ ./
+RUN npm run typecheck && npm run build
+
+# ---- Python dependency builder ----
+FROM python:3.12-slim AS python-builder
 
 WORKDIR /app
+COPY --from=uv-bin /uv /usr/local/bin/uv
 
-# 安装 uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Docker 构建时没有符号链接，用 copy 模式更稳定
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
 
-# 先拷贝依赖文件（利用 Docker 层缓存）
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ ./src/
+RUN uv sync --frozen --no-dev --no-editable
 
-# 安装生产依赖到 .venv（不含 dev 依赖）
-RUN uv sync --no-dev
-
-# ---- runtime stage: slim image ----
+# ---- runtime ----
 FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
-# 拷贝 uv 运行时和虚拟环境
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-COPY --from=builder /app/.venv /app/.venv
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 mommy \
+    && useradd --uid 1000 --gid mommy --create-home mommy
 
-# 将 .venv 加入 PATH，这样可以直接调用 mommy-web
+COPY --from=python-builder /app/.venv /app/.venv
+COPY --from=web-builder /web/dist /app/web/dist
+COPY data/supply_chains/ /app/data-seed/supply_chains/
+COPY data/earnings_preview.json /app/data-seed/earnings_preview.json
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/mommy-entrypoint
+
 ENV PATH="/app/.venv/bin:$PATH" \
-    UV_LINK_MODE=copy \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    MOMMY_WEB_DIST=/app/web/dist
 
-# 拷贝项目文件
-COPY src/ ./src/
-COPY tests/ ./tests/
-COPY web/dist/ ./web/dist/
-COPY docs/ ./docs/
-COPY pyproject.toml uv.lock ./
-COPY .env.example ./.env.example
+RUN mkdir -p \
+        /app/data \
+        /app/.venv/lib/python3.12/site-packages/efinance/data \
+    && chown -R mommy:mommy \
+        /app/data \
+        /app/.venv/lib/python3.12/site-packages/efinance/data
 
-# 创建 data 目录并声明为 VOLUME（数据库持久化）
-RUN mkdir -p data
-VOLUME ["/app/data"]
-
-# 默认启动 Web 服务
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)" || exit 1
+USER mommy
 
-CMD ["mommy-web", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://localhost:{os.environ.get('PORT', '8000')}/api/health\", timeout=5)" || exit 1
+
+ENTRYPOINT ["mommy-entrypoint"]
+CMD ["mommy-web", "--host", "0.0.0.0"]

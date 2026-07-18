@@ -483,6 +483,10 @@ WORKFLOWS: list[Workflow] = [
     ),
 ]
 
+_DEFAULT_REGISTRY = WorkflowRegistry()
+for _workflow in WORKFLOWS:
+    _DEFAULT_REGISTRY.register(_workflow)
+
 
 def get_default_registry() -> WorkflowRegistry:
     """获取包含所有预定义工作流的注册表。
@@ -490,7 +494,4 @@ def get_default_registry() -> WorkflowRegistry:
     Returns:
         已注册 9 个工作流的 WorkflowRegistry。
     """
-    registry = WorkflowRegistry()
-    for wf in WORKFLOWS:
-        registry.register(wf)
-    return registry
+    return _DEFAULT_REGISTRY

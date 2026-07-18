@@ -18,7 +18,7 @@ class TestHealth:
         assert data["ok"] is True
         assert "adapter_name" in data
         assert "uptime_seconds" in data
-        assert "db_path" in data
+        assert "db_path" not in data
 
     def test_health_with_last_snapshot(self, client: TestClient, mock_service: MagicMock) -> None:
         mock_service.last_poll_at.return_value = datetime.now(UTC)

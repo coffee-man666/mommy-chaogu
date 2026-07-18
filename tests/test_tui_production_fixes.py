@@ -203,9 +203,7 @@ class TestTabSlashCompletion:
                 await pilot.press("tab")
                 await pilot.pause()
 
-                assert prompt.value == "/refresh", (
-                    f"Expected '/refresh', got '{prompt.value}'"
-                )
+                assert prompt.value == "/refresh", f"Expected '/refresh', got '{prompt.value}'"
                 assert switcher.current == "chat", "Should still be in chat mode"
 
         asyncio.run(_test())
@@ -249,3 +247,16 @@ class TestHelpScreenBindings:
         assert hasattr(HelpScreen, "BINDINGS")
         # BINDING (singular) must NOT exist
         assert not hasattr(HelpScreen, "BINDING")
+
+
+class TestTuiCli:
+    def test_help_exits_without_starting_tui(self, capsys) -> None:
+        import pytest
+
+        from mommy_chaogu.tui.app import build_tui_parser
+
+        with pytest.raises(SystemExit) as exc_info:
+            build_tui_parser().parse_args(["--help"])
+
+        assert exc_info.value.code == 0
+        assert "mommy-tui" in capsys.readouterr().out

@@ -299,9 +299,7 @@ class ChatView(Vertical):
             if not args:
                 self.append_hint("用法: /flows <股票代码>，如 /flows 688981")
             else:
-                self.append_hint(
-                    f"查看 {args} 资金流请在终端运行: mommy flows show {args}"
-                )
+                self.append_hint(f"查看 {args} 资金流请在终端运行: mommy flows show {args}")
         elif cmd == "memory":
             self.append_hint("查看记忆请在终端运行: mommy memory stats")
         elif cmd == "quit":
@@ -325,10 +323,12 @@ class ChatView(Vertical):
         """追加工作流匹配卡片。"""
         log = self.query_one("#chat-log", VerticalScroll)
         steps_str = "  ".join(f"⠹ {s}" for s in steps)
-        log.mount(Static(
-            f"[yellow]⚡ 匹配工作流：{title}[/]\n{steps_str}",
-            classes="workflow-card",
-        ))
+        log.mount(
+            Static(
+                f"[yellow]⚡ 匹配工作流：{title}[/]\n{steps_str}",
+                classes="workflow-card",
+            )
+        )
         log.scroll_end(animate=False)
 
     def append_tool_call(self, name: str, args_summary: str) -> None:
@@ -358,9 +358,7 @@ class ChatView(Vertical):
     def on_step_status(self, msg: StepStatus) -> None:
         """接收 StepStatus 消息并显示步骤进度。"""
         mark = {"ok": "✓", "fail": "✗", "running": "⠹"}.get(msg.state, "?")
-        color = {"ok": "green", "fail": "red", "running": "yellow"}.get(
-            msg.state, "white"
-        )
+        color = {"ok": "green", "fail": "red", "running": "yellow"}.get(msg.state, "white")
         log = self.query_one("#chat-log", VerticalScroll)
         log.mount(
             Static(

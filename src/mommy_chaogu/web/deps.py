@@ -188,3 +188,42 @@ def get_agent_service() -> object:
         tracker=get_prediction_tracker(),
         semantic=get_semantic_memory(),
     )
+
+
+def close_cached_dependencies() -> None:
+    """Close owned resources and clear dependency singletons.
+
+    Only dependencies that were actually constructed are evaluated, so
+    shutdown never creates a resource merely to close it.
+    """
+    from mommy_chaogu.web.routes.agent import _get_router
+
+    _get_router.cache_clear()
+
+    resource_factories = (
+        get_adapter,
+        get_watchlist_store,
+        get_portfolio_store,
+        get_agent_memory,
+        get_episodic_memory,
+        get_prediction_tracker,
+        get_semantic_memory,
+    )
+    for factory in resource_factories:
+        cache_info = getattr(factory, "cache_info", None)
+        if cache_info is None or cache_info().currsize == 0:
+            continue
+        resource = factory()
+        close = getattr(resource, "close", None)
+        if close is not None:
+            close()
+
+    for factory in (
+        get_agent_service,
+        get_memory_service,
+        *resource_factories,
+        get_alerter,
+    ):
+        cache_clear = getattr(factory, "cache_clear", None)
+        if cache_clear is not None:
+            cache_clear()

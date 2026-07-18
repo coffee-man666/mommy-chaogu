@@ -100,7 +100,6 @@ export interface CacheStats {
 export interface Health {
   ok: boolean
   adapter_name: string
-  db_path: string
   uptime_seconds: number
   last_snapshot_at: string | null
 }

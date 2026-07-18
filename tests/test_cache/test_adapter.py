@@ -497,9 +497,7 @@ def test_format_source_label_realtime(cached: CachedMarketDataAdapter) -> None:
     assert label  # 非空
 
 
-def test_format_source_label_cache(
-    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
-) -> None:
+def test_format_source_label_cache(cached: CachedMarketDataAdapter, mock_adp: MockAdapter) -> None:
     """cache 来源 → 返回 '本地缓存'。"""
     cached.get_quote("600519")
     cached.get_quote("600519")  # 命中缓存

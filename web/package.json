@@ -1,13 +1,15 @@
 {
   "name": "mommy-chaogu-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "妈妈炒股 Web 前端（Vite + Vue 3）",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 8080 --host 0.0.0.0",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@lucide/vue": "^1.23.0",
@@ -29,9 +31,12 @@
     "vue-router": "^4.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@vitejs/plugin-vue": "^5.2",
+    "jsdom": "^26.1.0",
     "typescript": "^5.6",
     "vite": "^6.0",
+    "vitest": "^3.2.7",
     "vue-tsc": "^2.1.0"
   }
 }
