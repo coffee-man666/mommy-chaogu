@@ -42,6 +42,8 @@ output/playwright/
 data/cache/
 data/*.db
 data/*.db-journal
+data/*.db-shm
+data/*.db-wal
 data/*.bak
 data/*.sqlite
 data/monitor.log
