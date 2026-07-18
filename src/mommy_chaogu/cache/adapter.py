@@ -67,6 +67,14 @@ class CachedMarketDataAdapter:
             "fetch_fail": 0,
             "miss": 0,
         }
+        # 最近一次数据来源（供调用方感知数据新鲜度）
+        self.last_source: str = (
+            ""  # "network", "cache", "stale_cache", "snapshot", "stale_snapshot", ""
+        )
+
+    def close(self) -> None:
+        """Release the cache store owned by this adapter."""
+        self.store.close()
 
     # ============================================================
     # 内部：拉新节流判断
@@ -107,6 +115,7 @@ class CachedMarketDataAdapter:
                     self.store.set_quote(code, fresh)
                 except Exception as e:
                     _log.error("cache set_quote(%s) failed: %s", code, e)
+                self.last_source = "network"
                 return fresh
 
             # 拉新失败
@@ -115,17 +124,21 @@ class CachedMarketDataAdapter:
                 _log.info(
                     "serving cached quote(%s) age=%.0fs (fetch failed)", code, cached.age_seconds
                 )
+                self.last_source = "stale_cache"
                 return cached.quote  # type: ignore[return-value]
 
             self.stats_counters["miss"] += 1
+            self.last_source = ""
             return None
 
         # 不到拉新间隔 → 直接用缓存
         if cached is not None:
             self.stats_counters["hits"] += 1
+            self.last_source = "cache"
             return cached.quote  # type: ignore[return-value]
         # 缓存为空但不到拉新间隔（理论上不会发生，但兜底）
         self.stats_counters["miss"] += 1
+        self.last_source = ""
         return None
 
     def get_quotes(self, codes: list[str]) -> list[Quote]:
@@ -147,6 +160,7 @@ class CachedMarketDataAdapter:
             # 从快照还原 Quote 对象列表
             from mommy_chaogu.cache.serializer import quote_from_dict
 
+            self.last_source = "snapshot"
             return [quote_from_dict(d) for d in snap[3]]
 
         # 尝试拉新
@@ -170,6 +184,7 @@ class CachedMarketDataAdapter:
                 self.store.trim_market_snapshots(self.config.market_snapshot_history_keep)
             except Exception as e:
                 _log.error("cache save_market_snapshot failed: %s", e)
+            self.last_source = "snapshot"
             return fresh
 
         # 拉新失败 → 用旧快照
@@ -181,9 +196,11 @@ class CachedMarketDataAdapter:
                 "serving cached market_snapshot age=%.0fs (fetch failed)",
                 (_utcnow() - snap[1]).total_seconds(),
             )
+            self.last_source = "stale_snapshot"
             return [quote_from_dict(d) for d in snap[3]]
 
         self.stats_counters["miss"] += 1
+        self.last_source = ""
         return []
 
     # ============================================================
@@ -235,6 +252,7 @@ class CachedMarketDataAdapter:
             except Exception as e:
                 self.stats_counters["fetch_fail"] += 1
                 _log.warning("fetch bars(%s) failed: %s", code, e)
+                self.last_source = "cache"
                 return []
 
             # 写入缓存（每根 K 线一天一条记录）
@@ -256,6 +274,7 @@ class CachedMarketDataAdapter:
                     self.store.set_bar(code, interval_str, adj_str, trade_date, bar_dict)
                 except Exception as e:
                     _log.error("cache set_bar failed: %s", e)
+            self.last_source = "cache"
             return fresh
 
         # 有缓存 → 看是否需要尝试拉新（节流）
@@ -291,6 +310,7 @@ class CachedMarketDataAdapter:
 
         # 从缓存构造 Bar 列表
         self.stats_counters["hits"] += 1
+        self.last_source = "cache"
         from mommy_chaogu.market_data.types import Bar, Money
 
         bars: list[Bar] = []
@@ -344,7 +364,9 @@ class CachedMarketDataAdapter:
             # 不到拉新间隔 → 直接用缓存
             if cached is not None:
                 self.stats_counters["hits"] += 1
+                self.last_source = "cache"
                 return [_money_flow_from_dict(d) for d in cached]
+            self.last_source = ""
             return []
 
         # 到拉新间隔 → 尝试拉新
@@ -364,13 +386,16 @@ class CachedMarketDataAdapter:
                 self.store.set_today_money_flow(code, flow_dicts)
             except Exception as e:
                 _log.error("cache set_today_money_flow failed: %s", e)
+            self.last_source = "network"
             return fresh
 
         # 拉新失败 → fallback 到旧缓存
         if cached is not None:
             self.stats_counters["hits"] += 1
             _log.info("serving cached today_money_flow(%s) (fetch failed)", code)
+            self.last_source = "stale_cache"
             return [_money_flow_from_dict(d) for d in cached]
+        self.last_source = ""
         return []
 
     def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
@@ -387,6 +412,7 @@ class CachedMarketDataAdapter:
             except Exception as e:
                 self.stats_counters["fetch_fail"] += 1
                 _log.warning("fetch history_money_flow(%s) failed: %s", code, e)
+                self.last_source = "cache"
                 return []
 
             # 按 trade_date 分组存
@@ -399,10 +425,12 @@ class CachedMarketDataAdapter:
             for trade_date, flows in by_date.items():
                 flow_dicts = [_money_flow_to_dict(f) for f in flows]
                 self.store.set_money_flow_history(code, trade_date, flow_dicts)
+            self.last_source = "cache"
             return fresh
 
         # 有缓存
         self.stats_counters["hits"] += 1
+        self.last_source = "cache"
         out: list[MoneyFlow] = []
         for d in cached:
             flows = d.get("flows", [])
@@ -451,6 +479,26 @@ class CachedMarketDataAdapter:
             )
         out_list.sort(key=lambda x: x["age_seconds"])  # 最新的在前
         return out_list
+
+    # ============================================================
+    # 数据来源标注
+    # ============================================================
+
+    def format_source_label(self) -> str:
+        """返回用户可读的数据来源标注，如 '东方财富 实时' 或 '本地缓存'。"""
+        if not self.last_source:
+            return ""
+        if self.last_source in ("network", "snapshot"):
+            inner_name = getattr(self.inner, "__class__", None)
+            inner_name = inner_name.__name__ if inner_name else ""
+            if "Efinance" in inner_name:
+                return "东方财富 实时"
+            elif "Tencent" in inner_name:
+                return "腾讯财经 实时"
+            return "实时数据"
+        if self.last_source in ("cache", "stale_cache", "stale_snapshot"):
+            return "本地缓存"
+        return self.last_source
 
 
 # ---------- 内部：MoneyFlow 序列化（简化版） ----------

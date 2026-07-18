@@ -21,7 +21,6 @@ from sqlalchemy import (
     DateTime,
     Integer,
     String,
-    create_engine,
     select,
 )
 from sqlalchemy.engine import Engine
@@ -33,6 +32,7 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 
+from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 from mommy_chaogu.market_data.types import Quote
 
 # ---------- 常量 ----------
@@ -115,7 +115,7 @@ class InvalidConditionError(CustomAlertError):
 # ---------- Store ----------
 
 
-class CustomAlertStore:
+class CustomAlertStore(EngineOwner):
     """SQLite-backed 自定义告警存储。
 
     用法：
@@ -128,11 +128,8 @@ class CustomAlertStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine: Engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            future=True,
-        )
+        self.engine: Engine = create_sqlite_engine(db_path)
+        self._manage_engine()
         CustomAlertBase.metadata.create_all(self.engine)
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
 

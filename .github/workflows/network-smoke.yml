@@ -1,0 +1,60 @@
+name: Network adapter smoke
+
+on:
+  schedule:
+    - cron: "17 1 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --frozen --extra dev
+      - name: Probe live providers
+        id: probe
+        continue-on-error: true
+        run: uv run pytest -m network --tb=short | tee network-probe.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: network-probe-${{ github.run_id }}
+          path: network-probe.log
+      - name: Summarize and track repeated failures
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PROBE_RESULT: ${{ steps.probe.outcome }}
+        with:
+          script: |
+            const title = "Scheduled network adapter probe is failing";
+            const {owner, repo} = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: "open", per_page: 100
+            });
+            const existing = issues.find(issue => issue.title === title);
+            const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            if (process.env.PROBE_RESULT === "failure") {
+              core.warning(`Live provider probe failed: ${run}`);
+              if (existing) {
+                await github.rest.issues.createComment({owner, repo, issue_number: existing.number,
+                  body: `Probe failed again: ${run}`});
+              } else {
+                await github.rest.issues.create({owner, repo, title,
+                  body: `First observed failure: ${run}`});
+              }
+            } else if (existing) {
+              await github.rest.issues.createComment({owner, repo, issue_number: existing.number,
+                body: `Probe recovered: ${run}`});
+              await github.rest.issues.update({owner, repo, issue_number: existing.number,
+                state: "closed"});
+            }

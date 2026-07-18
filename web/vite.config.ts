@@ -22,4 +22,9 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'static',
   },
+  test: {
+    environment: 'jsdom',
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+    restoreMocks: true,
+  },
 })

@@ -1,0 +1,67 @@
+name: 功能建议 ✨
+description: 给妈妈想一个新功能
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你的想法！请先想想：**这个功能对妈妈有什么帮助？**
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: 用户故事
+      description: |
+        用「作为…我想…以便…」格式描述。
+        例如：> 作为妈妈，我想在收盘后看到「今天哪些股被主力买了超过 1 亿」，以便决定是否跟进。
+      placeholder: |
+        **作为** 妈妈（或团长）
+        **我想** ___功能___
+        **以便** ___好处___
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 建议的实现方案
+      description: 描述你希望这个功能怎么工作。
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 考虑过的其他方案（如果存在）。
+    validations:
+      required: false
+
+  - type: textarea
+    id: value
+    attributes:
+      label: 对妈妈的价值
+      description: 这个功能让妈妈开心吗？解决了什么痛点？
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - 🔴 紧急（影响妈妈日常使用）
+        - 🟡 重要（财报窗口等关键场景需要）
+        - 🟢 一般（锦上添花）
+        - ⚪ 低（讨论中）
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 额外上下文
+      description: 任何相关的 issue / 截图 / 参考资料。
+    validations:
+      required: false

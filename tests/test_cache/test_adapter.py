@@ -449,3 +449,61 @@ def test_cache_manager_stats(cached: CachedMarketDataAdapter) -> None:
     assert st["fetch_ok"] == 1
     assert st["hits"] == 1
     assert "freshness" in st
+
+
+# ---------- last_source 数据来源追踪 ----------
+
+
+def test_last_source_network_on_fresh_fetch(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """首次拉新成功 → last_source == 'network'。"""
+    cached.get_quote("600519")
+    assert cached.last_source == "network"
+
+
+def test_last_source_cache_on_throttle_hit(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """间隔内二次调用命中缓存 → last_source == 'cache'。"""
+    cached.get_quote("600519")  # 拉新
+    cached.get_quote("600519")  # 命中缓存
+    assert cached.last_source == "cache"
+
+
+def test_last_source_stale_cache_on_fetch_failure(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """拉新失败但缓存有旧数据 → last_source == 'stale_cache'。"""
+    cached.get_quote("600519")  # 先拉新成功
+    mock_adp.fail_until_attempt = 2
+    cached._last_fetch_attempt["quote:600519"] = datetime.now(UTC) - timedelta(seconds=120)
+    cached.get_quote("600519")  # 拉新失败 → fallback 到旧缓存
+    assert cached.last_source == "stale_cache"
+
+
+def test_last_source_snapshot_on_market_quotes(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """全市场快照首次拉新 → last_source == 'snapshot'。"""
+    cached.list_market_quotes()
+    assert cached.last_source == "snapshot"
+
+
+def test_format_source_label_realtime(cached: CachedMarketDataAdapter) -> None:
+    """network 来源 → 返回带适配器名的实时标注。"""
+    cached.get_quote("600519")
+    label = cached.format_source_label()
+    assert label  # 非空
+
+
+def test_format_source_label_cache(cached: CachedMarketDataAdapter, mock_adp: MockAdapter) -> None:
+    """cache 来源 → 返回 '本地缓存'。"""
+    cached.get_quote("600519")
+    cached.get_quote("600519")  # 命中缓存
+    assert cached.format_source_label() == "本地缓存"
+
+
+def test_format_source_label_empty(cached: CachedMarketDataAdapter) -> None:
+    """无数据 → 空字符串。"""
+    assert cached.format_source_label() == ""

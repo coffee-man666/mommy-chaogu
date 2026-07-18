@@ -205,7 +205,7 @@ class AgentMonitor:
                     {"role": "system", "content": system_content},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.1,
+                temperature=1,
                 response_format={"type": "json_object"},
             )
             text = resp.choices[0].message.content or ""

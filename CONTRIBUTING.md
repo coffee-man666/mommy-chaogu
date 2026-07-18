@@ -52,6 +52,12 @@ uv run pytest -m "not network"   # 离线测试（必须 100% 通过）
 
 CI 会在 PR 时自动跑这些检查。
 
+本地可用一条命令复现完整质量门（包含 Web typecheck + build）：
+
+```bash
+./scripts/quality.sh
+```
+
 ### 4. Commit 规范
 
 用 [Conventional Commits](https://www.conventionalcommits.org/) 格式：
@@ -73,10 +79,25 @@ git push origin feat/your-feature-name
 gh pr create --fill
 ```
 
-**PR 必须包含**：
-- 改动描述（改了什么 + 为什么）
-- 测试说明（怎么验证的）
-- 关联的 Issue（如果有）
+**PR 模板**：仓库已配置 `.github/PULL_REQUEST_TEMPLATE.md`，创建 PR 时会自动加载，按模板填写即可。
+
+---
+
+## CLI 入口
+
+项目有两层 CLI 入口，**写文档 / 报 bug 时请优先用 `mommy` 风格**：
+
+```bash
+# 主入口：自然语言
+uv run mommy                    # 交互式 REPL
+uv run mommy 今天怎么样          # 单次查询
+uv run mommy watchlist list     # 自然语言工作流（新风格）
+
+# 透传到底层子命令（高级用户）
+uv run mommy --raw watchlist list
+```
+
+旧风格的底层子命令（`mommy-watchlist`、`mommy-monitor` 等）仍然可用，但文档和 Issue 中请使用 `mommy` 入口，因为这才是面向用户的用法。
 
 ---
 
@@ -190,18 +211,22 @@ UNIQUE(code, period, source) 约束保证跨券商不重复。
 
 ### Bug Report
 
-请用 `.github/ISSUE_TEMPLATE/bug_report.md` 模板，包含：
-- 复现步骤
+请在 GitHub Issue 页面选择 **「Bug 报告 🐛」** 模板（`.github/ISSUE_TEMPLATE/bug_report.yml`），包含：
+- 复现步骤（用 `mommy` 入口命令描述，例如 `uv run mommy 今天怎么样`）
 - 期望行为 vs 实际行为
 - 环境信息（Python 版本 / OS / 妈妈用什么终端）
 - 截图 / 日志
 
 ### Feature Request
 
-请用 `.github/ISSUE_TEMPLATE/feature_request.md` 模板，包含：
+请在 GitHub Issue 页面选择 **「功能建议 ✨」** 模板（`.github/ISSUE_TEMPLATE/feature_request.yml`），包含：
 - 用户故事（妈妈为什么要这个？）
 - 建议的实现方案
 - 替代方案（如果存在）
+
+### 其他讨论
+
+想法 / 提问 / 经验分享不需要开 Issue，请去 [Discussions](https://github.com/hanyan0x1/mommy-chaogu/discussions)（Issue 模板的 config 里也加了入口链接）。
 
 ---
 

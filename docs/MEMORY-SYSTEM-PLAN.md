@@ -4,7 +4,7 @@
 >
 > 状态：**已实现**（2026-07-05，MemoryPipeline 全入口激活，代码与设计对齐）
 >
-> 前置依赖：`docs/BRANCH-MERGE-ANALYSIS.md`（merge 完成）、`src/mommy_chaogu/agent/memory.py`（现有朴素记忆）
+> 前置依赖：`docs/archive/BRANCH-MERGE-ANALYSIS.md`（merge 完成）、`src/mommy_chaogu/agent/memory.py`（现有朴素记忆）
 
 ---
 

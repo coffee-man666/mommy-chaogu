@@ -5,6 +5,6 @@
   - 数据看板（Tab 切换）
 """
 
-from mommy_chaogu.tui.app import MommyTUIApp
+from mommy_chaogu.tui.app import MommyTuiApp, main
 
-__all__ = ["MommyTUIApp"]
+__all__ = ["MommyTuiApp", "main"]

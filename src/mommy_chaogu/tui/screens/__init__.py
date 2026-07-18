@@ -1,1 +1,1 @@
-"""screens 包：TUI 屏幕定义。"""
+"""TUI screens package."""

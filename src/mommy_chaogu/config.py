@@ -11,8 +11,11 @@
     OPENAI_API_KEY    → agent.api_key（provider=openai 时）
     MOONSHOT_API_KEY  → agent.api_key（provider=kimi 时）
     ZAI_API_KEY       → agent.api_key（provider=zai 时）
+    NOVA_API_KEY      → agent.api_key（provider=nova 时）
     SERVER_CHAN_KEY   → push.server_chan_key
     AGENT_PROVIDER    → agent.provider
+    MOMMY_API_TOKEN   → web.api_token
+    MOMMY_CORS_ORIGINS → web.cors_origins（逗号分隔）
 """
 
 from __future__ import annotations
@@ -35,7 +38,18 @@ _PROVIDER_ENV_KEYS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "kimi": "MOONSHOT_API_KEY",
     "zai": "ZAI_API_KEY",
+    "nova": "NOVA_API_KEY",
 }
+SUPPORTED_AGENT_PROVIDERS = tuple(_PROVIDER_ENV_KEYS)
+
+
+def validate_agent_provider(provider: str) -> str:
+    """Return a normalized provider name or fail with an actionable message."""
+    normalized = provider.strip().lower()
+    if normalized not in _PROVIDER_ENV_KEYS:
+        supported = ", ".join(SUPPORTED_AGENT_PROVIDERS)
+        raise ValueError(f"Unsupported agent provider {provider!r}; choose one of: {supported}")
+    return normalized
 
 
 @dataclass
@@ -75,6 +89,17 @@ class MonitorConfig:
 
 
 @dataclass
+class WebConfig:
+    """Web security and browser-access configuration."""
+
+    api_token: str = ""
+    cors_origins: list[str] = field(default_factory=list)
+    ws_ticket_ttl_seconds: int = 60
+    agent_max_concurrency: int = 2
+    session_retention_days: int = 30
+
+
+@dataclass
 class AppConfig:
     """顶层配置，聚合所有子配置。"""
 
@@ -83,6 +108,7 @@ class AppConfig:
     push: PushConfig = field(default_factory=PushConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
+    web: WebConfig = field(default_factory=WebConfig)
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -105,11 +131,13 @@ def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
 
     根据 provider 自动选择对应的 env var 读 key：
     deepseek → DEEPSEEK_API_KEY, openai → OPENAI_API_KEY,
-    kimi → MOONSHOT_API_KEY, zai → ZAI_API_KEY。
+    kimi → MOONSHOT_API_KEY, zai → ZAI_API_KEY, nova → NOVA_API_KEY。
     """
     env_provider = os.environ.get("AGENT_PROVIDER")
     if env_provider:
         cfg.agent.provider = env_provider
+
+    cfg.agent.provider = validate_agent_provider(cfg.agent.provider)
 
     # 根据当前 provider 取对应 key
     env_key = _PROVIDER_ENV_KEYS.get(cfg.agent.provider, "")
@@ -121,6 +149,14 @@ def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
     env_sck = os.environ.get("SERVER_CHAN_KEY")
     if env_sck:
         cfg.push.server_chan_key = env_sck
+
+    env_api_token = os.environ.get("MOMMY_API_TOKEN")
+    if env_api_token:
+        cfg.web.api_token = env_api_token
+
+    env_cors = os.environ.get("MOMMY_CORS_ORIGINS")
+    if env_cors is not None:
+        cfg.web.cors_origins = [origin.strip() for origin in env_cors.split(",") if origin.strip()]
 
     return cfg
 
@@ -145,6 +181,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     push = _build_section(PushConfig, data.get("push", {}))
     cache = _build_section(CacheConfig, data.get("cache", {}))
     monitor = _build_section(MonitorConfig, data.get("monitor", {}))
+    web = _build_section(WebConfig, data.get("web", {}))
 
     cfg = AppConfig(
         db_path=data.get("db_path", str(MARKET_DB)),
@@ -152,6 +189,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         push=push,  # type: ignore[arg-type]
         cache=cache,  # type: ignore[arg-type]
         monitor=monitor,  # type: ignore[arg-type]
+        web=web,  # type: ignore[arg-type]
     )
     return _apply_env_overrides(cfg)
 
@@ -167,13 +205,16 @@ _CONFIG_TEMPLATE = """\
 #   OPENAI_API_KEY    (provider=openai)
 #   MOONSHOT_API_KEY  (provider=kimi)
 #   ZAI_API_KEY       (provider=zai)
+#   NOVA_API_KEY      (provider=nova)
 #   SERVER_CHAN_KEY   → push.server_chan_key
 #   AGENT_PROVIDER    → agent.provider
+#   MOMMY_API_TOKEN   → web.api_token
+#   MOMMY_CORS_ORIGINS → web.cors_origins
 
 db_path = "{market_db}"
 
 [agent]
-provider = "deepseek"          # deepseek / openai / kimi / zai
+provider = "deepseek"          # deepseek / openai / kimi / zai / nova
 model = "deepseek-chat"        # 留空则用 provider 默认模型
 api_key = ""                   # 建议用 .env 或环境变量
 max_tool_calls = 10
@@ -190,6 +231,13 @@ market_snapshot_fetch_interval_seconds = 3600  # 全市场快照（1 小时）
 [monitor]
 interval_seconds = 30.0        # 监控轮询间隔
 with_signals = true            # 同时评估告警信号
+
+[web]
+api_token = ""                         # 远程访问必填；建议使用 MOMMY_API_TOKEN
+cors_origins = []                     # 例如 ["https://stocks.example.com"]
+ws_ticket_ttl_seconds = 60
+agent_max_concurrency = 2
+session_retention_days = 30
 """
 
 

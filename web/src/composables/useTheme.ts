@@ -21,6 +21,7 @@ if (typeof window !== 'undefined') {
 function applyMode(mode: Mode) {
   if (typeof document !== 'undefined') {
     document.documentElement.classList.toggle('dark', mode === 'dark')
+    document.documentElement.style.colorScheme = mode
   }
 }
 

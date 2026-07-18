@@ -13,12 +13,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from mommy_chaogu.cache.schema import SCHEMA_SQL
 from mommy_chaogu.cache.serializer import quote_from_dict, quote_to_dict
+from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
 from mommy_chaogu.market_data.types import AdjustmentType, Bar, BarInterval, MoneyFlow
 
@@ -82,7 +83,7 @@ class QuoteCacheEntry:
         return (_utcnow() - self.fetched_at).total_seconds()
 
 
-class CacheStore:
+class CacheStore(EngineOwner):
     """SQLite-backed 行情缓存。
 
     设计原则：
@@ -94,13 +95,9 @@ class CacheStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine: Engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            future=True,
-        )
+        self.engine: Engine = create_sqlite_engine(db_path)
+        self._manage_engine()
         with self.engine.begin() as conn:
-            conn.execute(text("PRAGMA foreign_keys = ON"))
             for stmt in SCHEMA_SQL.strip().split(";"):
                 stmt = stmt.strip()
                 if stmt:

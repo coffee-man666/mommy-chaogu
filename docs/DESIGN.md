@@ -259,6 +259,6 @@ src/mommy_chaogu/
 
 ## 9. 相关文档
 
-- `docs/PROGRESS.md` — 当前进度 + 下一步
-- `docs/LEDGER.md` — 逐条时间线（commit 级别）
+- `docs/archive/PROGRESS.md` — 历史进度快照（截至 2026-07-05）
+- `docs/archive/LEDGER.md` — 逐条时间线（commit 级别，截至 2026-07-04）
 - `README.md` — 快速上手

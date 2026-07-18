@@ -10,6 +10,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import TracebackType
+from typing import Self
 
 from mommy_chaogu.earnings.schema import SCHEMA_SQL
 from mommy_chaogu.earnings.types import (
@@ -39,11 +41,28 @@ class EarningsStore:
             detect_types=sqlite3.PARSE_DECLTYPES,
         )
         self.engine.row_factory = sqlite3.Row
+        self.engine.execute("PRAGMA foreign_keys = ON")
+        self.engine.execute("PRAGMA busy_timeout = 5000")
+        self.engine.execute("PRAGMA journal_mode = WAL")
         self.engine.executescript(SCHEMA_SQL)
         self.engine.commit()
+        self._closed = False
 
     def close(self) -> None:
-        self.engine.close()
+        if not self._closed:
+            self.engine.close()
+            self._closed = True
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
 
     @contextmanager
     def _tx(self):  # type: ignore[no-untyped-def]

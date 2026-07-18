@@ -445,7 +445,7 @@ onUnmounted(() => {
                           :disabled="adjusting"
                           @click="submitAdjust(p)"
                         >
-                          {{ adjusting ? '提交中...' : '提交调仓' }}
+                          {{ adjusting ? '提交中…' : '提交调仓' }}
                         </Button>
                       </div>
                     </div>
@@ -543,7 +543,7 @@ onUnmounted(() => {
         <DialogFooter>
           <Button variant="outline" @click="showAdd = false">取消</Button>
           <Button :disabled="adding" @click="submitAdd">
-            {{ adding ? '保存中...' : '保存' }}
+            {{ adding ? '保存中…' : '保存' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -558,7 +558,7 @@ onUnmounted(() => {
         </DialogHeader>
         <div class="flex flex-col items-center gap-3 py-2">
           <button
-            class="flex size-16 items-center justify-center rounded-full border transition-all"
+            class="flex size-16 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform]"
             :class="voiceState === 'listening'
               ? 'border-up bg-up/10 animate-pulse'
               : 'border-border bg-muted/50 hover:bg-muted'"
@@ -567,7 +567,7 @@ onUnmounted(() => {
             <span class="text-2xl">{{ voiceState === 'listening' ? '🔴' : '🎙️' }}</span>
           </button>
           <p class="text-sm text-muted-foreground">
-            <span v-if="voiceState === 'listening'">正在听...</span>
+            <span v-if="voiceState === 'listening'">正在听…</span>
             <span v-else-if="voiceState === 'done'">识别完成</span>
             <span v-else-if="voiceState === 'error'" class="text-destructive">{{ voiceError }}</span>
             <span v-else>点击麦克风开始说话</span>

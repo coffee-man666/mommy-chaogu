@@ -14,11 +14,13 @@
     pushed = notifier.notify(signals)  # 返回实际推了的
 """
 
+from .bark import BarkPusher
 from .base import Deduper, Pusher, SignalNotifier
 from .deduper import JsonFileDeduper
 from .server_chan import ServerChanPusher
 
 __all__ = [
+    "BarkPusher",
     "Deduper",
     "JsonFileDeduper",
     "Pusher",

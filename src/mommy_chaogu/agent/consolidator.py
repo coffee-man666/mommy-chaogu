@@ -165,7 +165,7 @@ class MemoryConsolidator:
             events_text = self._format_events(scoped_events)
             prompt = _SECTOR_THESIS_PROMPT.format(scope=scope, events_text=events_text)
 
-            content = self._llm_call(prompt, temperature=0.5)
+            content = self._llm_call(prompt, temperature=1)
             if not content or len(content) < 5:
                 continue
 
@@ -205,7 +205,7 @@ class MemoryConsolidator:
             prior_text=self._format_events(prior) or "（无事件）",
         )
 
-        content = self._llm_call(prompt, temperature=0.3)
+        content = self._llm_call(prompt, temperature=1)
         if not content or len(content) < 5:
             return 0
 
@@ -241,7 +241,7 @@ class MemoryConsolidator:
         predictions_text = self._format_predictions(verified)
         prompt = _PATTERN_PROMPT.format(predictions_text=predictions_text)
 
-        content = self._llm_call(prompt, temperature=0.3)
+        content = self._llm_call(prompt, temperature=1)
         if not content or "样本不足" in content:
             return 0
 
@@ -345,7 +345,7 @@ class MemoryConsolidator:
             }
         )
 
-    def _llm_call(self, prompt: str, temperature: float = 0.3) -> str:
+    def _llm_call(self, prompt: str, temperature: float = 1) -> str:
         """调用 LLM，返回文本。失败返回空字符串。"""
         try:
             response = self._client.chat.completions.create(

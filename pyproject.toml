@@ -1,6 +1,6 @@
 [project]
 name = "mommy-chaogu"
-version = "0.1.0"
+dynamic = ["version"]
 description = "妈妈炒股 - 给妈妈用的行情监控和投资陪伴工具"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -35,6 +35,7 @@ mommy-flows = "mommy_chaogu.cli:main_flows"
 mommy-web = "mommy_chaogu.cli:main_web"
 mommy-earnings = "mommy_chaogu.earnings.cli:main_earnings"
 mommy-agent = "mommy_chaogu.cli:main_agent"
+mommy-memory = "mommy_chaogu.cli:main_memory"
 mommy-mcp = "mommy_chaogu.agent.mcp_server:main_mcp"
 mommy-chaogu = "mommy_chaogu.cli:main"
 mommy = "mommy_chaogu.cli:main_mommy"
@@ -56,6 +57,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mommy_chaogu"]
+
+[tool.hatch.version]
+path = "src/mommy_chaogu/version.py"
 
 [tool.ruff]
 line-length = 100
@@ -93,11 +97,27 @@ ignore_errors = true
 
 # web 模块涉及 FastAPI 依赖注入和 Pydantic，类型相对弱
 [[tool.mypy.overrides]]
-module = ["mommy_chaogu.web.*", "mommy_chaogu.agent.*", "mommy_chaogu.backtest.*"]
+module = ["mommy_chaogu.web.*", "mommy_chaogu.backtest.*"]
+ignore_errors = true
+
+# Agent integrations depend on dynamic OpenAI/MCP response objects. Keep the
+# exclusions scoped to those boundaries; core memory and tracking stay strict.
+[[tool.mypy.overrides]]
+module = [
+    "mommy_chaogu.agent.service",
+    "mommy_chaogu.agent.tools",
+    "mommy_chaogu.agent.mcp_server",
+    "mommy_chaogu.agent.extractor",
+    "mommy_chaogu.agent.consolidator",
+    "mommy_chaogu.agent.monitor",
+    "mommy_chaogu.agent.narrative",
+    "mommy_chaogu.agent.vector_search",
+]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["mommy_chaogu.cli"]
+# argparse namespaces and dynamically registered callbacks form the CLI boundary.
+module = ["mommy_chaogu.cli", "mommy_chaogu.cli_commands.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -110,3 +130,12 @@ addopts = "-ra -q"
 markers = [
     "network: requires live efinance API access (东财接口)",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["mommy_chaogu"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+precision = 1

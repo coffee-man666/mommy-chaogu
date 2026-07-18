@@ -1,0 +1,9 @@
+# CODEOWNERS
+#
+# 每行格式：<pattern> <@user/@team>
+# 当 PR 修改了 pattern 匹配的文件时，会自动请求 <user> 的 review。
+#
+# 目前是单人维护项目，暂不设置强制 reviewer。
+# 如果有多人协作需求，取消下面的注释并填入你的 GitHub 用户名：
+#
+# * @<your-github-username>

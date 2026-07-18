@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { apiGet } from '@/api/client'
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,27 +11,44 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { Signal } from '@/api/types'
 
 const router = useRouter()
+const route = useRoute()
 
 const recentSignals = ref<Signal[]>([])
 const history = ref<Signal[]>([])
 const loading = ref(true)
-const activeTab = ref('recent')
+const recentError = ref(false)
+const historyError = ref(false)
+type SignalTab = 'recent' | 'history'
+
+function signalTab(value: unknown): SignalTab {
+  return value === 'history' ? 'history' : 'recent'
+}
+
+const activeTab = ref<SignalTab>(signalTab(route.query.tab))
 
 let timer: number | null = null
 
 async function load() {
-  try {
-    const [r, h] = await Promise.all([
-      apiGet<Signal[]>('/api/signals/recent').catch(() => [] as Signal[]),
-      apiGet<Signal[]>('/api/signals/history?limit=50').catch(() => [] as Signal[]),
-    ])
-    recentSignals.value = r
-    history.value = h
-  } catch (e) {
-    console.error(e)
-  } finally {
-    loading.value = false
+  const [recentResult, historyResult] = await Promise.allSettled([
+    apiGet<Signal[]>('/api/signals/recent'),
+    apiGet<Signal[]>('/api/signals/history?limit=50'),
+  ])
+
+  if (recentResult.status === 'fulfilled') {
+    recentSignals.value = recentResult.value
+    recentError.value = false
+  } else {
+    recentError.value = true
   }
+
+  if (historyResult.status === 'fulfilled') {
+    history.value = historyResult.value
+    historyError.value = false
+  } else {
+    historyError.value = true
+  }
+
+  loading.value = false
 }
 
 function isStockCode(code: string): boolean {
@@ -48,10 +65,26 @@ function fmtTime(iso: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
   const now = new Date()
-  if (d.toDateString() === now.toDateString()) {
-    return d.toTimeString().slice(0, 8)
+  const dayFormatter = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  if (dayFormatter.format(d) === dayFormatter.format(now)) {
+    return new Intl.DateTimeFormat('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d)
   }
-  return `${d.getMonth() + 1}/${d.getDate()} ${d.toTimeString().slice(0, 5)}`
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d)
 }
 
 const severityConfig: Record<
@@ -81,6 +114,26 @@ const severityConfig: Record<
 const currentList = computed(() =>
   activeTab.value === 'recent' ? recentSignals.value : history.value,
 )
+const currentError = computed(() =>
+  activeTab.value === 'recent' ? recentError.value : historyError.value,
+)
+const errorCount = computed(
+  () => Number(recentError.value) + Number(historyError.value),
+)
+
+watch(activeTab, (tab) => {
+  const query = { ...route.query }
+  if (tab === 'history') query.tab = tab
+  else delete query.tab
+  void router.replace({ query })
+})
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    activeTab.value = signalTab(tab)
+  },
+)
 
 onMounted(() => {
   load()
@@ -97,7 +150,12 @@ onUnmounted(() => {
     <!-- 页头 -->
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-bold tracking-tight">🔔 信号中心</h1>
-      <span class="font-mono text-xs text-muted-foreground">30秒刷新</span>
+      <div class="flex items-center gap-2">
+        <span class="font-mono text-xs text-muted-foreground">30秒刷新</span>
+        <span v-if="errorCount > 0" class="text-xs text-destructive" aria-live="polite">
+          ⚠ {{ errorCount === 2 ? '数据加载失败' : '部分数据加载失败' }}
+        </span>
+      </div>
     </div>
 
     <Tabs v-model="activeTab" default-value="recent" class="w-full">
@@ -115,6 +173,14 @@ onUnmounted(() => {
           </Badge>
         </TabsTrigger>
       </TabsList>
+
+      <div
+        v-if="!loading && currentError && currentList.length"
+        class="rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-700 dark:text-yellow-300"
+        role="status"
+      >
+        刷新失败，正在显示上次成功数据
+      </div>
 
       <!-- 本次触发 -->
       <TabsContent value="recent" class="space-y-3">
@@ -138,9 +204,18 @@ onUnmounted(() => {
           <Card
             v-for="s in recentSignals"
             :key="`${s.timestamp}-${s.code}-${s.rule_id}`"
-            class="cursor-pointer border-l-4 transition-transform active:scale-[0.98]"
-            :class="severityConfig[s.severity].border"
+            class="border-l-4 outline-none"
+            :class="[
+              severityConfig[s.severity].border,
+              isStockCode(s.code)
+                ? 'cursor-pointer transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary'
+                : '',
+            ]"
+            :tabindex="isStockCode(s.code) ? 0 : undefined"
+            :role="isStockCode(s.code) ? 'link' : undefined"
             @click="goDetail(s)"
+            @keydown.enter="goDetail(s)"
+            @keydown.space.prevent="goDetail(s)"
           >
             <CardContent class="space-y-2">
               <!-- 头部：严重度 + 代码 + 时间 -->
@@ -174,9 +249,16 @@ onUnmounted(() => {
         <!-- 空状态 -->
         <Card v-else>
           <CardContent class="flex flex-col items-center gap-2 py-16 text-center">
-            <span class="text-5xl">🌤️</span>
-            <p class="text-base font-semibold text-muted-foreground">本次轮询未触发信号</p>
-            <p class="text-sm text-muted-foreground">行情平稳，妈妈放心 ✨</p>
+            <template v-if="recentError">
+              <span class="text-5xl">⚠️</span>
+              <p class="text-base font-semibold text-destructive">数据加载失败</p>
+              <p class="text-sm text-muted-foreground">行情服务暂时不可用，请稍后重试</p>
+            </template>
+            <template v-else>
+              <span class="text-5xl">🌤️</span>
+              <p class="text-base font-semibold text-muted-foreground">本次轮询未触发信号</p>
+              <p class="text-sm text-muted-foreground">行情平稳，妈妈放心 ✨</p>
+            </template>
           </CardContent>
         </Card>
       </TabsContent>
@@ -203,9 +285,18 @@ onUnmounted(() => {
           <Card
             v-for="s in history"
             :key="`${s.timestamp}-${s.code}-${s.rule_id}`"
-            class="cursor-pointer border-l-4 transition-transform active:scale-[0.98]"
-            :class="severityConfig[s.severity].border"
+            class="border-l-4 outline-none"
+            :class="[
+              severityConfig[s.severity].border,
+              isStockCode(s.code)
+                ? 'cursor-pointer transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary'
+                : '',
+            ]"
+            :tabindex="isStockCode(s.code) ? 0 : undefined"
+            :role="isStockCode(s.code) ? 'link' : undefined"
             @click="goDetail(s)"
+            @keydown.enter="goDetail(s)"
+            @keydown.space.prevent="goDetail(s)"
           >
             <CardContent class="space-y-2">
               <!-- 头部 -->
@@ -235,8 +326,15 @@ onUnmounted(() => {
         <!-- 空状态 -->
         <Card v-else>
           <CardContent class="flex flex-col items-center gap-2 py-16 text-center">
-            <span class="text-5xl">📭</span>
-            <p class="text-base font-semibold text-muted-foreground">暂无历史信号</p>
+            <template v-if="historyError">
+              <span class="text-5xl">⚠️</span>
+              <p class="text-base font-semibold text-destructive">历史信号加载失败</p>
+              <p class="text-sm text-muted-foreground">信号服务暂时不可用，请稍后重试</p>
+            </template>
+            <template v-else>
+              <span class="text-5xl">📭</span>
+              <p class="text-base font-semibold text-muted-foreground">暂无历史信号</p>
+            </template>
           </CardContent>
         </Card>
       </TabsContent>

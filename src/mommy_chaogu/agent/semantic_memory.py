@@ -15,11 +15,13 @@ import json
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
+
+from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS semantic_knowledge (
@@ -66,7 +68,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class SemanticMemory:
+class SemanticMemory(EngineOwner):
     """知识记忆：SQLite 持久化的提取知识库。
 
     用法::
@@ -84,11 +86,8 @@ class SemanticMemory:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine: Engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            future=True,
-        )
+        self.engine: Engine = create_sqlite_engine(db_path)
+        self._manage_engine()
         with self.engine.begin() as conn:
             for stmt in _SCHEMA_SQL.strip().split(";"):
                 stmt = stmt.strip()
@@ -123,7 +122,7 @@ class SemanticMemory:
         self._vec_model = model
         self._vec_dim = dim
         try:
-            import sqlite_vec
+            import sqlite_vec  # type: ignore[import-untyped]
 
             with self.engine.raw_connection() as raw_conn:
                 raw_conn.enable_load_extension(True)
@@ -157,7 +156,7 @@ class SemanticMemory:
                 model=self._vec_model,
                 input=text_content[:2000],
             )
-            return response.data[0].embedding
+            return cast(list[float], response.data[0].embedding)
         except Exception:
             return None
 

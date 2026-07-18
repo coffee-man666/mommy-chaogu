@@ -1,0 +1,127 @@
+/* ---- design tokens ---- */
+/* A股约定：红涨绿跌 */
+$up: #e5484d;
+$down: #2f9e6e;
+$flat: #8a8f98;
+$warning: #f5a524;
+$danger: #e5484d;
+
+/* light theme (P4): uncomment to enable
+$up: #dc2626;
+$down: #16a34a;
+*/
+
+/* colorblind theme: red→red, green→blue
+$up: #e5484d;
+$down: #3b82f6;
+*/
+
+TopBar {
+    dock: top;
+    height: 1;
+    background: $surface;
+    color: $text;
+    padding: 0 1;
+}
+
+Footer {
+    dock: bottom;
+}
+
+#chat-log {
+    padding: 0 1;
+}
+
+ChatInput {
+    dock: bottom;
+    height: 3;
+    border: round $primary-darken-2;
+    margin: 0 1;
+    padding: 0 1;
+}
+
+ChatInput:focus {
+    border: round $accent;
+}
+
+.tool-call {
+    border: round $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+Collapsible > CollapsibleTitle {
+    color: $accent;
+}
+
+.hint-card {
+    border: round $warning;
+    color: $text-muted;
+    padding: 1 2;
+    margin: 1 0;
+}
+
+.workflow-card {
+    border-left: thick $accent;
+    padding: 0 0 0 1;
+    margin: 0 0 1 0;
+}
+
+/* DataTable 样式 */
+DataTable {
+    height: 1fr;
+}
+
+/* 看板 Tab 样式 */
+DashboardView {
+    padding: 0;
+}
+
+/* 持仓 SummaryCards */
+SummaryCards {
+    height: 3;
+    padding: 0 1;
+    layout: horizontal;
+}
+
+SummaryCard {
+    border: round $primary-darken-2;
+    padding: 0 1;
+    width: 1fr;
+    margin: 0 1;
+    content-align: center middle;
+}
+
+/* 对话消息 */
+.user-msg {
+    padding: 0 1;
+    margin: 0 0 0 4;
+    color: $text;
+}
+
+.assistant-msg {
+    padding: 0 1;
+    margin: 0 4 0 0;
+}
+
+/* 空态引导 */
+.empty-state {
+    content-align: center middle;
+    color: $text-muted;
+    padding: 2;
+}
+
+/* 信号页 */
+#signal-log {
+    padding: 0 1;
+}
+
+/* 个股详情页三栏布局 */
+StockDetailScreen Horizontal {
+    height: auto;
+}
+
+StockDetailScreen Vertical {
+    width: 1fr;
+    padding: 0 1;
+}

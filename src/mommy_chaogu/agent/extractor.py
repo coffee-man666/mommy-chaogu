@@ -183,7 +183,7 @@ def extract_from_conversation(
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.0,
+            temperature=1,
         )
 
         content = response.choices[0].message.content or ""

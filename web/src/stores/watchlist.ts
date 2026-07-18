@@ -12,7 +12,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     loading.value = true
     try {
       const [e, g] = await Promise.all([
-        apiGet<WatchlistEntry[]>('/api/watchlist').catch(() => []),
+        apiGet<WatchlistStock[]>('/api/watchlist').catch(() => []),
         apiGet<WatchlistGroup[]>('/api/watchlist/groups').catch(() => []),
       ])
       entries.value = e
