@@ -31,12 +31,12 @@ class HintBar(Static):
         self._mode = "busy"
         self.update("[#8a8f98] esc 中断[/]")
 
-    def show_suggestions(self, matches: list[tuple[str, str]]) -> None:
-        """slash 输入时展示候选命令（name, description 列表）。"""
+    def show_suggestions(self, matches: list[tuple[str, str]], selected: int = 0) -> None:
+        """slash 输入时展示候选命令（name, description 列表），高亮选中项。"""
         self._mode = "suggestions"
         lines: list[str] = []
         for i, (name, desc) in enumerate(matches[:_MAX_SUGGESTIONS]):
-            if i == 0:
+            if i == selected:
                 lines.append(f"[#79b8ff]> /{name}[/][#8a8f98] — {desc}[/]")
             else:
                 lines.append(f"[#8a8f98]  /{name} — {desc}[/]")

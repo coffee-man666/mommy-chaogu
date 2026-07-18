@@ -322,6 +322,103 @@ class TestThemeFix:
         _run(_test())
 
 
+# ---------------------------------------------------------------------------
+# Pilot: slash 候选 ↑↓ 循环选择
+# ---------------------------------------------------------------------------
+
+
+class TestSlashCycling:
+    def _to_chat(self, app) -> None:  # type: ignore[no-untyped-def]
+        from textual.widgets import ContentSwitcher
+
+        app.query_one("#main", ContentSwitcher).current = "chat"
+
+    def test_up_down_cycles_candidates(self) -> None:
+        from textual.widgets import Input
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())
+            async with app.run_test() as pilot:
+                self._to_chat(app)
+                chat = app.query_one(ChatView)
+                prompt = chat.query_one("#prompt", Input)
+                prompt.value = "/"
+                await pilot.pause()
+
+                assert len(chat._slash_matches) == 10
+                assert chat._slash_sel == 0
+
+                await pilot.press("down")
+                await pilot.pause()
+                assert chat._slash_sel == 1
+                assert chat.selected_slash_completion() == "/refresh"
+
+                await pilot.press("up")
+                await pilot.pause()
+                assert chat._slash_sel == 0
+
+                # 继续 up → 环绕到最后一项
+                await pilot.press("up")
+                await pilot.pause()
+                assert chat._slash_sel == 9
+                assert chat.selected_slash_completion() == "/quit"
+
+        _run(_test())
+
+    def test_tab_completes_selected_candidate(self) -> None:
+        from textual.widgets import ContentSwitcher, Input
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())
+            async with app.run_test() as pilot:
+                self._to_chat(app)
+                await pilot.pause()
+                chat = app.query_one(ChatView)
+                prompt = chat.query_one("#prompt", Input)
+                prompt.value = "/"
+                await pilot.pause()
+
+                # ↓ 移到 /refresh，Tab 接受选中项
+                await pilot.press("down")
+                await pilot.pause()
+                await pilot.press("tab")
+                await pilot.pause()
+                assert prompt.value == "/refresh"
+                # 仍在对话模式（Tab 被补全拦截）
+                switcher = app.query_one("#main", ContentSwitcher)
+                assert switcher.current == "chat"
+
+        _run(_test())
+
+    def test_space_exits_slash_selection(self) -> None:
+        from textual.widgets import Input
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())
+            async with app.run_test() as pilot:
+                self._to_chat(app)
+                chat = app.query_one(ChatView)
+                prompt = chat.query_one("#prompt", Input)
+                prompt.value = "/watch "
+                await pilot.pause()
+                assert not chat.in_slash_selection()
+                assert chat.selected_slash_completion() is None
+
+        _run(_test())
+
+
 class TestDashboardEmptyState:
     def test_empty_watchlist_shows_hint(self) -> None:
         from textual.widgets import Static

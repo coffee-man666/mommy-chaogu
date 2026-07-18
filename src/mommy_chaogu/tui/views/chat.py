@@ -122,23 +122,21 @@ class ChatInput(Input):
         super().__init__(*args, suggester=SlashSuggester(), **kwargs)  # type: ignore[arg-type]
 
     def on_key(self, event: events.Key) -> None:
-        """拦截 ↑↓（历史导航）和 1-7（预设问题，仅欢迎页可见时）。
+        """拦截 ↑↓（slash 选择 / 历史导航）和 1-7（预设问题，仅欢迎页可见时）。
 
         on_key 在 Input._on_key 之前调用（MRO 顺序），
         对需要拦截的按键调用 prevent_default() 阻止 Input._on_key。
         """
-        # ↑/↓: 历史导航
-        if event.key == "up":
+        # ↑/↓: slash 选择态循环候选，否则历史导航
+        if event.key in ("up", "down"):
             chat = self._chat_view()
             if chat is not None:
-                chat.history_prev()
-            event.prevent_default()
-            event.stop()
-            return
-        if event.key == "down":
-            chat = self._chat_view()
-            if chat is not None:
-                chat.history_next()
+                if chat.in_slash_selection():
+                    chat.cycle_slash(-1 if event.key == "up" else 1)
+                elif event.key == "up":
+                    chat.history_prev()
+                else:
+                    chat.history_next()
             event.prevent_default()
             event.stop()
             return
@@ -173,6 +171,8 @@ class ChatView(Vertical):
         self._working: WorkingIndicator | None = None
         self._tool_widgets: dict[int, ToolIndicator] = {}
         self._step_widgets: dict[int, Static] = {}
+        self._slash_matches: list[SlashCommand] = []
+        self._slash_sel: int = 0
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-log"):
@@ -217,18 +217,64 @@ class ChatView(Vertical):
         if self._busy:
             hint.show_busy()
             return
-        value = self.query_one("#prompt", ChatInput).value
-        if value.startswith("/"):
-            matches = match_slash_commands(value)
-            if matches:
-                hint.show_suggestions([(c.name, c.description) for c in matches])
-                return
+        if self._slash_matches:
+            hint.show_suggestions(
+                [(c.name, c.description) for c in self._slash_matches],
+                selected=self._slash_sel,
+            )
+            return
         hint.show_default()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """输入变化时更新 HintBar（slash 候选列表）。"""
-        if event.input.id == "prompt":
-            self._refresh_hint_bar()
+        """输入变化时重算 slash 候选并刷新 HintBar。"""
+        if event.input.id != "prompt":
+            return
+        value = event.value
+        # 仅在"还在输入命令名"阶段（/ 开头且无空格）进入 slash 选择态
+        if value.startswith("/") and " " not in value:
+            self._slash_matches = match_slash_commands(value)
+        else:
+            self._slash_matches = []
+        self._slash_sel = 0
+        self._refresh_hint_bar()
+
+    # ------------------------------------------------------------------
+    # Slash 候选选择（↑↓ 循环 + Tab 接受）
+    # ------------------------------------------------------------------
+
+    def in_slash_selection(self) -> bool:
+        """当前是否处于 slash 命令选择态（↑↓ 应循环候选而非翻历史）。"""
+        return bool(self._slash_matches)
+
+    def cycle_slash(self, delta: int) -> None:
+        """↑↓ 在候选命令间循环移动选中项。"""
+        if not self._slash_matches:
+            return
+        self._slash_sel = (self._slash_sel + delta) % len(self._slash_matches)
+        self._refresh_hint_bar()
+        self._update_ghost()
+
+    def selected_slash_completion(self) -> str | None:
+        """当前选中的 slash 补全文本（Tab 接受的对象）。"""
+        if not self._slash_matches:
+            return None
+        cmd = self._slash_matches[self._slash_sel]
+        suffix = " " if cmd.has_args else ""
+        return f"/{cmd.name}{suffix}"
+
+    def _update_ghost(self) -> None:
+        """让输入框的灰色 ghost 补全跟随选中项。
+
+        直接写 textual 8.2.8 的私有 reactive `_suggestion`（公开 API 只在
+        输入变化时重新取建议）；未来 textual 改名时退化为 ghost 不跟随，
+        HintBar 高亮仍是选中项的真实来源。
+        """
+        completion = self.selected_slash_completion()
+        if completion is None:
+            return
+        prompt = self.query_one("#prompt", ChatInput)
+        if hasattr(prompt, "_suggestion"):
+            prompt._suggestion = completion
 
     def welcome_visible(self) -> bool:
         """欢迎页是否可见。"""

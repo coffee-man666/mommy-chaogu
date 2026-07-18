@@ -161,27 +161,18 @@ class MommyTuiApp(App[None]):
                 self.query_one("#prompt", Input).focus()
 
     def _try_accept_slash_suggestion(self) -> bool:
-        """如果对话输入框当前是斜杠前缀且有匹配命令，执行补全。"""
+        """如果对话输入框处于 slash 选择态，Tab 接受当前选中的候选。"""
         try:
-            prompt = self.query_one("#prompt", Input)
+            chat = self.query_one(ChatView)
+            prompt = chat.query_one("#prompt", Input)
         except Exception:
             return False
-        value = prompt.value
-        if not value.startswith("/"):
+        completion = chat.selected_slash_completion()
+        if completion is None or completion == prompt.value:
             return False
-        from mommy_chaogu.tui.views.chat import SLASH_COMMANDS
-
-        typed = value[1:].split(None, 1)[0].casefold() if len(value) > 1 else ""
-        for name, cmd in SLASH_COMMANDS.items():
-            if name.startswith(typed):
-                suffix = " " if cmd.has_args else ""
-                suggestion = f"/{name}{suffix}"
-                if suggestion != value:
-                    prompt.value = suggestion
-                    prompt.cursor_position = len(suggestion)
-                    return True
-                break
-        return False
+        prompt.value = completion
+        prompt.cursor_position = len(completion)
+        return True
 
     # ------------------------------------------------------------------
     # 全局动作
