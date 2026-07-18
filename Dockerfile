@@ -4,7 +4,7 @@
 FROM ghcr.io/astral-sh/uv:0.7.19 AS uv-bin
 
 # ---- frontend builder ----
-FROM node:22-bookworm-slim AS web-builder
+FROM node:26-bookworm-slim AS web-builder
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
