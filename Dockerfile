@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- pinned tool image ----
-FROM ghcr.io/astral-sh/uv:0.7.19 AS uv-bin
+FROM ghcr.io/astral-sh/uv:0.11.29 AS uv-bin
 
 # ---- frontend builder ----
 FROM node:22-bookworm-slim AS web-builder
