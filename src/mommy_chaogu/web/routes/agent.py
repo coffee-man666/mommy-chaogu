@@ -177,13 +177,13 @@ async def get_history(
 
 
 @router.get("/predictions")
-async def get_predictions(limit: int = 20) -> dict[str, Any]:
-    """获取预测记录。"""
+async def get_predictions(limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]:
+    """获取预测记录（按 created_at 降序）。"""
     tracker = get_prediction_tracker_safe()
     if tracker is None:
         return {"predictions": [], "total": 0}
     try:
-        rows = tracker.list_recent(limit=limit)  # type: ignore[attr-defined]
+        rows = tracker.all(limit=limit)
         return {"predictions": rows, "total": len(rows)}
     except Exception:
         return {"predictions": [], "total": 0}

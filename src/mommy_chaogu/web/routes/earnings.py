@@ -89,16 +89,24 @@ async def get_stock_earnings(
 
 @router.get("/scores/{code}")
 async def get_stock_scores(code: str) -> dict[str, Any]:
-    """个股业绩评分。"""
+    """个股业绩评分（actual vs 前瞻的比对结果）。"""
     store = _store()
     try:
         scores = store.list_scores()
         items = [
             {
                 "code": s.code,
+                "name": s.name,
                 "period": s.period,
-                "score": s.score,
-                "verdict": s.verdict,
+                "predicted_low": str(s.predicted_low),
+                "predicted_high": str(s.predicted_high),
+                "predicted_mid": str(s.predicted_mid),
+                "actual_value": str(s.actual_value),
+                "actual_growth": str(s.actual_growth) if s.actual_growth is not None else None,
+                "gap_to_mid": str(s.gap_to_mid) if s.gap_to_mid is not None else None,
+                "gap_to_high": str(s.gap_to_high) if s.gap_to_high is not None else None,
+                "verdict": s.verdict.value,
+                "confidence": str(s.confidence),
             }
             for s in scores
             if s.code == code
