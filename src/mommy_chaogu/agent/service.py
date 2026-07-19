@@ -8,6 +8,10 @@
       ├─ 是 → 执行每个 tool_call → 结果回传 → 再给 LLM
       └─ 否 → 返回最终文本
 循环最多 max_tool_calls 次
+
+容错：
+- 工具执行抛异常时不中断对话，错误以 {"error": ...} 形式回传给 LLM 自行恢复
+- LLM 调用的瞬时错误（连接 / 限流 / 5xx）按指数退避重试，最多 max_retries 次
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import contextlib
 import json
 import logging
 import os
+import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -107,6 +112,8 @@ class AgentService:
         provider: str | None = None,
         api_key: str | None = None,
         max_tool_calls: int = 10,
+        max_retries: int = 3,
+        retry_base_delay: float = 1.0,
         episodic: Any | None = None,
         tracker: Any | None = None,
         semantic: Any | None = None,
@@ -115,6 +122,8 @@ class AgentService:
     ) -> None:
         self._tools = ToolRegistry(ctx)
         self._max_tool_calls = max_tool_calls
+        self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
         self._ctx = ctx
 
         # 解析 provider 配置
@@ -232,6 +241,39 @@ class AgentService:
         """直接传入完整 messages 列表（灵活但需自己构造格式）。"""
         return self._run_loop(messages, on_tool_call=on_tool_call, on_tool_result=on_tool_result)
 
+    def _create_with_retry(self, messages: list[dict[str, Any]]) -> Any:
+        """调用 LLM，对瞬时错误（连接 / 限流 / 5xx）按指数退避重试。
+
+        重试 max_retries 次后仍失败则抛出最后一次异常（上游 CLI / TUI / Web
+        均有 try/except 兜底展示）。认证、参数等非瞬时错误不重试，直接抛出。
+        """
+        from openai import APIConnectionError, InternalServerError, RateLimitError
+
+        retryable = (APIConnectionError, RateLimitError, InternalServerError)
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                return self._client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,
+                    tools=self._tools.definitions(),
+                    **self._completion_options,
+                )
+            except retryable as exc:
+                if attempt >= self._max_retries:
+                    _log.error("LLM 调用重试 %d 次后仍失败: %s", self._max_retries, exc)
+                    raise
+                delay = self._retry_base_delay * (2**attempt) + random.uniform(0, 0.5)
+                _log.warning(
+                    "LLM 调用失败（第 %d/%d 次）: %s — %.1fs 后重试",
+                    attempt + 1,
+                    self._max_retries + 1,
+                    exc,
+                    delay,
+                )
+                time.sleep(delay)
+        raise AssertionError("unreachable")  # pragma: no cover
+
     def _run_loop(
         self,
         messages: list[dict[str, Any]],
@@ -250,12 +292,7 @@ class AgentService:
         while rounds < self._max_tool_calls:
             rounds += 1
 
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=messages,
-                tools=self._tools.definitions(),
-                **self._completion_options,
-            )
+            response = self._create_with_retry(messages)
 
             msg = response.choices[0].message
 
@@ -287,11 +324,23 @@ class AgentService:
                 try:
                     result = self._tools.call(fn_name, fn_args)
                 except Exception as exc:
+                    # 工具异常不中断整轮对话：把错误作为 tool 结果回传，
+                    # 让 LLM 决定换工具重试，或在回答中向用户说明。
+                    elapsed_ms = int((time.monotonic() - started) * 1000)
+                    _log.warning("工具 %s 抛异常，错误将回传给 LLM: %s", fn_name, exc)
+                    result = json.dumps({"error": f"工具执行异常: {exc}"}, ensure_ascii=False)
                     if on_tool_result is not None:
-                        elapsed_ms = int((time.monotonic() - started) * 1000)
                         with contextlib.suppress(Exception):
                             on_tool_result(fn_name, False, elapsed_ms, str(exc))
-                    raise
+                    all_tool_calls.append(ToolCallRecord(fn_name, fn_args, result))
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        }
+                    )
+                    continue
                 if on_tool_result is not None:
                     elapsed_ms = int((time.monotonic() - started) * 1000)
                     with contextlib.suppress(Exception):
