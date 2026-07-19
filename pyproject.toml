@@ -105,7 +105,6 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = [
     "mommy_chaogu.agent.service",
-    "mommy_chaogu.agent.tools",
     "mommy_chaogu.agent.mcp_server",
     "mommy_chaogu.agent.extractor",
     "mommy_chaogu.agent.consolidator",
