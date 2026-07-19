@@ -287,10 +287,12 @@
 
 ### 添加新工具
 
-1. 在 `src/mommy_chaogu/agent/tools.py` 的 `_TOOL_DEFINITIONS` 中添加 `ToolDef`
-2. 在 `_HANDLERS` 字典中添加对应的 handler 函数
-3. 添加测试到 `tests/test_agent/test_tools.py`
-4. 工作流和 AgentService 都能自动使用新工具
+1. 在 `src/mommy_chaogu/agent/tools/` 对应域模块（quote / sector / flows / bars /
+   holdings / intel / alerts / memory / themes）的 `DEFS` 中添加 `ToolDef`，
+   并实现 `_handle_*` 函数、登记到该模块的 `HANDLERS`
+2. 添加测试到 `tests/test_agent/test_tools.py`
+3. 工作流和 AgentService 都能自动使用新工具（registry 自动聚合各域模块，
+   无需修改 `registry.py`）
 
 ---
 
