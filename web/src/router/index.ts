@@ -20,6 +20,7 @@ const router = createRouter({
     { path: '/agent', component: () => import('../pages/agent/index.vue'), name: 'agent' },
     { path: '/detail/:code', component: () => import('../pages/detail/index.vue'), name: 'detail', props: true },
     { path: '/signals', component: () => import('../pages/signals/index.vue'), name: 'signals' },
+    { path: '/predictions', component: () => import('../pages/predictions/index.vue'), name: 'predictions' },
     { path: '/themes', component: () => import('../pages/themes/index.vue'), name: 'themes' },
     { path: '/themes/:id', component: () => import('../pages/themes/detail.vue'), name: 'theme-detail' },
     { path: '/settings', component: () => import('../pages/settings/index.vue'), name: 'settings' },

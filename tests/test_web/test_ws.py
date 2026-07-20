@@ -108,11 +108,20 @@ class TestAgentWebSocket:
         from mommy_chaogu.web import deps
 
         agent = MagicMock()
-        agent.chat.return_value = SimpleNamespace(
-            text="abcdefghijklmnop",
-            tool_calls=[SimpleNamespace(name="get_quote")],
-            rounds=2,
-        )
+
+        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
+            # 模拟 agent 层通过 on_chunk 回调推送真实 delta（#4 真流式）
+            on_chunk = args[2] if len(args) > 2 else kwargs.get("on_chunk")
+            if on_chunk is not None:
+                on_chunk("abcdefghijkl")
+                on_chunk("mnop")
+            return SimpleNamespace(
+                text="abcdefghijklmnop",
+                tool_calls=[SimpleNamespace(name="get_quote")],
+                rounds=2,
+            )
+
+        agent.chat.side_effect = fake_chat
         memory = MagicMock()
         session_memory = MagicMock()
         memory.for_session.return_value = session_memory
@@ -122,6 +131,7 @@ class TestAgentWebSocket:
         with client.websocket_connect("/ws/agent") as ws:
             ws.send_json({"message": "hello"})
             assert ws.receive_json() == {"type": "thinking"}
+            # 真流式：on_chunk 推送的 delta 原样转发（不再是 12 字符切片）
             assert ws.receive_json() == {"type": "chunk", "text": "abcdefghijkl"}
             assert ws.receive_json() == {"type": "chunk", "text": "mnop"}
             assert ws.receive_json() == {
@@ -131,7 +141,7 @@ class TestAgentWebSocket:
             }
 
         memory.for_session.assert_called_once_with("web-default")
-        agent.chat.assert_called_once_with("hello", None, None, session_memory)
+        agent.chat.assert_called_once()
 
     def test_rejects_invalid_session_id(self, client: TestClient, monkeypatch: object) -> None:
         from mommy_chaogu.web import deps

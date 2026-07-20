@@ -189,6 +189,40 @@ async def get_predictions(limit: int = Query(default=20, ge=1, le=200)) -> dict[
         return {"predictions": [], "total": 0}
 
 
+@router.get("/predictions/stats")
+async def get_prediction_stats() -> dict[str, Any]:
+    """获取预测统计（命中率分布，供 Web 预测页顶部统计条用）。
+
+    背后是 PredictionTracker.stats()，无 tracker 时返回空统计。
+    """
+    tracker = get_prediction_tracker_safe()
+    if tracker is None:
+        return {
+            "total": 0,
+            "pending": 0,
+            "hit": 0,
+            "missed": 0,
+            "expired": 0,
+            "unverifiable": 0,
+            "hit_rate": 0.0,
+        }
+    try:
+        stats = tracker.stats()
+        # 确保 hit_rate 是 float（JSON 可序列化）
+        stats["hit_rate"] = float(stats.get("hit_rate", 0.0))
+        return stats
+    except Exception:
+        return {
+            "total": 0,
+            "pending": 0,
+            "hit": 0,
+            "missed": 0,
+            "expired": 0,
+            "unverifiable": 0,
+            "hit_rate": 0.0,
+        }
+
+
 def get_prediction_tracker_safe() -> Any:
     """安全获取 prediction tracker（可能未配置）。"""
     try:

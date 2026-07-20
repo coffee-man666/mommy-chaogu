@@ -13,6 +13,7 @@ import argparse
 import contextlib
 import logging
 import os
+import threading
 import time
 from collections import defaultdict, deque
 from typing import Any, ClassVar
@@ -130,6 +131,10 @@ class MommyTuiApp(App[None]):
         self._turn_started: float = 0.0
         self._tool_seq: int = 0
         self._pending_tool_ids: dict[str, deque[int]] = defaultdict(deque)
+        # 流式 + 取消状态（每个 turn 重置）
+        self._cancel_event: threading.Event | None = None
+        self._stream_usage: dict[str, int] = {}
+        self._stream_flush_timer: Any = None
 
     def compose(self) -> ComposeResult:
         """挂载主屏。"""
@@ -231,6 +236,11 @@ class MommyTuiApp(App[None]):
         chat.set_busy(True)
         self._turn_started = time.monotonic()
 
+        # 每轮重置 cancel + usage 状态
+        self._cancel_event = threading.Event()
+        self._stream_usage = {}
+        chat.set_cancel_callback(self._cancel_event.set)
+
         # 1. 尝试工作流路由
         route = self.services.agent.route(text)
         if route is not None and getattr(route, "matched", False):
@@ -320,7 +330,12 @@ class MommyTuiApp(App[None]):
     # ------------------------------------------------------------------
 
     def _do_agent_chat(self, text: str) -> None:
-        """worker 线程内调用 agent.chat，工具调用/结果实时回传 UI。"""
+        """worker 线程内调用 agent.chat，工具调用/结果 + 流式 chunk 实时回传 UI。
+
+        #4 流式：on_chunk 回调把每个 delta 转发到 ChatView 的流式 widget。
+        #5 取消：cancel_event 在 worker 开始前创建，Esc 时 set()。
+        #6 token：usage 由 agent 层累加，worker 结束后传给 finish_turn。
+        """
 
         def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
             self.call_from_thread(self._post_tool_started, fn_name, fn_args)
@@ -328,19 +343,37 @@ class MommyTuiApp(App[None]):
         def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None:
             self.call_from_thread(self._post_tool_result, fn_name, ok, elapsed_ms, result)
 
+        # 流式 chunk 回调：worker 线程调用，通过 call_from_thread 转主线程
+        streaming_started = threading.Event()
+
+        def on_chunk(delta: str) -> None:
+            if not streaming_started.is_set():
+                streaming_started.set()
+                self.call_from_thread(self._start_streaming)
+
+            self.call_from_thread(self._append_stream_chunk, delta)
+
         try:
             resp = self.services.agent.chat(
-                text, on_tool_call=on_tool_call, on_tool_result=on_tool_result
+                text,
+                on_tool_call=on_tool_call,
+                on_tool_result=on_tool_result,
+                on_chunk=on_chunk,
+                cancel_event=self._cancel_event,
             )
         except Exception as e:
             _log.warning("Agent chat 失败: %s", e)
             self.call_from_thread(self._on_chat_error, f"Agent 出错：{e}")
             return
 
+        # 收集 usage（#6）
+        usage = getattr(resp, "usage", {}) if resp is not None else {}
+        interrupted = getattr(resp, "interrupted", False) if resp is not None else False
         reply = ""
         if resp is not None:
             reply = getattr(resp, "text", "") or ""
-        self.call_from_thread(self._on_agent_done, reply)
+
+        self.call_from_thread(self._on_agent_done, reply, interrupted, usage)
 
     def _post_tool_started(self, name: str, args: dict[str, Any]) -> None:
         """主线程：分配 call_id 并通知 ChatView 挂载 ToolIndicator。"""
@@ -359,22 +392,76 @@ class MommyTuiApp(App[None]):
         chat = self.query_one(ChatView)
         chat.tool_call_finished(call_id, ok, elapsed_ms, result)
 
+    def _start_streaming(self) -> None:
+        """主线程：首个 chunk 到达时挂载流式 widget + 启动 50ms 节流 timer。"""
+        chat = self.query_one(ChatView)
+        chat.start_streaming()
+        # 注册 usage 共享 dict 给 WorkingIndicator 做 token 统计
+        if chat._working is not None:
+            chat._working.set_stats_provider(lambda: self._stream_usage)
+        # 50ms 节流 timer（在主线程刷新 Markdown）
+        self._stream_flush_timer = self.set_timer(0.05, self._flush_stream_loop)
+
+    def _flush_stream_loop(self) -> None:
+        """主线程：节流刷新流式 Markdown，循环直到流式结束。"""
+        chat = self.query_one(ChatView)
+        chat.flush_stream()
+        # 如果流式 widget 还在，继续调度下一次刷新
+        if chat._stream_widget is not None:
+            self._stream_flush_timer = self.set_timer(0.05, self._flush_stream_loop)
+        else:
+            self._stream_flush_timer = None
+
+    def _append_stream_chunk(self, delta: str) -> None:
+        """主线程：追加一个 chunk 到 ChatView 缓冲区。"""
+        chat = self.query_one(ChatView)
+        chat.append_chunk(delta)
+
     def _turn_elapsed_ms(self) -> int:
         if self._turn_started <= 0:
             return 0
         return int((time.monotonic() - self._turn_started) * 1000)
 
-    def _on_agent_done(self, reply: str) -> None:
+    def _on_agent_done(
+        self, reply: str, interrupted: bool = False, usage: dict[str, int] | None = None
+    ) -> None:
         """主线程：Agent 回复完成。"""
+        self._stream_usage = usage or {}
         chat = self.query_one(ChatView)
-        if chat.is_cancelled():
+
+        # 如果流式 widget 存在，收尾它（最终刷新 + 拿到流式文本）
+        streamed_text = ""
+        if chat._stream_widget is not None:
+            streamed_text = chat.finalize_stream()
+        # 停止 flush timer（如果还在跑）
+        if self._stream_flush_timer is not None:
+            self._stream_flush_timer.stop()
+            self._stream_flush_timer = None
+
+        if interrupted:
+            # Esc 真取消：action_cancel_chat 已显示"已中断"，这里只收尾 busy
             chat.clear_cancelled()
             chat.set_busy(False)
             return
-        text = reply if reply else "（无回复）"
-        chat.append_assistant(text)
+
+        if chat.is_cancelled():
+            # UI 取消（旧路径兼容）
+            chat.clear_cancelled()
+            chat.set_busy(False)
+            return
+
+        # 如果有流式文本，流式 widget 已渲染了它（不需要再 append_assistant）；
+        # 否则用非流式 reply 走 append_assistant。
+        text = streamed_text or reply
+        if not streamed_text:
+            chat.append_assistant(text if text else "（无回复）")
         chat.set_busy(False)
-        chat.finish_turn(self._turn_elapsed_ms())
+
+        # token 统计（#6）：优先 total_tokens，否则 completion_tokens
+        tokens = self._stream_usage.get("total_tokens") or self._stream_usage.get(
+            "completion_tokens", 0
+        )
+        chat.finish_turn(self._turn_elapsed_ms(), tokens=tokens)
 
     def _on_chat_error(self, error: str) -> None:
         """主线程：对话出错。"""

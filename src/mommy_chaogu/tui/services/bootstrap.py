@@ -129,11 +129,18 @@ class AgentBridge:
         history: list[dict[str, str]] | None = None,
         on_tool_call: Any = None,
         on_tool_result: Any = None,
+        on_chunk: Any = None,
+        cancel_event: Any = None,
     ) -> Any:
         if self._agent is None:
             return None
         return self._agent.chat(
-            message, history=history, on_tool_call=on_tool_call, on_tool_result=on_tool_result
+            message,
+            history=history,
+            on_tool_call=on_tool_call,
+            on_tool_result=on_tool_result,
+            on_chunk=on_chunk,
+            cancel_event=cancel_event,
         )
 
 
@@ -143,6 +150,8 @@ class Services:
 
     data: DataService = field(default_factory=DataService)
     agent: AgentBridge = field(default_factory=AgentBridge)
+    flows: Any = None  # FlowService，无 MARKET_DB 退化为 None
+    memory_db: Any = None  # 记忆统计可调用字典（见 _make_memory_stats）
 
     @classmethod
     def bootstrap(cls) -> Services:
@@ -228,7 +237,39 @@ class Services:
         except Exception as e:
             _log.warning("NLRouter 初始化失败: %s", e)
 
-        return cls(data=data_svc, agent=agent_bridge)
+        # FlowService（/flows slash 命令用）
+        flows_service = None
+        try:
+            from mommy_chaogu.flows.service import FlowService
+
+            flows_service = FlowService.from_default(MARKET_DB)
+        except Exception as e:
+            _log.warning("FlowService 初始化失败: %s", e)
+
+        # 记忆统计可调用（/memory slash 命令用，无 api_key 也能查统计）
+        memory_stats = _make_memory_stats(AGENT_DB)
+
+        return cls(data=data_svc, agent=agent_bridge, flows=flows_service, memory_db=memory_stats)
+
+
+def _make_memory_stats(agent_db: Any) -> dict[str, Any] | None:
+    """构造记忆统计 dict（含各 summary()/stats() 调用器）。
+
+    返回 None 表示记忆系统不可用（db 初始化失败）。
+    """
+    try:
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+        from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+        return {
+            "episodic": EpisodicMemory(agent_db).summary,
+            "predictions": PredictionTracker(agent_db).stats,
+            "semantic": SemanticMemory(agent_db).summary,
+        }
+    except Exception as e:
+        _log.warning("记忆统计初始化失败: %s", e)
+        return None
 
 
 @dataclass
@@ -237,6 +278,8 @@ class FakeServices:
 
     data: DataService = field(default_factory=DataService)
     agent: AgentBridge = field(default_factory=AgentBridge)
+    flows: Any = None
+    memory_db: Any = None
 
     @classmethod
     def create(cls) -> FakeServices:
@@ -281,4 +324,39 @@ class FakeServices:
                 "total_cost": Decimal("48800"),
             }
         )
-        return cls(data=data, agent=AgentBridge())
+
+        # Fake flows + memory（供 /flows /memory slash 命令测试）
+        from types import SimpleNamespace
+
+        fake_flows = SimpleNamespace(
+            show=lambda code, days=30: {
+                "code": code,
+                "today": SimpleNamespace(
+                    name="测试股",
+                    main_net=Decimal("100000000"),
+                    super_large_net=Decimal("60000000"),
+                    large_net=Decimal("40000000"),
+                    medium_net=Decimal("-20000000"),
+                    small_net=Decimal("-80000000"),
+                    main_net_ratio=Decimal("12.5"),
+                    sample_count=1,
+                    period="today",
+                    big_money_net=Decimal("100000000"),
+                ),
+                "history": None,
+                "history_days_cached": 0,
+            }
+        )
+        fake_memory_db = {
+            "episodic": lambda: {"total": 15, "by_type": {"signal": 8, "news": 7}},
+            "predictions": lambda: {
+                "total": 10,
+                "hit": 4,
+                "missed": 1,
+                "pending": 5,
+                "hit_rate": 0.8,
+            },
+            "semantic": lambda: {"total": 23, "active": 20},
+        }
+
+        return cls(data=data, agent=AgentBridge(), flows=fake_flows, memory_db=fake_memory_db)
