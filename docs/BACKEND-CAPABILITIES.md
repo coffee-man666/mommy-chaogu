@@ -209,10 +209,10 @@ CLI 对照见 §7；完整 REST 契约见 §4；Python 签名见 §6。
 | POST `/api/agent/route` | 工作流路由 | `{matched, workflow_id, reply, steps[]}` |
 | POST `/api/agent/chat` | 单轮对话 | `{reply, tools_used[], rounds}`；429 限流 |
 | GET `/api/agent/history?session_id=` | 对话历史 | session_id 正则 `[\w-]{1,64}` |
-| GET `/api/agent/predictions` | 预测列表 | ⚠️ 恒空（§9） |
+| GET `/api/agent/predictions` | 预测列表 | 按 created_at 降序 |
 | GET `/api/earnings/calendar?since=&days_ahead=` | 披露日历 | |
 | GET `/api/earnings/stock/{code}` | 个股业绩 | |
-| GET `/api/earnings/scores/{code}` | 业绩打分 | ⚠️ 恒空（§9） |
+| GET `/api/earnings/scores/{code}` | 业绩打分 | 完整比对字段（§9） |
 | GET `/api/themes` | 主题列表 | |
 | GET `/api/themes/{id}` | 主题详情 | 404 |
 | GET `/api/themes/{id}/quotes?limit=` | 主题行情合成 | 失败个股带 error |
@@ -363,11 +363,20 @@ def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None
 
 ---
 
-## 9. 已知坑（前端先避开，后端待修）
+## 9. 已知坑的历史记录（2026-07-18 已修复）
 
-1. `GET /api/agent/predictions` **恒返回空**——调了 `PredictionTracker` 不存在的方法，异常被吞（`web/routes/agent.py:186`）。预测列表请走 CLI `mommy memory predictions` 或 Python 层。
-2. `GET /api/earnings/scores/{code}` **恒返回空**——访问了 `EarningsScore` 不存在的 `.score` 属性（`web/routes/earnings.py:100`）。打分数据请走 Python 层 `EarningsService.score_one/score_all`。
-3. `/ws/signals` 推送字段实际是 `signals`（复数数组），`schemas.py` 里的 `WSSignalMessage` 写的是 `signal`（单数）——以实际收到的为准。
+以下三个坑曾影响前端，已在 `fix/web-api-pitfalls` 分支修复并附回归测试
+（`tests/test_web/test_api_pitfalls.py`）：
+
+1. `GET /api/agent/predictions` 曾调用 `PredictionTracker` 不存在的方法恒返空——
+   已改为 `tracker.all(limit=...)`，正常返回预测记录（按 created_at 降序）。
+2. `GET /api/earnings/scores/{code}` 曾访问 `EarningsScore` 不存在的 `.score` 属性
+   恒返空——已改为返回完整比对字段：`{code, name, period, predicted_low/high/mid,
+   actual_value, actual_growth, gap_to_mid, gap_to_high, verdict, confidence}`。
+3. `/ws/signals` 推送字段实际是 `signals`（复数数组）——`WSSignalMessage` schema
+   已改为与实际一致。
+
+修复前的行为曾记录于此，供旧客户端排查参考。
 
 ---
 

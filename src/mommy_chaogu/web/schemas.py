@@ -233,10 +233,10 @@ class WSQuoteMessage(BaseModel):
 
 
 class WSSignalMessage(BaseModel):
-    """WebSocket 推送：信号触发。"""
+    """WebSocket 推送：信号触发（与 /ws/signals 实际帧一致，复数数组）。"""
 
     type: Literal["signal_triggered"] = "signal_triggered"
-    signal: SignalOut
+    signals: list[SignalOut]
 
 
 class WSErrorMessage(BaseModel):
