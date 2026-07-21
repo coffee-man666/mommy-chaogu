@@ -131,3 +131,66 @@ class TestSlashSuggester:
         assert result is not None
         # Should return one of the 'c' commands
         assert result.lstrip("/").split()[0] in ("clear", "chat")
+
+
+# ---------------------------------------------------------------------------
+# Pilot: /flows + /memory 卡片渲染（#7）
+# ---------------------------------------------------------------------------
+
+
+def _run(coro) -> None:  # type: ignore[no-untyped-def]
+    asyncio.run(coro)
+
+
+class TestFlowsMemoryCards:
+    def test_flows_renders_card(self) -> None:
+        from textual.widgets import Input
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
+            async with app.run_test() as pilot:
+                chat = app.query_one(ChatView)
+                prompt = chat.query_one("#prompt", Input)
+                prompt.value = "/flows 688981"
+                await pilot.pause()
+                # 提交
+                await pilot.press("enter")
+                await pilot.pause()
+
+                card = chat.query(".flows-card")
+                assert len(card) == 1
+                content = str(card[0].content)  # type: ignore[attr-defined]
+                assert "688981" in content
+                assert "主力" in content
+                # 不应再出现"请在终端运行"
+                assert "请在终端运行" not in content
+
+        _run(_test())
+
+    def test_memory_renders_card(self) -> None:
+        from textual.widgets import Input
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
+            async with app.run_test() as pilot:
+                chat = app.query_one(ChatView)
+                prompt = chat.query_one("#prompt", Input)
+                prompt.value = "/memory"
+                await pilot.pause()
+                await pilot.press("enter")
+                await pilot.pause()
+
+                card = chat.query(".memory-card")
+                assert len(card) == 1
+                content = str(card[0].content)  # type: ignore[attr-defined]
+                assert "记忆系统" in content
+                assert "预测" in content
+                assert "请在终端运行" not in content

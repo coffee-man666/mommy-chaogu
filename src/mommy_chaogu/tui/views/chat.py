@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -99,6 +100,13 @@ def match_slash_commands(value: str) -> list[SlashCommand]:
     return [cmd for name, cmd in SLASH_COMMANDS.items() if name.startswith(typed)]
 
 
+def _format_tokens_compact(n: int) -> str:
+    """token 数 → dexter 风格紧凑显示（1.2k / 850）。"""
+    if n >= 1000:
+        return f"{n / 1000:.1f}k"
+    return str(n)
+
+
 def _build_welcome() -> str:
     """构建欢迎页文本（含预设问题列表）。"""
     lines = [
@@ -173,6 +181,12 @@ class ChatView(Vertical):
         self._step_widgets: dict[int, Static] = {}
         self._slash_matches: list[SlashCommand] = []
         self._slash_sel: int = 0
+        # 流式渲染状态
+        self._stream_widget: Markdown | None = None
+        self._stream_buffer: str = ""
+        self._stream_dirty: bool = False
+        # 取消回调（app.py 设置，Esc 触发真取消）
+        self._cancel_callback: Callable[[], None] | None = None
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-log"):
@@ -393,9 +407,23 @@ class ChatView(Vertical):
             if not args:
                 self.append_hint("用法: /flows <股票代码>，如 /flows 688981")
             else:
-                self.append_hint(f"查看 {args} 资金流请在终端运行: mommy flows show {args}")
+                services = getattr(app, "services", None)
+                flows_service = getattr(services, "flows", None) if services else None
+                if flows_service is None:
+                    self.append_hint("资金流服务未配置")
+                else:
+                    try:
+                        info = flows_service.show(args, days=30)
+                        self.append_flows_card(args, info)
+                    except Exception as e:
+                        self.append_hint(f"查询 {args} 资金流失败：{e}")
         elif cmd == "memory":
-            self.append_hint("查看记忆请在终端运行: mommy memory stats")
+            services = getattr(app, "services", None)
+            memory_stats = getattr(services, "memory_db", None) if services else None
+            if memory_stats is None:
+                self.append_hint("记忆系统未配置")
+            else:
+                self.append_memory_card(memory_stats)
         elif cmd == "quit":
             app.quit()  # type: ignore[attr-defined]
 
@@ -445,12 +473,16 @@ class ChatView(Vertical):
             indicator.set_error(digest, elapsed_ms)
         self.query_one("#chat-log", VerticalScroll).scroll_end(animate=False)
 
-    def finish_turn(self, elapsed_ms: int, interrupted: bool = False) -> None:
-        """一轮对话收尾：✻ 总耗时（dexter performance-stats 风格）。"""
+    def finish_turn(self, elapsed_ms: int, interrupted: bool = False, tokens: int = 0) -> None:
+        """一轮对话收尾：✻ 总耗时 + token（dexter performance-stats 风格）。"""
         if interrupted:
             return
+        parts = [format_elapsed(elapsed_ms)]
+        if tokens:
+            parts.append(f"↓ {_format_tokens_compact(tokens)} tokens")
+        suffix = " · ".join(parts)
         log = self.query_one("#chat-log", VerticalScroll)
-        log.mount(Static(f"[#8a8f98]✻ {format_elapsed(elapsed_ms)}[/]", classes="turn-stats"))
+        log.mount(Static(f"[#8a8f98]✻ {suffix}[/]", classes="turn-stats"))
         log.scroll_end(animate=False)
 
     def append_hint(self, text: str) -> None:
@@ -458,6 +490,134 @@ class ChatView(Vertical):
         log = self.query_one("#chat-log", VerticalScroll)
         log.mount(Static(f"[yellow]⚠[/] {text}", classes="hint-card"))
         log.scroll_end(animate=False)
+
+    def append_flows_card(self, code: str, info: Any) -> None:
+        """渲染资金流卡片（#7：/flows <code>）。
+
+        info 是 FlowService.show() 的返回 dict：
+        {today: FlowSummary|None, history: FlowSummary|None, history_days_cached: int}
+        """
+        from mommy_chaogu.tui.services.formatting import format_flow
+
+        today = info.get("today") if info else None
+        history = info.get("history") if info else None
+        days = info.get("history_days_cached", 0) if info else 0
+        name = getattr(today or history, "name", code)
+
+        if today is None and history is None:
+            self.append_hint(f"{code} 暂无资金流数据")
+            return
+
+        lines: list[str] = [f"[bold cyan]💰 {name}（{code}）资金流[/]"]
+
+        def _summary_line(label: str, fs: Any, period: str) -> str:
+            main = format_flow(getattr(fs, "main_net", None))
+            big = (
+                format_flow(getattr(fs, "big_money_net", None))
+                if hasattr(fs, "big_money_net")
+                else "—"
+            )
+            ratio = getattr(fs, "main_net_ratio", None)
+            ratio_str = f"{float(ratio):+.1f}%" if ratio is not None else "—"
+            return f"  {label}（{period}）  主力 {main}  超大+大单 {big}  占比 {ratio_str}"
+
+        if today is not None:
+            lines.append(_summary_line("今日", today, "today"))
+        if history is not None and days > 0:
+            lines.append(_summary_line(f"近{days}日", history, f"history:{days}d"))
+
+        lines.append(f"  [dim]详细：mommy flows show {code}[/]")
+
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(Static("\n".join(lines), classes="flows-card"))
+        log.scroll_end(animate=False)
+
+    def append_memory_card(self, stats: dict[str, Any]) -> None:
+        """渲染记忆系统统计卡片（#7：/memory）。
+
+        stats 是 memory_db dict：{episodic: callable, predictions: callable, semantic: callable}
+        """
+        lines: list[str] = ["[bold cyan]🧠 记忆系统[/]"]
+
+        try:
+            ep = stats["episodic"]() if stats.get("episodic") else None
+            if ep:
+                lines.append(
+                    f"  事件：{ep.get('total', 0)} 条（{', '.join(f'{k} {v}' for k, v in ep.get('by_type', {}).items())}）"
+                )
+        except Exception:
+            pass
+
+        try:
+            pred = stats["predictions"]() if stats.get("predictions") else None
+            if pred:
+                hit_rate = pred.get("hit_rate", 0)
+                hit_rate_str = f"{float(hit_rate):.0%}" if hit_rate else "—"
+                lines.append(
+                    f"  预测：{pred.get('total', 0)} 条  命中 {pred.get('hit', 0)}/{pred.get('hit', 0) + pred.get('missed', 0)}（{hit_rate_str}）  待验证 {pred.get('pending', 0)}"
+                )
+        except Exception:
+            pass
+
+        try:
+            sem = stats["semantic"]() if stats.get("semantic") else None
+            if sem:
+                lines.append(f"  知识：{sem.get('total', 0)} 条（活跃 {sem.get('active', 0)}）")
+        except Exception:
+            pass
+
+        lines.append("  [dim]详细：mommy memory events / mommy memory predictions[/]")
+
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(Static("\n".join(lines), classes="memory-card"))
+        log.scroll_end(animate=False)
+
+    # ------------------------------------------------------------------
+    # 流式渲染（#4：逐 delta 更新 Markdown，50ms 节流）
+    # ------------------------------------------------------------------
+
+    def start_streaming(self) -> None:
+        """挂载流式 Markdown widget（首个 chunk 到达前调用）。"""
+        if self._stream_widget is not None:
+            return
+        self._stream_buffer = ""
+        self._stream_dirty = False
+        widget = Markdown("⏺ …", classes="assistant-msg streaming")
+        self._stream_widget = widget
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(widget)
+        log.scroll_end(animate=False)
+
+    def append_chunk(self, delta: str) -> None:
+        """追加一个流式 chunk 到缓冲区，标记 dirty 等待节流刷新。"""
+        self._stream_buffer += delta
+        self._stream_dirty = True
+
+    def flush_stream(self) -> None:
+        """把缓冲区内容刷新到 Markdown widget（由 app.py 的 timer 节流调用）。"""
+        if not self._stream_dirty or self._stream_widget is None:
+            return
+        self._stream_dirty = False
+        text = self._stream_buffer.lstrip("\n")
+        self._stream_widget.update(f"⏺ {text}")
+        self.query_one("#chat-log", VerticalScroll).scroll_end(animate=False)
+
+    def finalize_stream(self) -> str:
+        """收尾流式 widget：最终刷新并返回完整文本。"""
+        self.flush_stream()
+        widget = self._stream_widget
+        self._stream_widget = None
+        text = self._stream_buffer
+        self._stream_buffer = ""
+        self._stream_dirty = False
+        # 如果从未收到 chunk（provider 不支持流式），移除占位 widget
+        if not text and widget is not None:
+            widget.remove()
+        return text
+
+    def set_cancel_callback(self, callback: Callable[[], None]) -> None:
+        """注册真取消回调（app.py 传入，Esc 时触发 cancel_event.set()）。"""
+        self._cancel_callback = callback
 
     # ------------------------------------------------------------------
     # 工作流步骤进度（StepStatus 消息驱动）
@@ -489,6 +649,9 @@ class ChatView(Vertical):
             self._working = None
         self._tool_widgets.clear()
         self._step_widgets.clear()
+        self._stream_widget = None
+        self._stream_buffer = ""
+        self._stream_dirty = False
         log = self.query_one("#chat-log", VerticalScroll)
         log.query("*").remove()
         log.mount(Static(_build_welcome(), id="chat-welcome"))
@@ -498,10 +661,24 @@ class ChatView(Vertical):
         self.clear_messages()
 
     def action_cancel_chat(self) -> None:
-        """Esc 中断当前对话（后台任务自然收尾，结果不再展示）。"""
+        """Esc 中断当前对话。
+
+        #5 真取消：先触发 cancel_event（让 worker 线程在下一个检查点退出），
+        再做 UI 收尾。如果没有 cancel_callback 则只做 UI 抑制（旧行为）。
+        """
         if not self._busy:
             return
         self._cancelled = True
+        # 触发真取消（cancel_event.set()）
+        if self._cancel_callback is not None:
+            with contextlib.suppress(Exception):
+                self._cancel_callback()
+        # 清理流式 widget（如果正在流式渲染）
+        if self._stream_widget is not None:
+            self._stream_widget.remove()
+            self._stream_widget = None
+            self._stream_buffer = ""
+            self._stream_dirty = False
         self.set_busy(False)
         log = self.query_one("#chat-log", VerticalScroll)
         log.mount(

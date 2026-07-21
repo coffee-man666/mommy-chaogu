@@ -1,71 +1,22 @@
 """TUI 消息协议（§5.4）。
 
-跨 widget 通信一律走 Textual Message，禁止 widget 间直接方法调用。
+现状说明：跨 widget 通信目前实际有两条路径——
+
+1. worker 线程 → 主线程：app.call_from_thread → ChatView 直接方法调用
+   （工具指示器、流式 chunk、turn 收尾都走这条，见 app.py）。
+2. 主线程内 widget 间：Textual Message。
+
+原设计中 AgentChunk / ToolCallStarted / ToolCallFinished / AgentDone 等
+消息从未被实际发送（路径 1 取代了它们），已在 PLAN.md 三档 #9 清理。
+目前真正使用的只剩 StepStatus（工作流步骤进度，由 _post_step 发送）。
+
+新增跨 widget 通信时：worker 线程回 UI 用 call_from_thread，主线程内
+才用 Message——不要照已被清理的旧设计恢复消息类。
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from textual.message import Message
-
-
-class QuotesUpdated(Message):
-    """自选股报价更新。"""
-
-    def __init__(self, rows: list[dict[str, Any]], source_label: str, ts: float) -> None:
-        super().__init__()
-        self.rows = rows
-        self.source_label = source_label
-        self.ts = ts
-
-
-class PortfolioUpdated(Message):
-    """持仓更新。"""
-
-    def __init__(self, summary: dict[str, Any], rows: list[dict[str, Any]]) -> None:
-        super().__init__()
-        self.summary = summary
-        self.rows = rows
-
-
-class SectorsUpdated(Message):
-    """板块排行更新。"""
-
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
-        super().__init__()
-        self.rows = rows
-
-
-class SignalFired(Message):
-    """信号触发。"""
-
-    def __init__(
-        self,
-        code: str,
-        name: str,
-        rule: str,
-        value: str,
-        severity: str,
-        ts: str,
-    ) -> None:
-        super().__init__()
-        self.code = code
-        self.name = name
-        self.rule = rule
-        self.value = value
-        self.severity = severity
-        self.ts = ts
-
-
-class WorkflowMatched(Message):
-    """工作流匹配成功。"""
-
-    def __init__(self, workflow_id: str, title: str, steps: list[str]) -> None:
-        super().__init__()
-        self.workflow_id = workflow_id
-        self.title = title
-        self.steps = steps
 
 
 class StepStatus(Message):
@@ -76,50 +27,3 @@ class StepStatus(Message):
         self.idx = idx
         self.state = state  # running | ok | fail
         self.detail = detail
-
-
-class AgentChunk(Message):
-    """Agent 流式输出片段。"""
-
-    def __init__(self, delta: str) -> None:
-        super().__init__()
-        self.delta = delta
-
-
-class ToolCallStarted(Message):
-    """工具调用开始。"""
-
-    def __init__(self, call_id: int, name: str, args: dict[str, Any]) -> None:
-        super().__init__()
-        self.call_id = call_id
-        self.name = name
-        self.args = args
-
-
-class ToolCallFinished(Message):
-    """工具调用完成。"""
-
-    def __init__(self, call_id: int, ok: bool, elapsed_ms: int, result_digest: str) -> None:
-        super().__init__()
-        self.call_id = call_id
-        self.ok = ok
-        self.elapsed_ms = elapsed_ms
-        self.result_digest = result_digest
-
-
-class AgentDone(Message):
-    """Agent 回复完成。"""
-
-    def __init__(self, tools_used: int, interrupted: bool = False) -> None:
-        super().__init__()
-        self.tools_used = tools_used
-        self.interrupted = interrupted
-
-
-class ConnectionChanged(Message):
-    """连接状态变更。"""
-
-    def __init__(self, level: str, source_label: str) -> None:
-        super().__init__()
-        self.level = level  # live | degraded | offline
-        self.source_label = source_label

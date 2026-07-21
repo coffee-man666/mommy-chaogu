@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterView, RouterLink, useRoute } from 'vue-router'
-import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Settings, ChevronRight } from 'lucide-vue-next'
+import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Target, Settings, ChevronRight } from 'lucide-vue-next'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,10 @@ import {
 const route = useRoute()
 const moreOpen = ref(false)
 const moreActive = computed(
-  () => route.path.startsWith('/themes') || route.path.startsWith('/settings'),
+  () =>
+    route.path.startsWith('/themes') ||
+    route.path.startsWith('/settings') ||
+    route.path.startsWith('/predictions'),
 )
 
 function focusMainContent() {
@@ -49,6 +52,9 @@ function focusMainContent() {
       </RouterLink>
       <RouterLink to="/signals" title="信号" aria-label="信号" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
         <Bell class="size-5" aria-hidden="true" />
+      </RouterLink>
+      <RouterLink to="/predictions" title="预测跟踪" aria-label="预测跟踪" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
+        <Target class="size-5" aria-hidden="true" />
       </RouterLink>
       <div class="flex-1" />
       <RouterLink to="/settings" title="设置" aria-label="设置" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
@@ -98,6 +104,15 @@ function focusMainContent() {
             前往主题研究或应用设置
           </DialogDescription>
           <nav aria-label="更多导航" class="grid gap-2">
+            <RouterLink
+              to="/predictions"
+              class="flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              @click="moreOpen = false"
+            >
+              <Target class="size-5 text-primary" aria-hidden="true" />
+              <span class="flex-1">预测跟踪</span>
+              <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
+            </RouterLink>
             <RouterLink
               to="/themes"
               class="flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

@@ -37,6 +37,17 @@ class _FakeTracker:
             }
         ][:limit]
 
+    def stats(self) -> dict[str, Any]:
+        return {
+            "total": 10,
+            "pending": 4,
+            "hit": 3,
+            "missed": 2,
+            "expired": 1,
+            "unverifiable": 0,
+            "hit_rate": 0.6,
+        }
+
 
 class TestPredictionsEndpoint:
     def test_returns_tracker_rows(
@@ -63,6 +74,35 @@ class TestPredictionsEndpoint:
         resp = client.get("/api/agent/predictions")
         assert resp.status_code == 200
         assert resp.json() == {"predictions": [], "total": 0}
+
+
+class TestPredictionStatsEndpoint:
+    def test_returns_stats(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.agent.get_prediction_tracker_safe",
+            lambda: _FakeTracker(),
+        )
+        resp = client.get("/api/agent/predictions/stats")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 10
+        assert body["hit"] == 3
+        assert body["missed"] == 2
+        assert body["pending"] == 4
+        assert body["hit_rate"] == 0.6
+
+    def test_tracker_none_returns_zero_stats(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.agent.get_prediction_tracker_safe",
+            lambda: None,
+        )
+        resp = client.get("/api/agent/predictions/stats")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["hit_rate"] == 0.0
 
 
 # ---------------------------------------------------------------------------
