@@ -2,8 +2,9 @@
 
 覆盖：
 - on_chunk 流式：工具循环结束后发起 stream=True 调用，逐 delta 调 on_chunk
-- cancel_event：每轮 LLM 前 + 每个工具前检查 is_set()，命中返回 interrupted=True
-- usage 累加：response.usage 累加到 AgentResponse.usage
+- cancel_event：每轮 LLM 前 + 每个工具前 + 流式输出途中检查 is_set()
+- usage 累加：response.usage 累加到 AgentResponse.usage，流式调用不重复计
+- usage_out：调用方传入的 dict 作为共享容器原地累加（UI 实时读取）
 - provider 不支持 stream 时回退非流式文本
 """
 
@@ -116,6 +117,27 @@ class TestStreamingFinalAnswer:
         assert chunks == []
         assert resp.text == "非流式答案"
 
+    @patch("openai.OpenAI")
+    def test_stream_usage_not_double_counted(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """流式调用（重新生成同一回答）的 usage 不累加，只计非流式那次。
+
+        否则最终回答的 token 成本会被计两次，统计口径虚高约 2 倍。
+        """
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.side_effect = [
+            _text_response("你好", usage=_usage(100, 50)),
+            _stream_response(["你", "好"], usage=_usage(100, 50)),
+        ]
+
+        resp = svc.chat("hi", on_chunk=lambda d: None)
+
+        # 只有非流式那轮的 usage
+        assert resp.usage["prompt_tokens"] == 100
+        assert resp.usage["completion_tokens"] == 50
+        assert resp.usage["total_tokens"] == 150
+
 
 class TestCancelEvent:
     """cancel_event 真取消（#5）。"""
@@ -138,7 +160,7 @@ class TestCancelEvent:
     def test_cancel_before_tool_execution(
         self, _mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:
-        """LLM 返回 tool_calls，但工具执行前 cancel_event 被 set。"""
+        """LLM 返回 tool_calls，工具执行期间 cancel 被 set → 下一轮 LLM 前退出。"""
         # 第一轮：返回 tool_call
         tc_msg = MagicMock()
         tc_msg.tool_calls = [MagicMock()]
@@ -157,11 +179,10 @@ class TestCancelEvent:
         svc._tools = MagicMock()
         svc._tools.definitions.return_value = []
 
-        # cancel_event 在工具执行前 set
+        # cancel_event 在工具执行期间 set
         event = threading.Event()
 
         def fake_call(name: str, args: dict[str, Any]) -> str:
-            # 工具执行前 set cancel
             event.set()
             return "{}"
 
@@ -170,8 +191,10 @@ class TestCancelEvent:
         resp = svc.chat("hi", cancel_event=event)
 
         assert resp.interrupted is True
-        # 工具确实被调了一次（因为 set 发生在 fake_call 内部，但循环会在
-        # 下一个工具前检查到——这里只有一个工具，所以会在下一轮 LLM 前退出）
+        # 唯一的工具执行了一次（set 发生在执行期间），
+        # 之后循环在「下一轮 LLM 调用前」的检查点退出
+        assert svc._tools.call.call_count == 1
+        assert svc._client.chat.completions.create.call_count == 1
 
     @patch("openai.OpenAI")
     def test_cancel_after_tool_round_before_next_llm(
@@ -213,6 +236,32 @@ class TestCancelEvent:
         # 第二轮 LLM 从未被调用（cancel 在它之前命中）
         assert svc._client.chat.completions.create.call_count == 1
 
+    @patch("openai.OpenAI")
+    def test_cancel_during_stream_marks_interrupted(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """流式输出途中 cancel → 返回 interrupted=True（不再被吞成完整回答）。"""
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.side_effect = [
+            _text_response("你好世界"),
+            _stream_response(["你", "好", "世", "界"]),
+        ]
+
+        event = threading.Event()
+        chunks: list[str] = []
+
+        def on_chunk(delta: str) -> None:
+            chunks.append(delta)
+            # 收到第一个 delta 后取消
+            event.set()
+
+        resp = svc.chat("hi", on_chunk=on_chunk, cancel_event=event)
+
+        assert resp.interrupted is True
+        # 已流出的部分保留
+        assert "".join(chunks) == "你"
+        assert resp.text == "你"
+
 
 class TestUsageAccumulation:
     """response.usage 累加到 AgentResponse.usage（#6）。"""
@@ -253,3 +302,22 @@ class TestUsageAccumulation:
         resp = AgentResponse(text="test")
         assert resp.usage == {}
         assert resp.interrupted is False
+
+    @patch("openai.OpenAI")
+    def test_usage_out_shared_container(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """usage_out 传入的 dict 被原地累加，且与 resp.usage 是同一对象。
+
+        TUI 的 WorkingIndicator 靠这个共享 dict 在对话进行中实时显示 token。
+        """
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.side_effect = [
+            _text_response("回答", usage=_usage(100, 50)),
+        ]
+
+        shared: dict[str, int] = {}
+        resp = svc.chat("hi", usage_out=shared)
+
+        assert resp.usage is shared
+        assert shared["total_tokens"] == 150
