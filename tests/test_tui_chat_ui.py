@@ -256,6 +256,7 @@ class _FakeAgent:
         on_tool_result=None,
         on_chunk=None,
         cancel_event=None,
+        usage_out=None,
     ):
         if on_tool_call is not None:
             on_tool_call("get_quote", {"code": "600519"})
