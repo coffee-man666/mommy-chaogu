@@ -208,3 +208,49 @@ export interface MoneyFlowResponse {
   cumulative: MoneyFlowCumulative
   days?: number
 }
+
+// ---------- Prediction Tracking ----------
+
+export type PredictionStatus = 'pending' | 'hit' | 'missed' | 'expired' | 'unverifiable'
+
+/** 单条 agent 预测记录（对应后端 predictions 表行，字段名与 DB 列一致）。 */
+export interface Prediction {
+  id: number
+  created_at: string
+  code: string
+  name: string | null
+  /** 预测文本，如「看涨」「看跌」。 */
+  prediction: string
+  /** 方向标识：up / down / neutral（由 LLM 抽取，可能为其他值）。 */
+  direction: string
+  rationale: string | null
+  target_price: number | null
+  entry_price: number | null
+  /** 后端 DB 列名为 stop_loss（非 stop_price）。 */
+  stop_loss: number | null
+  change_pct_at_creation: number | null
+  timeframe: string
+  verify_after: string
+  status: PredictionStatus
+  verified_at: string | null
+  actual_price: number | null
+  actual_change_pct: number | null
+  accuracy_score: number | null
+  verify_attempts: number | null
+  verify_log: string | null
+  data_coverage_at_creation: string | null
+  data_coverage_at_verify: string | null
+  source_event_id: number | null
+  insight_event_id: number | null
+}
+
+/** 预测统计（命中率分布）。hit_rate 为 0..1 的小数。 */
+export interface PredictionStats {
+  total: number
+  pending: number
+  hit: number
+  missed: number
+  expired: number
+  unverifiable: number
+  hit_rate: number
+}

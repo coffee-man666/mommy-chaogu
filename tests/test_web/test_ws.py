@@ -108,10 +108,56 @@ class TestAgentWebSocket:
         from mommy_chaogu.web import deps
 
         agent = MagicMock()
+
+        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
+            # 模拟 agent 层通过 on_chunk 回调推送真实 delta（#4 真流式）
+            on_chunk = args[2] if len(args) > 2 else kwargs.get("on_chunk")
+            if on_chunk is not None:
+                on_chunk("abcdefghijkl")
+                on_chunk("mnop")
+            return SimpleNamespace(
+                text="abcdefghijklmnop",
+                tool_calls=[SimpleNamespace(name="get_quote")],
+                rounds=2,
+            )
+
+        agent.chat.side_effect = fake_chat
+        memory = MagicMock()
+        session_memory = MagicMock()
+        memory.for_session.return_value = session_memory
+        monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+
+        with client.websocket_connect("/ws/agent") as ws:
+            ws.send_json({"message": "hello"})
+            assert ws.receive_json() == {"type": "thinking"}
+            # 真流式：on_chunk 推送的 delta 原样转发（不再是 12 字符切片）
+            assert ws.receive_json() == {"type": "chunk", "text": "abcdefghijkl"}
+            assert ws.receive_json() == {"type": "chunk", "text": "mnop"}
+            assert ws.receive_json() == {
+                "type": "done",
+                "tools_used": ["get_quote"],
+                "rounds": 2,
+            }
+
+        memory.for_session.assert_called_once_with("web-default")
+        agent.chat.assert_called_once()
+
+    def test_fallback_sends_full_text_when_streaming_unsupported(
+        self, client: TestClient, monkeypatch: object
+    ) -> None:
+        """provider 不支持 stream 时 on_chunk 不触发，resp.text 必须兜底补发。
+
+        回归：此前真流式改造删掉了切片转发逻辑，流式不可用时前端会收到
+        空回答——这里钉死兜底行为。
+        """
+        from mommy_chaogu.web import deps
+
+        agent = MagicMock()
         agent.chat.return_value = SimpleNamespace(
-            text="abcdefghijklmnop",
-            tool_calls=[SimpleNamespace(name="get_quote")],
-            rounds=2,
+            text="这是非流式兜底回答",
+            tool_calls=[],
+            rounds=1,
         )
         memory = MagicMock()
         session_memory = MagicMock()
@@ -122,16 +168,13 @@ class TestAgentWebSocket:
         with client.websocket_connect("/ws/agent") as ws:
             ws.send_json({"message": "hello"})
             assert ws.receive_json() == {"type": "thinking"}
-            assert ws.receive_json() == {"type": "chunk", "text": "abcdefghijkl"}
-            assert ws.receive_json() == {"type": "chunk", "text": "mnop"}
+            # on_chunk 从未触发 → 兜底：完整文本作为单个 chunk 补发
+            assert ws.receive_json() == {"type": "chunk", "text": "这是非流式兜底回答"}
             assert ws.receive_json() == {
                 "type": "done",
-                "tools_used": ["get_quote"],
-                "rounds": 2,
+                "tools_used": [],
+                "rounds": 1,
             }
-
-        memory.for_session.assert_called_once_with("web-default")
-        agent.chat.assert_called_once_with("hello", None, None, session_memory)
 
     def test_rejects_invalid_session_id(self, client: TestClient, monkeypatch: object) -> None:
         from mommy_chaogu.web import deps
