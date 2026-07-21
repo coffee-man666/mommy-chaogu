@@ -131,6 +131,7 @@ class AgentBridge:
         on_tool_result: Any = None,
         on_chunk: Any = None,
         cancel_event: Any = None,
+        usage_out: Any = None,
     ) -> Any:
         if self._agent is None:
             return None
@@ -141,6 +142,7 @@ class AgentBridge:
             on_tool_result=on_tool_result,
             on_chunk=on_chunk,
             cancel_event=cancel_event,
+            usage_out=usage_out,
         )
 
 
