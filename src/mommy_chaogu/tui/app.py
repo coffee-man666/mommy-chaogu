@@ -133,6 +133,8 @@ class MommyTuiApp(App[None]):
         self._pending_tool_ids: dict[str, deque[int]] = defaultdict(deque)
         # 流式 + 取消状态（每个 turn 重置）
         self._cancel_event: threading.Event | None = None
+        # usage 共享 dict：作为 usage_out 传给 agent 层，worker 线程原地累加，
+        # WorkingIndicator 的 stats_provider 在主线程实时读它。
         self._stream_usage: dict[str, int] = {}
         self._stream_flush_timer: Any = None
 
@@ -334,7 +336,8 @@ class MommyTuiApp(App[None]):
 
         #4 流式：on_chunk 回调把每个 delta 转发到 ChatView 的流式 widget。
         #5 取消：cancel_event 在 worker 开始前创建，Esc 时 set()。
-        #6 token：usage 由 agent 层累加，worker 结束后传给 finish_turn。
+        #6 token：self._stream_usage 作为 usage_out 共享 dict 传入，agent 层
+           原地累加，主线程 WorkingIndicator 的 stats_provider 实时读取。
         """
 
         def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
@@ -360,13 +363,15 @@ class MommyTuiApp(App[None]):
                 on_tool_result=on_tool_result,
                 on_chunk=on_chunk,
                 cancel_event=self._cancel_event,
+                usage_out=self._stream_usage,
             )
         except Exception as e:
             _log.warning("Agent chat 失败: %s", e)
             self.call_from_thread(self._on_chat_error, f"Agent 出错：{e}")
             return
 
-        # 收集 usage（#6）
+        # 收集 usage（#6）：resp.usage 与 self._stream_usage 是同一 dict，
+        # 但 resp 可能为 None（AgentBridge 未配置），这里仍走 getattr 兼容。
         usage = getattr(resp, "usage", {}) if resp is not None else {}
         interrupted = getattr(resp, "interrupted", False) if resp is not None else False
         reply = ""
@@ -396,7 +401,9 @@ class MommyTuiApp(App[None]):
         """主线程：首个 chunk 到达时挂载流式 widget + 启动 50ms 节流 timer。"""
         chat = self.query_one(ChatView)
         chat.start_streaming()
-        # 注册 usage 共享 dict 给 WorkingIndicator 做 token 统计
+        # 注册 usage 共享 dict 给 WorkingIndicator 做实时 token 统计。
+        # self._stream_usage 已作为 usage_out 传给 agent 层，worker 线程在
+        # 每轮 LLM 返回后原地累加，这里读到的就是实时值。
         if chat._working is not None:
             chat._working.set_stats_provider(lambda: self._stream_usage)
         # 50ms 节流 timer（在主线程刷新 Markdown）
