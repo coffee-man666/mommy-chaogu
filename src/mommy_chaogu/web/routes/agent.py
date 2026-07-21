@@ -28,6 +28,17 @@ _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
+# tracker 缺失或统计异常时的兜底返回（调用方需拷贝，勿原地修改）
+_EMPTY_PREDICTION_STATS: dict[str, Any] = {
+    "total": 0,
+    "pending": 0,
+    "hit": 0,
+    "missed": 0,
+    "expired": 0,
+    "unverifiable": 0,
+    "hit_rate": 0.0,
+}
+
 
 # ---------- Schemas ----------
 
@@ -177,16 +188,35 @@ async def get_history(
 
 
 @router.get("/predictions")
-async def get_predictions(limit: int = 20) -> dict[str, Any]:
-    """获取预测记录。"""
+async def get_predictions(limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]:
+    """获取预测记录（按 created_at 降序）。"""
     tracker = get_prediction_tracker_safe()
     if tracker is None:
         return {"predictions": [], "total": 0}
     try:
-        rows = tracker.list_recent(limit=limit)  # type: ignore[attr-defined]
+        rows = tracker.all(limit=limit)
         return {"predictions": rows, "total": len(rows)}
     except Exception:
         return {"predictions": [], "total": 0}
+
+
+@router.get("/predictions/stats")
+async def get_prediction_stats() -> dict[str, Any]:
+    """获取预测统计（命中率分布，供 Web 预测页顶部统计条用）。
+
+    背后是 PredictionTracker.stats()，无 tracker 或统计异常时返回空统计。
+    """
+    tracker = get_prediction_tracker_safe()
+    if tracker is None:
+        return dict(_EMPTY_PREDICTION_STATS)
+    try:
+        stats = tracker.stats()
+        # 确保 hit_rate 是 float（JSON 可序列化）
+        stats["hit_rate"] = float(stats.get("hit_rate", 0.0))
+        return stats
+    except Exception as exc:
+        _log.warning("预测统计查询失败，返回空统计: %s", exc)
+        return dict(_EMPTY_PREDICTION_STATS)
 
 
 def get_prediction_tracker_safe() -> Any:

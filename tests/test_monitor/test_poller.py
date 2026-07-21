@@ -240,3 +240,63 @@ def test_protocol_satisfaction() -> None:
     """MockAdapter 必须实现 MarketDataAdapter Protocol。"""
     adapter = MockMarketDataAdapter()
     assert isinstance(adapter, MarketDataAdapter)
+
+
+# ---------- run_forever 轮询循环（#12 覆盖率）----------
+
+
+def test_run_poller_single_iteration(tmp_path: Path) -> None:
+    """max_iterations=1 → 跑一轮就退出。"""
+    adapter = MockMarketDataAdapter(
+        quotes={
+            "600519": _make_quote("600519", "100", "0"),
+        }
+    )
+    store = WatchlistStore(tmp_path / "test.db")
+    store.get_or_create_group("默认")
+    store.add_entry("600519", "默认")
+    monitor = Monitor(adapter, store, log_path=tmp_path / "monitor.log")
+    monitor.run(interval_seconds=0, max_iterations=1)
+    assert monitor._snapshot_id >= 1
+
+
+def test_run_poller_writes_log(tmp_path: Path) -> None:
+    """run() 会写日志文件。"""
+    adapter = MockMarketDataAdapter(quotes={"600519": _make_quote("600519", "100", "0")})
+    store = WatchlistStore(tmp_path / "test.db")
+    store.get_or_create_group("默认")
+    store.add_entry("600519", "默认")
+    log_path = tmp_path / "monitor.log"
+    monitor = Monitor(adapter, store, log_path=log_path)
+    monitor.run(interval_seconds=0, max_iterations=1)
+    assert log_path.exists()
+
+
+def test_run_poller_with_alerter(tmp_path: Path) -> None:
+    """带 alerter 的 run_forever 正常运行（信号评估路径）。"""
+    from mommy_chaogu.signals import Alerter
+
+    adapter = MockMarketDataAdapter(quotes={"600519": _make_quote("600519", "100", "0")})
+    store = WatchlistStore(tmp_path / "test.db")
+    store.get_or_create_group("默认")
+    store.add_entry("600519", "默认")
+    alerter = Alerter.default()
+    monitor = Monitor(adapter, store, alerter=alerter)
+    monitor.run(interval_seconds=0, max_iterations=1)
+    # 不崩溃即通过
+
+
+def test_run_poller_handles_adapter_error(tmp_path: Path) -> None:
+    """adapter 抛异常时 run_forever 不崩溃。"""
+
+    class FailingAdapter(MockMarketDataAdapter):
+        def get_quote(self, code: str):
+            raise ConnectionError("simulated")
+
+    adapter = FailingAdapter()
+    store = WatchlistStore(tmp_path / "test.db")
+    store.get_or_create_group("默认")
+    store.add_entry("600519", "默认")
+    monitor = Monitor(adapter, store)
+    monitor.run(interval_seconds=0, max_iterations=1)
+    # 不崩溃即通过

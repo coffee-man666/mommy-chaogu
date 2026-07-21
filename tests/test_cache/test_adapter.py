@@ -507,3 +507,94 @@ def test_format_source_label_cache(cached: CachedMarketDataAdapter, mock_adp: Mo
 def test_format_source_label_empty(cached: CachedMarketDataAdapter) -> None:
     """无数据 → 空字符串。"""
     assert cached.format_source_label() == ""
+
+
+# ---------- get_quotes 批量拉取（#11 新增的批量路径）----------
+
+
+def test_get_quotes_empty_input(cached: CachedMarketDataAdapter) -> None:
+    """空 codes → 空列表，不调底层。"""
+    result = cached.get_quotes([])
+    assert result == []
+
+
+def test_get_quotes_all_fresh(cached: CachedMarketDataAdapter, mock_adp: MockAdapter) -> None:
+    """全部未缓存 → 一次性批量拉，inner.get_quotes 只调 1 次。"""
+    # 补充第二个 code 到 mock
+    mock_adp._quotes["000001"] = _make_quote("000001")
+    result = cached.get_quotes(["600519", "000001"])
+    assert len(result) == 2
+    codes = {q.code for q in result}
+    assert codes == {"600519", "000001"}
+    assert cached.last_source == "network"
+
+
+def test_get_quotes_dedup_codes(cached: CachedMarketDataAdapter) -> None:
+    """重复 code 去重。"""
+    result = cached.get_quotes(["600519", "600519", "600519"])
+    assert len(result) == 1
+    assert result[0].code == "600519"
+
+
+def test_get_quotes_cache_hit_skips_network(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """缓存命中（节流窗口内）→ 不走网络。"""
+    # 第一次：拉新 + 写缓存
+    cached.get_quote("600519")
+
+    # 第二次：批量查，应命中缓存（节流窗口 60s 内）
+    result = cached.get_quotes(["600519"])
+    assert len(result) == 1
+    assert cached.last_source == "cache"
+
+
+def test_get_quotes_partial_cache_partial_fresh(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """部分缓存命中、部分未命中 → 混合来源。"""
+    # 补充第二个 code
+    mock_adp._quotes["000001"] = _make_quote("000001")
+    # 先缓存 600519
+    cached.get_quote("600519")
+    # 批量查 600519（缓存）+ 000001（新）
+    result = cached.get_quotes(["600519", "000001"])
+    assert len(result) == 2
+    codes = {q.code for q in result}
+    assert codes == {"600519", "000001"}
+
+
+def test_get_quotes_inner_failure_falls_back_to_cache(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """底层批量拉失败 → 回退旧缓存。"""
+    # 先缓存（含旧数据）
+    cached.get_quote("600519")
+
+    # 让 inner.get_quotes 抛异常
+    original = mock_adp.get_quotes
+
+    def failing_get_quotes(codes: list[str]) -> list:
+        raise ConnectionError("batch failed")
+
+    mock_adp.get_quotes = failing_get_quotes  # type: ignore[method-assign]
+
+    # 等节流窗口过期后重试
+    from datetime import UTC, datetime, timedelta
+
+    cached._last_fetch_attempt["quote:600519"] = datetime.now(UTC) - timedelta(seconds=120)
+    result = cached.get_quotes(["600519"])
+
+    # 底层失败了，但旧缓存兜底
+    assert len(result) == 1
+    assert result[0].code == "600519"
+    assert cached.stats_counters["fetch_fail"] >= 1
+
+    # 恢复
+    mock_adp.get_quotes = original  # type: ignore[method-assign]
+
+
+def test_get_quotes_unknown_code_returns_empty(cached: CachedMarketDataAdapter) -> None:
+    """底层不认识的 code → 结果不含它。"""
+    result = cached.get_quotes(["999999"])
+    assert len(result) == 0

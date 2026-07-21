@@ -67,7 +67,7 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（24 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
+├── agent/           # LLM agent（tools/ 包按域拆分 24 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
 ├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
@@ -135,5 +135,6 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 - **Conventional Commits** — `feat / fix / docs / refactor / chore`
 - 数据金额一律 `Decimal`，不用 `float`
 - 数据源走 `MarketDataAdapter` Protocol，加新源只实现 Protocol
+- 新增 agent 工具：在 `agent/tools/` 对应域模块（quote/sector/flows/bars/holdings/intel/alerts/memory/themes）的 `DEFS` 与 `HANDLERS` 各加一项，`registry.py` 自动聚合，无需改注册表
 - 拉新失败保留旧数据（数据库是唯一真相源）
 - 新增模块在 `db_paths.py` 里定义数据库路径，不要硬编码

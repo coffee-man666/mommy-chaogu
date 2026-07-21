@@ -5,6 +5,28 @@
 
 ---
 
+## [1.1.0] - 2026-07-19
+
+### 新增
+
+- **dexter 风格 TUI 对话体验** — ToolIndicator（⏺ 工具调用指示 + ⎿ 摘要 + 耗时）、WorkingIndicator（spinner + 思考动词 + 计时）、HintBar（上下文提示 + slash 命令候选）；统一符号 ❯/⏺/✻/⎿；`AgentService` 新增 `on_tool_result` 回调驱动指示器。
+- **slash 命令 ↑↓ 循环选择** — slash 模式下 ↑↓ 切换候选，HintBar 高亮，Tab + ghost text 跟随，命令名后空格退出选择。
+
+### 改进
+
+- **agent 工具按域拆分重构** — 单文件 `tools.py` 拆为 `tools/` 包 9 个域模块（quote/sector/flows/bars/holdings/intel/alerts/memory/themes）+ base + registry；全部通过 `mypy --strict`，移除 `agent.tools` 的豁免并记入 `docs/TECH-DEBT.md`。
+- **工具编写指南** — `docs/AGENT-INTERACTION-GUIDE.md` 的 add-a-tool 改为指向域模块的 `DEFS`/`HANDLERS`（registry 自动聚合，无需改注册表）。
+- **SQLite WAL sidecar 文件**（`*.db-shm`/`*.db-wal`）取消跟踪并加入 `.gitignore`。
+- 主题切换修复（textual 8.x `self.dark` → `app.theme`）；HelpScreen 改 Markdown 渲染；看板空状态接通。
+
+### 修复
+
+- `/api/agent/predictions` 调用不存在的 `list_recent` 导致永远返回空（改用 `PredictionTracker.all()` 并加 limit 边界）。
+- `/api/earnings/scores/{code}` 访问不存在的 `.score` 属性导致永远返回空（改用真实 `EarningsScore` 字段）。
+- `WSSignalMessage` schema 的 `signals`（复数列表）与实际推送格式不匹配。
+
+---
+
 ## [1.0.0] - 2026-07-16
 
 ### 新增
@@ -167,6 +189,7 @@
 - **0.6.x** — 产业链数据 + hub 联动
 - **0.7.x** — 财报窗口 + 实战手册
 - **1.0.0** — 首个稳定版（生产加固 + TUI/Web 重写 + 安全边界）
+- **1.1.0** — 体验对齐 dexter（工具指示 + slash 选择）+ agent 工具按域拆分 + web API 修复
 
 ---
 

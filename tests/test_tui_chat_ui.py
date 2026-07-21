@@ -248,12 +248,27 @@ class TestBusyIndicators:
 class _FakeAgent:
     """同步触发两个回调的假 agent。"""
 
-    def chat(self, message, history=None, on_tool_call=None, on_tool_result=None):  # type: ignore[no-untyped-def]
+    def chat(  # type: ignore[no-untyped-def]
+        self,
+        message,
+        history=None,
+        on_tool_call=None,
+        on_tool_result=None,
+        on_chunk=None,
+        cancel_event=None,
+        usage_out=None,
+    ):
         if on_tool_call is not None:
             on_tool_call("get_quote", {"code": "600519"})
         if on_tool_result is not None:
             on_tool_result("get_quote", True, 1230, "贵州茅台 1680.00 +0.5%")
-        return SimpleNamespace(text="茅台最新报价 1680 元。", tool_calls=[], rounds=1)
+        return SimpleNamespace(
+            text="茅台最新报价 1680 元。",
+            tool_calls=[],
+            rounds=1,
+            usage={},
+            interrupted=False,
+        )
 
 
 class TestAgentChatFlow:

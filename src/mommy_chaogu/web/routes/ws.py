@@ -95,13 +95,16 @@ async def ws_signals(
 
 @router.websocket("/ws/agent")
 async def ws_agent(websocket: WebSocket) -> None:
-    """AI 对话流式 WebSocket。
+    """AI 对话流式 WebSocket（真流式：逐 LLM delta 转发，#4）。
 
-    消息格式：
+    消息格式（前端零改动，纯累加 chunk.text）：
     - 客户端发: {"message": "...", "history": [...]}
     - 服务端回: {"type": "thinking"} (一次)
-    - 服务端回: {"type": "chunk", "text": "..."} (多次)
+    - 服务端回: {"type": "chunk", "text": "..."} (多次，真实 LLM delta)
     - 服务端回: {"type": "done", "tools_used": [...], "rounds": N}
+
+    兜底：若 agent 层流式不可用（provider 不支持 stream），on_chunk 不会
+    被调用，此时把 resp.text 作为单个 chunk 补发，保证前端一定有回答。
     """
     import asyncio
     import json
@@ -154,19 +157,50 @@ async def ws_agent(websocket: WebSocket) -> None:
             if not await security.try_acquire_agent():
                 await websocket.send_json({"type": "error", "message": "AI 助手忙，请稍后重试"})
                 continue
+
+            # 真流式：asyncio.Queue 桥接 worker 线程的 on_chunk → 事件循环发送
+            loop = asyncio.get_running_loop()
+            chunk_queue: asyncio.Queue[str | None] = asyncio.Queue()
+            streamed_any = False  # on_chunk 是否真的推过 delta（流式不可用时为 False）
+
+            def on_chunk(delta: str) -> None:
+                """worker 线程内调用，线程安全地把 delta 推入 asyncio Queue。"""
+                nonlocal streamed_any
+                streamed_any = True
+                loop.call_soon_threadsafe(chunk_queue.put_nowait, delta)  # noqa: B023
+
+            async def _drain_stream() -> None:
+                """持续从 queue 取 delta 发给前端，直到收到 None sentinel。"""
+                while True:
+                    delta = await chunk_queue.get()  # noqa: B023
+                    if delta is None:
+                        break
+                    await websocket.send_json({"type": "chunk", "text": delta})
+
+            # 启动 drain task，与 agent.chat worker 并发
+            drain_task = asyncio.create_task(_drain_stream())
             try:
-                # agent.chat 是同步的，用 to_thread 包装
-                resp = await asyncio.to_thread(agent.chat, user_message, None, None, session_memory)
+                # agent.chat 在 worker 线程跑，on_chunk 实时推 delta
+                resp = await asyncio.to_thread(
+                    agent.chat,
+                    user_message,
+                    None,
+                    None,
+                    session_memory,
+                    None,  # on_tool_call
+                    None,  # on_tool_result
+                    on_chunk,
+                )
             finally:
+                # 通知 drain 结束 + 等 drain 把剩余 delta 发完
+                loop.call_soon_threadsafe(chunk_queue.put_nowait, None)
+                await drain_task
                 await security.release_agent()
 
-            # 分段发送（小段快发）
-            text = resp.text
-            chunk_size = 12
-            for i in range(0, len(text), chunk_size):
-                chunk = text[i : i + chunk_size]
-                await websocket.send_json({"type": "chunk", "text": chunk})
-                await asyncio.sleep(0.01)
+            # 流式兜底：on_chunk 从未触发（provider 不支持 stream）时，
+            # 把非流式兜底文本作为单个 chunk 补发，否则前端会收到空回答。
+            if not streamed_any and resp.text:
+                await websocket.send_json({"type": "chunk", "text": resp.text})
 
             await websocket.send_json(
                 {
