@@ -35,7 +35,7 @@ jobs:
       - name: Type check
         run: uv run mypy --strict src
       - name: Offline tests
-        run: uv run pytest -m "not network" --tb=short --cov=mommy_chaogu --cov-report=xml --cov-fail-under=65
+        run: uv run pytest -m "not network" --tb=short --cov=mommy_chaogu --cov-report=xml --cov-fail-under=70
       - name: Resource lifecycle gate
         run: uv run pytest tests/test_db_lifecycle.py -W error::ResourceWarning
       - name: Upload coverage

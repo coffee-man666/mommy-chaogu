@@ -108,3 +108,86 @@ class TestHistorySignals:
         data = resp.json()
         assert len(data) == 1  # only the valid line
         log_file.unlink(missing_ok=True)
+
+
+class TestHistoryFromStore:
+    """GET /api/signals/history — #10 结构化库读取（主路径）。"""
+
+    def test_reads_from_store(self, client: TestClient, tmp_path: object) -> None:
+        import pathlib
+        from datetime import datetime
+        from decimal import Decimal
+
+        from mommy_chaogu.signals import SignalStore
+        from mommy_chaogu.signals.types import Signal, SignalSeverity
+        from mommy_chaogu.web.deps import get_alerter, get_signal_store
+
+        db_path = pathlib.Path("/tmp/test_signals_store.db")
+        db_path.unlink(missing_ok=True)
+        store = SignalStore(db_path)
+        store.insert(
+            [
+                Signal(
+                    timestamp=datetime(2026, 7, 1, 10, 30, 0),
+                    code="600519",
+                    name="贵州茅台",
+                    rule_id="price_change",
+                    severity=SignalSeverity.WARNING,
+                    title="茅台涨超5%",
+                    detail="现价1850 涨6.2%",
+                    trigger_value=Decimal("6.2"),
+                    threshold_value=Decimal("5.0"),
+                )
+            ]
+        )
+        client.app.dependency_overrides[get_signal_store] = lambda: store  # type: ignore[attr-defined]
+        # 覆盖 alerter（conftest 的 MagicMock 实例会触发 FastAPI 签名探测 422）
+        alerter_mock = MagicMock()
+        alerter_mock.log_path = None
+        client.app.dependency_overrides[get_alerter] = lambda: alerter_mock  # type: ignore[attr-defined]
+
+        resp = client.get("/api/signals/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["code"] == "600519"
+        assert data[0]["severity"] == "warning"
+        assert data[0]["trigger_value"] == "6.2"
+
+        store.close()
+        db_path.unlink(missing_ok=True)
+        client.app.dependency_overrides.clear()  # type: ignore[attr-defined]
+
+    def test_store_empty_falls_back_to_log(self, client: TestClient) -> None:
+        """库为空时回退日志解析。"""
+        import pathlib
+
+        from mommy_chaogu.signals import SignalStore
+        from mommy_chaogu.web.deps import get_alerter, get_signal_store
+
+        # 空 store
+        db_path = pathlib.Path("/tmp/test_signals_empty.db")
+        db_path.unlink(missing_ok=True)
+        store = SignalStore(db_path)
+        client.app.dependency_overrides[get_signal_store] = lambda: store  # type: ignore[attr-defined]
+
+        # 配置 alerter 的 log_path 有内容
+        log_file = pathlib.Path("/tmp/test_signals_fallback.log")
+        log_file.write_text(
+            "2026-06-27 14:32:15 [CRITICAL] 600519 茅台 main_flow_threshold: ok\n",
+            encoding="utf-8",
+        )
+        alerter = MagicMock()
+        alerter.log_path = log_file
+        client.app.dependency_overrides[get_alerter] = lambda: alerter  # type: ignore[attr-defined]
+
+        resp = client.get("/api/signals/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1  # 从日志回退解析
+        assert data[0]["code"] == "600519"
+
+        store.close()
+        db_path.unlink(missing_ok=True)
+        log_file.unlink(missing_ok=True)
+        client.app.dependency_overrides.clear()  # type: ignore[attr-defined]

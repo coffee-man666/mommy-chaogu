@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from mommy_chaogu.cache.config import CacheConfig
-from mommy_chaogu.cache.store import CacheStore
+from mommy_chaogu.cache.store import CacheStore, QuoteCacheEntry
 from mommy_chaogu.market_data import MarketDataAdapter, Quote
 from mommy_chaogu.market_data.types import (
     AdjustmentType,
@@ -142,11 +142,63 @@ class CachedMarketDataAdapter:
         return None
 
     def get_quotes(self, codes: list[str]) -> list[Quote]:
+        """批量拉取：先查缓存，未命中的 codes 一次性走底层批量 API。
+
+        与 get_quote 的优先级一致：缓存（若在节流窗口内） > 底层批量拉新。
+        把 N 次单股往返压成 1 次批量调用（腾讯接口一次拉 80 只）。
+        """
+        unique_codes = list(dict.fromkeys(codes))
+        if not unique_codes:
+            return []
+
+        # 1. 逐 code 读缓存 + 判断节流窗口
+        cached_entries: dict[str, QuoteCacheEntry | None] = {}
+        miss_codes: list[str] = []
+        for code in unique_codes:
+            cached_entries[code] = self.store.get_quote(code)
+            if self._should_fetch(f"quote:{code}", self.config.quote_fetch_interval_seconds):
+                miss_codes.append(code)
+
+        # 2. 未命中的 codes 一次性批量拉（关键：走 inner.get_quotes 而非逐个 get_quote）
+        fresh_map: dict[str, Quote] = {}
+        if miss_codes:
+            for code in miss_codes:
+                self._mark_fetched(f"quote:{code}")
+            self.stats_counters["fetches"] += 1
+            try:
+                fresh_list = self.inner.get_quotes(miss_codes)
+            except Exception as e:
+                self.stats_counters["fetch_fail"] += 1
+                _log.warning("fetch get_quotes(%s) failed: %s", miss_codes, e)
+                fresh_list = []
+            if fresh_list:
+                self.stats_counters["fetch_ok"] += 1
+                for q in fresh_list:
+                    fresh_map[q.code] = q
+                    try:
+                        self.store.set_quote(q.code, q)
+                    except Exception as e:
+                        _log.error("cache set_quote(%s) failed: %s", q.code, e)
+
+        # 3. 合并：fresh 优先，缺失的 fallback 到缓存（含拉新失败的旧缓存）
         out: list[Quote] = []
-        for code in dict.fromkeys(codes):
-            q = self.get_quote(code)
+        used_network = False
+        used_cache = False
+        for code in unique_codes:
+            q = fresh_map.get(code)
             if q is not None:
                 out.append(q)
+                used_network = True
+                continue
+            entry = cached_entries.get(code)
+            if entry is not None:
+                out.append(entry.quote)  # type: ignore[arg-type]
+                self.stats_counters["hits"] += 1
+                used_cache = True
+        if used_network:
+            self.last_source = "network"
+        elif used_cache:
+            self.last_source = "cache"
         return out
 
     def list_market_quotes(self) -> list[Quote]:

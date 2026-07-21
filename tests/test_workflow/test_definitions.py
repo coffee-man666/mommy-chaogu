@@ -6,6 +6,9 @@ import pytest
 
 from mommy_chaogu.workflow.definitions import (
     WORKFLOWS,
+    _extract_codes_from_portfolio,
+    _extract_codes_from_watchlist,
+    _extract_sector_code_from_prev,
     _extract_sector_keyword,
     _extract_stock_code,
     get_default_registry,
@@ -132,3 +135,99 @@ class TestExtractors:
     def test_extract_sector_keyword_multiple_words(self) -> None:
         result = _extract_sector_keyword("创新药板块分析", [])
         assert result["keyword"] == "创新药"
+
+
+class TestExtractSectorCodeFromPrev:
+    def test_extracts_from_list_result(self) -> None:
+        previous = [{"tool": "search_sector", "result": [{"board_code": "BK1106"}]}]
+        result = _extract_sector_code_from_prev("", previous)
+        assert result == {"board_code": "BK1106"}
+
+    def test_extracts_from_dict_result(self) -> None:
+        previous = [{"tool": "search_sector", "result": {"board_code": "BK0475"}}]
+        result = _extract_sector_code_from_prev("", previous)
+        assert result == {"board_code": "BK0475"}
+
+    def test_returns_empty_when_no_search_sector(self) -> None:
+        previous = [{"tool": "get_quote", "result": {"code": "600519"}}]
+        assert _extract_sector_code_from_prev("", previous) == {}
+
+    def test_returns_empty_when_empty_list_result(self) -> None:
+        previous = [{"tool": "search_sector", "result": []}]
+        assert _extract_sector_code_from_prev("", previous) == {}
+
+    def test_returns_empty_when_no_previous(self) -> None:
+        assert _extract_sector_code_from_prev("", []) == {}
+
+
+class TestExtractCodesFromWatchlist:
+    def test_extracts_flat_list(self) -> None:
+        previous = [
+            {
+                "tool": "get_watchlist",
+                "result": [
+                    {"code": "600519"},
+                    {"code": "000858"},
+                ],
+            }
+        ]
+        result = _extract_codes_from_watchlist("", previous)
+        assert result == {"codes": ["600519", "000858"]}
+
+    def test_extracts_grouped_format(self) -> None:
+        previous = [
+            {
+                "tool": "get_watchlist",
+                "result": {
+                    "groups": [
+                        {"stocks": [{"code": "600519"}, {"code": "000001"}]},
+                        {"stocks": [{"code": "000858"}]},
+                    ]
+                },
+            }
+        ]
+        result = _extract_codes_from_watchlist("", previous)
+        assert result == {"codes": ["600519", "000001", "000858"]}
+
+    def test_caps_at_50(self) -> None:
+        stocks = [{"code": f"60000{i}"} for i in range(60)]
+        previous = [{"tool": "get_watchlist", "result": stocks}]
+        result = _extract_codes_from_watchlist("", previous)
+        assert len(result["codes"]) == 50
+
+    def test_returns_empty_when_no_watchlist(self) -> None:
+        assert _extract_codes_from_watchlist("", []) == {}
+
+    def test_returns_empty_when_no_codes(self) -> None:
+        previous = [{"tool": "get_watchlist", "result": []}]
+        assert _extract_codes_from_watchlist("", previous) == {}
+
+
+class TestExtractCodesFromPortfolio:
+    def test_extracts_from_positions(self) -> None:
+        previous = [
+            {
+                "tool": "get_portfolio",
+                "result": {
+                    "positions": [
+                        {"code": "600519"},
+                        {"code": "000858"},
+                    ]
+                },
+            }
+        ]
+        result = _extract_codes_from_portfolio("", previous)
+        assert result == {"codes": ["600519", "000858"]}
+
+    def test_caps_at_50(self) -> None:
+        positions = [{"code": f"60000{i}"} for i in range(60)]
+        previous = [{"tool": "get_portfolio", "result": {"positions": positions}}]
+        result = _extract_codes_from_portfolio("", previous)
+        assert len(result["codes"]) == 50
+
+    def test_returns_empty_when_no_portfolio(self) -> None:
+        assert _extract_codes_from_portfolio("", []) == {}
+
+    def test_returns_empty_when_no_positions_key(self) -> None:
+        previous = [{"tool": "get_portfolio", "result": {}}]
+        assert _extract_codes_from_portfolio("", previous) == {}

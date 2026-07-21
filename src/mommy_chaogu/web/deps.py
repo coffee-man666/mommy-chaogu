@@ -25,7 +25,7 @@ from mommy_chaogu.market_data import (
     TencentAdapter,
 )
 from mommy_chaogu.portfolio import PortfolioStore
-from mommy_chaogu.signals import Alerter
+from mommy_chaogu.signals import Alerter, SignalStore
 from mommy_chaogu.watchlist import WatchlistStore
 
 
@@ -76,11 +76,17 @@ def get_watchlist_store() -> WatchlistStore:
 
 
 @lru_cache(maxsize=1)
+def get_signal_store() -> SignalStore:
+    """全局信号历史存储（market.db / signal_events 表）。"""
+    return SignalStore(get_market_db())
+
+
+@lru_cache(maxsize=1)
 def get_alerter() -> Alerter:
-    """全局告警器。"""
+    """全局告警器（注入 SignalStore 做结构化持久化）。"""
     log_path = Path("data/signals.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    return Alerter.default(log_path=log_path)
+    return Alerter.default(log_path=log_path, signal_store=get_signal_store())
 
 
 @lru_cache(maxsize=1)
@@ -204,6 +210,7 @@ def close_cached_dependencies() -> None:
         get_adapter,
         get_watchlist_store,
         get_portfolio_store,
+        get_signal_store,
         get_agent_memory,
         get_episodic_memory,
         get_prediction_tracker,

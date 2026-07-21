@@ -18,6 +18,7 @@ from mommy_chaogu.signals.rules import (
     VolumeSurgeRule,
     default_rules,
 )
+from mommy_chaogu.signals.store import SignalStore
 from mommy_chaogu.signals.types import (
     Rule,
     RuleConfig,
@@ -36,6 +37,7 @@ __all__ = [
     "RuleConfig",
     "Signal",
     "SignalSeverity",
+    "SignalStore",
     "TurnoverSurgeRule",
     "VolumeSurgeRule",
     "default_rules",

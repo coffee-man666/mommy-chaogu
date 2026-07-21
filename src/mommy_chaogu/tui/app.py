@@ -398,6 +398,7 @@ class MommyTuiApp(App[None]):
 
     def _do_refresh(self) -> None:
         """worker 线程内执行：调数据服务，回主线程应用。"""
+        t0 = time.monotonic()
         try:
             svc = self.services.data
             rows = svc.watchlist_quotes()
@@ -406,6 +407,8 @@ class MommyTuiApp(App[None]):
             _log.warning("数据刷新失败: %s", e)
             self.call_from_thread(self._on_refresh_error, f"数据刷新失败: {e}")
             return
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        _log.info("watchlist 刷新耗时 %.0fms", elapsed_ms)
         self.call_from_thread(self._apply_data, rows, summary)
 
     def _on_refresh_error(self, error: str) -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -28,7 +29,11 @@ class DataService:
     _source_label: str = "初始化中"
 
     def watchlist_quotes(self) -> list[dict[str, Any]]:
-        """批量获取自选股报价 + 主力资金流。"""
+        """批量获取自选股报价 + 主力资金流。
+
+        报价走 adapter.get_quotes（批量，底层腾讯一次 HTTP 拉 80 只）；
+        资金流无批量 API，但有 5 分钟节流缓存，用 4 线程并发拉。
+        """
         if self.adapter is None:
             return []
         codes: list[str] = []
@@ -38,31 +43,37 @@ class DataService:
         if not codes:
             return []
 
+        # 批量报价（一次 HTTP 拉所有 code）
+        try:
+            quotes = self.adapter.get_quotes(codes)
+        except Exception as e:
+            _log.debug("批量拉取报价失败: %s", e)
+            quotes = []
+        quotes_by_code: dict[str, Any] = {getattr(q, "code", ""): q for q in quotes}
+
+        # 资金流并发拉（无批量 API，5 分钟节流缓存，max_workers=4 控并发）
+        flows_by_code: dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            flow_results = list(pool.map(self._fetch_flow_safe, codes))
+        for code, flow_val in zip(codes, flow_results, strict=True):
+            if flow_val is not None:
+                flows_by_code[code] = flow_val
+
         rows: list[dict[str, Any]] = []
         for code in codes:
-            try:
-                q = self.adapter.get_quote(code)
-                if q is None:
-                    continue
-                flow_val = None
-                try:
-                    flows = self.adapter.get_today_money_flow(code)
-                    if flows:
-                        flow_val = getattr(flows[-1], "main_net", None)
-                except Exception:
-                    pass
-                rows.append(
-                    {
-                        "code": code,
-                        "name": getattr(q, "name", code),
-                        "price": q.price,
-                        "change_pct": getattr(q, "change_pct", None),
-                        "change_amount": getattr(q, "change", None),
-                        "main_flow": flow_val,
-                    }
-                )
-            except Exception as e:
-                _log.debug("拉取 %s 失败: %s", code, e)
+            q = quotes_by_code.get(code)
+            if q is None:
+                continue
+            rows.append(
+                {
+                    "code": code,
+                    "name": getattr(q, "name", code),
+                    "price": q.price,
+                    "change_pct": getattr(q, "change_pct", None),
+                    "change_amount": getattr(q, "change", None),
+                    "main_flow": flows_by_code.get(code),
+                }
+            )
 
         self._source_label = (
             self.adapter.format_source_label()
@@ -70,6 +81,16 @@ class DataService:
             else ""
         )
         return rows
+
+    def _fetch_flow_safe(self, code: str) -> Any:
+        """线程池内安全拉资金流，失败返回 None。"""
+        try:
+            flows = self.adapter.get_today_money_flow(code)
+            if flows:
+                return getattr(flows[-1], "main_net", None)
+        except Exception as e:
+            _log.debug("拉资金流 %s 失败: %s", code, e)
+        return None
 
     def portfolio_snapshot(self) -> dict[str, Any]:
         """持仓快照 = portfolio.db × 实时报价 join。"""
@@ -81,14 +102,13 @@ class DataService:
                 return {"positions": [], "total_market_value": None, "total_unrealized_pnl": None}
             codes = list({p.code for p in positions})
             prices: dict[str, Decimal] = {}
-            if self.adapter:
-                for code in codes:
-                    try:
-                        q = self.adapter.get_quote(code)
-                        if q:
-                            prices[code] = q.price
-                    except Exception:
-                        pass
+            if self.adapter and codes:
+                # 批量拉报价（一次 HTTP）
+                try:
+                    for q in self.adapter.get_quotes(codes):
+                        prices[q.code] = q.price
+                except Exception:
+                    pass
             return self.portfolio_store.summary(prices)  # type: ignore[no-any-return]
         except Exception as e:
             _log.warning("持仓快照失败: %s", e)

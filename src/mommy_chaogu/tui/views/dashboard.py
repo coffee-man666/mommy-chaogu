@@ -318,26 +318,31 @@ class ThemeListWidget(DataTable[Any]):
         self.add_column("代码", width=8)
         self.add_column("名称", width=12)
         self.add_column("产业链位置", width=10)
-        self._load_data()
+        # 半导体产业链是静态参考库，加载一次即可；DB 读取挪进 worker 线程避免阻塞 UI。
+        self.run_worker(self._load_data, thread=True)
 
     def _load_data(self) -> None:
-        """从 reference.db 读取半导体产业链股票。"""
+        """worker 线程：读 reference.db，回主线程 add_row。"""
         try:
             from mommy_chaogu.db_paths import REFERENCE_DB
             from mommy_chaogu.semicon.store import SemiconStore
 
             store = SemiconStore(REFERENCE_DB)
             stocks = store.list_all()
-            if not stocks:
-                return
-            for s in stocks:
-                self.add_row(
-                    s.code,
-                    getattr(s, "name", s.code),
-                    getattr(s, "chain_position", ""),
-                )
         except Exception as e:
             _log.warning("加载半导体产业链失败: %s", e)
+            return
+        if not stocks:
+            return
+        rows = [
+            (s.code, getattr(s, "name", s.code), getattr(s, "chain_position", "")) for s in stocks
+        ]
+        self.app.call_from_thread(self._populate, rows)
+
+    def _populate(self, rows: list[tuple[str, str, str]]) -> None:
+        """主线程：批量 add_row。"""
+        for code, name, chain_position in rows:
+            self.add_row(code, name, chain_position)
 
 
 class SignalLogWidget(RichLog):
