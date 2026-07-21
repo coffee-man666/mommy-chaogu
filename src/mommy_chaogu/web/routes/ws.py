@@ -102,6 +102,9 @@ async def ws_agent(websocket: WebSocket) -> None:
     - 服务端回: {"type": "thinking"} (一次)
     - 服务端回: {"type": "chunk", "text": "..."} (多次，真实 LLM delta)
     - 服务端回: {"type": "done", "tools_used": [...], "rounds": N}
+
+    兜底：若 agent 层流式不可用（provider 不支持 stream），on_chunk 不会
+    被调用，此时把 resp.text 作为单个 chunk 补发，保证前端一定有回答。
     """
     import asyncio
     import json
@@ -158,9 +161,12 @@ async def ws_agent(websocket: WebSocket) -> None:
             # 真流式：asyncio.Queue 桥接 worker 线程的 on_chunk → 事件循环发送
             loop = asyncio.get_running_loop()
             chunk_queue: asyncio.Queue[str | None] = asyncio.Queue()
+            streamed_any = False  # on_chunk 是否真的推过 delta（流式不可用时为 False）
 
             def on_chunk(delta: str) -> None:
                 """worker 线程内调用，线程安全地把 delta 推入 asyncio Queue。"""
+                nonlocal streamed_any
+                streamed_any = True
                 loop.call_soon_threadsafe(chunk_queue.put_nowait, delta)  # noqa: B023
 
             async def _drain_stream() -> None:
@@ -190,6 +196,11 @@ async def ws_agent(websocket: WebSocket) -> None:
                 loop.call_soon_threadsafe(chunk_queue.put_nowait, None)
                 await drain_task
                 await security.release_agent()
+
+            # 流式兜底：on_chunk 从未触发（provider 不支持 stream）时，
+            # 把非流式兜底文本作为单个 chunk 补发，否则前端会收到空回答。
+            if not streamed_any and resp.text:
+                await websocket.send_json({"type": "chunk", "text": resp.text})
 
             await websocket.send_json(
                 {

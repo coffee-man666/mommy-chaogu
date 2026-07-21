@@ -186,6 +186,7 @@ class AgentService:
         on_tool_result: Callable[[str, bool, int, str], None] | None = None,
         on_chunk: Callable[[str], None] | None = None,
         cancel_event: threading.Event | None = None,
+        usage_out: dict[str, int] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
@@ -199,8 +200,13 @@ class AgentService:
           逐 delta 调 on_chunk；provider 不支持 stream 时自动回退非流式。
 
         取消：
-        - 如果传入 *cancel_event*，每轮 LLM 调用前 + 每个工具执行前检查 is_set()，
-          命中即立即返回 interrupted=True。
+        - 如果传入 *cancel_event*，每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中
+          检查 is_set()，命中即立即返回 interrupted=True。
+
+        token 统计：
+        - 如果传入 *usage_out*，它会被直接用作累加容器（worker 线程原地累加），
+          调用方可在对话进行中实时读取——TUI 的 WorkingIndicator 靠它显示
+          实时 token 数。resp.usage 与 usage_out 是同一个 dict。
         """
         ms = self._memory_service
 
@@ -235,6 +241,7 @@ class AgentService:
             on_tool_result=on_tool_result,
             on_chunk=on_chunk,
             cancel_event=cancel_event,
+            usage_out=usage_out,
         )
 
         # 3. 对话后记录 + 提取
@@ -258,6 +265,7 @@ class AgentService:
         on_tool_result: Callable[[str, bool, int, str], None] | None = None,
         on_chunk: Callable[[str], None] | None = None,
         cancel_event: threading.Event | None = None,
+        usage_out: dict[str, int] | None = None,
     ) -> AgentResponse:
         """直接传入完整 messages 列表（灵活但需自己构造格式）。"""
         return self._run_loop(
@@ -266,6 +274,7 @@ class AgentService:
             on_tool_result=on_tool_result,
             on_chunk=on_chunk,
             cancel_event=cancel_event,
+            usage_out=usage_out,
         )
 
     def _create_with_retry(self, messages: list[dict[str, Any]]) -> Any:
@@ -308,6 +317,7 @@ class AgentService:
         on_tool_result: Callable[[str, bool, int, str], None] | None = None,
         on_chunk: Callable[[str], None] | None = None,
         cancel_event: threading.Event | None = None,
+        usage_out: dict[str, int] | None = None,
     ) -> AgentResponse:
         """核心 agent 循环：LLM → tool_calls → execute → LLM → ...
 
@@ -318,12 +328,15 @@ class AgentService:
         on_chunk：工具循环结束后，若有则发起一次 stream=True 的最终回答调用，
         逐 delta 调用。provider 不支持 stream 时回退非流式。
 
-        cancel_event：每轮 LLM 调用前 + 每个工具执行前检查 is_set()，
-        命中即返回 interrupted=True 的 AgentResponse。
+        cancel_event：每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中检查
+        is_set()，命中即返回 interrupted=True 的 AgentResponse。
+
+        usage_out：若提供，直接作为 usage 累加容器（引用共享），调用方可在
+        对话进行中实时读取累加值；AgentResponse.usage 即此 dict。
         """
         all_tool_calls: list[ToolCallRecord] = []
         rounds = 0
-        total_usage: dict[str, int] = {}
+        total_usage: dict[str, int] = usage_out if usage_out is not None else {}
 
         while rounds < self._max_tool_calls:
             # 取消检查（每轮 LLM 调用前）
@@ -350,11 +363,19 @@ class AgentService:
                 # 仅在 on_chunk 提供时启用；provider 不支持 stream 或失败时
                 # _stream_final_answer 返回 None，保留非流式 text 兜底。
                 if on_chunk is not None and text:
-                    streamed = self._stream_final_answer(
-                        messages, on_chunk, cancel_event, total_usage
-                    )
+                    streamed = self._stream_final_answer(messages, on_chunk, cancel_event)
                     if streamed is not None:
                         text = streamed
+                # 流式输出途中被取消：已流出的部分保留，但标记 interrupted，
+                # 让 UI 层按「已中断」而非「完整回答」收尾。
+                if cancel_event is not None and cancel_event.is_set():
+                    return AgentResponse(
+                        text=text or "（已中断）",
+                        tool_calls=all_tool_calls,
+                        rounds=rounds,
+                        usage=total_usage,
+                        interrupted=True,
+                    )
                 return AgentResponse(
                     text=text,
                     tool_calls=all_tool_calls,
@@ -459,12 +480,14 @@ class AgentService:
         messages: list[dict[str, Any]],
         on_chunk: Callable[[str], None],
         cancel_event: threading.Event | None,
-        total_usage: dict[str, int],
     ) -> str | None:
         """发起一次 stream=True 的无 tools 调用，逐 delta 调 on_chunk。
 
         学 dexter：工具循环已由上一轮非流式调用得出最终回答方向，这里重新发
         一次相同 messages 的流式调用（不绑 tools），把完整文本流式输出给前端。
+
+        注意：流式调用的 usage 不累加——最终回答的 token 成本只计上一轮
+        非流式调用那一次，避免同一回答被计两次、统计口径虚高。
 
         返回 None 表示流式不可用（provider 不支持或出错），调用方用上一轮
         非流式 text 兜底；返回 str 为实际流式收集到的完整文本。
@@ -493,8 +516,6 @@ class AgentService:
                     collected.append(text)
                     with contextlib.suppress(Exception):
                         on_chunk(text)
-                # 流式 usage（部分 provider 在最后一个 chunk 带 usage）
-                self._accumulate_usage(total_usage, chunk)
         except Exception as exc:
             _log.warning("stream 迭代中断: %s", exc)
             # 已收集的部分仍有价值，返回已得文本（可能不完整）
