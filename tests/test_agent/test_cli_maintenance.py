@@ -76,9 +76,7 @@ class TestVerifySubcommand:
 
 
 class TestConsolidateSubcommand:
-    def test_no_api_key_exits_one(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_api_key_exits_one(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """无法构造 LLM client 时退出码 1，且给出明确错误信息。"""
         monkeypatch.setattr(agent_cli, "_build_llm_client", lambda *a, **kw: (None, None))
         monkeypatch.setattr(
@@ -117,9 +115,7 @@ class TestConsolidateSubcommand:
 
 
 class TestChatPathVectorSearchFallback:
-    def test_vector_search_init_failure_degrades(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_vector_search_init_failure_degrades(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """VectorSearch 构造抛异常时不崩溃，以 vector_search=None 继续。
 
         修复前 cli 用 ``VectorSearch(AGENT_DB)``（Path 当 EpisodicMemory 传

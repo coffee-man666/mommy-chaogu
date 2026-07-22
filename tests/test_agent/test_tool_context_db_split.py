@@ -188,12 +188,6 @@ class TestLegacyDbPathFallback:
     def test_none_db_still_errors(self) -> None:
         """三个字段都为空时，工具返回明确错误而非崩溃。"""
         ctx = ToolContext(adapter=MagicMock())
-        assert "error" in json.loads(
-            ALERTS_HANDLERS["manage_alert"](ctx, {"action": "list"})
-        )
-        assert "error" in json.loads(
-            BARS_HANDLERS["backfill_history"](ctx, {"code": "600519"})
-        )
-        assert "error" in json.loads(
-            MEMORY_HANDLERS["get_prediction_history"](ctx, {})
-        )
+        assert "error" in json.loads(ALERTS_HANDLERS["manage_alert"](ctx, {"action": "list"}))
+        assert "error" in json.loads(BARS_HANDLERS["backfill_history"](ctx, {"code": "600519"}))
+        assert "error" in json.loads(MEMORY_HANDLERS["get_prediction_history"](ctx, {}))
