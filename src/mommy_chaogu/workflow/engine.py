@@ -205,15 +205,27 @@ class WorkflowExecutor:
             try:
                 raw = self._tools.call(step.tool_name, args)
                 parsed = _safe_parse_json(raw)
-                sr = StepResult(
-                    display_name=step.display_name,
-                    tool_name=step.tool_name,
-                    success=True,
-                    data=parsed,
-                )
-                step_results.append(
-                    {"step": step.display_name, "tool": step.tool_name, "result": parsed}
-                )
+                # registry.call 把工具失败转成 {"error": ...} JSON 字符串返回，
+                # 并不抛出——必须检查 payload 的 error 键，否则失败步骤一律
+                # 记为 success，optional/break 逻辑成为死代码（T2）。
+                # 非 JSON 结果（纯文本）不会是 dict，不误判。
+                if isinstance(parsed, dict) and "error" in parsed:
+                    sr = StepResult(
+                        display_name=step.display_name,
+                        tool_name=step.tool_name,
+                        success=False,
+                        error=str(parsed["error"]),
+                    )
+                else:
+                    sr = StepResult(
+                        display_name=step.display_name,
+                        tool_name=step.tool_name,
+                        success=True,
+                        data=parsed,
+                    )
+                    step_results.append(
+                        {"step": step.display_name, "tool": step.tool_name, "result": parsed}
+                    )
             except Exception as e:
                 _log.warning("工作流步骤 %s 失败: %s", step.display_name, e)
                 sr = StepResult(

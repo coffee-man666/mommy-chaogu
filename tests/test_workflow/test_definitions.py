@@ -231,3 +231,109 @@ class TestExtractCodesFromPortfolio:
     def test_returns_empty_when_no_positions_key(self) -> None:
         previous = [{"tool": "get_portfolio", "result": {}}]
         assert _extract_codes_from_portfolio("", previous) == {}
+
+
+class _FakeTools:
+    """最小 ToolRegistry 替身：返回预设 JSON，记录调用参数。"""
+
+    def __init__(self, results: dict[str, str]) -> None:
+        self._results = results
+        self.calls: list[tuple[str, dict]] = []
+
+    def call(self, name: str, args: dict) -> str:
+        self.calls.append((name, args))
+        return self._results.get(name, "{}")
+
+    def definitions(self) -> list[dict]:
+        return []
+
+    @staticmethod
+    def tool_names() -> list[str]:
+        return []
+
+
+class TestStockAnalysisDefinition:
+    def test_get_bars_uses_limit_not_count(self) -> None:
+        """stock_analysis 传给 get_bars 的参数是 limit（工具不认 count）。"""
+        wf = get_default_registry().get("stock_analysis")
+        assert wf is not None
+        bars_step = next(s for s in wf.steps if s.tool_name == "get_bars")
+        assert bars_step.args.get("limit") == 20
+        assert "count" not in bars_step.args
+
+
+class TestFlowCheckDefinition:
+    def test_flow_step_succeeds_with_watchlist_codes(self) -> None:
+        """flow_check 的资金流步骤用自选股 codes 批量查询并成功。
+
+        修复前 get_money_flow_today 只认单数 code，_extract_codes_from_watchlist
+        返回的 {"codes": [...]} 让该步每次必败（且被记为成功）。
+        """
+        from mommy_chaogu.workflow.engine import WorkflowExecutor
+
+        tools = _FakeTools(
+            {
+                "get_watchlist": '[{"code": "600519"}, {"code": "000858"}]',
+                "get_money_flow_today": '{"results": {"600519": {}}, "count": 1}',
+                "get_sector_ranking": "[]",
+            }
+        )
+        executor = WorkflowExecutor(tools)  # type: ignore[arg-type]
+        wf = get_default_registry().get("flow_check")
+        assert wf is not None
+
+        result = executor.execute(wf, "主力资金怎么样")
+
+        flow_calls = [args for name, args in tools.calls if name == "get_money_flow_today"]
+        assert flow_calls == [{"codes": ["600519", "000858"]}]
+        flow_step = next(s for s in result.steps if s.tool_name == "get_money_flow_today")
+        assert flow_step.success is True
+
+
+class TestAddWatchlistDefinition:
+    def test_uses_manage_watchlist_tool(self) -> None:
+        """add_watchlist 工作流调 manage_watchlist（修复前误用告警工具 manage_alert）。"""
+        wf = get_default_registry().get("add_watchlist")
+        assert wf is not None
+        assert wf.steps[0].tool_name == "manage_watchlist"
+        assert wf.steps[0].args == {"action": "add"}
+
+    def test_end_to_end_adds_entry(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """端到端：'加自选 600519' 真正把股票写进 portfolio.db 自选股。"""
+        from unittest.mock import MagicMock
+
+        from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+        from mommy_chaogu.watchlist.store import WatchlistStore
+        from mommy_chaogu.workflow.engine import WorkflowExecutor
+
+        store = WatchlistStore(tmp_path / "portfolio.db")
+        ctx = ToolContext(adapter=MagicMock(), watchlist_store=store)
+        executor = WorkflowExecutor(ToolRegistry(ctx))
+
+        wf = get_default_registry().get("add_watchlist")
+        assert wf is not None
+        result = executor.execute(wf, "加自选 600519")
+
+        assert result.steps[0].success is True
+        entries = store.list_entries()
+        assert [e.code for e in entries] == ["600519"]
+
+    def test_without_code_step_fails_but_workflow_continues(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """抠不到 6 位代码时步骤失败但 optional 不中断（由 LLM 总结引导用户）。"""
+        from unittest.mock import MagicMock
+
+        from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+        from mommy_chaogu.watchlist.store import WatchlistStore
+        from mommy_chaogu.workflow.engine import WorkflowExecutor
+
+        store = WatchlistStore(tmp_path / "portfolio.db")
+        ctx = ToolContext(adapter=MagicMock(), watchlist_store=store)
+        executor = WorkflowExecutor(ToolRegistry(ctx))
+
+        wf = get_default_registry().get("add_watchlist")
+        assert wf is not None
+        result = executor.execute(wf, "加个自选")
+
+        assert result.steps[0].success is False
+        assert result.steps[0].error is not None
+        assert store.list_entries() == []

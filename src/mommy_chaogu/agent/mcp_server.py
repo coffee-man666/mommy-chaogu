@@ -1,7 +1,7 @@
 """MCP Server：把 agent 工具暴露为 MCP 协议。
 
 任何支持 MCP 的客户端（🦞 / Claude Desktop / Kimi Code / 等）
-都可以直接连接这个 server，调用 14 个数据工具。
+都可以直接连接这个 server，调用 25 个数据工具。
 
 用法：
     # stdio 模式（最简单，Claude Desktop 等用）
@@ -129,7 +129,7 @@ async def run_stdio() -> None:
     ctx = _build_context()
     server = create_mcp_server(ctx)
     async with stdio_server() as (read_stream, write_stream):
-        _log.info("mommy-chaogu MCP server started (24 tools)")
+        _log.info("mommy-chaogu MCP server started (25 tools)")
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
