@@ -189,6 +189,7 @@ class TestVerifyPredictions:
             "missed": 0,
             "data_unavailable": 0,
             "expired": 0,
+            "unverifiable": 0,
         }
 
 

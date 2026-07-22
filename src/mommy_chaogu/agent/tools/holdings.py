@@ -44,6 +44,32 @@ DEFS: list[ToolDef] = [
             },
         },
     ),
+    ToolDef(
+        name="manage_watchlist",
+        description=(
+            "添加或移除自选股（如'把600519加入自选'、'取消关注000858'）。"
+            "只是查看自选股列表时用 get_watchlist，不要用本工具。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "remove"],
+                    "description": "操作类型：add 添加 / remove 移除",
+                },
+                "code": {
+                    "type": "string",
+                    "description": "6 位股票代码（必填）",
+                },
+                "group": {
+                    "type": "string",
+                    "description": "分组名称（可选，默认'默认'；add 时分组不存在会自动创建）",
+                },
+            },
+            "required": ["action", "code"],
+        },
+    ),
 ]
 
 
@@ -128,9 +154,11 @@ def _handle_get_portfolio_analysis(ctx: ToolContext, args: dict[str, Any]) -> st
     from mommy_chaogu.cache.store import CacheStore
     from mommy_chaogu.portfolio.analysis import PortfolioAnalyzer
 
+    # 组合分析的行情缓存属于 market.db
     cache_store: CacheStore | None = None
-    if ctx.db_path is not None:
-        cache_store = CacheStore(ctx.db_path)
+    market_db = ctx.resolved_market_db
+    if market_db is not None:
+        cache_store = CacheStore(market_db)
 
     analyzer = PortfolioAnalyzer(
         store=ctx.portfolio_store,
@@ -152,8 +180,53 @@ def _handle_get_portfolio_analysis(ctx: ToolContext, args: dict[str, Any]) -> st
     )
 
 
+def _handle_manage_watchlist(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """添加/移除自选股。数据落在 portfolio.db（与自选/监控读取一致）。"""
+    store = ctx.watchlist_store
+    if store is None:
+        # MCP 等入口未注入 store 时，按 portfolio_db 构造
+        db_path = ctx.resolved_portfolio_db
+        if db_path is None:
+            return _json({"error": "portfolio_db 未配置，无法管理自选股"})
+        from mommy_chaogu.watchlist.store import WatchlistStore
+
+        store = WatchlistStore(db_path)
+
+    from mommy_chaogu.watchlist.store import (
+        GroupNotFoundError,
+        StockEntryNotFoundError,
+    )
+
+    action = args["action"]
+    code = args.get("code")
+    if not code:
+        return _json({"error": "需要 code 参数（6 位股票代码）"})
+    group = args.get("group") or "默认"
+
+    if action == "add":
+        store.get_or_create_group(group)
+        entry = store.add_entry(code, group)
+        return _json(
+            {
+                "code": entry.code,
+                "group": entry.group.name,
+                "message": f"已把 {code} 加入自选股（分组：{entry.group.name}）",
+            }
+        )
+
+    if action == "remove":
+        try:
+            store.remove_entry(code, group)
+        except (GroupNotFoundError, StockEntryNotFoundError) as e:
+            return _json({"error": str(e)})
+        return _json({"code": code, "group": group, "message": f"已把 {code} 移出自选股"})
+
+    return _json({"error": f"未知 action: {action!r}"})
+
+
 HANDLERS: dict[str, ToolHandler] = {
     "get_watchlist": _handle_get_watchlist,
     "get_portfolio": _handle_get_portfolio,
     "get_portfolio_analysis": _handle_get_portfolio_analysis,
+    "manage_watchlist": _handle_manage_watchlist,
 }

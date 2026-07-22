@@ -539,7 +539,11 @@ class TestTimeframeUnification:
         assert _TIMEFRAME_DAYS["60d"] == 60
 
     def test_verify_after_and_is_expired_use_same_days(self) -> None:
-        """verify_after 和 _is_expired 用同一天数，5d 预测 +5 天可验证且到期。"""
+        """_is_expired 以 verify_after + 一个 timeframe 宽限期为界（同一天数映射）。
+
+        5d 预测：created+5d 到期可验证，此后留 5 天验证窗口，
+        超过 verify_after+5d 才判 expired。
+        """
         from datetime import UTC, datetime, timedelta
 
         from mommy_chaogu.agent.prediction_tracker import _compute_verify_after
@@ -554,12 +558,14 @@ class TestTimeframeUnification:
         # verify_after 应在 now+5d 附近（允许 1 分钟误差）
         assert abs((verify_after - now - timedelta(days=5)).total_seconds()) < 60
 
-        # 用同一个 created_at，+5天后应正好到期
-        created_at = now.isoformat()
-        # +4 天：未到期
-        assert _is_expired(created_at, "5d", now=now + timedelta(days=4)) is False
-        # +5 天 +1 秒：已到期
-        assert _is_expired(created_at, "5d", now=now + timedelta(days=5, seconds=1)) is True
+        # 到期后宽限期内：未过期（到期当天 / +4 天）
+        assert _is_expired(verify_after_iso, "5d", now=verify_after) is False
+        assert _is_expired(verify_after_iso, "5d", now=verify_after + timedelta(days=4)) is False
+        # 超过宽限期（verify_after + 5d + 1s）：过期
+        assert (
+            _is_expired(verify_after_iso, "5d", now=verify_after + timedelta(days=5, seconds=1))
+            is True
+        )
 
     def test_compute_verify_after_5d_is_5_days(self, tracker: PredictionTracker) -> None:
         """create("5d") 的 verify_after 距 created_at 正好 5 天。"""

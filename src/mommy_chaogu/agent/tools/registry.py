@@ -47,8 +47,8 @@ class ToolRegistry:
     def call(self, name: str, args: dict[str, Any]) -> str:
         """执行工具调用，返回 JSON 字符串结果。
 
-        Raises:
-            KeyError: 工具名不存在
+        工具不存在或执行抛异常时不抛出，返回 ``{"error": ...}`` JSON——
+        调用方（WorkflowExecutor / AgentService）需检查 payload 判断成败。
         """
         handler = _HANDLERS.get(name)
         if handler is None:

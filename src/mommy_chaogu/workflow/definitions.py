@@ -277,22 +277,18 @@ WORKFLOWS: list[Workflow] = [
         description="添加自选股（需提供股票代码）",
         steps=[
             WorkflowStep(
-                tool_name="manage_alert",
+                tool_name="manage_watchlist",
                 display_name="正在添加自选股",
                 args_extractor=_extract_stock_code,
-                args={
-                    "action": "add",
-                    "alert_type": "price_above",
-                    "threshold": 0,  # 占位，manage_alert 需要参数
-                },
-                optional=True,  # 这个工作流主要是提示用户操作
+                args={"action": "add"},
+                optional=True,  # 抠不到 6 位代码时跳过，由 LLM 总结给出引导
             ),
         ],
         summary_template=(
-            "用户想添加自选股。提取到的信息：{context}\n"
-            "请告诉用户如何添加（给出具体命令或建议）。如果已提取到代码，"
-            "请提示用户可以通过 Web 界面或 mommy-watchlist add 命令添加。"
-            "控制在 100 字以内。"
+            "用户想添加自选股。执行结果：{context}\n"
+            "如果添加成功，一句话告诉用户已加入自选股；"
+            "如果执行结果为空（没有提取到 6 位股票代码），告诉用户需要提供"
+            "股票代码（如'加自选 600519'）。控制在 100 字以内。"
         ),
     ),
     # ----------------------------------------------------------
@@ -318,7 +314,7 @@ WORKFLOWS: list[Workflow] = [
                 tool_name="get_bars",
                 display_name="正在获取近期K线",
                 args_extractor=_extract_stock_code,
-                args={"interval": "1d", "count": 20},
+                args={"interval": "1d", "limit": 20},
             ),
             WorkflowStep(
                 tool_name="get_money_flow_today",
@@ -372,6 +368,10 @@ WORKFLOWS: list[Workflow] = [
         ],
         description="主力资金流分析",
         steps=[
+            WorkflowStep(
+                tool_name="get_watchlist",
+                display_name="正在查看自选股",
+            ),
             WorkflowStep(
                 tool_name="get_money_flow_today",
                 display_name="正在获取自选股资金流",

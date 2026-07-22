@@ -99,8 +99,9 @@ DEFS: list[ToolDef] = [
 
 def _handle_search_similar_events(ctx: ToolContext, args: dict[str, Any]) -> str:
     """语义搜索历史事件。embedding client 不可用时降级为关键词搜索。"""
-    if ctx.db_path is None:
-        return _json({"error": "记忆系统未配置（db_path is None）"})
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"error": "记忆系统未配置（agent_db is None）"})
 
     query = args["query"]
     limit = args.get("limit", 5)
@@ -108,7 +109,7 @@ def _handle_search_similar_events(ctx: ToolContext, args: dict[str, Any]) -> str
     # lazy import 避免循环依赖
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
-    episodic = EpisodicMemory(ctx.db_path)
+    episodic = EpisodicMemory(db_path)
 
     # 有 embedding client → 向量语义搜索
     if ctx.client is not None:
@@ -169,8 +170,9 @@ def _handle_search_similar_events(ctx: ToolContext, args: dict[str, Any]) -> str
 
 def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> str:
     """查询预测历史，可选按 code / status 过滤。"""
-    if ctx.db_path is None:
-        return _json({"error": "记忆系统未配置（db_path is None）"})
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"error": "记忆系统未配置（agent_db is None）"})
 
     from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 
@@ -178,7 +180,7 @@ def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> st
     status = args.get("status")
     limit = args.get("limit", 10)
 
-    tracker = PredictionTracker(ctx.db_path)
+    tracker = PredictionTracker(db_path)
     preds = tracker.all(limit=limit, status=status)
 
     # all() 不支持 code 过滤，在 Python 层过滤
@@ -205,14 +207,15 @@ def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> st
 
 def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
     """生成市场脉络叙述。LLM 不可用时降级为返回事件列表。"""
-    if ctx.db_path is None:
-        return _json({"error": "记忆系统未配置（db_path is None）"})
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"error": "记忆系统未配置（agent_db is None）"})
 
     days = args.get("days", 7)
 
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
-    episodic = EpisodicMemory(ctx.db_path)
+    episodic = EpisodicMemory(db_path)
 
     # 有 LLM client → 生成叙事
     if ctx.client is not None and ctx.model is not None:

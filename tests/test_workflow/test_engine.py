@@ -333,6 +333,90 @@ class TestWorkflowExecutor:
         assert result.summary == ""  # 没有 LLM，不做总结
 
 
+class TestErrorPayloadSemantics:
+    """工具返回 {"error": ...} JSON payload 时的失败语义（EVALUATION-2026-07-18 T2）。
+
+    registry.call 把工具异常转成 error JSON 字符串而不抛出，执行器必须
+    检查 payload 的 error 键，否则失败步骤一律记 success，optional/break
+    成为死逻辑。
+    """
+
+    def test_error_payload_marks_step_failed_and_breaks(self) -> None:
+        """error payload → success=False，非 optional 时中断工作流。"""
+        tools = FakeToolRegistry(
+            {
+                "tool_a": '{"error": "工具执行失败: boom"}',
+                "tool_b": '{"status": "ok"}',
+            }
+        )
+        executor = WorkflowExecutor(tools)
+        wf = Workflow(
+            id="err",
+            trigger_patterns=["test"],
+            description="",
+            steps=[
+                WorkflowStep(tool_name="tool_a", display_name="步骤A"),
+                WorkflowStep(tool_name="tool_b", display_name="步骤B"),
+            ],
+        )
+        result = executor.execute(wf, "test")
+        assert len(result.steps) == 1  # 第一步失败后中断，tool_b 未执行
+        assert result.steps[0].success is False
+        assert result.steps[0].error == "工具执行失败: boom"
+        assert [name for name, _ in tools.calls] == ["tool_a"]
+
+    def test_error_payload_optional_continues(self) -> None:
+        """optional 步骤返回 error payload → 记录失败但继续执行。"""
+        tools = FakeToolRegistry(
+            {
+                "tool_a": '{"error": "数据不可用"}',
+                "tool_b": '{"status": "ok"}',
+            }
+        )
+        executor = WorkflowExecutor(tools)
+        wf = Workflow(
+            id="err_opt",
+            trigger_patterns=["test"],
+            description="",
+            steps=[
+                WorkflowStep(tool_name="tool_a", display_name="步骤A", optional=True),
+                WorkflowStep(tool_name="tool_b", display_name="步骤B"),
+            ],
+        )
+        result = executor.execute(wf, "test")
+        assert len(result.steps) == 2
+        assert result.steps[0].success is False
+        assert result.steps[0].error == "数据不可用"
+        assert result.steps[1].success is True
+
+    def test_plain_text_result_not_misjudged(self) -> None:
+        """非 JSON 结果（纯文本）不误判为失败。"""
+        tools = FakeToolRegistry({"tool_a": "这是一段纯文本结果"})
+        executor = WorkflowExecutor(tools)
+        wf = Workflow(
+            id="text",
+            trigger_patterns=["test"],
+            description="",
+            steps=[WorkflowStep(tool_name="tool_a", display_name="步骤A")],
+        )
+        result = executor.execute(wf, "test")
+        assert result.steps[0].success is True
+        assert result.steps[0].data == "这是一段纯文本结果"
+
+    def test_list_result_not_misjudged(self) -> None:
+        """JSON 数组结果（即便元素含 error 键）不误判——只看顶层 dict。"""
+        tools = FakeToolRegistry({"tool_a": '[{"error": "元素级信息"}, {"x": 1}]'})
+        executor = WorkflowExecutor(tools)
+        wf = Workflow(
+            id="list",
+            trigger_patterns=["test"],
+            description="",
+            steps=[WorkflowStep(tool_name="tool_a", display_name="步骤A")],
+        )
+        result = executor.execute(wf, "test")
+        assert result.steps[0].success is True
+
+
 # ============================================================
 # WorkflowResult
 # ============================================================

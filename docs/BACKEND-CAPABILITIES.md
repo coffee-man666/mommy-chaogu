@@ -305,7 +305,7 @@ def on_tool_call(fn_name: str, fn_args: dict) -> None: ...      # 执行前
 def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None: ...  # 执行后
 ```
 
-24 个工具的**中文显示名映射**（前端可直接复用，`tui/widgets/tool_indicator.py:TOOL_DISPLAY_NAMES`）：
+25 个工具的**中文显示名映射**（前端可直接复用，`tui/widgets/tool_indicator.py:TOOL_DISPLAY_NAMES`）：
 
 | 工具 | 显示名 | 工具 | 显示名 |
 |---|---|---|---|
@@ -321,6 +321,7 @@ def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None
 | search_similar_events | 搜相似事件 | get_prediction_history | 查预测记录 |
 | get_market_narrative | 查市场叙事 | list_themes | 查主题列表 |
 | get_theme_stocks | 查主题个股 | get_memory_context | 查记忆 |
+| manage_watchlist | 管理自选股 | — | — |
 
 工具结果摘要/耗时渲染规范（dexter 风格）：`⏺ 查行情(code=600519)` → `⎿ 首行摘要 · 1.2s`，参考实现 `tui/widgets/tool_indicator.py`（含 `format_tool_args / format_result_digest / format_elapsed` 可直接复用逻辑）。
 

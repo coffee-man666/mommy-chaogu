@@ -46,18 +46,45 @@ class ToolDef:
 
 @dataclass
 class ToolContext:
-    """工具层的共享依赖。"""
+    """工具层的共享依赖。
+
+    数据库路径按职责拆分（见 db_paths.py）：
+    - ``agent_db``: 记忆系统（episodic / predictions / semantic）
+    - ``market_db``: 行情缓存（CacheStore：K 线回填 / 资金流 / quote 缓存）
+    - ``portfolio_db``: 用户数据（自选股 / 持仓 / 自定义告警）
+
+    旧字段 ``db_path`` 保留作向后兼容：工具优先读专用字段，专用字段为
+    None 时回退 ``db_path``（见 ``resolved_*`` 属性）。
+    """
 
     adapter: MarketDataAdapter
     watchlist_store: WatchlistStore | None = None
     portfolio_store: PortfolioStore | None = None
     db_path: Path | None = None
+    agent_db: Path | None = None
+    market_db: Path | None = None
+    portfolio_db: Path | None = None
     # LLM / embedding client（OpenAI 兼容），记忆查询工具需要。
     # 为 None 时记忆工具降级为无 LLM 模式。
     client: Any | None = None
     model: str | None = None
     # 独立记忆服务（MCP 等非 AgentService 入口用）
     memory_service: Any | None = None
+
+    @property
+    def resolved_agent_db(self) -> Path | None:
+        """记忆系统数据库：``agent_db``，缺省回退 ``db_path``。"""
+        return self.agent_db or self.db_path
+
+    @property
+    def resolved_market_db(self) -> Path | None:
+        """行情缓存数据库：``market_db``，缺省回退 ``db_path``。"""
+        return self.market_db or self.db_path
+
+    @property
+    def resolved_portfolio_db(self) -> Path | None:
+        """用户数据数据库：``portfolio_db``，缺省回退 ``db_path``。"""
+        return self.portfolio_db or self.db_path
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], str]

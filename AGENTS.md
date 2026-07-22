@@ -67,7 +67,7 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（tools/ 包按域拆分 24 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
+├── agent/           # LLM agent（tools/ 包按域拆分 25 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
 ├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）

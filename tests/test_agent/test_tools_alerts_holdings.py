@@ -190,3 +190,92 @@ class TestGetPortfolio:
 
         data = json.loads(result)
         assert data["positions"] == []
+
+
+# ---------------------------------------------------------------------------
+# manage_watchlist handler（EVALUATION-2026-07-18 T3：写自选股的工具）
+# ---------------------------------------------------------------------------
+
+
+class TestManageWatchlist:
+    def test_add_lands_in_portfolio_db(self, tmp_path: Path) -> None:
+        """未注入 watchlist_store 时按 portfolio_db 落库（与自选/监控读取一致）。"""
+        db = tmp_path / "portfolio.db"
+        ctx = ToolContext(adapter=MagicMock(), portfolio_db=db)
+        result = HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "add", "code": "600519"})
+        import json
+
+        data = json.loads(result)
+        assert "error" not in data
+        assert data["group"] == "默认"
+
+        from mommy_chaogu.watchlist.store import WatchlistStore
+
+        entries = WatchlistStore(db).list_entries()
+        assert [e.code for e in entries] == ["600519"]
+        assert entries[0].group.name == "默认"
+
+    def test_add_uses_injected_store(self, tmp_path: Path) -> None:
+        """注入了 watchlist_store 时优先用注入的 store。"""
+        from mommy_chaogu.watchlist.store import WatchlistStore
+
+        store = WatchlistStore(tmp_path / "portfolio.db")
+        ctx = ToolContext(adapter=MagicMock(), watchlist_store=store)
+        result = HOLDINGS_HANDLERS["manage_watchlist"](
+            ctx, {"action": "add", "code": "000858", "group": "白酒"}
+        )
+        import json
+
+        data = json.loads(result)
+        assert "error" not in data
+        assert data["group"] == "白酒"
+        entries = store.list_entries()
+        assert [e.code for e in entries] == ["000858"]
+
+    def test_add_idempotent(self, tmp_path: Path) -> None:
+        from mommy_chaogu.watchlist.store import WatchlistStore
+
+        store = WatchlistStore(tmp_path / "portfolio.db")
+        ctx = ToolContext(adapter=MagicMock(), watchlist_store=store)
+        HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "add", "code": "600519"})
+        HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "add", "code": "600519"})
+        assert len(store.list_entries()) == 1
+
+    def test_remove(self, tmp_path: Path) -> None:
+        from mommy_chaogu.watchlist.store import WatchlistStore
+
+        store = WatchlistStore(tmp_path / "portfolio.db")
+        ctx = ToolContext(adapter=MagicMock(), watchlist_store=store)
+        HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "add", "code": "600519"})
+        result = HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "remove", "code": "600519"})
+        import json
+
+        assert "error" not in json.loads(result)
+        assert store.list_entries() == []
+
+    def test_remove_nonexistent(self, tmp_path: Path) -> None:
+        from mommy_chaogu.watchlist.store import WatchlistStore
+
+        store = WatchlistStore(tmp_path / "portfolio.db")
+        ctx = ToolContext(adapter=MagicMock(), watchlist_store=store)
+        result = HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "remove", "code": "600519"})
+        import json
+
+        assert "error" in json.loads(result)
+
+    def test_missing_code(self, tmp_path: Path) -> None:
+        from mommy_chaogu.watchlist.store import WatchlistStore
+
+        store = WatchlistStore(tmp_path / "portfolio.db")
+        ctx = ToolContext(adapter=MagicMock(), watchlist_store=store)
+        result = HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "add"})
+        import json
+
+        assert "error" in json.loads(result)
+
+    def test_no_store_no_db(self) -> None:
+        ctx = ToolContext(adapter=MagicMock())
+        result = HOLDINGS_HANDLERS["manage_watchlist"](ctx, {"action": "add", "code": "600519"})
+        import json
+
+        assert "error" in json.loads(result)

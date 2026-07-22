@@ -16,7 +16,7 @@ from textual.containers import Vertical
 from textual.timer import Timer
 from textual.widgets import Static
 
-# 工具名 → 中文显示名（覆盖 agent/tools/ 的 24 个工具）
+# 工具名 → 中文显示名（覆盖 agent/tools/ 的 25 个工具）
 TOOL_DISPLAY_NAMES: dict[str, str] = {
     "get_quote": "查行情",
     "get_quotes": "批量查行情",
@@ -28,6 +28,7 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "get_money_flow_history": "查资金流历史",
     "get_bars": "查K线",
     "get_watchlist": "查自选股",
+    "manage_watchlist": "管理自选股",
     "get_portfolio": "查持仓",
     "search_news": "搜新闻",
     "get_announcements": "查公告",
