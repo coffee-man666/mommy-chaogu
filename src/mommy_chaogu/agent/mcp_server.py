@@ -35,7 +35,7 @@ _log = logging.getLogger(__name__)
 def _build_context() -> ToolContext:
     """从项目默认配置构造 ToolContext（含记忆服务）。"""
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-    from mommy_chaogu.db_paths import MARKET_DB, PORTFOLIO_DB
+    from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
     from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
@@ -51,7 +51,9 @@ def _build_context() -> ToolContext:
         adapter=adapter,
         watchlist_store=WatchlistStore(PORTFOLIO_DB),
         portfolio_store=PortfolioStore(PORTFOLIO_DB),
-        db_path=MARKET_DB,
+        agent_db=AGENT_DB,
+        market_db=MARKET_DB,
+        portfolio_db=PORTFOLIO_DB,
         memory_service=memory_service,
     )
 

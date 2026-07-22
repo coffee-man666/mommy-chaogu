@@ -333,7 +333,9 @@ def main_mommy() -> NoReturn:
         adapter=adapter,
         watchlist_store=WatchlistStore(PORTFOLIO_DB),
         portfolio_store=PortfolioStore(PORTFOLIO_DB),
-        db_path=AGENT_DB,
+        agent_db=AGENT_DB,
+        market_db=MARKET_DB,
+        portfolio_db=PORTFOLIO_DB,
     )
     tool_registry = ToolRegistry(ctx)
 

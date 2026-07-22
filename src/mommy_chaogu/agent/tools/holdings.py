@@ -128,9 +128,11 @@ def _handle_get_portfolio_analysis(ctx: ToolContext, args: dict[str, Any]) -> st
     from mommy_chaogu.cache.store import CacheStore
     from mommy_chaogu.portfolio.analysis import PortfolioAnalyzer
 
+    # 组合分析的行情缓存属于 market.db
     cache_store: CacheStore | None = None
-    if ctx.db_path is not None:
-        cache_store = CacheStore(ctx.db_path)
+    market_db = ctx.resolved_market_db
+    if market_db is not None:
+        cache_store = CacheStore(market_db)
 
     analyzer = PortfolioAnalyzer(
         store=ctx.portfolio_store,

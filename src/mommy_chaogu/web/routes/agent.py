@@ -73,7 +73,7 @@ class RouteResponse(BaseModel):
 def _get_router() -> Any:
     """Build the process-wide router from explicit application dependencies."""
     from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
-    from mommy_chaogu.db_paths import AGENT_DB
+    from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
     from mommy_chaogu.workflow.definitions import get_default_registry
     from mommy_chaogu.workflow.engine import WorkflowExecutor
     from mommy_chaogu.workflow.router import NLRouter
@@ -82,7 +82,9 @@ def _get_router() -> Any:
         adapter=get_adapter(),
         watchlist_store=get_watchlist_store(),
         portfolio_store=get_portfolio_store(),
-        db_path=AGENT_DB,
+        agent_db=AGENT_DB,
+        market_db=MARKET_DB,
+        portfolio_db=PORTFOLIO_DB,
     )
     tool_registry = ToolRegistry(ctx)
 

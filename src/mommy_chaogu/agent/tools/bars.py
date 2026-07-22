@@ -76,11 +76,13 @@ def _handle_get_bars(ctx: ToolContext, args: dict[str, Any]) -> str:
 
 
 def _handle_backfill_history(ctx: ToolContext, args: dict[str, Any]) -> str:
-    if ctx.db_path is None:
-        return _json({"error": "db_path 未配置，无法回填"})
+    # 回填写入行情缓存，与缓存层读取共用 market.db
+    db_path = ctx.resolved_market_db
+    if db_path is None:
+        return _json({"error": "market_db 未配置，无法回填"})
     code = args["code"]
     days = args.get("days", 30)
-    store = CacheStore(ctx.db_path)
+    store = CacheStore(db_path)
     result = store.backfill_history(ctx.adapter, code, days=days)
     return _json(result)
 

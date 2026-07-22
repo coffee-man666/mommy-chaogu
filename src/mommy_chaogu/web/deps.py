@@ -180,7 +180,9 @@ def get_agent_service() -> object:
         adapter=get_adapter(),
         watchlist_store=get_watchlist_store(),
         portfolio_store=get_portfolio_store(),
-        db_path=get_agent_db(),
+        agent_db=get_agent_db(),
+        market_db=get_market_db(),
+        portfolio_db=get_portfolio_db(),
     )
 
     # AgentService 内部会从散件构造 MemoryPipeline（带 LLM client），

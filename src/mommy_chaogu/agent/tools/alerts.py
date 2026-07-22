@@ -53,8 +53,10 @@ DEFS: list[ToolDef] = [
 
 
 def _handle_manage_alert(ctx: ToolContext, args: dict[str, Any]) -> str:
-    if ctx.db_path is None:
-        return _json({"error": "db_path 未配置，无法管理告警"})
+    # 自定义告警属于用户数据，与监控进程共用 portfolio.db
+    db_path = ctx.resolved_portfolio_db
+    if db_path is None:
+        return _json({"error": "portfolio_db 未配置，无法管理告警"})
 
     from mommy_chaogu.signals.custom_alerts import (
         CustomAlertNotFoundError,
@@ -62,7 +64,7 @@ def _handle_manage_alert(ctx: ToolContext, args: dict[str, Any]) -> str:
         InvalidConditionError,
     )
 
-    store = CustomAlertStore(ctx.db_path)
+    store = CustomAlertStore(db_path)
     action = args["action"]
 
     if action == "add":
