@@ -5,6 +5,8 @@
 - 资金流可选（拿不到不 block，退化为纯报价验证）
 - 数据完全不可用 → 标 unverifiable，不猜
 - 3 次 data_unavailable → expired（不算 hit 也不算 missed）
+- 验证窗口非零：verify_after 到期后还有一个 timeframe 宽限期，
+  超过宽限期才判 expired（修复前到期即过期，预测从未被验证）
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ class VerifyResult:
 # ---------- timeframe 解析 ----------
 #
 # _TIMEFRAME_DAYS 从 prediction_tracker 导入（权威来源），
-# 保证 verify_after（可验证时间）与 _is_expired（过期时间）用同一天数。
+# 保证 verify_after（可验证时间）与 _is_expired（宽限期）用同一天数。
 
 
 def _parse_timeframe_days(timeframe: str) -> int:
@@ -44,17 +46,34 @@ def _parse_timeframe_days(timeframe: str) -> int:
     return _TIMEFRAME_DAYS.get(timeframe, 5)
 
 
-def _is_expired(created_at: str, timeframe: str, now: datetime | None = None) -> bool:
-    """是否已超过 timeframe 窗口。"""
+def _is_expired(verify_after: str, timeframe: str, now: datetime | None = None) -> bool:
+    """是否已超过验证窗口（``verify_after`` + 一个 timeframe 宽限期）。
+
+    预测在 ``verify_after`` 到期后可验证，此后保留一个 timeframe 窗口
+    作为验证期（如 1d 预测到期后还有 1 天）；超过宽限期才判 expired。
+    """
     if now is None:
         now = datetime.now(UTC)
     try:
-        created = datetime.fromisoformat(created_at)
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=UTC)
+        due = datetime.fromisoformat(verify_after)
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         return False
-    return now > created + timedelta(days=_parse_timeframe_days(timeframe))
+    return now > due + timedelta(days=_parse_timeframe_days(timeframe))
+
+
+def _derive_verify_after(created_at: str, timeframe: str) -> str:
+    """从 created_at + timeframe 推算 verify_after。
+
+    生产数据一定带 verify_after 字段；这里只为手工构造的 pred dict 兜底。
+    解析失败返回空串（调用方视为不过期，继续验证）。
+    """
+    try:
+        created = datetime.fromisoformat(created_at)
+    except (ValueError, TypeError):
+        return ""
+    return (created + timedelta(days=_parse_timeframe_days(timeframe))).isoformat()
 
 
 # ---------- 评分 ----------
@@ -63,8 +82,13 @@ def _is_expired(created_at: str, timeframe: str, now: datetime | None = None) ->
 def _score_direction(direction: str, change_pct: float) -> tuple[str, float]:
     """方向预测评分。
 
+    Args:
+        direction: bullish / bearish / neutral
+        change_pct: 用于判定的涨跌幅（%）。方向验证应传入相对
+            entry_price 的窗口涨跌幅，而非验证当日单日涨跌幅。
+
     Returns:
-        (status, score) — status 是 "hit" 或 "missed"
+        (status, score) — status 是 "hit" / "missed" / "unverifiable"
     """
     if direction == "bullish":
         if change_pct > 2:
@@ -84,8 +108,8 @@ def _score_direction(direction: str, change_pct: float) -> tuple[str, float]:
             return ("missed", 0.3)
         return ("missed", 0.0)
 
-    # neutral — 不验证方向
-    return ("hit", 0.5)
+    # neutral — 无方向可验证，不计入 hit/missed（否则命中率被灌水）
+    return ("unverifiable", 0.0)
 
 
 def _score_target(
@@ -137,11 +161,14 @@ def verify_one(
     code = pred["code"]
     direction = pred["direction"]
 
-    # ---------- 检查是否超时 ----------
+    # ---------- 检查是否超过验证窗口 ----------
+    # 窗口 = verify_after（到期可验证）→ verify_after + 一个 timeframe（宽限期）。
+    # 修复前用 created_at + timeframe 判定，与 verify_after 重合，窗口宽度为零。
     created_at = pred.get("created_at", "")
     timeframe = pred.get("timeframe", "5d")
-    if _is_expired(created_at, timeframe, now):
-        return VerifyResult(status="expired", reason="超过 timeframe 窗口")
+    verify_after = pred.get("verify_after") or _derive_verify_after(created_at, timeframe)
+    if verify_after and _is_expired(verify_after, timeframe, now):
+        return VerifyResult(status="expired", reason="超过验证窗口（verify_after + 宽限期）")
 
     # ---------- 第一优先：报价验证 ----------
     quote = None
@@ -203,14 +230,23 @@ def verify_one(
             reason=f"目标价验证 ({quote_source})",
         )
 
-    # 无目标价 → 方向验证
-    status, score = _score_direction(direction, change_pct)
+    # 无目标价 → 方向验证。优先用相对 entry_price 的窗口涨跌幅判定
+    # （N 日方向预测不能用验证当日的单日 change_pct 判定）；
+    # entry_price 缺失时回退单日 change_pct 旧口径。
+    if entry_price is not None and entry_price > 0:
+        judged_change_pct = (actual_price - entry_price) / entry_price * 100
+        basis = "窗口涨跌幅"
+    else:
+        judged_change_pct = change_pct
+        basis = "单日涨跌幅"
+
+    status, score = _score_direction(direction, judged_change_pct)
     return VerifyResult(
         status=status,
         price=actual_price,
-        change_pct=change_pct,
+        change_pct=judged_change_pct,
         score=score,
-        reason=f"方向验证 ({quote_source})",
+        reason=f"方向验证·{basis} ({quote_source})",
     )
 
 
@@ -233,7 +269,8 @@ def verify_pending(
         now: 当前时间（测试用）
 
     Returns:
-        统计 dict: {"total": N, "hit": X, "missed": Y, "data_unavailable": Z, "expired": W}
+        统计 dict: {"total": N, "hit": X, "missed": Y, "data_unavailable": Z,
+        "expired": W, "unverifiable": U}
     """
     if now is None:
         now = datetime.now(UTC)
@@ -241,7 +278,14 @@ def verify_pending(
     verify_before = now.isoformat()
     pending = tracker.get_pending(verify_before)
 
-    results = {"total": len(pending), "hit": 0, "missed": 0, "data_unavailable": 0, "expired": 0}
+    results = {
+        "total": len(pending),
+        "hit": 0,
+        "missed": 0,
+        "data_unavailable": 0,
+        "expired": 0,
+        "unverifiable": 0,
+    }
 
     for pred in pending:
         pred_id = pred["id"]
@@ -271,7 +315,8 @@ def verify_pending(
             results["expired"] += 1
             continue
 
-        # hit 或 missed
+        # hit / missed / unverifiable — 终态，回填验证结果
+        # （unverifiable 不计入 hit/missed，hit_rate 分母不受影响）
         data_coverage_verify = {"quote": result.price is not None}
         tracker.update_status(
             pred_id,
@@ -297,7 +342,7 @@ def verify_pending(
 
         # 写回 episodic（验证结果也是一种事件）
         if episodic is not None:
-            emoji = "✅" if result.status == "hit" else "❌"
+            emoji = {"hit": "✅", "missed": "❌", "unverifiable": "⚪"}.get(result.status, "❓")
             episodic.write(
                 event_type="analysis_record",
                 scope=f"stock:{pred['code']}",
@@ -321,11 +366,12 @@ def verify_pending(
             )
 
     _log.info(
-        "verify_pending: %d total, %d hit, %d missed, %d data_unavailable, %d expired",
+        "verify_pending: %d total, %d hit, %d missed, %d data_unavailable, %d expired, %d unverifiable",
         results["total"],
         results["hit"],
         results["missed"],
         results["data_unavailable"],
         results["expired"],
+        results["unverifiable"],
     )
     return results

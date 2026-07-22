@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 from mommy_chaogu.agent.verify_engine import (
     _score_direction,
@@ -50,6 +52,28 @@ def make_quote(price: float, change_pct: float) -> MagicMock:
     return q
 
 
+def _create_aged_prediction(
+    tracker: object,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    days_old: float,
+    **kwargs: object,
+) -> int:
+    """以真实 created_at/verify_after 关系创建一条 days_old 天前的预测。
+
+    通过猴子补丁 ``prediction_tracker._utcnow``，让 create() 算出的
+    ``verify_after = created_at + timeframe`` 自然落在过去（已到期），
+    而不是用裸 SQL 改写 verify_after——那是生产不可能出现的数据形状，
+    恰好掩盖了"验证窗口宽度为零"的 bug。
+    """
+    import mommy_chaogu.agent.prediction_tracker as pt
+
+    fake_now = datetime.now(UTC) - timedelta(days=days_old)
+    with monkeypatch.context() as m:
+        m.setattr(pt, "_utcnow", lambda: fake_now)
+        return tracker.create(**kwargs)  # type: ignore[attr-defined]
+
+
 # ---------- TestScoring ----------
 
 
@@ -84,10 +108,11 @@ class TestScoreDirection:
         assert status == "hit"
         assert score == 0.7
 
-    def test_neutral(self) -> None:
+    def test_neutral_is_unverifiable(self) -> None:
+        """neutral 无方向可验证 → unverifiable（不计 hit/missed，防命中率灌水）。"""
         status, score = _score_direction("neutral", 0.0)
-        assert status == "hit"
-        assert score == 0.5
+        assert status == "unverifiable"
+        assert score == 0.0
 
 
 class TestScoreTarget:
@@ -208,6 +233,59 @@ class TestVerifyDataUnavailable:
         assert "stale_cache" in result.reason
 
 
+# ---------- TestVerifyOne: 窗口口径 ----------
+
+
+class TestVerifyWindowBasis:
+    def test_window_change_pct_overrides_single_day(self) -> None:
+        """方向判定用相对 entry_price 的窗口涨跌幅，而非验证当日单日 change_pct。
+
+        单日 -3%（旧口径会判 bullish missed），但窗口 +5% → hit。
+        """
+        pred = make_pred(direction="bullish", entry_price=80.0)
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(84.0, -3.0)
+
+        result = verify_one(pred, adapter)
+        assert result.status == "hit"
+        assert result.score == 1.0
+        # 记录的 actual_change_pct 是窗口涨跌幅
+        assert result.change_pct == pytest.approx(5.0)
+        assert "窗口涨跌幅" in result.reason
+
+    def test_window_miss_despite_single_day_up(self) -> None:
+        """单日 +4% 但窗口 -5% → bullish missed（旧口径会误判 hit）。"""
+        pred = make_pred(direction="bullish", entry_price=80.0)
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(76.0, 4.0)
+
+        result = verify_one(pred, adapter)
+        assert result.status == "missed"
+        assert result.score == 0.0
+
+    def test_fallback_to_single_day_without_entry_price(self) -> None:
+        """entry_price 缺失时回退单日 change_pct 旧口径。"""
+        pred = make_pred(direction="bullish", entry_price=None)
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(83.0, 3.75)
+
+        result = verify_one(pred, adapter)
+        assert result.status == "hit"
+        assert result.score == 1.0
+        assert result.change_pct == 3.75
+        assert "单日涨跌幅" in result.reason
+
+    def test_neutral_prediction_is_unverifiable(self) -> None:
+        """neutral 预测走 verify_one → unverifiable，不记 hit。"""
+        pred = make_pred(direction="neutral")
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(83.0, 3.75)
+
+        result = verify_one(pred, adapter)
+        assert result.status == "unverifiable"
+        assert result.score == 0.0
+
+
 # ---------- TestVerifyOne: Expired ----------
 
 
@@ -230,47 +308,148 @@ class TestVerifyExpired:
         result = verify_one(pred, adapter)
         assert result.status in ("hit", "missed")
 
+    def test_within_grace_window_is_verified(self) -> None:
+        """到期后在宽限期内（verify_after + 1 个 timeframe 内）仍应验证，不判 expired。
+
+        修复前过期判定用 created_at + timeframe（= verify_after），到期即过期，
+        真实 created_at/verify_after 关系的预测永远不会被验证。
+        """
+        now = datetime.now(UTC)
+        created_at = (now - timedelta(days=8)).isoformat()
+        verify_after = (now - timedelta(days=3)).isoformat()  # 5d 预测，3 天前到期
+        pred = make_pred(created_at=created_at, timeframe="5d")
+        pred["verify_after"] = verify_after
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(84.0, 1.0)
+
+        result = verify_one(pred, adapter)
+        assert result.status == "hit"  # 窗口 +5% → hit，而非 expired
+
+    def test_beyond_grace_window_is_expired(self) -> None:
+        """超过 verify_after + 一个 timeframe 宽限期才判 expired。"""
+        now = datetime.now(UTC)
+        created_at = (now - timedelta(days=11)).isoformat()
+        verify_after = (now - timedelta(days=6)).isoformat()  # 6 天前到期，超过 5 天宽限
+        pred = make_pred(created_at=created_at, timeframe="5d")
+        pred["verify_after"] = verify_after
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(84.0, 1.0)
+
+        result = verify_one(pred, adapter)
+        assert result.status == "expired"
+
 
 # ---------- TestVerifyPending: Batch ----------
 
 
 class TestVerifyPending:
-    def test_batch_hit_and_missed(
+    def test_due_prediction_with_real_relationship_gets_verified(
         self,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        """真实 created_at/verify_after 关系的到期预测会被验证，而非直接 expired。
+
+        回归 P2：6 天前创建的 5d 预测（1 天前到期，仍在 5 天宽限期内），
+        修复前 now > created_at + 5d 恒成立 → 直接 expired，adapter 不被调用。
+        """
         from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 
         tracker = PredictionTracker(tmp_path / "test.db")
-        tracker.create(
+        pid = _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
             code="603662",
             name="柯力传感",
             prediction="看涨",
             direction="bullish",
-            timeframe="1d",
+            timeframe="5d",
+            entry_price=80.0,
         )
-        tracker.create(
+
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(84.0, 1.0)  # 窗口 +5%
+
+        results = verify_pending(tracker, None, adapter, None)
+        assert results["total"] == 1
+        assert results["hit"] == 1
+        assert results["expired"] == 0
+        assert adapter.get_quote.called
+
+        row = tracker.get_by_id(pid)
+        assert row is not None
+        assert row["status"] == "hit"
+        assert row["actual_change_pct"] == pytest.approx(5.0)
+
+    def test_neutral_counts_as_unverifiable_not_hit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """neutral 预测验证后记 unverifiable，不进 hit_rate 分母。"""
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        tracker = PredictionTracker(tmp_path / "test.db")
+        _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
+            code="603662",
+            name="柯力传感",
+            prediction="震荡",
+            direction="neutral",
+            timeframe="5d",
+        )
+
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(84.0, 3.75)
+
+        results = verify_pending(tracker, None, adapter, None)
+        assert results["unverifiable"] == 1
+        assert results["hit"] == 0
+        assert results["missed"] == 0
+
+        stats = tracker.stats()
+        assert stats["unverifiable"] == 1
+        assert stats["hit"] == 0
+        assert stats["hit_rate"] == 0.0
+
+    def test_batch_hit_and_missed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        tracker = PredictionTracker(tmp_path / "test.db")
+        # 6 天前创建的 5d 预测：1 天前到期，仍在宽限期内（真实时间关系）
+        _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
+            code="603662",
+            name="柯力传感",
+            prediction="看涨",
+            direction="bullish",
+            timeframe="5d",
+        )
+        _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
             code="000858",
             name="五粮液",
             prediction="看跌",
             direction="bearish",
-            timeframe="1d",
+            timeframe="5d",
         )
-
-        # Make them immediately verifiable
-        import sqlite3
-
-        conn = sqlite3.connect(str(tmp_path / "test.db"))
-        past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-        conn.execute("UPDATE predictions SET verify_after = ?", (past,))
-        conn.commit()
-        conn.close()
 
         adapter = MagicMock()
 
         def get_quote(code: str) -> MagicMock | None:
             if code == "603662":
-                return make_quote(83.0, 3.75)  # bullish hit
+                return make_quote(83.0, 3.75)  # bullish hit（无 entry_price → 单日口径）
             if code == "000858":
                 return make_quote(76.0, 5.0)  # bearish missed (price went up)
 
@@ -286,25 +465,21 @@ class TestVerifyPending:
     def test_data_unavailable_then_expired(
         self,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 
         tracker = PredictionTracker(tmp_path / "test.db")
-        tracker.create(
+        _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
             code="603662",
             name="柯力传感",
             prediction="看涨",
             direction="bullish",
-            timeframe="1d",
+            timeframe="5d",
         )
-
-        import sqlite3
-
-        past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-        conn = sqlite3.connect(str(tmp_path / "test.db"))
-        conn.execute("UPDATE predictions SET verify_after = ?", (past,))
-        conn.commit()
-        conn.close()
 
         adapter = MagicMock()
         adapter.get_quote.return_value = None  # 永远拿不到数据
@@ -314,6 +489,8 @@ class TestVerifyPending:
         assert results["data_unavailable"] == 1
 
         # 手动把 attempts 设到 3
+        import sqlite3
+
         conn = sqlite3.connect(str(tmp_path / "test.db"))
         conn.execute("UPDATE predictions SET verify_attempts = 3")
         conn.commit()
@@ -326,6 +503,7 @@ class TestVerifyPending:
     def test_verify_backfills_source_event_prediction_id(
         self,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """验证 hit/missed 后，源事件的 prediction_id 被回填。"""
         from mommy_chaogu.agent.prediction_tracker import PredictionTracker
@@ -345,24 +523,18 @@ class TestVerifyPending:
         # 源事件初始没有 prediction_id
         assert episodic.get_by_id(event_id)["prediction_id"] is None
 
-        # 创建一条 prediction，关联源事件
-        pred_id = tracker.create(
+        # 创建一条 prediction，关联源事件（6 天前的 5d 预测，真实时间关系）
+        pred_id = _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
             code="603662",
             name="柯力传感",
             prediction="看涨",
             direction="bullish",
-            timeframe="1d",
+            timeframe="5d",
             source_event_id=event_id,
         )
-
-        # 让它立即可验证
-        import sqlite3
-
-        past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-        conn = sqlite3.connect(str(tmp_path / "test.db"))
-        conn.execute("UPDATE predictions SET verify_after = ?", (past,))
-        conn.commit()
-        conn.close()
 
         adapter = MagicMock()
         adapter.get_quote.return_value = make_quote(83.0, 3.75)  # bullish hit

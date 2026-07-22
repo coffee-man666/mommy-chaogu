@@ -134,7 +134,14 @@ class MemoryPipeline:
         """
         if self._tracker is None:
             _log.debug("verify_predictions: tracker missing, returning empty stats")
-            return {"total": 0, "hit": 0, "missed": 0, "data_unavailable": 0, "expired": 0}
+            return {
+                "total": 0,
+                "hit": 0,
+                "missed": 0,
+                "data_unavailable": 0,
+                "expired": 0,
+                "unverifiable": 0,
+            }
 
         return verify_pending(
             tracker=self._tracker,
