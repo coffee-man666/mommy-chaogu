@@ -75,6 +75,12 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "env_key": "NOVA_API_KEY",
         "temperature": None,
     },
+    "minimax": {
+        "base_url": "https://api.minimaxi.com/v1",
+        "default_model": "MiniMax-M2.7",
+        "env_key": "MINIMAX_API_KEY",
+        "temperature": 1.0,
+    },
 }
 
 

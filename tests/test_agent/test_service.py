@@ -41,6 +41,14 @@ class TestProviderConfig:
             "temperature": None,
         }
 
+    def test_minimax_configuration(self) -> None:
+        assert SUPPORTED_PROVIDERS["minimax"] == {
+            "base_url": "https://api.minimaxi.com/v1",
+            "default_model": "MiniMax-M2.7",
+            "env_key": "MINIMAX_API_KEY",
+            "temperature": 1.0,
+        }
+
     def test_temperatures_are_provider_aware(self) -> None:
         assert SUPPORTED_PROVIDERS["kimi"]["temperature"] == 1.0
         assert SUPPORTED_PROVIDERS["openai"]["temperature"] == 0.2
@@ -67,6 +75,16 @@ class TestAgentServiceInit:
     def test_init_with_provider(self, _mock_openai: MagicMock, mock_ctx: ToolContext) -> None:
         svc = AgentService(mock_ctx, provider="openai", api_key="sk-test")
         assert svc._model == "gpt-4o-mini"
+
+    @patch("openai.OpenAI")
+    def test_init_with_minimax_provider(
+        self, mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        svc = AgentService(mock_ctx, provider="minimax", api_key="minimax-test")
+        assert svc._model == "MiniMax-M2.7"
+        mock_openai.assert_called_once_with(
+            api_key="minimax-test", base_url="https://api.minimaxi.com/v1"
+        )
 
 
 class TestAgentLoop:

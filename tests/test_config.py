@@ -19,6 +19,7 @@ _ENV_KEYS = (
     "MOONSHOT_API_KEY",
     "ZAI_API_KEY",
     "NOVA_API_KEY",
+    "MINIMAX_API_KEY",
     "SERVER_CHAN_KEY",
     "AGENT_PROVIDER",
     "MOMMY_API_TOKEN",
@@ -132,6 +133,15 @@ def test_nova_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_pat
     cfg = load_config(tmp_path / "missing.toml")
     assert cfg.agent.api_key == "dummy"
     assert cfg.agent.provider == "nova"
+
+
+def test_minimax_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """provider=minimax 时从 MINIMAX_API_KEY 读取 API key。"""
+    monkeypatch.setenv("MINIMAX_API_KEY", "minimax_env_key")
+    monkeypatch.setenv("AGENT_PROVIDER", "minimax")
+    cfg = load_config(tmp_path / "missing.toml")
+    assert cfg.agent.api_key == "minimax_env_key"
+    assert cfg.agent.provider == "minimax"
 
 
 def test_invalid_provider_fails_fast(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

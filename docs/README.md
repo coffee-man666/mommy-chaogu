@@ -28,8 +28,10 @@
 
 ## 历史档案（archive/）
 
-[archive/](archive/) 保留 25 份一次性工程记录：v1.0.0 强化计划与基线评估
-（ENHANCEMENT-PLAN / EVALUATION-2026-07-14）、2026-07-06 系列评估（EVAL-*）、
+[archive/](archive/) 保留 25+ 份一次性工程记录：v1.0.0 强化计划与基线评估
+（ENHANCEMENT-PLAN / EVALUATION-2026-07-14）、**2026-07-18 后端评估**
+（EVALUATION-2026-07-18-backend，agent/LLM/记忆系统 17 个问题）、
+2026-07-06 系列评估（EVAL-*）、
 回测报告（BACKTEST-REPORT）、commit 级台账（LEDGER）、进度快照（PROGRESS）、
 项目总览（PROJECT-LOG）、合并分析（BRANCH-MERGE-ANALYSIS）、TUI 重写实施记录、
 知乎发文草稿等。其中的数字与结论描述的是当时状态，
