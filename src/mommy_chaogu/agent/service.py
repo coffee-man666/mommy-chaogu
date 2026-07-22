@@ -363,7 +363,9 @@ class AgentService:
                 # 仅在 on_chunk 提供时启用；provider 不支持 stream 或失败时
                 # _stream_final_answer 返回 None，保留非流式 text 兜底。
                 if on_chunk is not None and text:
-                    streamed = self._stream_final_answer(messages, on_chunk, cancel_event)
+                    streamed = self._stream_final_answer(
+                        messages, on_chunk, cancel_event, total_usage
+                    )
                     if streamed is not None:
                         text = streamed
                 # 流式输出途中被取消：已流出的部分保留，但标记 interrupted，
@@ -480,23 +482,27 @@ class AgentService:
         messages: list[dict[str, Any]],
         on_chunk: Callable[[str], None],
         cancel_event: threading.Event | None,
+        total_usage: dict[str, int] | None = None,
     ) -> str | None:
         """发起一次 stream=True 的无 tools 调用，逐 delta 调 on_chunk。
 
         学 dexter：工具循环已由上一轮非流式调用得出最终回答方向，这里重新发
         一次相同 messages 的流式调用（不绑 tools），把完整文本流式输出给前端。
 
-        注意：流式调用的 usage 不累加——最终回答的 token 成本只计上一轮
-        非流式调用那一次，避免同一回答被计两次、统计口径虚高。
+        token 统计：流式调用是一次独立的真实计费调用（provider 照常收费），
+        通过 ``stream_options={"include_usage": True}`` 让最后一个 chunk 带
+        usage，计入 total_usage——之前刻意不计，导致 token 统计系统性偏低。
+        provider 不支持 stream_options 时 create 直接报错，走 except 返回 None。
 
-        返回 None 表示流式不可用（provider 不支持或出错），调用方用上一轮
-        非流式 text 兜底；返回 str 为实际流式收集到的完整文本。
+        返回 None 表示流式不可用（provider 不支持 / 出错 / 零 chunk），
+        调用方用上一轮非流式 text 兜底；返回 str 为实际流式收集到的完整文本。
         """
         try:
             stream = self._client.chat.completions.create(
                 model=self._model,
                 messages=messages,
                 stream=True,
+                stream_options={"include_usage": True},
                 **self._completion_options,
             )
         except Exception as exc:
@@ -508,6 +514,9 @@ class AgentService:
             for chunk in stream:
                 if cancel_event is not None and cancel_event.is_set():
                     break
+                # usage 只挂在最后一个 chunk 上（include_usage），其余为 None
+                if total_usage is not None:
+                    self._accumulate_usage(total_usage, chunk)
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -519,7 +528,9 @@ class AgentService:
         except Exception as exc:
             _log.warning("stream 迭代中断: %s", exc)
             # 已收集的部分仍有价值，返回已得文本（可能不完整）
-        return "".join(collected)
+        # 零 chunk（迭代前即失败 / 空流）视为流式不可用，不得用空串
+        # 覆盖非流式兜底答案
+        return "".join(collected) if collected else None
 
     @property
     def tools(self) -> ToolRegistry:

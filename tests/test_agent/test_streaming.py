@@ -3,9 +3,10 @@
 覆盖：
 - on_chunk 流式：工具循环结束后发起 stream=True 调用，逐 delta 调 on_chunk
 - cancel_event：每轮 LLM 前 + 每个工具前 + 流式输出途中检查 is_set()
-- usage 累加：response.usage 累加到 AgentResponse.usage，流式调用不重复计
+- usage 累加：response.usage 累加到 AgentResponse.usage；流式调用的 usage
+  通过 stream_options=include_usage 取回后同样计入（独立计费调用）
 - usage_out：调用方传入的 dict 作为共享容器原地累加（UI 实时读取）
-- provider 不支持 stream 时回退非流式文本
+- provider 不支持 stream / 流式零 chunk 时回退非流式文本（不被空串覆盖）
 """
 
 from __future__ import annotations
@@ -118,12 +119,13 @@ class TestStreamingFinalAnswer:
         assert resp.text == "非流式答案"
 
     @patch("openai.OpenAI")
-    def test_stream_usage_not_double_counted(
+    def test_stream_usage_counted_via_include_usage(
         self, _mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:
-        """流式调用（重新生成同一回答）的 usage 不累加，只计非流式那次。
+        """流式调用的 usage 通过 stream_options=include_usage 取回并计入统计。
 
-        否则最终回答的 token 成本会被计两次，统计口径虚高约 2 倍。
+        流式是一次独立的真实计费调用（全量 messages 重发），刻意不计会让
+        token 统计系统性偏低近 2 倍（EVALUATION-2026-07-18 L1）。
         """
         svc = AgentService(mock_ctx, api_key="sk-test")
         svc._client.chat.completions.create.side_effect = [
@@ -133,9 +135,52 @@ class TestStreamingFinalAnswer:
 
         resp = svc.chat("hi", on_chunk=lambda d: None)
 
-        # 只有非流式那轮的 usage
-        assert resp.usage["prompt_tokens"] == 100
-        assert resp.usage["completion_tokens"] == 50
+        # 非流式 + 流式两次调用的 usage 都被计入
+        assert resp.usage["prompt_tokens"] == 200
+        assert resp.usage["completion_tokens"] == 100
+        assert resp.usage["total_tokens"] == 300
+
+        # 流式调用带 stream_options=include_usage
+        second_call = svc._client.chat.completions.create.call_args_list[1]
+        assert second_call.kwargs.get("stream_options") == {"include_usage": True}
+
+    @patch("openai.OpenAI")
+    def test_stream_iter_error_before_first_chunk_keeps_fallback(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """流式迭代在第一个 chunk 前异常 → 返回 None，非流式答案不被空串覆盖。
+
+        回归 L1：修复前此时返回 ""，调用方 ``if streamed is not None`` 会把
+        完整的非流式答案覆盖成空串，用户看到空回答。
+        """
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        broken_stream = MagicMock()
+        broken_stream.__iter__ = MagicMock(side_effect=RuntimeError("连接中断"))
+        svc._client.chat.completions.create.side_effect = [
+            _text_response("完整的非流式答案"),
+            broken_stream,
+        ]
+
+        chunks: list[str] = []
+        resp = svc.chat("hi", on_chunk=chunks.append)
+
+        assert chunks == []
+        assert resp.text == "完整的非流式答案"
+
+    @patch("openai.OpenAI")
+    def test_stream_usage_without_usage_chunk_unchanged(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """provider 不回传 usage chunk 时，usage 只含非流式那次（不崩、不虚构）。"""
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.side_effect = [
+            _text_response("你好", usage=_usage(100, 50)),
+            _stream_response(["你", "好"], usage=None),
+        ]
+
+        resp = svc.chat("hi", on_chunk=lambda d: None)
+
+        assert resp.text == "你好"
         assert resp.usage["total_tokens"] == 150
 
 
