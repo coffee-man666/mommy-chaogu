@@ -38,10 +38,10 @@ class TestToolDisplayName:
         assert tool_display_name("get_money_flow_today") == "查今日资金流"
         assert tool_display_name("search_similar_events") == "搜相似事件"
 
-    def test_all_24_tools_mapped(self) -> None:
+    def test_all_25_tools_mapped(self) -> None:
         from mommy_chaogu.tui.widgets.tool_indicator import TOOL_DISPLAY_NAMES
 
-        assert len(TOOL_DISPLAY_NAMES) == 24
+        assert len(TOOL_DISPLAY_NAMES) == 25
 
     def test_fallback(self) -> None:
         assert tool_display_name("some_unknown_tool") == "some unknown tool"
