@@ -7,6 +7,7 @@ code / 日期范围查询，为后续回测与复盘提供可检索的事件流�
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from mommy_chaogu.db import EngineOwner, create_sqlite_engine
+
+_log = logging.getLogger(__name__)
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS episodic_events (
@@ -135,10 +138,14 @@ class EpisodicMemory(EngineOwner):
 
         *data* / *tags* / *data_coverage* 以 JSON 字符串形式存储，
         *timestamp* 与 *created_at* 设为当前 UTC 时间（ISO8601）。
+        *trade_date* 缺省时兜底为本地日期（与 monitor/reports 的口径一致），
+        保证 ``query(start_date, end_date)`` 的日期过滤对任何写入方都生效。
         *content_hash* 可选，用于内容去重（同 scope + content_hash 已存在
         时由调用方负责跳过）。
         """
         now_iso = _utcnow().isoformat()
+        if trade_date is None:
+            trade_date = datetime.now().strftime("%Y-%m-%d")
         with self.session() as s:
             result = s.execute(
                 text("""
@@ -320,6 +327,9 @@ class EpisodicMemory(EngineOwner):
           因为它们有长期复盘价值；
         - 其余类型（如 ``signal_event`` / ``trade_decision``）按 *days*
           天清理（默认 90 天）。
+
+        删除后顺带清理向量索引（episodic_embeddings / episodic_vec）里
+        的孤儿行，否则向量只增不减。
         """
         long_retain_types = ("analysis_record", "market_snapshot")
         long_days = max(days, 180)
@@ -349,7 +359,36 @@ class EpisodicMemory(EngineOwner):
                 """),
                 params,
             )
-            return result.rowcount or 0
+            deleted = result.rowcount or 0
+        if deleted:
+            self._cleanup_vector_orphans()
+        return deleted
+
+    def _cleanup_vector_orphans(self) -> None:
+        """清理向量索引里 episodic_events 已不存在的孤儿行（容错）。
+
+        表名与 ``VectorSearch`` 的约定常量一致；向量表未创建过或
+        sqlite_vec 不可用时静默跳过（记 debug 日志）。
+        """
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "DELETE FROM episodic_embeddings "
+                        "WHERE event_id NOT IN (SELECT id FROM episodic_events)"
+                    )
+                )
+            import sqlite_vec  # type: ignore[import-untyped]
+
+            with self.engine.raw_connection() as raw_conn:
+                raw_conn.enable_load_extension(True)
+                sqlite_vec.load(raw_conn)
+                raw_conn.execute(
+                    "DELETE FROM episodic_vec WHERE rowid NOT IN (SELECT id FROM episodic_events)"
+                )
+                raw_conn.commit()
+        except Exception as e:
+            _log.debug("cleanup vector orphans skipped: %s", e)
 
     def summary(self) -> dict[str, Any]:
         """返回统计摘要：总条数、按 event_type / scope 分组计数、时间跨度。"""

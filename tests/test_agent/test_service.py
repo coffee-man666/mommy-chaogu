@@ -39,6 +39,7 @@ class TestProviderConfig:
             "default_model": "nova-bridge",
             "env_key": "NOVA_API_KEY",
             "temperature": None,
+            "embedding_model": None,
         }
 
     def test_minimax_configuration(self) -> None:
@@ -47,6 +48,7 @@ class TestProviderConfig:
             "default_model": "MiniMax-M2.7",
             "env_key": "MINIMAX_API_KEY",
             "temperature": 1.0,
+            "embedding_model": None,
         }
 
     def test_temperatures_are_provider_aware(self) -> None:
@@ -68,7 +70,10 @@ class TestAgentServiceInit:
 
     @patch("openai.OpenAI")
     def test_init_with_explicit_key(self, _mock_openai: MagicMock, mock_ctx: ToolContext) -> None:
-        svc = AgentService(mock_ctx, api_key="sk-test")
+        # 隔离 AGENT_PROVIDER：默认 provider 必须是 deepseek，不能依赖
+        # 外部环境恰好没设（.env / shell 都可能注入）
+        with patch.dict("os.environ", {"AGENT_PROVIDER": "deepseek"}):
+            svc = AgentService(mock_ctx, api_key="sk-test")
         assert svc._model == "deepseek-chat"
 
     @patch("openai.OpenAI")
@@ -83,7 +88,10 @@ class TestAgentServiceInit:
         svc = AgentService(mock_ctx, provider="minimax", api_key="minimax-test")
         assert svc._model == "MiniMax-M2.7"
         mock_openai.assert_called_once_with(
-            api_key="minimax-test", base_url="https://api.minimaxi.com/v1"
+            api_key="minimax-test",
+            base_url="https://api.minimaxi.com/v1",
+            timeout=120.0,
+            max_retries=0,
         )
 
 

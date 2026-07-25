@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
 from mommy_chaogu.market_data.news_api import (
     get_announcements,
@@ -25,8 +25,10 @@ DEFS: list[ToolDef] = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "返回条数，默认 10",
+                    "description": "返回条数，默认 10（最大 100）",
                     "default": 10,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
             "required": ["keyword"],
@@ -38,11 +40,17 @@ DEFS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "description": "股票代码"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字）",
+                },
                 "limit": {
                     "type": "integer",
-                    "description": "返回条数，默认 10",
+                    "description": "返回条数，默认 10（最大 100）",
                     "default": 10,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
             "required": ["code"],
@@ -60,8 +68,10 @@ DEFS: list[ToolDef] = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "返回条数，默认 20",
+                    "description": "返回条数，默认 20（最大 100）",
                     "default": 20,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
         },
@@ -74,7 +84,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "股票代码，如 '600519'（贵州茅台）",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字），如 '600519'（贵州茅台）",
                 }
             },
             "required": ["code"],
@@ -85,21 +96,21 @@ DEFS: list[ToolDef] = [
 
 def _handle_search_news(_ctx: ToolContext, args: dict[str, Any]) -> str:
     keyword = args["keyword"]
-    limit = args.get("limit", 10)
+    limit = _clamp_int(args.get("limit", 10), 10, 1, 100)
     items = search_news(keyword, limit=limit)
     return _json(items)
 
 
 def _handle_get_announcements(_ctx: ToolContext, args: dict[str, Any]) -> str:
     code = args["code"]
-    limit = args.get("limit", 10)
+    limit = _clamp_int(args.get("limit", 10), 10, 1, 100)
     items = get_announcements(code, limit=limit)
     return _json(items)
 
 
 def _handle_get_longhuban(_ctx: ToolContext, args: dict[str, Any]) -> str:
     date = args.get("date")
-    limit = args.get("limit", 20)
+    limit = _clamp_int(args.get("limit", 20), 20, 1, 100)
     items = get_longhuban(date=date, limit=limit)
     return _json(items)
 

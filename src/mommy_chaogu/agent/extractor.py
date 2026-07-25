@@ -11,6 +11,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
+from contextlib import suppress
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -148,11 +151,93 @@ _EXTRACTION_PROMPT = """\
 """
 
 
+def _accumulate_extract_usage(
+    usage_out: dict[str, int] | None,
+    usage_lock: threading.Lock | None,
+    response: Any,
+) -> None:
+    """把提取调用的 token 计入调用方的共享统计容器（可选锁互斥）。
+
+    对话后提取是一轮真实计费的 LLM 调用——不计会让 token 统计偏低
+    （EVALUATION-2026-07-18 L6）。
+    """
+    if usage_out is None:
+        return
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+
+    def _add() -> None:
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            val = getattr(usage, key, None)
+            if val is not None:
+                usage_out[key] = usage_out.get(key, 0) + int(val)
+
+    if usage_lock is not None:
+        with usage_lock:
+            _add()
+    else:
+        _add()
+
+
+def _create_with_retry(
+    client: Any,
+    *,
+    model: str,
+    messages: list[dict[str, Any]],
+    timeout: float,
+    max_retries: int,
+) -> Any:
+    """提取用的 LLM 调用：显式超时 + 瞬时错误指数退避重试。
+
+    JSON 提取任务用 ``temperature=0``（稳定性优先）；限流时读
+    Retry-After 响应头。非瞬时错误（认证 / 参数）直接抛出。
+    """
+    import time
+
+    from openai import APIConnectionError, InternalServerError, RateLimitError
+
+    retryable = (APIConnectionError, RateLimitError, InternalServerError)
+
+    for attempt in range(max_retries + 1):
+        try:
+            return client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0,
+                timeout=timeout,
+            )
+        except retryable as e:
+            if attempt >= max_retries:
+                raise
+            delay = 1.0 * (2**attempt)
+            if isinstance(e, RateLimitError):
+                headers = getattr(getattr(e, "response", None), "headers", None)
+                retry_after = headers.get("retry-after") if headers is not None else None
+                if retry_after is not None:
+                    with suppress(TypeError, ValueError):
+                        delay = max(0.0, float(retry_after))
+            _log.warning(
+                "extract: LLM 调用失败（第 %d/%d 次）: %s — %.1fs 后重试",
+                attempt + 1,
+                max_retries + 1,
+                e,
+                delay,
+            )
+            time.sleep(delay)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def extract_from_conversation(
     user_message: str,
     assistant_response: str,
     client: Any,
     model: str,
+    *,
+    usage_out: dict[str, int] | None = None,
+    usage_lock: threading.Lock | None = None,
+    timeout: float = 60.0,
+    max_retries: int = 2,
 ) -> dict[str, Any] | None:
     """用 LLM 从对话中提取结构化信息。
 
@@ -161,6 +246,10 @@ def extract_from_conversation(
         assistant_response: agent 的回复
         client: OpenAI client（兼容 deepseek/kimi）
         model: 模型名
+        usage_out: 可选，提取消耗的 token 累加进这个 dict
+        usage_lock: 可选，累加 usage_out 时持有（与主线程统计互斥）
+        timeout: 单次 LLM 调用超时（秒）
+        max_retries: 瞬时错误重试次数
 
     Returns:
         {"observations": [...], "predictions": [...]} 或 None（提取失败/无内容）
@@ -170,21 +259,26 @@ def extract_from_conversation(
         assistant_msg=_truncate_to_tokens(assistant_response, _ASSISTANT_LIMIT),
     )
 
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是一个信息提取助手。从投资对话中提取结构化信息。"
+                "只返回 JSON，不要加任何其他文字。"
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
+
     try:
-        response = client.chat.completions.create(
+        response = _create_with_retry(
+            client,
             model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一个信息提取助手。从投资对话中提取结构化信息。"
-                        "只返回 JSON，不要加任何其他文字。"
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=1,
+            messages=messages,
+            timeout=timeout,
+            max_retries=max_retries,
         )
+        _accumulate_extract_usage(usage_out, usage_lock, response)
 
         content = response.choices[0].message.content or ""
 
@@ -282,15 +376,17 @@ def store_extraction(
             if not code:
                 continue
 
-            # 自动填 entry_price
+            # 自动填 entry_price（价格保持 Decimal 精度，比率为 float）
             entry_price = None
             change_pct = None
             if adapter is not None:
                 try:
                     quote = adapter.get_quote(code)
                     if quote is not None:
-                        entry_price = float(getattr(quote, "price", 0)) or None
-                        change_pct = float(getattr(quote, "change_pct", 0)) or None
+                        price = getattr(quote, "price", None)
+                        entry_price = Decimal(str(price)) if price else None
+                        pct = getattr(quote, "change_pct", None)
+                        change_pct = float(pct) if pct else None
                 except Exception:
                     pass  # 拿不到报价不影响预测创建
 

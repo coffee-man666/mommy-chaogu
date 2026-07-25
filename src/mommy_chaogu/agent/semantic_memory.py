@@ -7,11 +7,18 @@
 ``search_hybrid`` 提供向量召回 + 关键词混合排序：如果注入了 embedding client
 （``attach_vector_search``），先用 sqlite-vec 语义召回；否则降级为多关键词
 匹配 + 相关性排序。两种模式结果都带 ``relevance_score`` 并按其降序。
+
+⚠️ experimental：``attach_vector_search`` / ``search_hybrid`` /
+``index_knowledge_vector`` 这条语义知识向量路径当前**没有生产调用方**
+（episodic 事件的向量检索走 ``VectorSearch``，已接线；本模块这套是
+为 consolidator / prompt_builder 预留的语义召回，尚未接入）。调用前
+需自行评估，勿假设其经过生产验证。
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,6 +29,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from mommy_chaogu.db import EngineOwner, create_sqlite_engine
+
+_log = logging.getLogger(__name__)
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS semantic_knowledge (
@@ -144,7 +153,8 @@ class SemanticMemory(EngineOwner):
                 )
                 raw_conn.commit()
             self._vec_available = True
-        except Exception:
+        except Exception as e:
+            _log.warning("semantic_memory: attach_vector_search 失败，向量检索禁用: %s", e)
             self._vec_available = False
         return self._vec_available
 
@@ -157,7 +167,8 @@ class SemanticMemory(EngineOwner):
                 input=text_content[:2000],
             )
             return cast(list[float], response.data[0].embedding)
-        except Exception:
+        except Exception as e:
+            _log.warning("semantic_memory: embedding API failed: %s", e)
             return None
 
     def index_knowledge_vector(self, entry_id: int, content: str) -> bool:
@@ -193,7 +204,8 @@ class SemanticMemory(EngineOwner):
                 )
                 raw_conn.commit()
             return True
-        except Exception:
+        except Exception as e:
+            _log.warning("semantic_memory: index_knowledge_vector failed for %d: %s", entry_id, e)
             return False
 
     @contextmanager
@@ -384,7 +396,8 @@ class SemanticMemory(EngineOwner):
                     (packed, limit),
                 )
                 vec_rows = cursor.fetchall()
-        except Exception:
+        except Exception as e:
+            _log.warning("semantic_memory: vector recall failed: %s", e)
             return None
 
         if not vec_rows:
@@ -563,6 +576,8 @@ class SemanticMemory(EngineOwner):
 
         只删 ``status != 'active'`` 的（已被 supersede / 废弃的条目）；
         active 条目无论多旧都保留。判定时间用 ``updated_at``。
+        删除后顺带清理向量索引（meta + vec 表）里的孤儿行，
+        否则向量只增不减。
         """
         cutoff = (_utcnow() - timedelta(days=days)).isoformat()
         with self.session() as s:
@@ -573,7 +588,34 @@ class SemanticMemory(EngineOwner):
                 """),
                 {"cutoff": cutoff},
             )
-            return result.rowcount or 0
+            deleted = result.rowcount or 0
+        if deleted:
+            self._cleanup_vector_orphans()
+        return deleted
+
+    def _cleanup_vector_orphans(self) -> None:
+        """清理向量索引里 semantic_knowledge 已不存在的孤儿行（容错）。"""
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        f"DELETE FROM {self._SEMANTIC_VEC_META} "
+                        f"WHERE entry_id NOT IN (SELECT id FROM semantic_knowledge)"
+                    )
+                )
+            import sqlite_vec
+
+            with self.engine.raw_connection() as raw_conn:
+                raw_conn.enable_load_extension(True)
+                sqlite_vec.load(raw_conn)
+                raw_conn.execute(
+                    f"DELETE FROM {self._SEMANTIC_VEC_TABLE} "
+                    f"WHERE rowid NOT IN (SELECT id FROM semantic_knowledge)"
+                )
+                raw_conn.commit()
+        except Exception as e:
+            # 向量表未创建过 / sqlite_vec 不可用：无孤儿可清
+            _log.debug("cleanup vector orphans skipped: %s", e)
 
     def summary(self) -> dict[str, Any]:
         """返回统计摘要：总条数、active / superseded 计数、按 type / scope 分组计数。"""

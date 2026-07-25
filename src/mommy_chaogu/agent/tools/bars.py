@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 from mommy_chaogu.cache.store import CacheStore
 from mommy_chaogu.market_data.types import BarInterval
 
@@ -15,7 +15,11 @@ DEFS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "description": "股票代码"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字）",
+                },
                 "interval": {
                     "type": "string",
                     "enum": ["1d", "1w", "1M", "5m", "15m", "30m", "60m"],
@@ -24,8 +28,10 @@ DEFS: list[ToolDef] = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "返回 K 线根数",
+                    "description": "返回 K 线根数（最大 120）",
                     "default": 30,
+                    "minimum": 1,
+                    "maximum": 120,
                 },
             },
             "required": ["code"],
@@ -37,11 +43,17 @@ DEFS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "description": "股票代码"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字）",
+                },
                 "days": {
                     "type": "integer",
-                    "description": "回填天数，默认 30",
+                    "description": "回填天数，默认 30（最大 365）",
                     "default": 30,
+                    "minimum": 1,
+                    "maximum": 365,
                 },
             },
             "required": ["code"],
@@ -49,11 +61,18 @@ DEFS: list[ToolDef] = [
     ),
 ]
 
+# get_bars 单次返回上限（根）：120 根日 K ≈ 半年，再大只会灌爆
+# agent 的 context window（EVALUATION-2026-07-18 L2/T5）。
+MAX_BARS_LIMIT = 120
+
+# backfill_history 单次回填上限（天）。
+MAX_BACKFILL_DAYS = 365
+
 
 def _handle_get_bars(ctx: ToolContext, args: dict[str, Any]) -> str:
     code = args["code"]
     interval_str = args.get("interval", "1d")
-    limit = args.get("limit", 30)
+    limit = _clamp_int(args.get("limit", 30), 30, 1, MAX_BARS_LIMIT)
     interval = BarInterval(interval_str)
     bars = ctx.adapter.get_bars(code, interval=interval, limit=limit)
     return _json(
@@ -81,7 +100,7 @@ def _handle_backfill_history(ctx: ToolContext, args: dict[str, Any]) -> str:
     if db_path is None:
         return _json({"error": "market_db 未配置，无法回填"})
     code = args["code"]
-    days = args.get("days", 30)
+    days = _clamp_int(args.get("days", 30), 30, 1, MAX_BACKFILL_DAYS)
     store = CacheStore(db_path)
     result = store.backfill_history(ctx.adapter, code, days=days)
     return _json(result)

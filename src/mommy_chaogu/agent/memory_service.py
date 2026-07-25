@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
@@ -99,16 +100,25 @@ class MemoryService:
         user_msg: str,
         assistant_response: str,
         adapter: MarketDataAdapter | None = None,
+        *,
+        write_messages: bool = True,
+        usage_out: dict[str, int] | None = None,
+        usage_lock: threading.Lock | None = None,
     ) -> None:
         """对话结束后记录 + 提取。
 
-        1. 把 user/assistant 消息写入对话记忆（ConversationMemory）
+        1. 把 user/assistant 消息写入对话记忆（ConversationMemory），
+           *write_messages* 为 False 时跳过——AgentService 用外部传入的
+           memory 自行写入时会关，避免同一轮对话被写两遍。
         2. 从对话中提取 observations + predictions（MemoryPipeline.record_analysis）
+
+        *usage_out* / *usage_lock* 透传给提取 LLM 调用，把提取消耗的
+        token 计入调用方的共享统计容器（锁保证与主线程累加互斥）。
 
         两步独立，任一失败不影响另一步。
         """
         # 1. 写入对话记忆
-        if self._memory is not None:
+        if write_messages and self._memory is not None:
             try:
                 self._memory.add("user", user_msg)
                 self._memory.add("assistant", assistant_response)
@@ -122,6 +132,8 @@ class MemoryService:
                     user_msg,
                     assistant_response,
                     adapter=adapter,
+                    usage_out=usage_out,
+                    usage_lock=usage_lock,
                 )
             except Exception as e:
                 _log.warning(

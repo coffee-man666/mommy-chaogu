@@ -25,7 +25,7 @@ def build_agent_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--provider",
         default=None,
-        help="LLM provider（deepseek / openai / kimi / zai / nova，默认读 .env）",
+        help="LLM provider（deepseek / openai / kimi / zai / nova / minimax，默认读 .env）",
     )
     p.add_argument(
         "--model",
@@ -67,36 +67,31 @@ def _build_agent_context() -> object:
 def _build_llm_client(
     provider: str | None = None,
     model: str | None = None,
-) -> tuple[object | None, str | None]:
-    """容错地构造 OpenAI 兼容 client，返回 (client, model)。
+) -> tuple[object | None, str | None, str | None]:
+    """容错地构造 OpenAI 兼容 client，返回 (client, model, embedding_model)。
 
     任何一步失败（provider 未知 / 无 API key / 构造抛异常）都返回
-    ``(None, None)``，调用方必须容忍 None 并走降级路径。注意默认
-    provider（deepseek）没有 embedding 端点，此 client 只能用于
-    支持 embedding 的 provider。
+    ``(None, None, None)``，调用方必须容忍 None 并走降级路径。
+    ``embedding_model`` 为 None 表示该 provider 没有 OpenAI 兼容
+    embedding 接口（如默认的 deepseek），向量检索应显式降级，
+    不要把聊天模型名当 embedding 模型传。
     """
     try:
-        from mommy_chaogu.agent.service import SUPPORTED_PROVIDERS
+        from mommy_chaogu.agent import llm
         from mommy_chaogu.config import load_config
 
         cfg = load_config()
         resolved_provider = (provider or cfg.agent.provider).strip().lower()
-        config = SUPPORTED_PROVIDERS.get(resolved_provider)
-        if config is None:
-            return None, None
+        config = llm.provider_config(resolved_provider)
         api_key = os.environ.get(config["env_key"], "") or cfg.agent.api_key
         if not api_key:
-            return None, None
+            return None, None, None
 
-        from openai import OpenAI
-
-        kwargs = {"api_key": api_key}
-        if config["base_url"]:
-            kwargs["base_url"] = config["base_url"]
+        client = llm.create_client(resolved_provider, api_key)
         resolved_model = model or cfg.agent.model or config["default_model"]
-        return OpenAI(**kwargs), str(resolved_model)
+        return client, str(resolved_model), llm.embedding_model_for(resolved_provider)
     except Exception:
-        return None, None
+        return None, None, None
 
 
 def run_verify(db: Path, market_db: Path | None = None) -> dict[str, int]:
@@ -167,7 +162,7 @@ def _run_consolidate(argv: list[str]) -> NoReturn:
     from mommy_chaogu.agent.prediction_tracker import PredictionTracker
     from mommy_chaogu.agent.semantic_memory import SemanticMemory
 
-    client, model = _build_llm_client(args.provider, args.model)
+    client, model, embedding_model = _build_llm_client(args.provider, args.model)
     if client is None or model is None:
         print(
             "❌ 未配置 LLM API key，无法提炼知识（consolidate 需要 LLM）",
@@ -176,8 +171,9 @@ def _run_consolidate(argv: list[str]) -> NoReturn:
         sys.exit(1)
 
     db = Path(args.db) if args.db else AGENT_DB
+    episodic = EpisodicMemory(db)
     consolidator = MemoryConsolidator(
-        EpisodicMemory(db),
+        episodic,
         SemanticMemory(db),
         PredictionTracker(db),
         client,
@@ -188,6 +184,18 @@ def _run_consolidate(argv: list[str]) -> NoReturn:
     print(f"  板块叙事: {results['sector_theses']}")
     print(f"  市场状态: {results['market_regime']}")
     print(f"  规律归纳: {results['patterns']}")
+
+    # 提炼后顺带为存量事件补 embedding（向量子系统的定期生产触发点；
+    # provider 无 embedding 接口时跳过）
+    if embedding_model is not None:
+        from mommy_chaogu.agent.vector_search import VectorSearch
+
+        try:
+            vs = VectorSearch(episodic, client, model=embedding_model)
+            embed_results = vs.embed_pending()
+            print(f"  事件 embedding: {embed_results}")
+        except Exception as e:
+            print(f"⚠️ embedding 生成失败（不影响提炼结果）: {e}", file=sys.stderr)
     sys.exit(0)
 
 
@@ -209,26 +217,34 @@ def main_agent() -> NoReturn:
     from mommy_chaogu.agent.semantic_memory import SemanticMemory
     from mommy_chaogu.agent.service import AgentService
     from mommy_chaogu.agent.vector_search import VectorSearch
+    from mommy_chaogu.config import load_config
     from mommy_chaogu.db_paths import AGENT_DB
 
     ctx = _build_agent_context()
     episodic = EpisodicMemory(AGENT_DB)
 
-    # VectorSearch 需要 (episodic, client)：client 用于 embedding。
-    # 无 API key / client 构造失败 / 初始化失败时 vs 保持 None，
-    # AgentService 内部走关键词降级路径，不影响对话。
+    # provider/api_key 解析链与 _build_llm_client 对齐：CLI 参数 >
+    # config.toml > AGENT_PROVIDER 环境变量（AgentService 内部再兜底）。
+    # 否则只在 config.toml 配 provider 的用户会在这里被解析成默认
+    # deepseek，与 VectorSearch 的 provider 分裂。
+    cfg = load_config()
+
+    # VectorSearch 需要 (episodic, client) + 专用 embedding 模型。
+    # provider 无 embedding 接口（embedding_model=None）/ 无 key /
+    # 初始化失败时 vs 保持 None，走关键词降级路径，不影响对话。
     vs = None
-    client, _model = _build_llm_client(args.provider, args.model)
-    if client is not None:
+    client, _model, embedding_model = _build_llm_client(args.provider, args.model)
+    if client is not None and embedding_model is not None:
         try:
-            vs = VectorSearch(episodic, client)
+            vs = VectorSearch(episodic, client, model=embedding_model)
         except Exception as e:
             print(f"⚠️ 向量检索初始化失败，降级为关键词搜索: {e}", file=sys.stderr)
 
     agent = AgentService(
         ctx,
-        provider=args.provider,
-        model=args.model,
+        provider=args.provider or cfg.agent.provider,
+        model=args.model or cfg.agent.model,
+        api_key=cfg.agent.api_key or None,
         max_tool_calls=args.max_tool_calls,
         episodic=episodic,
         tracker=PredictionTracker(AGENT_DB),
@@ -242,6 +258,9 @@ def main_agent() -> NoReturn:
         # 单次提问模式
         resp = agent.chat(query)
         print(resp.text)
+        # P6：对话后提取在后台 daemon 线程跑——exit 前必须等它完成，
+        # 否则进程退出时提取被静默丢弃（单发模式唯一的消息轮次）。
+        agent.flush(timeout=30)
         sys.exit(0)
 
     # 交互式 REPL
@@ -261,4 +280,6 @@ def main_agent() -> NoReturn:
                 print(f"[工具调用: {tool_names}]\n")
     except KeyboardInterrupt:
         print("\n再见！")
+    # 退出前等最后一轮的后台提取完成（daemon 线程随进程退出会被丢弃）
+    agent.flush(timeout=10)
     sys.exit(0)

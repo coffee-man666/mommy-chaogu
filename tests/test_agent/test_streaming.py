@@ -1,12 +1,15 @@
 """AgentService 流式输出 / 取消 / usage 累加单测（PLAN #4/#5/#6）。
 
 覆盖：
-- on_chunk 流式：工具循环结束后发起 stream=True 调用，逐 delta 调 on_chunk
+- on_chunk 流式：最终回答轮直接走 stream=True（带 tools）调用，
+  文本 delta 逐段回调，tool_calls delta 同步拼接——「得出答案」与
+  「流式输出」是同一次调用（不再非流式出答案后重发全量 messages，
+  双重计费已消除，EVALUATION-2026-07-18 L1）
 - cancel_event：每轮 LLM 前 + 每个工具前 + 流式输出途中检查 is_set()
-- usage 累加：response.usage 累加到 AgentResponse.usage；流式调用的 usage
-  通过 stream_options=include_usage 取回后同样计入（独立计费调用）
+- usage 累加：response.usage 累加到 AgentResponse.usage；流式调用的
+  usage 通过 stream_options=include_usage 取回后计入
 - usage_out：调用方传入的 dict 作为共享容器原地累加（UI 实时读取）
-- provider 不支持 stream / 流式零 chunk 时回退非流式文本（不被空串覆盖）
+- 流式不可用（create 抛错 / 迭代零收集失败）时回退非流式调用
 """
 
 from __future__ import annotations
@@ -49,12 +52,13 @@ def _usage(p: int, c: int) -> MagicMock:
 
 
 def _stream_response(deltas: list[str], usage: Any = None) -> MagicMock:
-    """模拟 OpenAI stream 对象：迭代出 N 个 chunk。"""
+    """模拟 OpenAI stream 对象：迭代出 N 个 chunk（纯文本 delta）。"""
     chunks = []
     for d in deltas:
         chunk = MagicMock()
         chunk.choices = [MagicMock()]
         chunk.choices[0].delta.content = d
+        chunk.choices[0].delta.tool_calls = None
         chunk.usage = None
         chunks.append(chunk)
     # 最后一个 chunk 带 usage
@@ -73,21 +77,24 @@ class TestStreamingFinalAnswer:
     def test_on_chunk_called_per_delta(
         self, _mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:
-        """非流式轮拿到文本后，on_chunk 驱动一次 stream 调用逐 delta 输出。"""
+        """on_chunk 时最终回答轮直接走 stream=True（带 tools），逐 delta 输出。"""
         svc = AgentService(mock_ctx, api_key="sk-test")
-        svc._client.chat.completions.create.side_effect = [
-            _text_response("你好世界"),
-            _stream_response(["你", "好", "世", "界"]),
-        ]
+        svc._client.chat.completions.create.return_value = _stream_response(
+            ["你", "好", "世", "界"]
+        )
 
         chunks: list[str] = []
         resp = svc.chat("hi", on_chunk=chunks.append)
 
         assert "".join(chunks) == "你好世界"
         assert resp.text == "你好世界"
-        # 第二次调用是 stream=True
-        second_call = svc._client.chat.completions.create.call_args_list[1]
-        assert second_call.kwargs.get("stream") is True
+        # 单次调用即完成「出答案 + 流式输出」（双重调用已消除）：
+        # stream=True 且带 tools
+        create = svc._client.chat.completions.create
+        assert create.call_count == 1
+        call = create.call_args_list[0]
+        assert call.kwargs.get("stream") is True
+        assert call.kwargs.get("tools") is not None
 
     @patch("openai.OpenAI")
     def test_no_on_chunk_skips_streaming(
@@ -104,17 +111,17 @@ class TestStreamingFinalAnswer:
 
     @patch("openai.OpenAI")
     def test_stream_fallback_on_error(self, _mock_openai: MagicMock, mock_ctx: ToolContext) -> None:
-        """stream 调用抛异常时保留非流式文本（不返回空）。"""
+        """stream create 抛异常时回退非流式调用（此时未流出任何内容）。"""
         svc = AgentService(mock_ctx, api_key="sk-test")
         svc._client.chat.completions.create.side_effect = [
-            _text_response("非流式答案"),
             RuntimeError("provider 不支持 stream"),
+            _text_response("非流式答案"),
         ]
 
         chunks: list[str] = []
         resp = svc.chat("hi", on_chunk=chunks.append)
 
-        # 流式失败 → chunks 为空，但 resp.text 保留非流式文本
+        # 流式失败 → chunks 为空，回退非流式拿到完整答案
         assert chunks == []
         assert resp.text == "非流式答案"
 
@@ -122,43 +129,34 @@ class TestStreamingFinalAnswer:
     def test_stream_usage_counted_via_include_usage(
         self, _mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:
-        """流式调用的 usage 通过 stream_options=include_usage 取回并计入统计。
-
-        流式是一次独立的真实计费调用（全量 messages 重发），刻意不计会让
-        token 统计系统性偏低近 2 倍（EVALUATION-2026-07-18 L1）。
-        """
+        """流式调用的 usage 通过 stream_options=include_usage 取回并计入统计。"""
         svc = AgentService(mock_ctx, api_key="sk-test")
-        svc._client.chat.completions.create.side_effect = [
-            _text_response("你好", usage=_usage(100, 50)),
-            _stream_response(["你", "好"], usage=_usage(100, 50)),
-        ]
+        svc._client.chat.completions.create.return_value = _stream_response(
+            ["你", "好"], usage=_usage(100, 50)
+        )
 
         resp = svc.chat("hi", on_chunk=lambda d: None)
 
-        # 非流式 + 流式两次调用的 usage 都被计入
-        assert resp.usage["prompt_tokens"] == 200
-        assert resp.usage["completion_tokens"] == 100
-        assert resp.usage["total_tokens"] == 300
+        # 单次流式调用的 usage 计入
+        assert resp.usage["prompt_tokens"] == 100
+        assert resp.usage["completion_tokens"] == 50
+        assert resp.usage["total_tokens"] == 150
 
         # 流式调用带 stream_options=include_usage
-        second_call = svc._client.chat.completions.create.call_args_list[1]
-        assert second_call.kwargs.get("stream_options") == {"include_usage": True}
+        call = svc._client.chat.completions.create.call_args_list[0]
+        assert call.kwargs.get("stream_options") == {"include_usage": True}
 
     @patch("openai.OpenAI")
     def test_stream_iter_error_before_first_chunk_keeps_fallback(
         self, _mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:
-        """流式迭代在第一个 chunk 前异常 → 返回 None，非流式答案不被空串覆盖。
-
-        回归 L1：修复前此时返回 ""，调用方 ``if streamed is not None`` 会把
-        完整的非流式答案覆盖成空串，用户看到空回答。
-        """
+        """流式迭代在第一个 chunk 前异常 → 零收集，回退非流式调用。"""
         svc = AgentService(mock_ctx, api_key="sk-test")
         broken_stream = MagicMock()
         broken_stream.__iter__ = MagicMock(side_effect=RuntimeError("连接中断"))
         svc._client.chat.completions.create.side_effect = [
-            _text_response("完整的非流式答案"),
             broken_stream,
+            _text_response("完整的非流式答案"),
         ]
 
         chunks: list[str] = []
@@ -171,17 +169,63 @@ class TestStreamingFinalAnswer:
     def test_stream_usage_without_usage_chunk_unchanged(
         self, _mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:
-        """provider 不回传 usage chunk 时，usage 只含非流式那次（不崩、不虚构）。"""
+        """provider 不回传 usage chunk 时 usage 保持空（不崩、不虚构）。"""
         svc = AgentService(mock_ctx, api_key="sk-test")
-        svc._client.chat.completions.create.side_effect = [
-            _text_response("你好", usage=_usage(100, 50)),
-            _stream_response(["你", "好"], usage=None),
-        ]
+        svc._client.chat.completions.create.return_value = _stream_response(
+            ["你", "好"], usage=None
+        )
 
         resp = svc.chat("hi", on_chunk=lambda d: None)
 
         assert resp.text == "你好"
-        assert resp.usage["total_tokens"] == 150
+        assert resp.usage == {}
+
+    @patch("openai.OpenAI")
+    def test_stream_tool_calls_collected_and_executed(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """流式 chunk 里的 tool_calls delta 按 index 拼接并照常执行。"""
+        # 第一轮：流式返回 tool_call（arguments 分两片到达）
+        tc_delta1 = MagicMock()
+        tc_delta1.index = 0
+        tc_delta1.id = "tc_1"
+        tc_delta1.function.name = "get_quote"
+        tc_delta1.function.arguments = '{"code": '
+        chunk1 = MagicMock()
+        chunk1.choices = [MagicMock()]
+        chunk1.choices[0].delta.content = None
+        chunk1.choices[0].delta.tool_calls = [tc_delta1]
+        chunk1.usage = None
+
+        tc_delta2 = MagicMock()
+        tc_delta2.index = 0
+        tc_delta2.id = None
+        tc_delta2.function.name = None
+        tc_delta2.function.arguments = '"600519"}'
+        chunk2 = MagicMock()
+        chunk2.choices = [MagicMock()]
+        chunk2.choices[0].delta.content = None
+        chunk2.choices[0].delta.tool_calls = [tc_delta2]
+        chunk2.usage = None
+
+        stream1 = MagicMock()
+        stream1.__iter__ = lambda self: iter([chunk1, chunk2])  # type: ignore[misc]
+
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.side_effect = [
+            stream1,
+            _stream_response(["茅台", "1680"]),
+        ]
+        svc._tools = MagicMock()
+        svc._tools.definitions.return_value = []
+        svc._tools.call.return_value = '{"price": 1680}'
+
+        chunks: list[str] = []
+        resp = svc.chat("hi", on_chunk=chunks.append)
+
+        # tool_calls 拼接正确并执行
+        svc._tools.call.assert_called_once_with("get_quote", {"code": "600519"})
+        assert resp.text == "茅台1680"
 
 
 class TestCancelEvent:
@@ -287,10 +331,9 @@ class TestCancelEvent:
     ) -> None:
         """流式输出途中 cancel → 返回 interrupted=True（不再被吞成完整回答）。"""
         svc = AgentService(mock_ctx, api_key="sk-test")
-        svc._client.chat.completions.create.side_effect = [
-            _text_response("你好世界"),
-            _stream_response(["你", "好", "世", "界"]),
-        ]
+        svc._client.chat.completions.create.return_value = _stream_response(
+            ["你", "好", "世", "界"]
+        )
 
         event = threading.Event()
         chunks: list[str] = []

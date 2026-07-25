@@ -107,7 +107,14 @@ class TestRecordAnalysis:
             pipe = MemoryPipeline(episodic, tracker, None, client=client, model="test-model")
             pipe.record_analysis("user msg", "assistant resp")
 
-            mock_extract.assert_called_once_with("user msg", "assistant resp", client, "test-model")
+            mock_extract.assert_called_once_with(
+                "user msg",
+                "assistant resp",
+                client,
+                "test-model",
+                usage_out=None,
+                usage_lock=None,
+            )
             mock_store.assert_called_once()
 
     def test_no_client_skips(self, episodic: EpisodicMemory, tracker: PredictionTracker) -> None:

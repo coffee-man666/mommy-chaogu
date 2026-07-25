@@ -19,7 +19,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
 import random
 import threading
 import time
@@ -27,6 +26,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from mommy_chaogu.agent import llm as llm_provider
+from mommy_chaogu.agent.llm import SUPPORTED_PROVIDERS  # noqa: F401  (re-export, 向后兼容)
 from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
 from mommy_chaogu.agent.memory_service import MemoryService
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
@@ -43,45 +44,55 @@ class ConversationMemoryLike(Protocol):
     def add(self, role: str, content: str) -> int: ...
 
 
-# 支持的 provider 配置
-SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
-    "deepseek": {
-        "base_url": "https://api.deepseek.com",
-        "default_model": "deepseek-chat",
-        "env_key": "DEEPSEEK_API_KEY",
-        "temperature": 0.2,
-    },
-    "openai": {
-        "base_url": None,  # OpenAI 默认
-        "default_model": "gpt-4o-mini",
-        "env_key": "OPENAI_API_KEY",
-        "temperature": 0.2,
-    },
-    "kimi": {
-        "base_url": "https://api.kimi.com/coding/v1",
-        "default_model": "kimi-k2.6",
-        "env_key": "MOONSHOT_API_KEY",
-        "temperature": 1.0,
-    },
-    "zai": {
-        "base_url": "https://api.z.ai/api/coding/paas/v4",
-        "default_model": "glm-4.7",
-        "env_key": "ZAI_API_KEY",
-        "temperature": 0.2,
-    },
-    "nova": {
-        "base_url": "http://127.0.0.1:9999/v1",
-        "default_model": "nova-bridge",
-        "env_key": "NOVA_API_KEY",
-        "temperature": None,
-    },
-    "minimax": {
-        "base_url": "https://api.minimaxi.com/v1",
-        "default_model": "MiniMax-M2.7",
-        "env_key": "MINIMAX_API_KEY",
-        "temperature": 1.0,
-    },
-}
+@dataclass
+class _LoopToolCall:
+    """agent 循环内部统一的 tool_call 形态（非流式 / 流式收集共用）。"""
+
+    id: str
+    name: str
+    arguments: str  # JSON 字符串（可能不完整，由调用方 json.loads 容错）
+
+
+@dataclass
+class _LoopMessage:
+    """agent 循环内部统一的 assistant 消息形态。"""
+
+    content: str | None
+    tool_calls: list[_LoopToolCall] | None
+
+    @classmethod
+    def from_response(cls, response: Any) -> _LoopMessage:
+        """从非流式 ChatCompletion 提取。"""
+        msg = response.choices[0].message
+        tool_calls = (
+            [
+                _LoopToolCall(id=tc.id, name=tc.function.name, arguments=tc.function.arguments)
+                for tc in msg.tool_calls
+            ]
+            if msg.tool_calls
+            else None
+        )
+        return cls(content=msg.content, tool_calls=tool_calls)
+
+    def to_history(self) -> dict[str, Any]:
+        """转成可追加进 messages 历史的 dict。
+
+        只保留 OpenAI 协议字段（role/content/tool_calls），不带
+        ``model_dump()`` 里的多余字段（refusal / annotations 等），
+        避免严格 provider 拒收。
+        """
+        return {
+            "role": "assistant",
+            "content": self.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.name, "arguments": tc.arguments},
+                }
+                for tc in self.tool_calls or []
+            ],
+        }
 
 
 @dataclass
@@ -123,11 +134,13 @@ class AgentService:
         max_tool_calls: int = 10,
         max_retries: int = 3,
         retry_base_delay: float = 1.0,
+        timeout: float = llm_provider.DEFAULT_TIMEOUT,
         episodic: Any | None = None,
         tracker: Any | None = None,
         semantic: Any | None = None,
         vector_search: Any | None = None,
         memory_service: MemoryService | None = None,
+        token_tracker: Any | None = None,
     ) -> None:
         self._tools = ToolRegistry(ctx)
         self._max_tool_calls = max_tool_calls
@@ -135,40 +148,62 @@ class AgentService:
         self._retry_base_delay = retry_base_delay
         self._ctx = ctx
 
-        # 解析 provider 配置
-        provider = provider or os.environ.get("AGENT_PROVIDER", "deepseek")
-        provider = provider.strip().lower()
-        if provider not in SUPPORTED_PROVIDERS:
-            supported = ", ".join(SUPPORTED_PROVIDERS)
-            raise ValueError(f"Unsupported agent provider {provider!r}; choose one of: {supported}")
-        config = SUPPORTED_PROVIDERS[provider]
+        # 解析 provider 配置（单一真相源：agent/llm.py）
+        provider = llm_provider.resolve_provider(provider)
+        config = llm_provider.provider_config(provider)
         self._provider = provider
-        self._completion_options = (
-            {"temperature": config["temperature"]} if config["temperature"] is not None else {}
-        )
+        self._completion_options = llm_provider.completion_options(provider)
 
         self._model = model or config["default_model"]
 
-        # 解析 API key
-        if api_key is None:
-            api_key = os.environ.get(config["env_key"], "")
-        if not api_key:
-            raise ValueError(
-                f"未找到 API key。请设置环境变量 {config['env_key']} 或传入 api_key 参数。"
-            )
+        # 构造 OpenAI client（显式 timeout + 关闭 SDK 内置重试，重试由
+        # _create_with_retry 统一负责，避免双层重试叠加）
+        self._client = llm_provider.create_client(provider, api_key, timeout=timeout)
 
-        # 构造 OpenAI client（兼容 deepseek / kimi）
-        from openai import OpenAI
+        # 把 LLM client 回写到 ToolContext：记忆工具（search_similar_events /
+        # get_market_narrative）以 ctx.client 为门，装配处不再单独赋值。
+        # embedding_model 为 None 表示 provider 无 embedding 接口，
+        # 向量检索据此显式降级（而不是把聊天模型名当 embedding 模型传）。
+        ctx.client = self._client
+        ctx.model = self._model
+        ctx.embedding_model = llm_provider.embedding_model_for(provider)
 
-        client_kwargs: dict[str, Any] = {"api_key": api_key}
-        if config["base_url"]:
-            client_kwargs["base_url"] = config["base_url"]
-        self._client = OpenAI(**client_kwargs)
+        # TokenTracker：显式传入优先；否则有 agent_db 时自建（成本可观测性
+        # 默认开启）。初始化失败不阻塞 agent（降级为不追踪）。
+        self._token_tracker = token_tracker
+        if self._token_tracker is None:
+            agent_db = ctx.resolved_agent_db
+            if agent_db is not None:
+                try:
+                    from mommy_chaogu.agent.token_tracker import TokenTracker
+
+                    self._token_tracker = TokenTracker(agent_db)
+                except Exception as e:
+                    _log.warning("TokenTracker 初始化失败，token 追踪降级关闭: %s", e)
+
+        # usage 累加锁：后台提取线程（P6 异步化）与主线程可能同时累加
+        # 同一个 usage dict，必须串行化。
+        self._usage_lock = threading.Lock()
+        # 后台记忆任务（对话后提取）线程句柄，供 flush() 等待。
+        self._bg_threads: list[threading.Thread] = []
 
         # 记忆服务：优先使用外部传入的，否则从 episodic/tracker/semantic 构造
         if memory_service is not None:
             self._memory_service = memory_service
         else:
+            # 向量检索：显式传入优先；未传但有 embedding 模型 + episodic 时
+            # 自建（CLI/TUI/Web 入口经此自动接线；provider 无 embedding
+            # 接口时 embedding_model=None，保持关键词降级）。构造失败
+            # 不阻塞对话，降级为 None。
+            if vector_search is None and episodic is not None and ctx.embedding_model is not None:
+                from mommy_chaogu.agent.vector_search import VectorSearch
+
+                try:
+                    vector_search = VectorSearch(episodic, self._client, model=ctx.embedding_model)
+                except Exception as e:
+                    _log.warning("VectorSearch 初始化失败，向量检索降级关闭: %s", e)
+                    vector_search = None
+
             # 向后兼容：从散件构造 MemoryPipeline → MemoryService
             pipeline: MemoryPipeline | None = None
             if episodic is not None and tracker is not None:
@@ -202,17 +237,23 @@ class AgentService:
           对话后提取 observations/predictions
 
         流式：
-        - 如果传入 *on_chunk*，工具循环结束后会发起一次 stream=True 的最终回答调用，
-          逐 delta 调 on_chunk；provider 不支持 stream 时自动回退非流式。
+        - 如果传入 *on_chunk*，每轮 LLM 调用直接走 stream=True（带 tools），
+          最终回答的文本逐 delta 调 on_chunk——「出答案」与「流式输出」是
+          同一次调用；provider 不支持 stream 时自动回退非流式。
 
         取消：
         - 如果传入 *cancel_event*，每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中
-          检查 is_set()，命中即立即返回 interrupted=True。
+          检查 is_set()，命中即立即返回 interrupted=True（中断的对话不写入记忆）。
+
+        记忆：
+        - 对话后的记录 + 提取（LLM 调用 + 报价补全）在后台 daemon 线程执行，
+          不阻塞本次响应；单发进程（CLI 单次查询）退出前应调 flush() 等待完成。
 
         token 统计：
         - 如果传入 *usage_out*，它会被直接用作累加容器（worker 线程原地累加），
           调用方可在对话进行中实时读取——TUI 的 WorkingIndicator 靠它显示
-          实时 token 数。resp.usage 与 usage_out 是同一个 dict。
+          实时 token 数。resp.usage 与 usage_out 是同一个 dict。后台提取
+          线程的 token 消耗也会累加进来（同一把锁保护）。
         """
         ms = self._memory_service
 
@@ -226,18 +267,17 @@ class AgentService:
 
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
-        # 2. 对话历史上下文
+        # 2. 对话历史上下文（带字符预算：跨轮历史按条数注入会把长回答
+        # 反复灌进 context 且每轮重复计费——从最新往回装，超出预算丢弃
+        # 最旧的消息，L2）
         if memory is not None:
             # 用传入的 memory（向后兼容）
-            for h in memory.recent():
-                messages.append({"role": h["role"], "content": h["content"]})
+            self._append_history(messages, memory.recent())
         elif ms is not None and ms.has_memory:
             # 用 MemoryService 内部的对话记忆
-            for h in ms.get_recent_messages():
-                messages.append({"role": h["role"], "content": h["content"]})
+            self._append_history(messages, ms.get_recent_messages())
         elif history:
-            for h in history:
-                messages.append({"role": h["role"], "content": h["content"]})
+            self._append_history(messages, history)
 
         messages.append({"role": "user", "content": user_message})
 
@@ -251,18 +291,59 @@ class AgentService:
         )
 
         # 3. 对话后记录 + 提取
+        # 中断的对话不记录、不提取——"（已中断）"不是真实 assistant 回复，
+        # 写入记忆会污染上下文与提取管道。
+        if resp.interrupted:
+            return resp
+
         adapter = self._ctx.adapter if self._ctx else None
         if memory is not None:
-            # 向后兼容：直接用传入的 memory
+            # 向后兼容：直接用传入的 memory 写入对话历史
             memory.add("user", user_message)
             memory.add("assistant", resp.text)
-            if ms is not None:
-                # 同时走 MemoryService 的提取管道
-                ms.record_conversation(user_message, resp.text, adapter=adapter)
-        elif ms is not None:
-            ms.record_conversation(user_message, resp.text, adapter=adapter)
+        if ms is not None:
+            # 提取链（LLM 调用 + 逐条预测实时报价）是慢操作，放后台线程跑，
+            # 不阻塞响应（P6）。write_messages=False 避免与上面 memory.add
+            # 双写（外部 memory 与 MemoryService 内部 memory 并存时）。
+            self._spawn_background(
+                ms.record_conversation,
+                user_message,
+                resp.text,
+                adapter=adapter,
+                write_messages=memory is None,
+                usage_out=resp.usage,
+                usage_lock=self._usage_lock,
+            )
 
         return resp
+
+    def flush(self, timeout: float | None = None) -> None:
+        """等待所有后台记忆任务（对话后提取）完成。
+
+        *timeout* 是**每个**线程的 join 上限（不是总预算）——N 个存活线程
+        最坏等待 N × timeout。测试用它保证提取落库后再断言；单发进程
+        （CLI 单次查询）退出前必须调用，否则 daemon 线程随进程退出被
+        静默丢弃。长驻进程（TUI / Web）依赖 daemon 语义，可不调用。
+        """
+        for t in list(self._bg_threads):
+            t.join(timeout=timeout)
+        self._bg_threads = [t for t in self._bg_threads if t.is_alive()]
+
+    def _spawn_background(self, fn: Any, *args: Any, **kwargs: Any) -> threading.Thread:
+        """在 daemon 线程里跑后台任务，异常只记日志不上抛。"""
+        # 顺手清理已结束的线程句柄，避免长驻进程无界累积
+        self._bg_threads = [t for t in self._bg_threads if t.is_alive()]
+
+        def _run() -> None:
+            try:
+                fn(*args, **kwargs)
+            except Exception:
+                _log.warning("后台记忆任务失败: %s", fn, exc_info=True)
+
+        t = threading.Thread(target=_run, daemon=True)
+        self._bg_threads.append(t)
+        t.start()
+        return t
 
     def chat_raw(
         self,
@@ -288,6 +369,7 @@ class AgentService:
 
         重试 max_retries 次后仍失败则抛出最后一次异常（上游 CLI / TUI / Web
         均有 try/except 兜底展示）。认证、参数等非瞬时错误不重试，直接抛出。
+        RateLimitError 带 Retry-After 响应头时按服务器要求等待。
         """
         from openai import APIConnectionError, InternalServerError, RateLimitError
 
@@ -295,17 +377,19 @@ class AgentService:
 
         for attempt in range(self._max_retries + 1):
             try:
-                return self._client.chat.completions.create(
+                response = self._client.chat.completions.create(
                     model=self._model,
                     messages=messages,
                     tools=self._tools.definitions(),
                     **self._completion_options,
                 )
+                self._track_usage(response)
+                return response
             except retryable as exc:
                 if attempt >= self._max_retries:
                     _log.error("LLM 调用重试 %d 次后仍失败: %s", self._max_retries, exc)
                     raise
-                delay = self._retry_base_delay * (2**attempt) + random.uniform(0, 0.5)
+                delay = self._retry_delay(exc, attempt)
                 _log.warning(
                     "LLM 调用失败（第 %d/%d 次）: %s — %.1fs 后重试",
                     attempt + 1,
@@ -315,6 +399,31 @@ class AgentService:
                 )
                 time.sleep(delay)
         raise AssertionError("unreachable")  # pragma: no cover
+
+    def _retry_delay(self, exc: Exception, attempt: int) -> float:
+        """计算重试等待：限流时优先读 Retry-After 响应头，否则指数退避 + jitter。"""
+        from openai import RateLimitError
+
+        if isinstance(exc, RateLimitError):
+            response = getattr(exc, "response", None)
+            headers = getattr(response, "headers", None)
+            if headers is not None:
+                retry_after = headers.get("retry-after")
+                if retry_after is not None:
+                    try:
+                        return max(0.0, float(retry_after))
+                    except (TypeError, ValueError):
+                        pass
+        return self._retry_base_delay * (2**attempt) + random.uniform(0, 0.5)
+
+    def _track_usage(self, response: Any, phase: str = "agent") -> None:
+        """把一次 LLM 调用记进 TokenTracker（成本可观测性）。失败不阻塞主流程。"""
+        if self._token_tracker is None:
+            return
+        try:
+            self._token_tracker.record_from_response(response, model=self._model, phase=phase)
+        except Exception as e:
+            _log.warning("TokenTracker 记录失败: %s", e)
 
     def _run_loop(
         self,
@@ -331,8 +440,9 @@ class AgentService:
         签名为 (fn_name, ok, elapsed_ms, result_or_error)——TUI 用它做
         dexter 风格的 tool_start/tool_end 实时渲染。
 
-        on_chunk：工具循环结束后，若有则发起一次 stream=True 的最终回答调用，
-        逐 delta 调用。provider 不支持 stream 时回退非流式。
+        on_chunk：若提供，每轮 LLM 调用直接走 stream=True（带 tools）——
+        文本 delta 逐段回调，tool_calls delta 同步拼接；最终回答的「出答案」
+        与「流式输出」是同一次调用。provider 不支持 stream 时回退非流式。
 
         cancel_event：每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中检查
         is_set()，命中即返回 interrupted=True 的 AgentResponse。
@@ -357,23 +467,16 @@ class AgentService:
 
             rounds += 1
 
-            response = self._create_with_retry(messages)
-            self._accumulate_usage(total_usage, response)
-
-            msg = response.choices[0].message
+            msg = self._next_message(
+                messages,
+                on_chunk=on_chunk,
+                cancel_event=cancel_event,
+                total_usage=total_usage,
+            )
 
             # 如果没有 tool_calls，说明 LLM 已经准备好回复
             if not msg.tool_calls:
                 text = msg.content or ""
-                # 流式最终回答：发起一次 stream=True 调用以逐 delta 输出。
-                # 仅在 on_chunk 提供时启用；provider 不支持 stream 或失败时
-                # _stream_final_answer 返回 None，保留非流式 text 兜底。
-                if on_chunk is not None and text:
-                    streamed = self._stream_final_answer(
-                        messages, on_chunk, cancel_event, total_usage
-                    )
-                    if streamed is not None:
-                        text = streamed
                 # 流式输出途中被取消：已流出的部分保留，但标记 interrupted，
                 # 让 UI 层按「已中断」而非「完整回答」收尾。
                 if cancel_event is not None and cancel_event.is_set():
@@ -391,8 +494,9 @@ class AgentService:
                     usage=total_usage,
                 )
 
-            # 把 LLM 的 tool_call 消息加入历史
-            messages.append(msg.model_dump())  # type: ignore[arg-type]
+            # 把 LLM 的 tool_call 消息加入历史（只保留协议字段，不带
+            # model_dump() 的多余字段，严格 provider 也能收）
+            messages.append(msg.to_history())
 
             # 执行每个 tool_call
             for tc in msg.tool_calls:
@@ -406,9 +510,9 @@ class AgentService:
                         interrupted=True,
                     )
 
-                fn_name = tc.function.name
+                fn_name = tc.name
                 try:
-                    fn_args = json.loads(tc.function.arguments)
+                    fn_args = json.loads(tc.arguments)
                 except (json.JSONDecodeError, TypeError):
                     fn_args = {}
 
@@ -473,55 +577,129 @@ class AgentService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _accumulate_usage(total: dict[str, int], response: Any) -> None:
-        """把单次 response.usage 累加到 total dict。"""
+    def _append_history(
+        messages: list[dict[str, Any]],
+        items: Any,
+        budget: int = 6000,
+    ) -> None:
+        """把历史消息注入 messages，总字符不超过 *budget*（≈3k tokens）。
+
+        从最新消息往回装：超预算时丢弃最旧的消息（最新上下文价值最高）。
+        至少保留最新一条（即使它自己就超预算——截断单条不如整条保留
+        让 LLM 看到最近说了什么）。
+        """
+        picked: list[dict[str, str]] = []
+        remaining = budget
+        for h in reversed(list(items)):
+            cost = len(h["content"])
+            if picked and remaining - cost < 0:
+                break
+            picked.append({"role": h["role"], "content": h["content"]})
+            remaining -= cost
+        messages.extend(reversed(picked))
+
+    def _next_message(
+        self,
+        messages: list[dict[str, Any]],
+        on_chunk: Callable[[str], None] | None,
+        cancel_event: threading.Event | None,
+        total_usage: dict[str, int],
+    ) -> _LoopMessage:
+        """发起一轮 LLM 调用并返回统一形态的消息。
+
+        传了 *on_chunk* 时这一轮直接走 stream=True（带 tools）：最终回答的
+        文本边收边回调，tool_calls deltas 同步拼接——「得出答案」与「流式
+        输出」是同一次调用，不再像旧实现那样非流式出答案后再把全量
+        messages 重发一次流式（双重计费，EVALUATION-2026-07-18 L1）。
+        流式不可用（provider 不支持 / 非瞬时错误 / 零 chunk）时回退非流式
+        调用；create 阶段的瞬时错误（连接/限流/5xx）先按重试策略重试，
+        重试耗尽后与非流式路径一样抛异常。
+        """
+        if on_chunk is not None:
+            streamed = self._create_stream_with_retry(messages, on_chunk, cancel_event, total_usage)
+            if streamed is not None:
+                return streamed
+            # 流式不可用（尚未流出任何内容），安全回退非流式
+        response = self._create_with_retry(messages)
+        self._accumulate_usage(total_usage, response)
+        return _LoopMessage.from_response(response)
+
+    def _accumulate_usage(self, total: dict[str, int], response: Any) -> None:
+        """把单次 response.usage 累加到 total dict（线程安全）。
+
+        后台提取线程（对话后异步提取）与主线程可能同时累加同一个
+        usage dict，累加必须串行化。
+        """
         usage = getattr(response, "usage", None)
         if usage is None:
             return
-        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
-            val = getattr(usage, key, None)
-            if val is not None:
-                total[key] = total.get(key, 0) + int(val)
+        with self._usage_lock:
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                val = getattr(usage, key, None)
+                if val is not None:
+                    total[key] = total.get(key, 0) + int(val)
 
-    def _stream_final_answer(
+    def _create_stream_with_retry(
         self,
         messages: list[dict[str, Any]],
         on_chunk: Callable[[str], None],
         cancel_event: threading.Event | None,
-        total_usage: dict[str, int] | None = None,
-    ) -> str | None:
-        """发起一次 stream=True 的无 tools 调用，逐 delta 调 on_chunk。
+        total_usage: dict[str, int],
+    ) -> _LoopMessage | None:
+        """stream=True（带 tools）调用：文本 delta 回调 + tool_calls 拼接。
 
-        学 dexter：工具循环已由上一轮非流式调用得出最终回答方向，这里重新发
-        一次相同 messages 的流式调用（不绑 tools），把完整文本流式输出给前端。
+        只对 create 阶段的瞬时错误重试（此时尚未流出任何内容）；迭代开始
+        后不再重试——已流出的文本无法收回，中途异常用已收集内容收尾。
+        零收集（迭代前即失败 / 空流）返回 None，调用方回退非流式。
 
-        token 统计：流式调用是一次独立的真实计费调用（provider 照常收费），
-        通过 ``stream_options={"include_usage": True}`` 让最后一个 chunk 带
-        usage，计入 total_usage——之前刻意不计，导致 token 统计系统性偏低。
-        provider 不支持 stream_options 时 create 直接报错，走 except 返回 None。
-
-        返回 None 表示流式不可用（provider 不支持 / 出错 / 零 chunk），
-        调用方用上一轮非流式 text 兜底；返回 str 为实际流式收集到的完整文本。
+        token 统计：``stream_options={"include_usage": True}`` 让最后一个
+        chunk 带 usage，计入 total_usage 并进 TokenTracker。
         """
-        try:
-            stream = self._client.chat.completions.create(
-                model=self._model,
-                messages=messages,
-                stream=True,
-                stream_options={"include_usage": True},
-                **self._completion_options,
-            )
-        except Exception as exc:
-            _log.warning("stream 调用失败，回退非流式: %s", exc)
+        from openai import APIConnectionError, InternalServerError, RateLimitError
+
+        retryable = (APIConnectionError, RateLimitError, InternalServerError)
+
+        stream = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                stream = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,
+                    tools=self._tools.definitions(),
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    **self._completion_options,
+                )
+                break
+            except retryable as exc:
+                if attempt >= self._max_retries:
+                    _log.error("stream 调用重试 %d 次后仍失败: %s", self._max_retries, exc)
+                    raise
+                delay = self._retry_delay(exc, attempt)
+                _log.warning(
+                    "stream 调用失败（第 %d/%d 次）: %s — %.1fs 后重试",
+                    attempt + 1,
+                    self._max_retries + 1,
+                    exc,
+                    delay,
+                )
+                time.sleep(delay)
+            except Exception as exc:
+                _log.warning("stream 调用失败，回退非流式: %s", exc)
+                return None
+        if stream is None:  # pragma: no cover - 上面循环要么 break 要么 raise/return
             return None
 
         collected: list[str] = []
+        tool_acc: dict[int, dict[str, Any]] = {}  # index → {id, name, arguments 分片}
+        usage_chunk: Any | None = None
         try:
             for chunk in stream:
                 if cancel_event is not None and cancel_event.is_set():
                     break
                 # usage 只挂在最后一个 chunk 上（include_usage），其余为 None
-                if total_usage is not None:
+                if getattr(chunk, "usage", None) is not None:
+                    usage_chunk = chunk
                     self._accumulate_usage(total_usage, chunk)
                 if not chunk.choices:
                     continue
@@ -531,12 +709,37 @@ class AgentService:
                     collected.append(text)
                     with contextlib.suppress(Exception):
                         on_chunk(text)
+                for tc_delta in getattr(delta, "tool_calls", None) or []:
+                    slot = tool_acc.setdefault(
+                        tc_delta.index, {"id": "", "name": "", "arguments": []}
+                    )
+                    if tc_delta.id:
+                        slot["id"] += tc_delta.id
+                    fn = getattr(tc_delta, "function", None)
+                    if fn is not None:
+                        if fn.name:
+                            slot["name"] += fn.name
+                        if fn.arguments:
+                            slot["arguments"].append(fn.arguments)
         except Exception as exc:
-            _log.warning("stream 迭代中断: %s", exc)
-            # 已收集的部分仍有价值，返回已得文本（可能不完整）
-        # 零 chunk（迭代前即失败 / 空流）视为流式不可用，不得用空串
-        # 覆盖非流式兜底答案
-        return "".join(collected) if collected else None
+            _log.warning("stream 迭代中断，用已收集内容收尾: %s", exc)
+
+        if usage_chunk is not None:
+            self._track_usage(usage_chunk)
+
+        # 零收集（迭代前即失败 / 空流）视为流式不可用，回退非流式
+        if not collected and not tool_acc:
+            return None
+
+        tool_calls = [
+            _LoopToolCall(
+                id=slot["id"] or f"call_{index}",
+                name=slot["name"],
+                arguments="".join(slot["arguments"]),
+            )
+            for index, slot in sorted(tool_acc.items())
+        ] or None
+        return _LoopMessage(content="".join(collected) or None, tool_calls=tool_calls)
 
     @property
     def tools(self) -> ToolRegistry:

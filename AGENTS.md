@@ -25,14 +25,17 @@ cp .env.example .env       # 复制模板
 | Provider | 环境变量 | 说明 |
 |---|---|---|
 | deepseek（默认） | `DEEPSEEK_API_KEY` | DeepSeek API |
-| openai | `OPENAI_API_KEY` | OpenAI / 兼容接口 |
+| openai | `OPENAI_API_KEY` | OpenAI / 兼容接口（有 embedding 接口，向量检索可用） |
 | kimi | `MOONSHOT_API_KEY` | Moonshot / Kimi |
 | zai | `ZAI_API_KEY` | z.ai / GLM-4.7 |
 | nova | `NOVA_API_KEY` | Nova Bridge（本地桥接） |
+| minimax | `MINIMAX_API_KEY` | MiniMax（M2.7） |
 | — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
 
-优先级：shell 环境变量 > `.env` 文件 > `config.toml`。
+优先级：shell 环境变量 > `.env` 文件 > `config.toml`。provider 配置表
+（base_url / 默认模型 / env key / 温度 / embedding 模型）的单一真相源是
+`src/mommy_chaogu/agent/llm.py`——改 provider 只动它，不要另起表。
 
 ## 数据库布局（2026-07-03 重组）
 
@@ -67,7 +70,7 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（tools/ 包按域拆分 25 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
+├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 25 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
 ├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
@@ -135,6 +138,7 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 - **Conventional Commits** — `feat / fix / docs / refactor / chore`
 - 数据金额一律 `Decimal`，不用 `float`
 - 数据源走 `MarketDataAdapter` Protocol，加新源只实现 Protocol
-- 新增 agent 工具：在 `agent/tools/` 对应域模块（quote/sector/flows/bars/holdings/intel/alerts/memory/themes）的 `DEFS` 与 `HANDLERS` 各加一项，`registry.py` 自动聚合，无需改注册表
+- provider 配置只改 `agent/llm.py` 的 `SUPPORTED_PROVIDERS`（service/config/backtest/MCP 全部引用它）；LLM client 一律经 `llm.create_client()` 构造（显式 timeout + 关 SDK 内置重试，重试由应用层统一）
+- 新增 agent 工具：在 `agent/tools/` 对应域模块（quote/sector/flows/bars/holdings/intel/alerts/memory/themes）的 `DEFS` 与 `HANDLERS` 各加一项，`registry.py` 自动聚合（import 时校验两边名字一致），无需改注册表
 - 拉新失败保留旧数据（数据库是唯一真相源）
 - 新增模块在 `db_paths.py` 里定义数据库路径，不要硬编码

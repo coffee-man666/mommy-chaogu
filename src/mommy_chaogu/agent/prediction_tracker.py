@@ -3,6 +3,11 @@
 记录 agent 对个股做出的预测，并在到期后验证命中与否。表 predictions
 存储预测方向、目标价、止损价、依据等，到期后回填实际价格与命中状态，
 用于长期评估 agent 的预测准确度。
+
+价格字段约定（与项目"金额一律 Decimal"一致）：
+- API 边界（create / update_status / 查询返回）一律 ``Decimal``；
+- SQLite 列保持 REAL（存量库无法在线改列型），写入前量化到 4 位小数，
+  读出时 round 恢复为精确 ``Decimal``——二进制浮点误差不会泄漏到业务层。
 """
 
 from __future__ import annotations
@@ -10,6 +15,7 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +71,25 @@ _TIMEFRAME_DAYS: dict[str, int] = {
     "60d": 60,
 }
 
+# 价格字段（走 Decimal 约定）；change_pct / accuracy_score 是比率，保持 float。
+_PRICE_FIELDS = ("target_price", "entry_price", "stop_loss", "actual_price")
+
+_PRICE_QUANT = Decimal("0.0001")
+
+
+def _price_to_storage(value: Decimal | float | int | None) -> float | None:
+    """价格入库：量化到 4 位小数后存 float（REAL 列的精度安全网）。"""
+    if value is None:
+        return None
+    return float(Decimal(str(value)).quantize(_PRICE_QUANT))
+
+
+def _price_from_storage(value: Any) -> Decimal | None:
+    """价格出库：round 掉 REAL 的二进制浮点噪声，恢复精确 Decimal。"""
+    if value is None:
+        return None
+    return Decimal(str(round(float(value), 4)))
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -82,9 +107,13 @@ def _compute_verify_after(timeframe: str) -> str:
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
-    """将一行查询结果转为字典。"""
+    """将一行查询结果转为字典（价格字段恢复为 Decimal）。"""
     cols = list(row._mapping.keys())
-    return {col: row._mapping[col] for col in cols}
+    d = {col: row._mapping[col] for col in cols}
+    for field in _PRICE_FIELDS:
+        if field in d:
+            d[field] = _price_from_storage(d[field])
+    return d
 
 
 class PredictionTracker(EngineOwner):
@@ -132,9 +161,9 @@ class PredictionTracker(EngineOwner):
         direction: str,
         timeframe: str,
         rationale: str | None = None,
-        target_price: float | None = None,
-        entry_price: float | None = None,
-        stop_loss: float | None = None,
+        target_price: Decimal | float | None = None,
+        entry_price: Decimal | float | None = None,
+        stop_loss: Decimal | float | None = None,
         change_pct_at_creation: float | None = None,
         data_coverage: dict[str, bool] | None = None,
         source_event_id: int | None = None,
@@ -143,6 +172,8 @@ class PredictionTracker(EngineOwner):
 
         *timeframe* 决定到期时间（``verify_after``）。*data_coverage*
         会被序列化为 JSON 写入 ``data_coverage_at_creation``。
+        价格参数（target/entry/stop_loss）建议传 ``Decimal``，
+        入库前统一量化到 4 位小数。
         """
         created_at = _utcnow().isoformat()
         verify_after = _compute_verify_after(timeframe)
@@ -170,9 +201,9 @@ class PredictionTracker(EngineOwner):
                     "prediction": prediction,
                     "direction": direction,
                     "rationale": rationale,
-                    "target_price": target_price,
-                    "entry_price": entry_price,
-                    "stop_loss": stop_loss,
+                    "target_price": _price_to_storage(target_price),
+                    "entry_price": _price_to_storage(entry_price),
+                    "stop_loss": _price_to_storage(stop_loss),
                     "change_pct_at_creation": change_pct_at_creation,
                     "timeframe": timeframe,
                     "verify_after": verify_after,
@@ -211,7 +242,7 @@ class PredictionTracker(EngineOwner):
         self,
         pred_id: int,
         status: str,
-        actual_price: float | None = None,
+        actual_price: Decimal | float | None = None,
         actual_change_pct: float | None = None,
         accuracy_score: float | None = None,
         data_coverage: dict[str, bool] | None = None,
@@ -220,6 +251,7 @@ class PredictionTracker(EngineOwner):
 
         设置 ``verified_at`` 为当前时间，并填入实际价格、实际涨跌幅、
         命中分。*data_coverage* 序列化为 JSON 写入 ``data_coverage_at_verify``。
+        *actual_price* 建议传 ``Decimal``，入库前量化到 4 位小数。
         """
         verified_at = _utcnow().isoformat()
         coverage_json = json.dumps(data_coverage) if data_coverage else None
@@ -239,7 +271,7 @@ class PredictionTracker(EngineOwner):
                     "id": pred_id,
                     "status": status,
                     "verified_at": verified_at,
-                    "actual_price": actual_price,
+                    "actual_price": _price_to_storage(actual_price),
                     "actual_change_pct": actual_change_pct,
                     "accuracy_score": accuracy_score,
                     "data_coverage_at_verify": coverage_json,

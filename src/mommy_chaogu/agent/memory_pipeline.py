@@ -20,6 +20,7 @@ episodic + tracker + semantic 三层记忆，而不必关心各自的调用顺�
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
@@ -89,12 +90,20 @@ class MemoryPipeline:
         user_msg: str,
         assistant_response: str,
         adapter: MarketDataAdapter | None = None,
+        *,
+        usage_out: dict[str, int] | None = None,
+        usage_lock: threading.Lock | None = None,
     ) -> None:
         """对话结束后从 (user, assistant) 中抽取 observations / predictions 并落库。
 
         - ``client`` 为 ``None`` → 跳过（不调 LLM）；
         - episodic 或 tracker 为 ``None`` → 跳过（无落库目标）；
-        - 抽取 / 落库任何异常 → 静默降级（log warning）。
+        - 抽取 / 落库任何异常 → 静默降级（log warning）；
+        - 落库后若挂了 vector_search，顺带为新事件补 embedding（向量子系统
+          的生产触发点之一，embed_pending 内部逐事件容错）。
+
+        *usage_out* / *usage_lock* 把提取 LLM 调用消耗的 token 计入调用方
+        的共享统计容器（异步提取线程与主线程靠锁互斥）。
         """
         if self._client is None or self._model is None:
             _log.debug("record_analysis: no LLM client/model, skipping extraction")
@@ -105,7 +114,12 @@ class MemoryPipeline:
 
         try:
             extraction = extract_from_conversation(
-                user_msg, assistant_response, self._client, self._model
+                user_msg,
+                assistant_response,
+                self._client,
+                self._model,
+                usage_out=usage_out,
+                usage_lock=usage_lock,
             )
         except Exception as e:
             _log.warning("record_analysis: extract_from_conversation failed: %s", e)
@@ -118,6 +132,21 @@ class MemoryPipeline:
             store_extraction(extraction, self._episodic, self._tracker, adapter)
         except Exception as e:
             _log.warning("record_analysis: store_extraction failed: %s", e)
+
+        self.embed_pending_events()
+
+    def embed_pending_events(self, batch_size: int = 20) -> None:
+        """为还没有 embedding 的事件补向量（生产触发点）。
+
+        vector_search 未装配（provider 无 embedding 接口 / 未接线）时跳过；
+        生成失败逐事件容错，不向上抛。
+        """
+        if self._vector_search is None:
+            return
+        try:
+            self._vector_search.embed_pending(batch_size=batch_size)
+        except Exception as e:
+            _log.warning("embed_pending_events: failed: %s", e)
 
     # ------------------------------------------------------------------
     # 3. 验证预测
@@ -179,6 +208,10 @@ class MemoryPipeline:
             consolidator.consolidate_all()
         except Exception as e:
             _log.warning("consolidate: failed: %s", e)
+
+        # 提炼后顺带为存量事件补 embedding（cron consolidate 是向量子系统
+        # 的定期生产触发点）
+        self.embed_pending_events()
 
     # ------------------------------------------------------------------
     # 5. 状态快照
