@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { PortfolioSummary, PositionDetail, Adjustment } from '../api/types'
-import { apiGet, apiPost, apiDelete } from '../api/client'
+import { apiGet, apiPost, apiDelete, toApiError, type ApiError } from '../api/client'
 
 export interface AddPositionData {
   code: string
@@ -23,6 +23,8 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   const summary = ref<PortfolioSummary | null>(null)
   const positions = ref<PositionDetail[]>([])
   const loading = ref(false)
+  /** 最近一次拉取失败的原因；成功时清空。失败时保留旧数据，绝不清空假装"没有持仓" */
+  const error = ref<ApiError | null>(null)
   const lastFetch = ref(0)
   /** positionId → 调仓记录缓存 */
   const adjustmentsMap = ref<Record<number, Adjustment[]>>({})
@@ -32,9 +34,9 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       summary.value = await apiGet<PortfolioSummary>('/api/portfolio')
       positions.value = summary.value?.positions ?? []
       lastFetch.value = Date.now()
-    } catch {
-      summary.value = null
-      positions.value = []
+      error.value = null
+    } catch (e) {
+      error.value = toApiError(e)
     }
   }
 
@@ -78,6 +80,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     summary,
     positions,
     loading,
+    error,
     adjustmentsMap,
     totalPnl,
     hasPositions,

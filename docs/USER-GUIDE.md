@@ -363,7 +363,7 @@ uv run mommy memory history --limit 10
 uv run mommy agent tools
 ```
 
-24 个 function-calling 工具一览：
+25 个 function-calling 工具一览：
 
 | 类别 | 工具 | 用途 |
 |------|------|------|
@@ -372,7 +372,7 @@ uv run mommy agent tools
 | | `get_sector_ranking` / `search_sector` / `get_sector_stocks` | 板块行情 |
 | **资金流** | `get_money_flow_today` / `get_money_flow_history` | 主力资金流 |
 | **基本面** | `get_fundamentals` | PE/PB/ROE/市值等 |
-| **组合** | `get_watchlist` / `get_portfolio` / `get_portfolio_analysis` | 自选股/持仓/组合分析 |
+| **组合** | `get_watchlist` / `manage_watchlist` / `get_portfolio` / `get_portfolio_analysis` | 自选股/持仓/组合分析 |
 | **资讯** | `search_news` / `get_announcements` / `get_longhuban` | 新闻/公告/龙虎榜 |
 | **告警** | `manage_alert` | 价格/涨跌幅告警 |
 | **记忆** | `search_similar_events` / `get_prediction_history` / `get_market_narrative` | 记忆检索 |

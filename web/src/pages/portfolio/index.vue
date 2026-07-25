@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import ErrorState from '@/components/ErrorState.vue'
 import {
   Table,
   TableBody,
@@ -44,6 +45,7 @@ const store = usePortfolioStore()
 const summary = computed(() => store.summary)
 const loading = computed(() => store.loading)
 const positions = computed(() => store.positions)
+const storeError = computed(() => store.error)
 
 function pnlClass(v: string | number | null | undefined): string {
   if (v == null) return 'text-muted-foreground'
@@ -277,6 +279,15 @@ onUnmounted(() => {
         </Card>
       </template>
 
+      <template v-else-if="storeError && !summary">
+        <!-- 加载失败且没有旧数据：显示错误态（有旧数据时继续展示旧数据） -->
+        <Card class="col-span-full">
+          <CardContent class="p-0">
+            <ErrorState :message="storeError?.friendly" @retry="store.fetchAll()" />
+          </CardContent>
+        </Card>
+      </template>
+
       <template v-else>
         <Card>
           <CardContent class="space-y-1">
@@ -317,13 +328,29 @@ onUnmounted(() => {
     <Card>
       <CardHeader class="flex flex-row items-center justify-between">
         <CardTitle class="text-base">持仓明细</CardTitle>
-        <Badge variant="secondary" class="font-mono">{{ summary?.n_positions ?? 0 }}</Badge>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="storeError"
+            class="text-xs text-destructive hover:underline"
+            @click="store.fetchAll()"
+          >
+            刷新失败，点击重试
+          </button>
+          <Badge variant="secondary" class="font-mono">{{ summary?.n_positions ?? 0 }}</Badge>
+        </div>
       </CardHeader>
       <Separator />
       <CardContent class="px-0">
+        <!-- 加载失败且没有旧数据 -->
+        <ErrorState
+          v-if="storeError && positions.length === 0"
+          :message="storeError?.friendly"
+          @retry="store.fetchAll()"
+        />
+
         <!-- 空状态 -->
         <div
-          v-if="!loading && positions.length === 0"
+          v-else-if="!loading && positions.length === 0"
           class="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground"
         >
           <span>还没有持仓记录</span>

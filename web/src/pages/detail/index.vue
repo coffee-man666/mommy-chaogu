@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiGet } from '@/api/client'
+import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan, fmtMoney, fmtAge } from '@/utils/format'
 import type { Quote, Bar, MoneyFlowResponse } from '@/api/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import ErrorState from '@/components/ErrorState.vue'
 import { cn } from '@/lib/utils'
 
 const props = defineProps<{ code: string }>()
@@ -25,6 +26,8 @@ const router = useRouter()
 // ---------- 状态 ----------
 const quote = ref<Quote | null>(null)
 const quoteLoading = ref(true)
+/** 报价拉取失败原因（成功时清空；有旧报价时继续展示旧报价） */
+const quoteError = ref<ApiError | null>(null)
 const bars = ref<Bar[]>([])
 const klineChart = ref<any>(null)
 const interval = ref<string>('1d')
@@ -90,12 +93,22 @@ async function loadQuote() {
   quoteLoading.value = true
   try {
     quote.value = await apiGet<Quote>(`/api/quotes/${props.code}`)
+    quoteError.value = null
   } catch (e) {
-    console.error(e)
+    const err = toApiError(e)
+    quoteError.value = err
+    console.error(err.raw)
   } finally {
     quoteLoading.value = false
   }
 }
+
+/** 报价卡错误文案：404 说明代码可能输错，其余用统一 friendly */
+const quoteErrorMessage = computed(() => {
+  const e = quoteError.value
+  if (!e) return ''
+  return e.status === 404 ? '没查到这只股票，请检查代码是否正确' : e.friendly
+})
 
 async function loadBars() {
   try {
@@ -297,6 +310,7 @@ watch(
   () => props.code,
   async () => {
     quote.value = null
+    quoteError.value = null
     bars.value = []
     flowToday.value = null
     flowHistory.value = null
@@ -421,6 +435,13 @@ onUnmounted(() => {
               </TableBody>
             </Table>
           </template>
+
+          <!-- 加载失败且没有旧报价：错误态 + 重试（不再是一张白卡） -->
+          <ErrorState
+            v-else-if="quoteError"
+            :message="quoteErrorMessage"
+            @retry="loadQuote"
+          />
         </CardContent>
       </Card>
 

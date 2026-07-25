@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { apiGet } from '@/api/client'
+import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan } from '@/utils/format'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import ErrorState from '@/components/ErrorState.vue'
 import {
   Table,
   TableBody,
@@ -65,6 +66,9 @@ const theme = ref<ThemeDetail | null>(null)
 const stocks = ref<ThemeStock[]>([])
 const loading = ref(true)
 const loadingQuotes = ref(false)
+/** 主题信息 / 行情各自最近一次失败原因（成功时清空，失败时保留旧数据） */
+const loadError = ref<ApiError | null>(null)
+const quotesError = ref<ApiError | null>(null)
 const activeSub = ref('')
 const sortBy = ref<SortKey>('change')
 const sortDir = ref<'desc' | 'asc'>('desc')
@@ -73,10 +77,18 @@ const isEarnings = computed(() => themeId.value === 'earnings_watch')
 
 async function loadTheme() {
   loading.value = true
+  loadError.value = null
   try {
     theme.value = await apiGet<ThemeDetail>(`/api/themes/${themeId.value}`)
-  } catch {
-    theme.value = null
+  } catch (e) {
+    const err = toApiError(e)
+    if (err.status === 404) {
+      // 真的不存在才显示"主题不存在"
+      theme.value = null
+    } else {
+      // 网络 / 服务故障：保留旧数据，显示错误态
+      loadError.value = err
+    }
   } finally {
     loading.value = false
   }
@@ -90,8 +102,9 @@ async function loadQuotes() {
       `/api/themes/${themeId.value}/quotes?limit=200`
     )
     stocks.value = data.items
-  } catch {
-    stocks.value = []
+    quotesError.value = null
+  } catch (e) {
+    quotesError.value = toApiError(e)
   } finally {
     loadingQuotes.value = false
   }
@@ -222,7 +235,7 @@ function goDetail(code: string) {
       </Button>
       <h1 class="text-xl font-bold">
         {{ themeIcons[themeId] || '📈' }}
-        {{ theme?.name || (loading ? '加载中…' : '主题不存在') }}
+        {{ theme?.name || (loading ? '加载中…' : loadError ? '加载失败' : '主题不存在') }}
       </h1>
       <p v-if="theme" class="mt-1 text-xs opacity-85 leading-relaxed">
         {{ theme.description }}
@@ -239,6 +252,13 @@ function goDetail(code: string) {
         </Card>
         <Skeleton class="h-24 w-full" />
       </template>
+
+      <!-- 加载失败且没有旧数据：错误态 + 重试（不再伪装"主题不存在"） -->
+      <ErrorState
+        v-else-if="loadError && !theme"
+        :message="loadError?.friendly"
+        @retry="loadTheme"
+      />
 
       <template v-else-if="theme">
         <!-- 概览栏 -->
@@ -325,6 +345,14 @@ function goDetail(code: string) {
           <div v-if="loadingQuotes" class="py-10 text-center text-sm text-muted-foreground">
             拉取行情中…
           </div>
+
+          <!-- 行情加载失败且没有旧数据 -->
+          <ErrorState
+            v-else-if="quotesError && filteredStocks.length === 0"
+            compact
+            :message="quotesError?.friendly"
+            @retry="loadQuotes"
+          />
 
           <!-- 空状态 -->
           <div

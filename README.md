@@ -5,8 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
-[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-blue.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-1%2C103-brightgreen.svg)](#项目数据)
+[![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-1%2C488-brightgreen.svg)](#项目数据)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type check: mypy strict (core)](https://img.shields.io/badge/mypy-strict%20%E6%A0%B8%E5%BF%83%E6%A8%A1%E5%9D%97-blue.svg)](docs/TECH-DEBT.md)
 
@@ -14,7 +14,7 @@
 
 A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自进化记忆系统、回测引擎。
 
-从一个「给妈妈用的手机行情工具」起步，逐步演进为涵盖数据采集、信号告警、LLM 分析、预测验证闭环、回测评估的完整投研框架。当前版本 **v1.0.0**（首个稳定版），变更记录见 [CHANGELOG](CHANGELOG.md)。
+从一个「给妈妈用的手机行情工具」起步，逐步演进为涵盖数据采集、信号告警、LLM 分析、预测验证闭环、回测评估的完整投研框架。当前版本 **v1.1.0**，变更记录见 [CHANGELOG](CHANGELOG.md)。
 
 ---
 
@@ -27,7 +27,7 @@ A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自�
 | **工具调用可视化** | `--verbose` 显示完整路由决策 + 工具调用过程（`🔧 调用: get_quote...`），消除 AI 黑盒感 |
 | **行情数据** | 多源 fallback（东财 + 腾讯 + 缓存），报价 / K 线 / 资金流 / 板块排行 / 基本面 |
 | **资金流分析** | 主力净流入比率 (bp) 信号、板块扫描、收盘日报、历史回测 |
-| **AI Agent** | 25 个 function-calling 工具，支持 deepseek / openai / kimi / z.ai (GLM) / Nova Bridge，Web 聊天 + 流式推送 |
+| **AI Agent** | 25 个 function-calling 工具，支持 deepseek / openai / kimi / z.ai (GLM) / Nova Bridge / MiniMax，Web 聊天 + 流式推送 |
 | **自进化记忆** | 5 层记忆架构（工作/情景/预测验证/语义知识/向量检索），`mommy memory` 命令查看记忆 |
 | **回测引擎** | 规则回测 + LLM 回测 + 组合分析 + walk-forward 过拟合检测 + 市场环境分组分析 |
 | **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分，4 种 verdict 分级 |
@@ -151,7 +151,7 @@ Tab 键切换双模式：AI 对话（Markdown 流式渲染 + 工具调用折叠 
        |                     |  [匹配: 工作流名称] / [转交 AI 助手]
        v                     v
   ┌─────────────────────────────┐
-  │      ToolRegistry (24 tools) │
+  │      ToolRegistry (25 tools) │
   └────────────┬────────────────┘
                |
   ┌────────────v────────────┐
@@ -184,11 +184,11 @@ Cache   Agent    Data Sources
 | 指标 | 值 |
 |---|---|
 | 代码量 | ~51,000 行（src ~27,000 + tests ~16,000 + web ~7,000） |
-| 测试 | 1,103 collected；1,090 个确定性离线测试 + 13 个定时网络探针 |
+| 测试 | 1,488 collected；1,475 个确定性离线测试 + 13 个定时网络探针 |
 | CLI 入口 | `mommy` 统一入口 + 10 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
 | Agent 工具 | 25 个 function-calling tools |
 | 数据库 | 4 个（market / portfolio / agent / reference） |
-| LLM Provider | 5 个（deepseek / openai / kimi / z.ai / Nova Bridge） |
+| LLM Provider | 6 个（deepseek / openai / kimi / z.ai / Nova Bridge / MiniMax） |
 | 记忆系统 | 5 层（工作/情景/预测/语义/向量） |
 
 ---

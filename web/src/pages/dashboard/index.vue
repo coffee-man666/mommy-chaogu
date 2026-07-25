@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiGet } from '@/api/client'
+import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan } from '@/utils/format'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import ErrorState from '@/components/ErrorState.vue'
 import {
   Table,
   TableBody,
@@ -35,6 +36,10 @@ const watchCodes = ref<string[]>([])
 const dataAge = ref(0)
 const loading = ref(false)
 const errorCount = ref(0) // number of API calls that failed in last cycle
+/** 各数据源最近一次失败原因（成功时清空，失败时保留旧数据） */
+const indexesError = ref<ApiError | null>(null)
+const quotesError = ref<ApiError | null>(null)
+const watchlistError = ref<ApiError | null>(null)
 
 let refreshTimer: number | null = null
 let ageTimer: number | null = null
@@ -44,8 +49,10 @@ async function loadWatchlist() {
     type WatchlistStock = { code: string; name: string; group: string }
     const list = await apiGet<WatchlistStock[]>('/api/watchlist')
     watchCodes.value = list.map((s) => s.code)
-  } catch {
-    watchCodes.value = []
+    watchlistError.value = null
+  } catch (e) {
+    // 保留旧 watchCodes，避免误显示"去添加自选股"
+    watchlistError.value = toApiError(e)
   }
 }
 
@@ -57,11 +64,11 @@ async function loadAll() {
   let successes = 0
   await Promise.all([
     apiGet<IndexQuote[]>('/api/market/indexes')
-      .then((d) => { indexes.value = d; successes++ })
-      .catch(() => { failures++ }),
+      .then((d) => { indexes.value = d; indexesError.value = null; successes++ })
+      .catch((e) => { failures++; indexesError.value = toApiError(e) }),
     apiGet<SnapshotResponse>('/api/quotes')
-      .then((d) => { quotes.value = d.quotes ?? []; successes++ })
-      .catch(() => { failures++ }),
+      .then((d) => { quotes.value = d.quotes ?? []; quotesError.value = null; successes++ })
+      .catch((e) => { failures++; quotesError.value = toApiError(e) }),
     apiGet<PortfolioSummary>('/api/portfolio')
       .then((d) => { portfolio.value = d; successes++ })
       .catch(() => { failures++ }),
@@ -104,6 +111,9 @@ const watchlistQuotes = computed(() => {
     .filter((q) => set.has(q.code))
     .slice(0, 8)
 })
+
+/** 自选股快览的失败原因（行情快照或自选股列表任一失败） */
+const watchSectionError = computed(() => quotesError.value ?? watchlistError.value)
 
 /** 按涨跌幅排序的板块（前 8） */
 const sortedSectors = computed(() =>
@@ -178,8 +188,17 @@ const severityDot: Record<Signal['severity'], string> = {
         </CardContent>
       </Card>
       <Card v-if="indexes.length === 0" class="col-span-full py-6">
-        <CardContent class="px-4 text-center text-sm text-muted-foreground">
-          指数数据加载中…
+        <CardContent class="px-4">
+          <!-- 失败给重试，不再永久"加载中…" -->
+          <ErrorState
+            v-if="indexesError"
+            compact
+            :message="indexesError?.friendly"
+            @retry="loadAll"
+          />
+          <p v-else class="text-center text-sm text-muted-foreground">
+            指数数据加载中…
+          </p>
         </CardContent>
       </Card>
     </div>
@@ -237,6 +256,11 @@ const severityDot: Record<Signal['severity'], string> = {
               </TableRow>
             </TableBody>
           </Table>
+          <ErrorState
+            v-else-if="watchSectionError && !loading"
+            :message="watchSectionError?.friendly"
+            @retry="loadAll"
+          />
           <div
             v-else
             class="flex flex-col items-center gap-2 py-10 text-sm text-muted-foreground"

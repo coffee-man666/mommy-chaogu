@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterView, RouterLink, useRoute } from 'vue-router'
-import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Target, Settings, ChevronRight } from 'lucide-vue-next'
+import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Target, Settings, ChevronRight, KeyRound } from 'lucide-vue-next'
+import { authRequired } from '@/api/client'
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,23 @@ function focusMainContent() {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-background text-foreground">
+  <div class="min-h-screen bg-background text-foreground">
+    <!-- 401 全局横幅：任一请求返回 401 时出现，成功请求后自动消失 -->
+    <div
+      v-if="authRequired"
+      role="alert"
+      class="sticky top-0 z-[90] flex items-center justify-center gap-3 bg-destructive px-4 py-2 text-sm text-white"
+    >
+      <KeyRound class="size-4 shrink-0" aria-hidden="true" />
+      <span>需要访问令牌才能查看数据</span>
+      <RouterLink
+        to="/settings"
+        class="font-semibold underline underline-offset-2 hover:opacity-90"
+      >
+        前往设置
+      </RouterLink>
+    </div>
+    <div class="flex min-h-screen bg-background text-foreground">
     <a
       href="#main-content"
       class="fixed left-3 top-3 z-[100] -translate-y-20 rounded-md bg-background px-3 py-2 text-sm font-semibold shadow-lg transition-transform focus:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -135,5 +152,6 @@ function focusMainContent() {
         </DialogContent>
       </Dialog>
     </nav>
+    </div>
   </div>
 </template>

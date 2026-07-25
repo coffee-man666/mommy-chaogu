@@ -224,6 +224,13 @@ def main_mommy() -> NoReturn:
     <子命令> [参数] → 透传到底层 CLI（如 mommy watchlist list）
     --raw <子命令> [参数] → 同上（向后兼容）
     """
+    # 加载 .env 里的 API key（与 mommy-agent 的 load_config、TUI bootstrap
+    # 对齐——主入口漏了这步时，只配 .env 的用户会被误报「未配置 API key」）。
+    # 不覆盖已有的 shell 环境变量。
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     # 子命令 → 对应 main_* 函数 / entry point 的分发表
     # mommy watchlist list / mommy --raw watchlist list 共用同一张表
     dispatch: dict[str, tuple[str, object]] = {

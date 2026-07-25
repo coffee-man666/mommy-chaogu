@@ -1,6 +1,7 @@
 """首次启动交互式配置引导。
 
-当用户没有 .env 文件时，mommy 会启动这个向导：
+TUI（mommy-tui）首启且无可用 API key 时自动进入本向导；
+CLI 用户可随时用 ``mommy --setup`` 手动运行：
 1. 选择 LLM provider
 2. 输入对应的 API key
 3. 写入 .env 文件
