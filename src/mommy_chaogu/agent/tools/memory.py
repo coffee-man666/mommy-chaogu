@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 
 _log = logging.getLogger(__name__)
 
@@ -16,6 +16,8 @@ DEFS: list[ToolDef] = [
         description=(
             "语义搜索历史事件记忆。用向量检索找与当前情况相似的历史事件，"
             "如'半导体暴跌'或'茅台大涨'。用于复盘'上次类似情况发生了什么'。"
+            "（当前 LLM provider 无 embedding 接口时自动降级为关键词搜索，"
+            "返回结果带 degraded 标记）"
         ),
         parameters={
             "type": "object",
@@ -26,8 +28,10 @@ DEFS: list[ToolDef] = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "返回条数，默认 5",
+                    "description": "返回条数，默认 5（最大 100）",
                     "default": 5,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
             "required": ["query"],
@@ -44,7 +48,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "股票代码（可选，按个股过滤），如 '600519'",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字，可选，按个股过滤），如 '600519'",
                 },
                 "status": {
                     "type": "string",
@@ -53,8 +58,10 @@ DEFS: list[ToolDef] = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "返回条数，默认 10",
+                    "description": "返回条数，默认 10（最大 100）",
                     "default": 10,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
         },
@@ -70,8 +77,10 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "days": {
                     "type": "integer",
-                    "description": "回顾天数，默认 7",
+                    "description": "回顾天数，默认 7（最大 365）",
                     "default": 7,
+                    "minimum": 1,
+                    "maximum": 365,
                 }
             },
         },
@@ -104,20 +113,21 @@ def _handle_search_similar_events(ctx: ToolContext, args: dict[str, Any]) -> str
         return _json({"error": "记忆系统未配置（agent_db is None）"})
 
     query = args["query"]
-    limit = args.get("limit", 5)
+    limit = _clamp_int(args.get("limit", 5), 5, 1, 100)
 
     # lazy import 避免循环依赖
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
     episodic = EpisodicMemory(db_path)
 
-    # 有 embedding client → 向量语义搜索
-    if ctx.client is not None:
+    # 有 embedding client + 专用 embedding 模型 → 向量语义搜索。
+    # embedding_model 为 None 表示 provider 无 embedding 接口，
+    # 显式走关键词降级（不能把聊天模型名当 embedding 模型传）。
+    if ctx.client is not None and ctx.embedding_model is not None:
         from mommy_chaogu.agent.vector_search import VectorSearch
 
-        model = ctx.model or "text-embedding-3-small"
         try:
-            vs = VectorSearch(episodic, ctx.client, model=model)
+            vs = VectorSearch(episodic, ctx.client, model=ctx.embedding_model)
             results = vs.search_similar(query, top_k=limit)
             return _json(
                 [
@@ -178,7 +188,7 @@ def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> st
 
     code = args.get("code")
     status = args.get("status")
-    limit = args.get("limit", 10)
+    limit = _clamp_int(args.get("limit", 10), 10, 1, 100)
 
     tracker = PredictionTracker(db_path)
     preds = tracker.all(limit=limit, status=status)
@@ -211,7 +221,7 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
     if db_path is None:
         return _json({"error": "记忆系统未配置（agent_db is None）"})
 
-    days = args.get("days", 7)
+    days = _clamp_int(args.get("days", 7), 7, 1, 365)
 
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 

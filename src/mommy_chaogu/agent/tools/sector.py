@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 from mommy_chaogu.market_data.rankings import fetch_sector_ranking
 from mommy_chaogu.market_data.sector_api import fetch_sector_stocks, search_sector
 
@@ -17,8 +17,10 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "limit": {
                     "type": "integer",
-                    "description": "返回前 N 个板块，默认 30",
+                    "description": "返回前 N 个板块，默认 30（最大 100）",
                     "default": 30,
+                    "minimum": 1,
+                    "maximum": 100,
                 }
             },
         },
@@ -55,8 +57,10 @@ DEFS: list[ToolDef] = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "返回前 N 只股票",
+                    "description": "返回前 N 只股票（最大 100）",
                     "default": 30,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
             "required": ["board_code"],
@@ -66,7 +70,7 @@ DEFS: list[ToolDef] = [
 
 
 def _handle_get_sector_ranking(_ctx: ToolContext, args: dict[str, Any]) -> str:
-    limit = args.get("limit", 30)
+    limit = _clamp_int(args.get("limit", 30), 30, 1, 100)
     items = fetch_sector_ranking(limit=limit)
     return _json(
         [
@@ -89,7 +93,7 @@ def _handle_search_sector(_ctx: ToolContext, args: dict[str, Any]) -> str:
 def _handle_get_sector_stocks(_ctx: ToolContext, args: dict[str, Any]) -> str:
     board_code = args["board_code"]
     sort_by = args.get("sort_by", "change_pct")
-    limit = args.get("limit", 30)
+    limit = _clamp_int(args.get("limit", 30), 30, 1, 100)
     stocks = fetch_sector_stocks(board_code, sort_by=sort_by, limit=limit)
     return _json(stocks)
 

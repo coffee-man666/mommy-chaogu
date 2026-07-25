@@ -21,7 +21,8 @@ DEFS: list[ToolDef] = [
                 },
                 "code": {
                     "type": "string",
-                    "description": "股票代码（action=list 时可选）",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字，action=list 时可选）",
                 },
                 "condition": {
                     "type": "string",

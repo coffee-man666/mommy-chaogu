@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 
 DEFS: list[ToolDef] = [
     ToolDef(
@@ -16,10 +16,14 @@ DEFS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "description": "股票代码（单只，与 codes 二选一）"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字，单只，与 codes 二选一）",
+                },
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string"},
+                    "items": {"type": "string", "pattern": "^\\d{6}$"},
                     "description": "股票代码列表（多只批量查询，最多前 10 只，与 code 二选一）",
                 },
             },
@@ -31,11 +35,17 @@ DEFS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "description": "股票代码"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字）",
+                },
                 "days": {
                     "type": "integer",
-                    "description": "历史天数",
+                    "description": "历史天数，默认 7（最大 365）",
                     "default": 7,
+                    "minimum": 1,
+                    "maximum": 365,
                 },
             },
             "required": ["code"],
@@ -102,7 +112,7 @@ def _handle_multi_money_flow_today(ctx: ToolContext, codes: list[str]) -> str:
 
 def _handle_get_money_flow_history(ctx: ToolContext, args: dict[str, Any]) -> str:
     code = args["code"]
-    days = args.get("days", 7)
+    days = _clamp_int(args.get("days", 7), 7, 1, 365)
     flows = ctx.adapter.get_history_money_flow(code, days=days)
     return _json(
         [

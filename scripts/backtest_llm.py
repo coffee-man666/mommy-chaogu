@@ -362,35 +362,19 @@ def run(args: argparse.Namespace) -> int:
 
     conn = sqlite3.connect(str(market_db))
 
-    # 解析 provider / model
-    provider = args.provider or os.environ.get("AGENT_PROVIDER", "deepseek")
-    if provider == "deepseek":
-        base_url = "https://api.deepseek.com"
-        default_model = "deepseek-chat"
-        env_key = "DEEPSEEK_API_KEY"
-    elif provider == "openai":
-        base_url = None
-        default_model = "gpt-4o-mini"
-        env_key = "OPENAI_API_KEY"
-    elif provider == "kimi":
-        base_url = "https://api.moonshot.cn/v1"
-        default_model = "moonshot-v1-8k"
-        env_key = "MOONSHOT_API_KEY"
-    elif provider == "zai":
-        base_url = "https://api.z.ai/api/coding/paas/v4"
-        default_model = "glm-4.7"
-        env_key = "ZAI_API_KEY"
-    else:
-        base_url = None
-        default_model = "deepseek-chat"
-        env_key = "DEEPSEEK_API_KEY"
+    # 解析 provider / model（单一真相源：agent/llm.py，与 AgentService 一致）
+    from mommy_chaogu.agent import llm as llm_provider
 
-    model = args.model or default_model
+    provider = llm_provider.resolve_provider(args.provider)
+    provider_cfg = llm_provider.provider_config(provider)
+
+    model = args.model or provider_cfg["default_model"]
     _current_model = model
 
     # dry-run 不需要 key
     client = None
     if not args.dry_run:
+        env_key = provider_cfg["env_key"]
         api_key = os.environ.get(env_key, "")
         if not api_key:
             print(
@@ -398,12 +382,7 @@ def run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        from openai import OpenAI
-
-        client_kwargs: dict[str, Any] = {"api_key": api_key}
-        if base_url:
-            client_kwargs["base_url"] = base_url
-        client = OpenAI(**client_kwargs)
+        client = llm_provider.create_client(provider, api_key)
 
     # 选股：取 market.db 里同时有 klines + flows 的股票
     codes_k = {r[0] for r in conn.execute("SELECT DISTINCT code FROM klines")}

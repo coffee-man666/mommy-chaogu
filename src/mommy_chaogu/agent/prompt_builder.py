@@ -91,12 +91,19 @@ def _format_latest_insight(semantic: SemanticMemory) -> str:
 
     lines: list[str] = [f"## 最近复盘（{period_start} ~ {period_end}）"]
     if summary:
-        lines.append(summary)
+        # prompt 注入必须截断（L2：insight summary 是 LLM 生成的长文，
+        # 不截断会把 baseline context 吹大）
+        lines.append(_clip(summary, 500))
     if hit_rate is not None and reviewed > 0:
         lines.append(f"验证预测 {reviewed} 条，命中率 {hit_rate:.0%}。")
-    for obs in observations:
-        lines.append(f"- {obs}")
+    for obs in observations[:10]:
+        lines.append(f"- {_clip(str(obs), 80)}")
     return "\n".join(lines)
+
+
+def _clip(text: str, limit: int) -> str:
+    """截断到 *limit* 字符，超出加省略号。"""
+    return text[:limit] + "…" if len(text) > limit else text
 
 
 def _format_active_knowledge(semantic: SemanticMemory) -> str:

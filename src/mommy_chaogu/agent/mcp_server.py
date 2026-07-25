@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -32,8 +33,32 @@ from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 _log = logging.getLogger(__name__)
 
 
+def _build_llm() -> tuple[Any | None, str | None, str | None]:
+    """容错地构造 LLM client，返回 (client, chat_model, embedding_model)。
+
+    无可用 provider key / 构造失败时返回 (None, None, None)，
+    调用方走降级路径。embedding_model 为 None 表示 provider 无
+    embedding 接口（向量检索显式降级为关键词搜索）。
+    """
+    from mommy_chaogu.agent import llm
+
+    provider = llm.detect_provider()
+    if provider is None:
+        return None, None, None
+    try:
+        config = llm.provider_config(provider)
+        return (
+            llm.create_client(provider),
+            str(config["default_model"]),
+            llm.embedding_model_for(provider),
+        )
+    except Exception as e:
+        _log.warning("mcp: LLM client 构造失败，记忆工具走降级模式: %s", e)
+        return None, None, None
+
+
 def _build_context() -> ToolContext:
-    """从项目默认配置构造 ToolContext（含记忆服务）。"""
+    """从项目默认配置构造 ToolContext（含记忆服务 + LLM client）。"""
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
     from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
@@ -44,8 +69,10 @@ def _build_context() -> ToolContext:
     store = CacheStore(MARKET_DB)
     adapter = CachedMarketDataAdapter(base, store)
 
+    client, model, embedding_model = _build_llm()
+
     # 构造记忆服务（MCP 外部 agent 也能获得记忆注入）
-    memory_service = _build_memory_service()
+    memory_service = _build_memory_service(client, model, embedding_model)
 
     return ToolContext(
         adapter=adapter,
@@ -54,15 +81,22 @@ def _build_context() -> ToolContext:
         agent_db=AGENT_DB,
         market_db=MARKET_DB,
         portfolio_db=PORTFOLIO_DB,
+        client=client,
+        model=model,
+        embedding_model=embedding_model,
         memory_service=memory_service,
     )
 
 
-def _build_memory_service() -> Any:
+def _build_memory_service(
+    client: Any | None = None,
+    model: str | None = None,
+    embedding_model: str | None = None,
+) -> Any:
     """构造 MemoryService（用于 MCP 等非 AgentService 入口）。
 
-    如果 LLM API key 未配置，pipeline 不带 client（get_context 仍可用，
-    record_analysis 会跳过 LLM 提取）。
+    client 为 None（无 LLM key）时 pipeline 不带 LLM（get_context 仍可用，
+    record_analysis 跳过提取）；embedding_model 非 None 时接向量检索。
     """
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
     from mommy_chaogu.agent.memory import ConversationMemory
@@ -77,10 +111,22 @@ def _build_memory_service() -> Any:
     semantic = SemanticMemory(AGENT_DB)
     memory = ConversationMemory(AGENT_DB)
 
+    vector_search = None
+    if client is not None and embedding_model is not None:
+        from mommy_chaogu.agent.vector_search import VectorSearch
+
+        try:
+            vector_search = VectorSearch(episodic, client, model=embedding_model)
+        except Exception as e:
+            _log.warning("mcp: 向量检索初始化失败，降级关键词搜索: %s", e)
+
     pipeline = MemoryPipeline(
         episodic=episodic,
         tracker=tracker,
         semantic=semantic,
+        vector_search=vector_search,
+        client=client,
+        model=model,
     )
 
     return MemoryService(pipeline=pipeline, memory=memory)
@@ -117,7 +163,9 @@ def create_mcp_server(ctx: ToolContext | None = None) -> Server:
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
-        result = registry.call(name, arguments or {})
+        # registry.call 里是同步阻塞网络 IO（行情拉取等），直接跑会把
+        # 整个 MCP 会话的 event loop 卡死——挪到线程池执行。
+        result = await asyncio.to_thread(registry.call, name, arguments or {})
         return [TextContent(type="text", text=result)]
 
     return server
@@ -135,6 +183,4 @@ async def run_stdio() -> None:
 
 def main_mcp() -> None:
     """CLI 入口。"""
-    import asyncio
-
     asyncio.run(run_stdio())

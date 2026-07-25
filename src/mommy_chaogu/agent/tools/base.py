@@ -66,8 +66,12 @@ class ToolContext:
     portfolio_db: Path | None = None
     # LLM / embedding client（OpenAI 兼容），记忆查询工具需要。
     # 为 None 时记忆工具降级为无 LLM 模式。
+    # embedding_model 与聊天 model 分开：多数 provider（deepseek/kimi/zai/
+    # nova/minimax）的端点没有 embedding 接口，把聊天模型名当 embedding
+    # 模型传必然失败——为 None 时向量检索显式降级为关键词搜索。
     client: Any | None = None
     model: str | None = None
+    embedding_model: str | None = None
     # 独立记忆服务（MCP 等非 AgentService 入口用）
     memory_service: Any | None = None
 
@@ -117,3 +121,16 @@ def _quote_to_dict(q: Quote) -> dict[str, Any]:
 def _json(obj: Any) -> str:
     """安全 JSON 序列化（处理 Decimal / datetime）。"""
     return json.dumps(obj, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
+def _clamp_int(value: Any, default: int, low: int, high: int) -> int:
+    """把 LLM 传来的数值参数钳到 [low, high]；非法值用默认。
+
+    钳制而不是报错：LLM 漏参/超限时仍能拿到有意义的结果，
+    比 KeyError 报错更利于自恢复。
+    """
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(v, high))

@@ -46,6 +46,15 @@ _WELCOME = """\
 """
 
 
+def _flush_agent(agent: object | None) -> None:
+    """退出前等后台提取线程完成（P6：daemon 线程随进程退出会被丢弃）。"""
+    if agent is None:
+        return
+    flush = getattr(agent, "flush", None)
+    if callable(flush):
+        flush(timeout=10)
+
+
 def _run_mommy_repl(
     router: object,
     executor: object,
@@ -66,12 +75,14 @@ def _run_mommy_repl(
             user_input = input("❯ ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n再见！")
+            _flush_agent(agent)
             sys.exit(0)
 
         if not user_input:
             continue
         if user_input.lower() in ("q", "quit", "exit"):
             print("再见！")
+            _flush_agent(agent)
             sys.exit(0)
 
         # 帮助命令
@@ -354,7 +365,8 @@ def main_mommy() -> NoReturn:
             episodic=episodic,
             tracker=PredictionTracker(AGENT_DB),
             semantic=SemanticMemory(AGENT_DB),
-            vector_search=None,  # VectorSearch 需要 LLM client，延迟到 AgentService 内部处理
+            # vector_search 不显式传：AgentService 在 provider 有 embedding
+            # 接口时自动装配，无接口时保持关键词降级
         )
 
         # Adapter: 让 AgentService 兼容 LLMSummarizer Protocol
@@ -430,6 +442,9 @@ def main_mommy() -> NoReturn:
                     if resp.tool_calls and not args.verbose:
                         tool_names = ", ".join(tc.name for tc in resp.tool_calls)
                         print(f"[调用了 {len(resp.tool_calls)} 个工具: {tool_names}]")
+                    # P6：后台提取线程完成后再退出（单发模式唯一的消息轮次，
+                    # 不 flush 进程退出时提取会被静默丢弃）
+                    agent.flush(timeout=30)
                 except Exception as e:
                     err_msg = str(e)
                     if "rate_limit" in err_msg.lower() or "429" in err_msg:

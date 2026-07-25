@@ -78,7 +78,7 @@ class TestVerifySubcommand:
 class TestConsolidateSubcommand:
     def test_no_api_key_exits_one(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """无法构造 LLM client 时退出码 1，且给出明确错误信息。"""
-        monkeypatch.setattr(agent_cli, "_build_llm_client", lambda *a, **kw: (None, None))
+        monkeypatch.setattr(agent_cli, "_build_llm_client", lambda *a, **kw: (None, None, None))
         monkeypatch.setattr(
             sys, "argv", ["mommy-agent", "consolidate", "--db", str(tmp_path / "agent.db")]
         )
@@ -98,7 +98,7 @@ class TestConsolidateSubcommand:
         """
         fake_client = MagicMock()
         monkeypatch.setattr(
-            agent_cli, "_build_llm_client", lambda *a, **kw: (fake_client, "test-model")
+            agent_cli, "_build_llm_client", lambda *a, **kw: (fake_client, "test-model", None)
         )
         monkeypatch.setattr(
             sys, "argv", ["mommy-agent", "consolidate", "--db", str(tmp_path / "agent.db")]
@@ -122,6 +122,15 @@ class TestChatPathVectorSearchFallback:
         且缺 client）直接 TypeError，agent 启动即崩。
         """
         import mommy_chaogu.agent.vector_search as vs_mod
+        from mommy_chaogu.agent import llm as llm_provider
+
+        # 环境隔离：main_agent 会真实跑 load_config()/load_dotenv()——
+        # 把所有 provider key 与 AGENT_PROVIDER 置空串占位（load_dotenv
+        # 不覆盖已有 env var），既保证「无 API key」的测试前提，
+        # 又防止 .env 的真实值注入 os.environ 污染后续测试。
+        for cfg in llm_provider.SUPPORTED_PROVIDERS.values():
+            monkeypatch.setenv(cfg["env_key"], "")
+        monkeypatch.setenv("AGENT_PROVIDER", "")
 
         monkeypatch.setattr(
             vs_mod.VectorSearch,
@@ -129,7 +138,7 @@ class TestChatPathVectorSearchFallback:
             lambda self, *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         monkeypatch.setattr(
-            agent_cli, "_build_llm_client", lambda *a, **kw: (MagicMock(), "test-model")
+            agent_cli, "_build_llm_client", lambda *a, **kw: (MagicMock(), "test-model", None)
         )
 
         # AgentService 会因无 API key 抛 ValueError——证明执行越过了

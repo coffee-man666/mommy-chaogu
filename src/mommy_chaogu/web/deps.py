@@ -136,7 +136,10 @@ def get_memory_service() -> object:
 
     封装 MemoryPipeline + ConversationMemory，
     任何需要记忆能力的入口（AgentService / MCP）都可使用。
+    有可用 LLM key 时 pipeline 带 client（record_analysis 真实可用）；
+    无 key 时降级为纯 get_context（record_analysis 跳过提取）。
     """
+    from mommy_chaogu.agent import llm as llm_provider
     from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
     from mommy_chaogu.agent.memory_service import MemoryService
 
@@ -144,15 +147,33 @@ def get_memory_service() -> object:
     tracker = get_prediction_tracker()
     semantic = get_semantic_memory()
 
+    # 容错装配 LLM client：无 key / 构造失败时降级为无 LLM 模式
+    client = None
+    model = None
+    vector_search = None
+    provider = llm_provider.detect_provider()
+    if provider is not None:
+        try:
+            config = llm_provider.provider_config(provider)
+            client = llm_provider.create_client(provider)
+            model = str(config["default_model"])
+            embedding_model = llm_provider.embedding_model_for(provider)
+            if embedding_model is not None and episodic is not None:
+                from mommy_chaogu.agent.vector_search import VectorSearch
+
+                vector_search = VectorSearch(episodic, client, model=embedding_model)
+        except Exception:
+            client, model, vector_search = None, None, None
+
     pipeline = None
     if episodic is not None and tracker is not None:
-        # MemoryPipeline 需要 LLM client 做事实提取，
-        # 但这里不传 client — get_context 不需要 LLM，
-        # record_analysis 的 LLM 提取在 AgentService 构造后补充。
         pipeline = MemoryPipeline(
             episodic=episodic,
             tracker=tracker,
             semantic=semantic,
+            vector_search=vector_search,
+            client=client,
+            model=model,
         )
 
     return MemoryService(

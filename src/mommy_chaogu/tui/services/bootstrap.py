@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -195,14 +194,15 @@ class Services:
 
         agent_bridge = AgentBridge()
 
-        # 尝试初始化 agent
-        api_key = (
-            os.environ.get("DEEPSEEK_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or os.environ.get("ZAI_API_KEY")
-            or os.environ.get("MOONSHOT_API_KEY")
-        )
-        if api_key:
+        # 尝试初始化 agent。
+        # 探测链与实际读 key 链必须一致（L4）：detect_provider 找到哪个
+        # provider 有 key，就把它显式传给 AgentService——不能依赖
+        # AGENT_PROVIDER 默认值，否则「只配了 OPENAI_API_KEY」时探测通过、
+        # 初始化却因读 DEEPSEEK_API_KEY 失败，agent 静默不可用。
+        from mommy_chaogu.agent import llm as llm_provider
+
+        detected = llm_provider.detect_provider()
+        if detected is not None:
             try:
                 from mommy_chaogu.agent.episodic_memory import EpisodicMemory
                 from mommy_chaogu.agent.prediction_tracker import PredictionTracker
@@ -220,12 +220,15 @@ class Services:
                 )
                 agent_bridge._agent = AgentService(
                     ctx,
+                    provider=detected,
                     episodic=EpisodicMemory(AGENT_DB),
                     tracker=PredictionTracker(AGENT_DB),
                     semantic=SemanticMemory(AGENT_DB),
                 )
             except Exception as e:
                 _log.warning("AgentService 初始化失败: %s", e)
+        else:
+            _log.info("未检测到任何 LLM API key，agent 不可用（聊天模式降级）")
 
         # 尝试初始化 router
         try:

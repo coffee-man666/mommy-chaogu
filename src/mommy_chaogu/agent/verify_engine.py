@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from mommy_chaogu.agent.prediction_tracker import _TIMEFRAME_DAYS
@@ -29,7 +30,7 @@ class VerifyResult:
     """单条预测验证的结果。"""
 
     status: str  # "hit" / "missed" / "expired" / "data_unavailable" / "still_pending"
-    price: float | None = None
+    price: Decimal | float | None = None
     change_pct: float | None = None
     score: float = 0.0
     reason: str = ""
@@ -113,23 +114,29 @@ def _score_direction(direction: str, change_pct: float) -> tuple[str, float]:
 
 
 def _score_target(
-    target_price: float,
-    actual_price: float,
+    target_price: Decimal | float,
+    actual_price: Decimal | float,
     direction: str,
-    entry_price: float | None,
+    entry_price: Decimal | float | None,
 ) -> tuple[str, float]:
-    """目标价预测评分。"""
-    distance = abs(actual_price - target_price) / target_price if target_price else 1.0
+    """目标价预测评分（价格比较走 Decimal 精度）。"""
+    if not target_price:
+        return ("missed", 0.2)
+    target = Decimal(str(target_price))
+    actual = Decimal(str(actual_price))
+    entry = Decimal(str(entry_price)) if entry_price is not None else None
 
-    if distance < 0.02:
+    distance = abs(actual - target) / target
+
+    if distance < Decimal("0.02"):
         return ("hit", 1.0)
-    if distance < 0.05:
+    if distance < Decimal("0.05"):
         return ("hit", 0.8)
 
     # 方向对了但没到目标价
-    if direction == "bullish" and entry_price is not None and actual_price > entry_price:
+    if direction == "bullish" and entry is not None and actual > entry:
         return ("hit", 0.5)
-    if direction == "bearish" and entry_price is not None and actual_price < entry_price:
+    if direction == "bearish" and entry is not None and actual < entry:
         return ("hit", 0.5)
 
     return ("missed", 0.2)
@@ -200,8 +207,8 @@ def verify_one(
             reason="报价数据完全不可用（adapter + cache 均失败）",
         )
 
-    # 提取价格和涨跌幅
-    actual_price = float(getattr(quote, "price", 0))
+    # 提取价格和涨跌幅（价格保持 Decimal 精度，比率为 float）
+    actual_price = Decimal(str(getattr(quote, "price", 0) or 0))
     change_pct = float(getattr(quote, "change_pct", 0))
 
     if actual_price == 0:
@@ -234,7 +241,10 @@ def verify_one(
     # （N 日方向预测不能用验证当日的单日 change_pct 判定）；
     # entry_price 缺失时回退单日 change_pct 旧口径。
     if entry_price is not None and entry_price > 0:
-        judged_change_pct = (actual_price - entry_price) / entry_price * 100
+        # entry_price 可能是 Decimal（tracker 读出）或 float（直接构造），
+        # 统一转 Decimal 再与 actual_price 运算
+        entry = Decimal(str(entry_price))
+        judged_change_pct = float((actual_price - entry) / entry * 100)
         basis = "窗口涨跌幅"
     else:
         judged_change_pct = change_pct
@@ -355,7 +365,8 @@ def verify_pending(
                 data={
                     "prediction_id": pred_id,
                     "result": result.status,
-                    "actual_price": result.price,
+                    # Decimal 不进 JSON（episodic.data 是 JSON 列），转 float
+                    "actual_price": (float(result.price) if result.price is not None else None),
                     "actual_change_pct": result.change_pct,
                     "score": result.score,
                     "reason": result.reason,

@@ -54,6 +54,10 @@ CREATE INDEX IF NOT EXISTS ix_token_request ON token_usage(request_id);
 # 内置定价（美元 / 1M tokens）。key 为模型名前缀匹配。
 # input = 缓存未命中时的输入价；input_cached = 缓存命中价；output = 输出价。
 # 仅用于粗略估算，实际计费以 provider 账单为准。
+# 价格来源（2026-07 公开定价页，会漂移）：deepseek/openai/moonshot 官网，
+# kimi-k2.6 取 K2.5 档（$0.60/$2.50，cache hit $0.15），glm-4.7 取 GLM-4.6
+# 档（$0.60/$2.20，cached $0.11），MiniMax-M2.7 取官方 $0.30/$1.20
+# （cached $0.06）。nova-bridge 是本地桥接，无公开定价，按 0 计。
 DEFAULT_PRICING: dict[str, dict[str, float]] = {
     "deepseek-chat": {"input": 0.27, "input_cached": 0.07, "output": 1.10},
     "deepseek-reasoner": {"input": 0.55, "input_cached": 0.14, "output": 2.19},
@@ -62,6 +66,10 @@ DEFAULT_PRICING: dict[str, dict[str, float]] = {
     "moonshot-v1-8k": {"input": 1.67, "input_cached": 1.67, "output": 1.67},
     "moonshot-v1-32k": {"input": 3.34, "input_cached": 3.34, "output": 3.34},
     "moonshot-v1-128k": {"input": 8.68, "input_cached": 8.68, "output": 8.68},
+    "kimi-k2": {"input": 0.60, "input_cached": 0.15, "output": 2.50},
+    "glm-4": {"input": 0.60, "input_cached": 0.11, "output": 2.20},
+    "MiniMax-M2": {"input": 0.30, "input_cached": 0.06, "output": 1.20},
+    "nova-bridge": {"input": 0.0, "input_cached": 0.0, "output": 0.0},
 }
 
 

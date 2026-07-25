@@ -16,7 +16,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "股票代码，如 '600519'（贵州茅台）、'000001'（平安银行）",
+                    "pattern": "^\\d{6}$",
+                    "description": "股票代码（6 位数字），如 '600519'（贵州茅台）、'000001'（平安银行）",
                 }
             },
             "required": ["code"],
@@ -30,7 +31,7 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string"},
+                    "items": {"type": "string", "pattern": "^\\d{6}$"},
                     "description": "股票代码列表，如 ['600519', '000001']",
                 }
             },

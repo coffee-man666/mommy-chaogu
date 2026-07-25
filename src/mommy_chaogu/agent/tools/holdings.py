@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, TypedDict, cast
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 
 
 class _PortfolioSummary(TypedDict):
@@ -38,8 +38,10 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "days": {
                     "type": "integer",
-                    "description": "分析窗口天数，默认 30",
+                    "description": "分析窗口天数，默认 30（最大 365）",
                     "default": 30,
+                    "minimum": 1,
+                    "maximum": 365,
                 }
             },
         },
@@ -60,6 +62,7 @@ DEFS: list[ToolDef] = [
                 },
                 "code": {
                     "type": "string",
+                    "pattern": "^\\d{6}$",
                     "description": "6 位股票代码（必填）",
                 },
                 "group": {
@@ -149,7 +152,7 @@ def _handle_get_portfolio(ctx: ToolContext, _args: dict[str, Any]) -> str:
 def _handle_get_portfolio_analysis(ctx: ToolContext, args: dict[str, Any]) -> str:
     if ctx.portfolio_store is None:
         return _json({"error": "持仓未配置"})
-    days = args.get("days", 30)
+    days = _clamp_int(args.get("days", 30), 30, 1, 365)
 
     from mommy_chaogu.cache.store import CacheStore
     from mommy_chaogu.portfolio.analysis import PortfolioAnalyzer

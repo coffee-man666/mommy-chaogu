@@ -29,29 +29,17 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from mommy_chaogu.agent.llm import SUPPORTED_PROVIDERS as _LLM_PROVIDERS
+from mommy_chaogu.agent.llm import normalize_provider as validate_agent_provider
 from mommy_chaogu.db_paths import MARKET_DB
 
 DEFAULT_CONFIG_PATH = Path("config.toml")
 
-# provider → 对应的环境变量名
+# provider → 对应的环境变量名（单一真相源在 agent/llm.py，这里派生）
 _PROVIDER_ENV_KEYS: dict[str, str] = {
-    "deepseek": "DEEPSEEK_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "kimi": "MOONSHOT_API_KEY",
-    "zai": "ZAI_API_KEY",
-    "nova": "NOVA_API_KEY",
-    "minimax": "MINIMAX_API_KEY",
+    name: str(cfg["env_key"]) for name, cfg in _LLM_PROVIDERS.items()
 }
 SUPPORTED_AGENT_PROVIDERS = tuple(_PROVIDER_ENV_KEYS)
-
-
-def validate_agent_provider(provider: str) -> str:
-    """Return a normalized provider name or fail with an actionable message."""
-    normalized = provider.strip().lower()
-    if normalized not in _PROVIDER_ENV_KEYS:
-        supported = ", ".join(SUPPORTED_AGENT_PROVIDERS)
-        raise ValueError(f"Unsupported agent provider {provider!r}; choose one of: {supported}")
-    return normalized
 
 
 @dataclass
