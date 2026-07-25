@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,090 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（1,475 个离线用例，另有 13 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -76,7 +76,7 @@ src/mommy_chaogu/
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库
 ├── web/             # FastAPI + WebSocket
-├── tui/             # Textual 终端 UI（沉浸式 AI 对话 + 数据看板双模式）
+├── tui/             # Textual 终端 UI（单屏对话即界面的投研 Coding Agent CLI）
 ├── services/        # 统一数据服务层（工具层和 API 层共用）
 ├── push/            # Server酱微信推送
 ├── db_paths.py      # 统一数据库路径管理
@@ -108,17 +108,25 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 
 ## TUI 终端界面
 
-`uv run mommy-tui` → 沉浸式双模式终端（类似 Claude Code CLI），Tab 键切换：
+`uv run mommy-tui` → 单屏对话即界面的投研 Coding Agent CLI（类似 Claude Code CLI），
+无模式切换：TopBar（指数 + AI 状态 + 时钟）+ 对话流 + 输入框，启动焦点在输入框。
 
-- **模式 A：AI 对话** — Markdown 流式渲染 + 工具调用折叠 + 底部输入框
-- **模式 B：数据看板** — TabbedContent（自选股/持仓/主题/信号）+ 状态栏
+- 对话流内渲染富卡片（不跳屏）：slash 命令 `/today` `/watch` `/portfolio`
+  `/flows [code]` `/quote <code>` `/predictions` `/signals` `/memory` `/status`
+  `/help` `/clear` `/theme` `/quit`
+- `@` 股票联想（自选股 + 半导体库 + quote_cache 名称模糊匹配，Tab 插入代码）；
+  直接输入 6 位代码 Enter 看报价卡
+- agent 工具结果 → 富卡片渲染器（`tui/services/renderers.py`）：get_quote→报价卡、
+  get_money_flow_today→资金流卡、get_bars→迷你表、get_prediction_history→预测卡
+- 键盘：Enter 发送（busy 时排队，轮次结束自动发）；Esc 中断当前轮（保留已流部分）；
+  PgUp/PgDn 滚动；Ctrl+P 命令面板；Ctrl+C 双击退出
 
-- `src/mommy_chaogu/tui/app.py` — App 主类（ContentSwitcher 双模式）+ `main()` 入口
-- `tui/services/bootstrap.py` — Services 容器（DataService / AgentBridge / FakeServices）
-- `tui/views/chat.py` — AI 对话视图（dexter 风格工具指示 + slash 命令 + HintBar）
-- `tui/views/dashboard.py` — 数据看板视图（TabbedContent：自选/持仓/主题/信号）
-- `tui/screens/stock_detail.py` — 个股详情屏（报价 + K 线表）
-- `tui/widgets/` — TopBar / ToolIndicator / WorkingIndicator / HintBar
+- `src/mommy_chaogu/tui/app.py` — App 主类（单屏 compose）+ `main()` 入口
+- `tui/services/bootstrap.py` — Services 容器（DataService / AgentBridge / FakeServices
+  + 指数/信号/@联想数据源）
+- `tui/services/renderers.py` — 工具结果 → 卡片分发；`tui/services/errors.py` — 错误文案友好映射
+- `tui/views/chat.py` — 对话视图（流式 + 卡片容器 + slash/@ 联想 + busy 排队 + Esc）
+- `tui/widgets/` — TopBar / cards（10 种富卡片）/ ToolIndicator / WorkingIndicator / HintBar
 
 ## Web 前端
 

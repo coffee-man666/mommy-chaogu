@@ -128,13 +128,18 @@ class ToolIndicator(Vertical):
         circle = _CIRCLE if (not blink or self._blink_on) else " "
         self.query_one(".ti-header", Static).update(f"[{color}]{circle}[/] {self._title}")
 
-    def set_complete(self, digest: str, elapsed_ms: int) -> None:
-        """完成：圈点定型 + 追加 ⎿ 摘要 · 耗时 行。"""
+    def set_complete(self, digest: str, elapsed_ms: int, truncated: bool = False) -> None:
+        """完成：圈点定型 + 追加 ⎿ 摘要 · 耗时 行。
+
+        *truncated* 为 True（结果被 agent 层截断，>8KB）时追加
+        「（结果过大已截断）」——截断可见，不静默。
+        """
         self._stop_timer()
         self._render_header(_COLOR_OK)
+        note = "（结果过大已截断）" if truncated else ""
         self.mount(
             Static(
-                f"[{_COLOR_OK}]{_DETAIL_PREFIX}{digest} · {format_elapsed(elapsed_ms)}[/]",
+                f"[{_COLOR_OK}]{_DETAIL_PREFIX}{digest}{note} · {format_elapsed(elapsed_ms)}[/]",
                 classes="ti-detail",
             )
         )

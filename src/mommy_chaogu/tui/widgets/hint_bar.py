@@ -1,9 +1,11 @@
 """HintBar — 输入框下方的上下文提示栏（dexter hint-bar 移植）。
 
-三种状态：
-  空闲:    / 命令 · Tab 看板 · ? 帮助
-  busy:    esc 中断
-  slash:   命令候选列表（第一条高亮 = Tab 将接受的那条）
+五种状态：
+  空闲:      / 命令 · @ 股票 · Enter 发送 · Esc 中断
+  busy:      Esc 中断 · Enter 排队
+  slash:     命令候选列表（高亮项 = Tab 将接受的那条）
+  @联想:     股票候选列表（高亮项 = Tab 将插入的代码）
+  6 位代码:  ⏎ 查看 600519 报价
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ _MAX_SUGGESTIONS = 5
 
 
 class HintBar(Static):
-    """单行/多行上下文提示（默认一行，slash 候选时展开）。"""
+    """单行/多行上下文提示（默认一行，候选列表时展开）。"""
 
     def __init__(self) -> None:
         super().__init__(classes="hint-bar")
@@ -25,11 +27,11 @@ class HintBar(Static):
 
     def show_default(self) -> None:
         self._mode = "default"
-        self.update("[#8a8f98] / 命令 · Tab 看板 · ? 帮助[/]")
+        self.update("[#8a8f98] / 命令 · @ 股票 · Enter 发送 · ↑ 历史 · Esc 中断[/]")
 
     def show_busy(self) -> None:
         self._mode = "busy"
-        self.update("[#8a8f98] esc 中断[/]")
+        self.update("[#8a8f98] Esc 中断 · Enter 排队[/]")
 
     def show_suggestions(self, matches: list[tuple[str, str]], selected: int = 0) -> None:
         """slash 输入时展示候选命令（name, description 列表），高亮选中项。"""
@@ -41,6 +43,23 @@ class HintBar(Static):
             else:
                 lines.append(f"[#8a8f98]  /{name} — {desc}[/]")
         self.update("\n".join(lines))
+
+    def show_stock_suggestions(self, matches: list[tuple[str, str]], selected: int = 0) -> None:
+        """@ 输入时展示股票候选（code, name 列表），高亮选中项。"""
+        self._mode = "stock-suggestions"
+        lines: list[str] = []
+        for i, (code, name) in enumerate(matches[:_MAX_SUGGESTIONS]):
+            label = f"{code} {name}".rstrip()
+            if i == selected:
+                lines.append(f"[#79b8ff]> {label}[/]")
+            else:
+                lines.append(f"[#8a8f98]  {label}[/]")
+        self.update("\n".join(lines))
+
+    def show_code_hint(self, code: str) -> None:
+        """输入完整 6 位代码时提示 Enter 直接看报价。"""
+        self._mode = "code-hint"
+        self.update(f"[#8a8f98] ⏎ 查看 {code} 报价[/]")
 
     @property
     def mode(self) -> str:

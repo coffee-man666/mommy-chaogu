@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -142,6 +144,38 @@ class AgentBridge:
     def has_agent(self) -> bool:
         return self._agent is not None
 
+    def provider_name(self) -> str | None:
+        """agent 的 provider 名（TopBar AI🟢 状态用）；无 agent 返回 None。"""
+        if self._agent is None:
+            return None
+        return getattr(self._agent, "_provider", None)
+
+    def model_name(self) -> str | None:
+        """agent 当前模型名（/status 卡用）；无 agent 返回 None。"""
+        if self._agent is None:
+            return None
+        return getattr(self._agent, "_model", None)
+
+    def watch_background(self, on_done: Callable[[], None]) -> bool:
+        """挂上后台记忆线程的 watcher：全部结束后回调 on_done（记忆回执）。
+
+        返回是否确实挂上了 watcher（无 agent / 无后台线程时返回 False，
+        调用方不显示回执）。on_done 在 watcher 线程执行，UI 更新需
+        call_from_thread。
+        """
+        agent = self._agent
+        threads = list(getattr(agent, "_bg_threads", []) or []) if agent is not None else []
+        if not threads:
+            return False
+
+        def _watch() -> None:
+            for t in threads:
+                t.join()
+            on_done()
+
+        threading.Thread(target=_watch, daemon=True).start()
+        return True
+
     def chat(
         self,
         message: str,
@@ -151,6 +185,7 @@ class AgentBridge:
         on_chunk: Any = None,
         cancel_event: Any = None,
         usage_out: Any = None,
+        on_status: Any = None,
     ) -> Any:
         if self._agent is None:
             return None
@@ -162,6 +197,7 @@ class AgentBridge:
             on_chunk=on_chunk,
             cancel_event=cancel_event,
             usage_out=usage_out,
+            on_status=on_status,
         )
 
 
@@ -173,6 +209,10 @@ class Services:
     agent: AgentBridge = field(default_factory=AgentBridge)
     flows: Any = None  # FlowService，无 MARKET_DB 退化为 None
     memory_db: Any = None  # 记忆统计可调用字典（见 _make_memory_stats）
+    # 对话内卡片数据源（§1.2②③）：全部为无参 callable，失败返回 None 表示不可用
+    indexes: Callable[[], list[dict[str, Any]]] | None = None  # 大盘指数快照
+    signals_recent: Callable[[], list[dict[str, Any]]] | None = None  # 近期信号
+    stock_candidates: Callable[[], list[tuple[str, str]]] | None = None  # @ 联想（code, name）
 
     @classmethod
     def bootstrap(cls) -> Services:
@@ -275,30 +315,133 @@ class Services:
         except Exception as e:
             _log.warning("FlowService 初始化失败: %s", e)
 
-        # 记忆统计可调用（/memory slash 命令用，无 api_key 也能查统计）
+        # 记忆统计可调用（/memory /predictions slash 命令用，无 api_key 也能查统计）
         memory_stats = _make_memory_stats(AGENT_DB)
 
-        return cls(data=data_svc, agent=agent_bridge, flows=flows_service, memory_db=memory_stats)
+        # 对话内卡片数据源（§1.2②③）：指数快照 / 近期信号 / @ 股票联想
+        indexes_fn = _make_index_fetcher()
+        signals_fn = _make_signals_fetcher(MARKET_DB)
+        stocks_fn = _make_stock_candidates(
+            data_svc.watchlist_store,
+            getattr(adapter, "store", None),
+        )
+
+        return cls(
+            data=data_svc,
+            agent=agent_bridge,
+            flows=flows_service,
+            memory_db=memory_stats,
+            indexes=indexes_fn,
+            signals_recent=signals_fn,
+            stock_candidates=stocks_fn,
+        )
 
 
 def _make_memory_stats(agent_db: Any) -> dict[str, Any] | None:
     """构造记忆统计 dict（含各 summary()/stats() 调用器）。
 
     返回 None 表示记忆系统不可用（db 初始化失败）。
+    键：episodic / predictions / semantic / predictions_recent / tokens / cost，
+    每项为 callable；单项不可用时缺键，卡片渲染方按键缺失降级。
     """
     try:
         from mommy_chaogu.agent.episodic_memory import EpisodicMemory
         from mommy_chaogu.agent.prediction_tracker import PredictionTracker
         from mommy_chaogu.agent.semantic_memory import SemanticMemory
 
-        return {
+        tracker = PredictionTracker(agent_db)
+        stats: dict[str, Any] = {
             "episodic": EpisodicMemory(agent_db).summary,
-            "predictions": PredictionTracker(agent_db).stats,
+            "predictions": tracker.stats,
+            "predictions_recent": lambda: tracker.all(limit=8),
             "semantic": SemanticMemory(agent_db).summary,
         }
+        try:
+            from mommy_chaogu.agent.token_tracker import TokenTracker
+
+            token_tracker = TokenTracker(agent_db)
+            stats["tokens"] = token_tracker.totals
+            stats["cost"] = token_tracker.cost_estimate
+        except Exception as e:
+            _log.warning("TokenTracker 初始化失败，/memory 不显示 token 用量: %s", e)
+        return stats
     except Exception as e:
         _log.warning("记忆统计初始化失败: %s", e)
         return None
+
+
+def _make_index_fetcher() -> Callable[[], list[dict[str, Any]]] | None:
+    """大盘指数快照（TopBar + /today + 欢迎卡用）；失败返回 None 由调用方降级。"""
+
+    def _fetch() -> list[dict[str, Any]]:
+        from mommy_chaogu.market_data.rankings import fetch_indexes
+
+        return [
+            {"name": iq.name, "price": iq.price, "change_pct": float(iq.change_pct)}
+            for iq in fetch_indexes()
+        ]
+
+    return _fetch
+
+
+def _make_signals_fetcher(market_db: Any) -> Callable[[], list[dict[str, Any]]] | None:
+    """近期信号（/signals + /today 用）；SignalStore 初始化失败返回 None。"""
+    try:
+        from mommy_chaogu.signals.store import SignalStore
+
+        store = SignalStore(market_db)
+    except Exception as e:
+        _log.warning("SignalStore 初始化失败，/signals 不可用: %s", e)
+        return None
+
+    def _fetch() -> list[dict[str, Any]]:
+        return store.list(limit=8)
+
+    return _fetch
+
+
+def _make_stock_candidates(
+    watchlist_store: Any,
+    cache_store: Any,
+) -> Callable[[], list[tuple[str, str]]]:
+    """@ 股票联想数据源：自选股（优先）+ 半导体库 + quote_cache 名称，按 code 去重。"""
+
+    def _fetch() -> list[tuple[str, str]]:
+        # 名称表：quote_cache 里的历史报价名称（自选股条目本身不存名称）
+        names: dict[str, str] = {}
+        if cache_store is not None:
+            with contextlib.suppress(Exception):
+                for entry in cache_store.get_all_quote_entries():
+                    name = getattr(getattr(entry, "quote", None), "name", "") or ""
+                    if name and entry.code not in names:
+                        names[entry.code] = name
+
+        result: list[tuple[str, str]] = []
+        seen: set[str] = set()
+
+        def _add(code: str, name: str) -> None:
+            if code and code not in seen:
+                seen.add(code)
+                result.append((code, name))
+
+        # 1. 自选股优先
+        if watchlist_store is not None:
+            with contextlib.suppress(Exception):
+                for code in watchlist_store.get_all_codes():
+                    _add(code, names.get(code, ""))
+        # 2. 半导体产业链参考库
+        with contextlib.suppress(Exception):
+            from mommy_chaogu.db_paths import REFERENCE_DB
+            from mommy_chaogu.semicon.store import SemiconStore
+
+            for stock in SemiconStore(REFERENCE_DB).list_all():
+                _add(stock.code, stock.name)
+        # 3. quote_cache 其余（查过行情的股票）
+        for code, name in names.items():
+            _add(code, name)
+        return result
+
+    return _fetch
 
 
 @dataclass
@@ -309,6 +452,9 @@ class FakeServices:
     agent: AgentBridge = field(default_factory=AgentBridge)
     flows: Any = None
     memory_db: Any = None
+    indexes: Callable[[], list[dict[str, Any]]] | None = None
+    signals_recent: Callable[[], list[dict[str, Any]]] | None = None
+    stock_candidates: Callable[[], list[tuple[str, str]]] | None = None
 
     @classmethod
     def create(cls) -> FakeServices:
@@ -385,7 +531,72 @@ class FakeServices:
                 "pending": 5,
                 "hit_rate": 0.8,
             },
+            "predictions_recent": lambda: [
+                {
+                    "id": 1,
+                    "code": "688981",
+                    "name": "中芯国际",
+                    "prediction": "放量突破 20 日线后看高一线",
+                    "direction": "up",
+                    "timeframe": "5d",
+                    "status": "pending",
+                    "verify_after": "2099-01-01T00:00:00+00:00",
+                },
+                {
+                    "id": 2,
+                    "code": "600519",
+                    "name": "贵州茅台",
+                    "prediction": "跌破 1700 后走弱",
+                    "direction": "down",
+                    "timeframe": "3d",
+                    "status": "hit",
+                    "verify_after": "2026-07-20T00:00:00+00:00",
+                },
+            ],
             "semantic": lambda: {"total": 23, "active": 20},
+            "tokens": lambda: {
+                "prompt_tokens": 12000,
+                "completion_tokens": 3000,
+                "total_tokens": 15000,
+                "calls": 8,
+            },
+            "cost": lambda: {"total_usd": 0.0123},
         }
 
-        return cls(data=data, agent=AgentBridge(), flows=fake_flows, memory_db=fake_memory_db)
+        def fake_indexes() -> list[dict[str, Any]]:
+            return [
+                {"name": "上证指数", "price": Decimal("3847.51"), "change_pct": 0.6},
+                {"name": "深证成指", "price": Decimal("12345.67"), "change_pct": 0.9},
+                {"name": "创业板指", "price": Decimal("2345.67"), "change_pct": -0.3},
+            ]
+
+        def fake_signals() -> list[dict[str, Any]]:
+            return [
+                {
+                    "timestamp": "2026-07-25 10:30:00",
+                    "severity": "critical",
+                    "code": "688981",
+                    "name": "中芯国际",
+                    "title": "主力资金大幅流入",
+                },
+                {
+                    "timestamp": "2026-07-25 09:45:00",
+                    "severity": "warning",
+                    "code": "600519",
+                    "name": "贵州茅台",
+                    "title": "跌破 5 日线",
+                },
+            ]
+
+        def fake_stocks() -> list[tuple[str, str]]:
+            return [(str(r["code"]), str(r["name"])) for r in fake_rows]
+
+        return cls(
+            data=data,
+            agent=AgentBridge(),
+            flows=fake_flows,
+            memory_db=fake_memory_db,
+            indexes=fake_indexes,
+            signals_recent=fake_signals,
+            stock_candidates=fake_stocks,
+        )

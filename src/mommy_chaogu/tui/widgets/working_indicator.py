@@ -1,9 +1,10 @@
 """WorkingIndicator — "思考中" 工作指示器（dexter working-indicator 本土化）。
 
-    ⠹ 盯盘中… (12s)
-    ⠹ 盯盘中… (12s · ↓ 1.2k tokens)
+    ⠹ 盯盘中… (12s · ↓ 1.2k tokens · 已排队 1 条 · Esc 中断)
+    ⏳ 网络较慢，正在重试 (1/3)… (3s · Esc 中断)
 
 spinner 帧循环 + 每次 busy 随机一个炒股语境动词 + 实时耗时 + 可选 token 统计。
+重试态（set_retry）替换主文案显示重试进度；set_queued 显示 busy 排队消息数。
 """
 
 from __future__ import annotations
@@ -62,6 +63,10 @@ class WorkingIndicator(Static):
         self._started = time.monotonic()
         self._timer: Timer | None = None
         self._stats_provider: Callable[[], dict[str, Any]] | None = None
+        # 重试态（on_status("retry", ...) 回调驱动）：显示时替换 spinner 主文案
+        self._retry: tuple[int, int] | None = None
+        # busy 时 Enter 排队的消息数
+        self._queued = 0
 
     def on_mount(self) -> None:
         self._refresh_text()
@@ -71,6 +76,20 @@ class WorkingIndicator(Static):
         """注册 token 统计来源（worker 线程更新的共享 dict 或 callable）。"""
         self._stats_provider = provider
 
+    def set_retry(self, attempt: int, max_retries: int) -> None:
+        """进入重试态：⏳ 网络较慢，正在重试 (1/3)…"""
+        self._retry = (attempt, max_retries)
+        self._refresh_text()
+
+    def clear_retry(self) -> None:
+        """重试成功/轮次结束时退出重试态。"""
+        self._retry = None
+
+    def set_queued(self, n: int) -> None:
+        """更新排队消息数（busy 时 Enter 入队）。"""
+        self._queued = n
+        self._refresh_text()
+
     def _tick(self) -> None:
         self._frame_idx = (self._frame_idx + 1) % len(_SPINNER_FRAMES)
         self._refresh_text()
@@ -78,8 +97,12 @@ class WorkingIndicator(Static):
     def _refresh_text(self) -> None:
         frame = _SPINNER_FRAMES[self._frame_idx]
         elapsed = int(time.monotonic() - self._started)
-        parts: list[str] = [f"[#79b8ff]{frame} {self._verb}…[/]"]
-        # 后缀：耗时 + 可选 token 统计
+        if self._retry is not None:
+            attempt, max_retries = self._retry
+            parts: list[str] = [f"[#f5a524]⏳ 网络较慢，正在重试 ({attempt}/{max_retries})…[/]"]
+        else:
+            parts = [f"[#79b8ff]{frame} {self._verb}…[/]"]
+        # 后缀：耗时 + 可选 token 统计 + 排队数 + Esc 提示
         suffix_parts: list[str] = []
         if elapsed >= 1:
             suffix_parts.append(f"{elapsed}s")
@@ -89,6 +112,9 @@ class WorkingIndicator(Static):
                     tokens = stats.get("total_tokens") or stats.get("completion_tokens") or 0
                     if tokens:
                         suffix_parts.append(f"↓ {_format_tokens(int(tokens))} tokens")
+        if self._queued:
+            suffix_parts.append(f"已排队 {self._queued} 条")
+        suffix_parts.append("Esc 中断")
         if suffix_parts:
             parts.append(f"[#8a8f98]({' · '.join(suffix_parts)})[/]")
         self.update("".join(parts))
