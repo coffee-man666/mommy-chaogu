@@ -36,6 +36,10 @@ from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 _log = logging.getLogger(__name__)
 
 
+class _RetryCancelledError(Exception):
+    """重试等待期间被 cancel_event 中断（内部使用，_run_loop 捕获）。"""
+
+
 class ConversationMemoryLike(Protocol):
     """Minimal conversation-memory interface consumed by AgentService."""
 
@@ -228,6 +232,7 @@ class AgentService:
         on_chunk: Callable[[str], None] | None = None,
         cancel_event: threading.Event | None = None,
         usage_out: dict[str, int] | None = None,
+        on_status: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
@@ -243,7 +248,12 @@ class AgentService:
 
         取消：
         - 如果传入 *cancel_event*，每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中
-          检查 is_set()，命中即立即返回 interrupted=True（中断的对话不写入记忆）。
+          + 重试等待期间检查 is_set()，命中即立即返回 interrupted=True
+          （中断的对话不写入记忆）。
+
+        状态：
+        - 如果传入 *on_status*，LLM 重试时回调 ("retry", {attempt, max, delay})，
+          供 UI 展示重试进度（而不是静止的"思考中"）。
 
         记忆：
         - 对话后的记录 + 提取（LLM 调用 + 报价补全）在后台 daemon 线程执行，
@@ -288,6 +298,7 @@ class AgentService:
             on_chunk=on_chunk,
             cancel_event=cancel_event,
             usage_out=usage_out,
+            on_status=on_status,
         )
 
         # 3. 对话后记录 + 提取
@@ -353,6 +364,7 @@ class AgentService:
         on_chunk: Callable[[str], None] | None = None,
         cancel_event: threading.Event | None = None,
         usage_out: dict[str, int] | None = None,
+        on_status: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentResponse:
         """直接传入完整 messages 列表（灵活但需自己构造格式）。"""
         return self._run_loop(
@@ -362,14 +374,24 @@ class AgentService:
             on_chunk=on_chunk,
             cancel_event=cancel_event,
             usage_out=usage_out,
+            on_status=on_status,
         )
 
-    def _create_with_retry(self, messages: list[dict[str, Any]]) -> Any:
+    def _create_with_retry(
+        self,
+        messages: list[dict[str, Any]],
+        cancel_event: threading.Event | None = None,
+        on_status: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> Any:
         """调用 LLM，对瞬时错误（连接 / 限流 / 5xx）按指数退避重试。
 
         重试 max_retries 次后仍失败则抛出最后一次异常（上游 CLI / TUI / Web
         均有 try/except 兜底展示）。认证、参数等非瞬时错误不重试，直接抛出。
         RateLimitError 带 Retry-After 响应头时按服务器要求等待。
+        重试等待用 ``cancel_event.wait``——Esc 在等待期间也能即时中断
+        （抛 _RetryCancelledError，由 _run_loop 转成 interrupted 响应）。
+        *on_status* 在每次重试前回调 ``("retry", {attempt, max, delay})``，
+        供 UI 展示「正在重试 (1/3)」，而不是让用户对着静止屏幕猜。
         """
         from openai import APIConnectionError, InternalServerError, RateLimitError
 
@@ -397,7 +419,22 @@ class AgentService:
                     exc,
                     delay,
                 )
-                time.sleep(delay)
+                if on_status is not None:
+                    with contextlib.suppress(Exception):
+                        on_status(
+                            "retry",
+                            {
+                                "attempt": attempt + 1,
+                                "max": self._max_retries + 1,
+                                "delay": delay,
+                                "error": str(exc),
+                            },
+                        )
+                if cancel_event is not None:
+                    if cancel_event.wait(delay):
+                        raise _RetryCancelledError from None
+                else:
+                    time.sleep(delay)
         raise AssertionError("unreachable")  # pragma: no cover
 
     def _retry_delay(self, exc: Exception, attempt: int) -> float:
@@ -433,6 +470,7 @@ class AgentService:
         on_chunk: Callable[[str], None] | None = None,
         cancel_event: threading.Event | None = None,
         usage_out: dict[str, int] | None = None,
+        on_status: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentResponse:
         """核心 agent 循环：LLM → tool_calls → execute → LLM → ...
 
@@ -444,8 +482,11 @@ class AgentService:
         文本 delta 逐段回调，tool_calls delta 同步拼接；最终回答的「出答案」
         与「流式输出」是同一次调用。provider 不支持 stream 时回退非流式。
 
-        cancel_event：每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中检查
-        is_set()，命中即返回 interrupted=True 的 AgentResponse。
+        cancel_event：每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中 +
+        重试等待期间检查 is_set()，命中即返回 interrupted=True 的 AgentResponse。
+
+        on_status：重试等状态变化回调（("retry", {attempt, max, delay})），
+        供 UI 展示重试进度。
 
         usage_out：若提供，直接作为 usage 累加容器（引用共享），调用方可在
         对话进行中实时读取累加值；AgentResponse.usage 即此 dict。
@@ -467,12 +508,23 @@ class AgentService:
 
             rounds += 1
 
-            msg = self._next_message(
-                messages,
-                on_chunk=on_chunk,
-                cancel_event=cancel_event,
-                total_usage=total_usage,
-            )
+            try:
+                msg = self._next_message(
+                    messages,
+                    on_chunk=on_chunk,
+                    cancel_event=cancel_event,
+                    total_usage=total_usage,
+                    on_status=on_status,
+                )
+            except _RetryCancelledError:
+                # 重试等待期间被 Esc 中断
+                return AgentResponse(
+                    text="（已中断）",
+                    tool_calls=all_tool_calls,
+                    rounds=rounds,
+                    usage=total_usage,
+                    interrupted=True,
+                )
 
             # 如果没有 tool_calls，说明 LLM 已经准备好回复
             if not msg.tool_calls:
@@ -604,6 +656,7 @@ class AgentService:
         on_chunk: Callable[[str], None] | None,
         cancel_event: threading.Event | None,
         total_usage: dict[str, int],
+        on_status: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> _LoopMessage:
         """发起一轮 LLM 调用并返回统一形态的消息。
 
@@ -616,11 +669,13 @@ class AgentService:
         重试耗尽后与非流式路径一样抛异常。
         """
         if on_chunk is not None:
-            streamed = self._create_stream_with_retry(messages, on_chunk, cancel_event, total_usage)
+            streamed = self._create_stream_with_retry(
+                messages, on_chunk, cancel_event, total_usage, on_status
+            )
             if streamed is not None:
                 return streamed
             # 流式不可用（尚未流出任何内容），安全回退非流式
-        response = self._create_with_retry(messages)
+        response = self._create_with_retry(messages, cancel_event, on_status)
         self._accumulate_usage(total_usage, response)
         return _LoopMessage.from_response(response)
 
@@ -645,12 +700,14 @@ class AgentService:
         on_chunk: Callable[[str], None],
         cancel_event: threading.Event | None,
         total_usage: dict[str, int],
+        on_status: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> _LoopMessage | None:
         """stream=True（带 tools）调用：文本 delta 回调 + tool_calls 拼接。
 
         只对 create 阶段的瞬时错误重试（此时尚未流出任何内容）；迭代开始
         后不再重试——已流出的文本无法收回，中途异常用已收集内容收尾。
         零收集（迭代前即失败 / 空流）返回 None，调用方回退非流式。
+        重试等待用 ``cancel_event.wait``，Esc 可即时中断（_RetryCancelledError）。
 
         token 统计：``stream_options={"include_usage": True}`` 让最后一个
         chunk 带 usage，计入 total_usage 并进 TokenTracker。
@@ -683,7 +740,22 @@ class AgentService:
                     exc,
                     delay,
                 )
-                time.sleep(delay)
+                if on_status is not None:
+                    with contextlib.suppress(Exception):
+                        on_status(
+                            "retry",
+                            {
+                                "attempt": attempt + 1,
+                                "max": self._max_retries + 1,
+                                "delay": delay,
+                                "error": str(exc),
+                            },
+                        )
+                if cancel_event is not None:
+                    if cancel_event.wait(delay):
+                        raise _RetryCancelledError from None
+                else:
+                    time.sleep(delay)
             except Exception as exc:
                 _log.warning("stream 调用失败，回退非流式: %s", exc)
                 return None
