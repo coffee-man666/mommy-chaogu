@@ -67,18 +67,45 @@ function onKeydown(e: KeyboardEvent) {
       slashActive.value = (slashActive.value - 1 + filteredCount.value) % filteredCount.value
       return
     }
+    // slash 浮层开时，Enter 执行当前高亮命令（不换行）
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const cmd = palette.value?.filtered[slashActive.value]
+      if (cmd) {
+        applyCommand(cmd)
+      }
+      return
+    }
+    // Esc 关闭浮层
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      slashOpen.value = false
+      return
+    }
   }
-  // 移动端通常没有 Enter 发送（要换行），这里用 Cmd/Ctrl+Enter 或 发送按钮
+  // 非 slash 态：Cmd/Ctrl+Enter 发送（移动端用发送按钮，桌面用快捷键）
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
     e.preventDefault()
     doSend()
   }
 }
 
+/** 应用一个 slash 命令：无参数的直接执行，有参数的填入输入框等用户补。 */
+function applyCommand(c: SlashCommand) {
+  if (c.hasArgs) {
+    model.value = `/${c.name} `
+    slashOpen.value = false
+    nextTick(() => ta.value?.focus())
+  } else {
+    // 无参数 → 直接 emit slash，不经过 model（避免 v-model 同步覆盖）
+    slashOpen.value = false
+    model.value = ''
+    emit('slash', `/${c.name}`)
+  }
+}
+
 function onSelectCmd(c: SlashCommand) {
-  model.value = `/${c.name}${c.hasArgs ? ' ' : ''}`
-  slashOpen.value = false
-  ta.value?.focus()
+  applyCommand(c)
 }
 
 defineExpose({ focus: () => ta.value?.focus() })
