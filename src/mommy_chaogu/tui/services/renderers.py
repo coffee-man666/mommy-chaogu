@@ -11,6 +11,7 @@ get_bars → 迷你 K 线表（≤10 行）、get_prediction_history → 预测�
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from textual.widgets import Static
@@ -18,6 +19,7 @@ from textual.widgets import Static
 from mommy_chaogu.tui.widgets import cards
 
 TRUNCATED_MARK = "[truncated"
+_log = logging.getLogger(__name__)
 
 
 def is_truncated(result: str) -> bool:
@@ -46,7 +48,8 @@ def render_tool_result(name: str, result: str, theme: str = "dark") -> Static | 
             return cards.bars_card(data, theme)
         if name == "get_prediction_history" and isinstance(data, list):
             return cards.predictions_tool_card(data, theme)
-    except Exception:
+    except Exception as e:
+        _log.warning("工具结果卡片渲染失败 (%s): %s", name, e)
         return None
     return None
 

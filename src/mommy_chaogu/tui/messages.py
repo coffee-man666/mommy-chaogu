@@ -22,8 +22,9 @@ from textual.message import Message
 class StepStatus(Message):
     """工作流步骤状态变更。"""
 
-    def __init__(self, idx: int, state: str, detail: str = "") -> None:
+    def __init__(self, idx: int, state: str, detail: str = "", turn_id: int = 0) -> None:
         super().__init__()
         self.idx = idx
         self.state = state  # running | ok | fail
         self.detail = detail
+        self.turn_id = turn_id

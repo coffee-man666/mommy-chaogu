@@ -45,11 +45,13 @@ class DataService:
             return []
 
         # 批量报价（一次 HTTP 拉所有 code）
+        quote_error = False
         try:
             quotes = self.adapter.get_quotes(codes)
         except Exception as e:
             _log.debug("批量拉取报价失败: %s", e)
             quotes = []
+            quote_error = True
         quotes_by_code: dict[str, Any] = {getattr(q, "code", ""): q for q in quotes}
 
         # 资金流并发拉（无批量 API，5 分钟节流缓存，max_workers=4 控并发）
@@ -64,6 +66,18 @@ class DataService:
         for code in codes:
             q = quotes_by_code.get(code)
             if q is None:
+                if quote_error:
+                    rows.append(
+                        {
+                            "code": code,
+                            "name": code,
+                            "price": None,
+                            "change_pct": None,
+                            "change_amount": None,
+                            "main_flow": flows_by_code.get(code),
+                            "quote_unavailable": True,
+                        }
+                    )
                 continue
             rows.append(
                 {
@@ -108,8 +122,8 @@ class DataService:
                 try:
                     for q in self.adapter.get_quotes(codes):
                         prices[q.code] = q.price
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug("持仓实时报价拉取失败: %s", e)
             return self.portfolio_store.summary(prices)  # type: ignore[no-any-return]
         except Exception as e:
             _log.warning("持仓快照失败: %s", e)
@@ -125,6 +139,7 @@ class AgentBridge:
 
     _agent: Any = None
     _router: Any = None
+    _memory: Any = None
 
     def route(self, text: str) -> Any:
         """尝试路由匹配。返回 RouteResult。"""
@@ -133,12 +148,21 @@ class AgentBridge:
         return self._router.route(text)
 
     def execute_workflow(
-        self, route_result: Any, text: str, on_step_start: Any = None, on_step_done: Any = None
+        self,
+        route_result: Any,
+        text: str,
+        on_step_start: Any = None,
+        on_step_done: Any = None,
+        is_cancelled: Any = None,
     ) -> Any:
         if self._router is None:
             return None
         return self._router.execute_route(
-            route_result, text, on_step_start=on_step_start, on_step_done=on_step_done
+            route_result,
+            text,
+            on_step_start=on_step_start,
+            on_step_done=on_step_done,
+            is_cancelled=is_cancelled,
         )
 
     def has_agent(self) -> bool:
@@ -189,16 +213,18 @@ class AgentBridge:
     ) -> Any:
         if self._agent is None:
             return None
-        return self._agent.chat(
-            message,
-            history=history,
-            on_tool_call=on_tool_call,
-            on_tool_result=on_tool_result,
-            on_chunk=on_chunk,
-            cancel_event=cancel_event,
-            usage_out=usage_out,
-            on_status=on_status,
-        )
+        kwargs = {
+            "history": history,
+            "on_tool_call": on_tool_call,
+            "on_tool_result": on_tool_result,
+            "on_chunk": on_chunk,
+            "cancel_event": cancel_event,
+            "usage_out": usage_out,
+            "on_status": on_status,
+        }
+        if self._memory is not None:
+            kwargs["memory"] = self._memory
+        return self._agent.chat(message, **kwargs)
 
 
 @dataclass
@@ -245,6 +271,7 @@ class Services:
         if detected is not None:
             try:
                 from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+                from mommy_chaogu.agent.memory import ConversationMemory
                 from mommy_chaogu.agent.prediction_tracker import PredictionTracker
                 from mommy_chaogu.agent.semantic_memory import SemanticMemory
                 from mommy_chaogu.agent.service import AgentService
@@ -265,6 +292,7 @@ class Services:
                     tracker=PredictionTracker(AGENT_DB),
                     semantic=SemanticMemory(AGENT_DB),
                 )
+                agent_bridge._memory = ConversationMemory(AGENT_DB)
             except Exception as e:
                 _log.warning("AgentService 初始化失败: %s", e)
         else:

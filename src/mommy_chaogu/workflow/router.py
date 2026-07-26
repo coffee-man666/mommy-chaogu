@@ -81,6 +81,7 @@ class NLRouter:
         user_input: str,
         on_step_start: Any = None,
         on_step_done: Any = None,
+        is_cancelled: Any = None,
     ) -> WorkflowResult:
         """执行路由结果。
 
@@ -101,6 +102,7 @@ class NLRouter:
             user_input,
             on_step_start=on_step_start,
             on_step_done=on_step_done,
+            is_cancelled=is_cancelled,
         )
 
     def suggest_prompts(self) -> list[str]:

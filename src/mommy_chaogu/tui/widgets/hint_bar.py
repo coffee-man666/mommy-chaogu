@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from rich.markup import escape
 from textual.widgets import Static
 
 _MAX_SUGGESTIONS = 5
@@ -37,19 +38,27 @@ class HintBar(Static):
         """slash 输入时展示候选命令（name, description 列表），高亮选中项。"""
         self._mode = "suggestions"
         lines: list[str] = []
-        for i, (name, desc) in enumerate(matches[:_MAX_SUGGESTIONS]):
+        start = min(
+            max(0, selected - _MAX_SUGGESTIONS + 1),
+            max(0, len(matches) - _MAX_SUGGESTIONS),
+        )
+        for i, (name, desc) in enumerate(matches[start : start + _MAX_SUGGESTIONS], start=start):
             if i == selected:
-                lines.append(f"[#79b8ff]> /{name}[/][#8a8f98] — {desc}[/]")
+                lines.append(f"[#79b8ff]> /{escape(name)}[/][#8a8f98] — {escape(desc)}[/]")
             else:
-                lines.append(f"[#8a8f98]  /{name} — {desc}[/]")
+                lines.append(f"[#8a8f98]  /{escape(name)} — {escape(desc)}[/]")
         self.update("\n".join(lines))
 
     def show_stock_suggestions(self, matches: list[tuple[str, str]], selected: int = 0) -> None:
         """@ 输入时展示股票候选（code, name 列表），高亮选中项。"""
         self._mode = "stock-suggestions"
         lines: list[str] = []
-        for i, (code, name) in enumerate(matches[:_MAX_SUGGESTIONS]):
-            label = f"{code} {name}".rstrip()
+        start = min(
+            max(0, selected - _MAX_SUGGESTIONS + 1),
+            max(0, len(matches) - _MAX_SUGGESTIONS),
+        )
+        for i, (code, name) in enumerate(matches[start : start + _MAX_SUGGESTIONS], start=start):
+            label = escape(f"{code} {name}".rstrip())
             if i == selected:
                 lines.append(f"[#79b8ff]> {label}[/]")
             else:
@@ -59,7 +68,7 @@ class HintBar(Static):
     def show_code_hint(self, code: str) -> None:
         """输入完整 6 位代码时提示 Enter 直接看报价。"""
         self._mode = "code-hint"
-        self.update(f"[#8a8f98] ⏎ 查看 {code} 报价[/]")
+        self.update(f"[#8a8f98] ⏎ 查看 {escape(code)} 报价[/]")
 
     @property
     def mode(self) -> str:

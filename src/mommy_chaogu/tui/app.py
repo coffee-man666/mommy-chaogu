@@ -116,7 +116,16 @@ class MommyTuiApp(App[None]):
 
     def __init__(self, services: Services | None = None) -> None:
         super().__init__()
-        self.services = services or Services.bootstrap()
+        self._startup_error: str | None = None
+        if services is not None:
+            self.services = services
+        else:
+            try:
+                self.services = Services.bootstrap()
+            except Exception as e:
+                _log.exception("TUI 服务初始化失败，已进入降级模式")
+                self.services = Services()
+                self._startup_error = friendly_error(e)
         self._turn_started: float = 0.0
         self._tool_seq: int = 0
         self._pending_tool_ids: dict[str, deque[int]] = defaultdict(deque)
@@ -127,6 +136,9 @@ class MommyTuiApp(App[None]):
         self._stream_usage: dict[str, int] = {}
         self._stream_flush_timer: Any = None
         self._last_ctrl_c: float = 0.0
+        self._turn_seq: int = 0
+        self._active_turn_id: int | None = None
+        self._conversation_history: list[dict[str, str]] = []
 
     def compose(self) -> ComposeResult:
         """单屏：TopBar + ChatView + Footer。"""
@@ -143,6 +155,10 @@ class MommyTuiApp(App[None]):
         top.ai_label = f"AI🟢 {provider}" if provider else "AI⚪ 未配置"
         self._refresh_market()
         self.set_interval(self._INDEX_REFRESH_S, self._refresh_market)
+        if self._startup_error:
+            self.query_one(ChatView).append_hint(
+                f"部分服务初始化失败，已进入降级模式：{self._startup_error}"
+            )
 
     # ------------------------------------------------------------------
     # 全局动作
@@ -209,10 +225,16 @@ class MommyTuiApp(App[None]):
         chat.set_busy(True)
         self._turn_started = time.monotonic()
 
+        self._turn_seq += 1
+        turn_id = self._turn_seq
+        self._active_turn_id = turn_id
+
         # 每轮重置 cancel + usage 状态
-        self._cancel_event = threading.Event()
-        self._stream_usage = {}
-        chat.set_cancel_callback(self._cancel_event.set)
+        cancel_event = threading.Event()
+        usage: dict[str, int] = {}
+        self._cancel_event = cancel_event
+        self._stream_usage = usage
+        chat.set_cancel_callback(cancel_event.set)
 
         # 1. 尝试工作流路由
         route = self.services.agent.route(text)
@@ -223,7 +245,7 @@ class MommyTuiApp(App[None]):
                 chat.append_workflow_match(workflow.description, step_names)
 
                 def _run_workflow() -> None:
-                    self._do_workflow(route, text)
+                    self._do_workflow(route, text, turn_id, cancel_event)
 
                 self.run_worker(_run_workflow, name="workflow", thread=True)
                 return
@@ -232,13 +254,14 @@ class MommyTuiApp(App[None]):
         if self.services.agent.has_agent():
 
             def _run_agent() -> None:
-                self._do_agent_chat(text)
+                self._do_agent_chat(text, turn_id, cancel_event, usage)
 
             self.run_worker(_run_agent, name="agent-chat", thread=True)
             return
 
         # 3. 无 Agent → 提示配置（降级说明）
         chat.set_busy(False)
+        self._active_turn_id = None
         chat.append_hint("AI 未配置：仅数据命令可用，配置见 .env（如 DEEPSEEK_API_KEY）")
         self._drain_queue()
 
@@ -253,11 +276,24 @@ class MommyTuiApp(App[None]):
         if text is not None:
             self.handle_chat_message(text)
 
+    def cancel_active_turn(self) -> None:
+        """取消并作废当前轮；后续旧 worker 回调会被 turn id 丢弃。"""
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        self._active_turn_id = None
+        self._turn_seq += 1
+        self._pending_tool_ids.clear()
+        if self._stream_flush_timer is not None:
+            self._stream_flush_timer.stop()
+            self._stream_flush_timer = None
+
     # ------------------------------------------------------------------
     # 工作流执行（worker 线程）
     # ------------------------------------------------------------------
 
-    def _do_workflow(self, route: Any, text: str) -> None:
+    def _do_workflow(
+        self, route: Any, text: str, turn_id: int, cancel_event: threading.Event
+    ) -> None:
         """worker 线程内执行工作流，通过 call_from_thread 回主线程更新 UI。"""
         step_idx = 0
 
@@ -265,41 +301,57 @@ class MommyTuiApp(App[None]):
             nonlocal step_idx
             idx = step_idx
             step_idx += 1
-            self.call_from_thread(self._post_step, idx, "running", display_name)
+            self.call_from_thread(self._post_step, turn_id, idx, "running", display_name)
 
         def on_step_done(display_name: str, success: bool) -> None:
             idx = step_idx - 1
             state = "ok" if success else "fail"
-            self.call_from_thread(self._post_step, idx, state, display_name)
+            self.call_from_thread(self._post_step, turn_id, idx, state, display_name)
 
         try:
-            result = self.services.agent.execute_workflow(route, text, on_step_start, on_step_done)
+            result = self.services.agent.execute_workflow(
+                route,
+                text,
+                on_step_start,
+                on_step_done,
+                is_cancelled=cancel_event.is_set,
+            )
         except Exception as e:
             _log.warning("工作流执行失败: %s", e)
-            self.call_from_thread(self._on_chat_error, f"工作流出错：{friendly_error(e)}")
+            self.call_from_thread(self._on_chat_error, turn_id, f"工作流出错：{friendly_error(e)}")
             return
 
         summary = ""
         if result is not None:
             summary = getattr(result, "summary", "") or ""
-        self.call_from_thread(self._on_workflow_done, summary)
+            if not summary and getattr(result, "steps", None):
+                from mommy_chaogu.workflow.engine import _format_fallback
 
-    def _post_step(self, idx: int, state: str, detail: str) -> None:
+                summary = _format_fallback(getattr(result, "workflow_id", ""), result)
+        self.call_from_thread(self._on_workflow_done, turn_id, summary)
+
+    def _post_step(self, turn_id: int, idx: int, state: str, detail: str) -> None:
         """主线程：向 ChatView 发送 StepStatus 消息。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
-        chat.post_message(StepStatus(idx=idx, state=state, detail=detail))
+        chat.post_message(StepStatus(idx=idx, state=state, detail=detail, turn_id=turn_id))
 
-    def _on_workflow_done(self, summary: str) -> None:
+    def _on_workflow_done(self, turn_id: int, summary: str) -> None:
         """主线程：工作流执行完成。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         if chat.is_cancelled():
             chat.clear_cancelled()
             chat.set_busy(False)
+            self._active_turn_id = None
             self._drain_queue()
             return
         text = summary if summary else "工作流执行完成。"
         chat.append_assistant(text)
         chat.set_busy(False)
+        self._active_turn_id = None
         chat.finish_turn(self._turn_elapsed_ms())
         self._drain_queue()
 
@@ -307,7 +359,13 @@ class MommyTuiApp(App[None]):
     # Agent 对话（worker 线程）
     # ------------------------------------------------------------------
 
-    def _do_agent_chat(self, text: str) -> None:
+    def _do_agent_chat(
+        self,
+        text: str,
+        turn_id: int,
+        cancel_event: threading.Event,
+        usage_out: dict[str, int],
+    ) -> None:
         """worker 线程内调用 agent.chat，工具调用/结果 + 流式 chunk + 重试状态实时回传 UI。
 
         流式：on_chunk 回调把每个 delta 转发到 ChatView 的流式 widget。
@@ -318,17 +376,17 @@ class MommyTuiApp(App[None]):
         """
 
         def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
-            self.call_from_thread(self._post_tool_started, fn_name, fn_args)
+            self.call_from_thread(self._post_tool_started, turn_id, fn_name, fn_args)
 
         def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None:
-            self.call_from_thread(self._post_tool_result, fn_name, ok, elapsed_ms, result)
+            self.call_from_thread(self._post_tool_result, turn_id, fn_name, ok, elapsed_ms, result)
 
         def on_status(status: str, info: dict[str, Any]) -> None:
             if status == "retry":
                 attempt = int(info.get("attempt", 1))
                 # 回调的 max 是「总尝试次数」（重试上限 + 1），显示为重试进度
                 max_retries = max(1, int(info.get("max", 2)) - 1)
-                self.call_from_thread(self._on_retry_status, attempt, max_retries)
+                self.call_from_thread(self._on_retry_status, turn_id, attempt, max_retries)
 
         # 流式 chunk 回调：worker 线程调用，通过 call_from_thread 转主线程
         streaming_started = threading.Event()
@@ -336,23 +394,24 @@ class MommyTuiApp(App[None]):
         def on_chunk(delta: str) -> None:
             if not streaming_started.is_set():
                 streaming_started.set()
-                self.call_from_thread(self._start_streaming)
+                self.call_from_thread(self._start_streaming, turn_id)
 
-            self.call_from_thread(self._append_stream_chunk, delta)
+            self.call_from_thread(self._append_stream_chunk, turn_id, delta)
 
         try:
             resp = self.services.agent.chat(
                 text,
+                history=list(self._conversation_history[-20:]),
                 on_tool_call=on_tool_call,
                 on_tool_result=on_tool_result,
                 on_chunk=on_chunk,
-                cancel_event=self._cancel_event,
-                usage_out=self._stream_usage,
+                cancel_event=cancel_event,
+                usage_out=usage_out,
                 on_status=on_status,
             )
         except Exception as e:
             _log.warning("Agent chat 失败: %s", e)
-            self.call_from_thread(self._on_chat_error, friendly_error(e))
+            self.call_from_thread(self._on_chat_error, turn_id, friendly_error(e))
             return
 
         # 收集 usage：resp.usage 与 self._stream_usage 是同一 dict，
@@ -363,32 +422,42 @@ class MommyTuiApp(App[None]):
         if resp is not None:
             reply = getattr(resp, "text", "") or ""
 
-        self.call_from_thread(self._on_agent_done, reply, interrupted, usage)
+        self.call_from_thread(self._on_agent_done, turn_id, text, reply, interrupted, usage)
 
-    def _post_tool_started(self, name: str, args: dict[str, Any]) -> None:
+    def _post_tool_started(self, turn_id: int, name: str, args: dict[str, Any]) -> None:
         """主线程：分配 call_id 并通知 ChatView 挂载 ToolIndicator。"""
+        if turn_id != self._active_turn_id:
+            return
         self._tool_seq += 1
         self._pending_tool_ids[name].append(self._tool_seq)
         chat = self.query_one(ChatView)
         chat.tool_call_started(self._tool_seq, name, args)
 
-    def _post_tool_result(self, name: str, ok: bool, elapsed_ms: int, result: str) -> None:
+    def _post_tool_result(
+        self, turn_id: int, name: str, ok: bool, elapsed_ms: int, result: str
+    ) -> None:
         """主线程：按 FIFO 匹配同名 call_id，通知 ChatView 更新指示器。
 
         agent 循环单线程顺序执行工具，同名调用按先来先完成匹配。
         """
+        if turn_id != self._active_turn_id:
+            return
         queue = self._pending_tool_ids.get(name)
         call_id = queue.popleft() if queue else 0
         chat = self.query_one(ChatView)
         chat.tool_call_finished(call_id, ok, elapsed_ms, result)
 
-    def _on_retry_status(self, attempt: int, max_retries: int) -> None:
+    def _on_retry_status(self, turn_id: int, attempt: int, max_retries: int) -> None:
         """主线程：重试状态 → 工作行显示「⏳ 网络较慢，正在重试 (1/3)…」。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         chat.set_retry_status(attempt, max_retries)
 
-    def _start_streaming(self) -> None:
+    def _start_streaming(self, turn_id: int) -> None:
         """主线程：首个 chunk 到达时挂载流式 widget + 启动 50ms 节流 timer。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         chat.start_streaming()
         # 注册 usage 共享 dict 给 WorkingIndicator 做实时 token 统计。
@@ -409,8 +478,10 @@ class MommyTuiApp(App[None]):
         else:
             self._stream_flush_timer = None
 
-    def _append_stream_chunk(self, delta: str) -> None:
+    def _append_stream_chunk(self, turn_id: int, delta: str) -> None:
         """主线程：追加一个 chunk 到 ChatView 缓冲区。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         chat.append_chunk(delta)
 
@@ -420,9 +491,16 @@ class MommyTuiApp(App[None]):
         return int((time.monotonic() - self._turn_started) * 1000)
 
     def _on_agent_done(
-        self, reply: str, interrupted: bool = False, usage: dict[str, int] | None = None
+        self,
+        turn_id: int,
+        user_text: str,
+        reply: str,
+        interrupted: bool = False,
+        usage: dict[str, int] | None = None,
     ) -> None:
         """主线程：Agent 回复完成。"""
+        if turn_id != self._active_turn_id:
+            return
         self._stream_usage = usage or {}
         chat = self.query_one(ChatView)
 
@@ -440,6 +518,7 @@ class MommyTuiApp(App[None]):
             # 这里只收尾状态 + 放行排队消息。
             chat.clear_cancelled()
             chat.set_busy(False)
+            self._active_turn_id = None
             self._drain_queue()
             return
 
@@ -449,6 +528,12 @@ class MommyTuiApp(App[None]):
         if not streamed_text:
             chat.append_assistant(text if text else "（无回复）")
         chat.set_busy(False)
+        self._active_turn_id = None
+
+        self._conversation_history.extend(
+            [{"role": "user", "content": user_text}, {"role": "assistant", "content": text}]
+        )
+        self._conversation_history = self._conversation_history[-20:]
 
         # token 统计：优先 total_tokens，否则 completion_tokens
         tokens = self._stream_usage.get("total_tokens") or self._stream_usage.get(
@@ -457,21 +542,28 @@ class MommyTuiApp(App[None]):
         chat.finish_turn(self._turn_elapsed_ms(), tokens=tokens)
 
         # 记忆回执：后台提取完成后在对话流尾部追加淡色一行
-        self.services.agent.watch_background(lambda: self.call_from_thread(self._on_memory_saved))
+        self.services.agent.watch_background(
+            lambda: self.call_from_thread(self._on_memory_saved, turn_id)
+        )
 
         self._drain_queue()
 
-    def _on_memory_saved(self) -> None:
+    def _on_memory_saved(self, turn_id: int) -> None:
         """主线程：后台记忆提取完成 → 对话流尾部追加「✎ 已记住…」。"""
+        if turn_id != self._turn_seq:
+            return
         with contextlib.suppress(Exception):
             chat = self.query_one(ChatView)
             chat.append_memory_receipt()
 
-    def _on_chat_error(self, error: str) -> None:
+    def _on_chat_error(self, turn_id: int, error: str) -> None:
         """主线程：对话出错（error 已是友好文案）。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         chat.append_hint(error)
         chat.set_busy(False)
+        self._active_turn_id = None
         self._drain_queue()
 
     # ------------------------------------------------------------------

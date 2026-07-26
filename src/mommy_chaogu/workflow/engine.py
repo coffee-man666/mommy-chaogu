@@ -178,6 +178,7 @@ class WorkflowExecutor:
         user_input: str,
         on_step_start: Callable[[str], None] | None = None,
         on_step_done: Callable[[str, bool], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> WorkflowResult:
         """按顺序执行工作流的所有步骤。
 
@@ -191,6 +192,8 @@ class WorkflowExecutor:
         step_results: list[dict[str, Any]] = []
 
         for step in workflow.steps:
+            if is_cancelled is not None and is_cancelled():
+                break
             # 构建参数
             args = dict(step.args)
             if step.args_extractor:
@@ -237,6 +240,9 @@ class WorkflowExecutor:
 
             result.steps.append(sr)
 
+            if is_cancelled is not None and is_cancelled():
+                break
+
             if not sr.success and not step.optional:
                 if on_step_done:
                     on_step_done(step.display_name, False)
@@ -246,7 +252,12 @@ class WorkflowExecutor:
                 on_step_done(step.display_name, sr.success)
 
         # LLM 总结
-        if workflow.summary_template and workflow.use_llm_summary and self._llm:
+        if (
+            workflow.summary_template
+            and workflow.use_llm_summary
+            and self._llm
+            and not (is_cancelled is not None and is_cancelled())
+        ):
             import json
 
             context = json.dumps(step_results, ensure_ascii=False, default=str)
