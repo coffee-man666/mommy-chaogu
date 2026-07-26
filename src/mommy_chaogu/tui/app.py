@@ -620,7 +620,7 @@ def main() -> None:
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    # 启动前检查 .env 配置，未配置则引导用户完成向导
+    # 启动前检查项目级 / 用户级配置，未配置则进入统一 onboarding
     from mommy_chaogu.setup import check_and_run_setup
 
     check_and_run_setup()

@@ -52,10 +52,10 @@ cd mommy-chaogu
 uv sync --extra dev
 ```
 
-### Step 2：配置 LLM（交互式引导）
+### Step 2：配置 AI 与微信（统一交互式引导）
 
 ```bash
-uv run mommy --setup
+uv run mommy setup
 ```
 
 系统会引导你完成：
@@ -71,8 +71,11 @@ uv run mommy --setup
 │                        │
 ╰────────────────────────╯
 
-请选择 [1-4]: 1
-请输入 DEEPSEEK_API_KEY: sk-xxxxxxxx
+请选择 [1-6]: 1
+模型名（回车使用 deepseek-chat）:
+API key（输入不会显示）:
+✅ 连接成功
+现在连接微信？(Y/n):
 
 是否配置微信推送？(y/n): n
 
@@ -503,7 +506,7 @@ uv run python scripts/backtest_evolution.py --db /tmp/backtest.db
 ### Step 1：配置推送
 
 ```bash
-uv run mommy --setup
+uv run mommy setup
 # 选择 "是否配置微信推送？" → y
 # 输入 SERVER_CHAN_KEY（去 sct.ftqq.com 申请）
 ```
@@ -734,7 +737,8 @@ print(f"数据来源: {adapter.format_source_label()}")  # "东方财富 实时"
 mommy                           # 交互式 REPL
 mommy "今天怎么样"               # 单次自然语言查询
 mommy -v "分析 600519"          # --verbose 显示工具调用详情
-mommy --setup                   # 首次配置引导
+mommy setup                     # Provider + 模型 + Key + 微信统一配置
+mommy --setup                   # 兼容入口
 ```
 
 ### 结构化子命令
@@ -790,7 +794,7 @@ AGENT_PROVIDER=zai uv run mommy "今天怎么样"
 # 确保对应的 key 已填入: ZAI_API_KEY=xxx
 
 # 重新运行配置向导
-uv run mommy --setup
+uv run mommy setup
 ```
 
 ### 数据库位置

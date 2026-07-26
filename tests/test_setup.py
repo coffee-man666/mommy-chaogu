@@ -10,12 +10,23 @@ import pytest
 from mommy_chaogu.setup import (
     _PROVIDERS,
     _write_env_file,
+    build_setup_parser,
     has_env_file,
+    preferred_setup_env_path,
     run_setup_wizard,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+
+@pytest.fixture(autouse=True)
+def _isolate_setup_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    for info in _PROVIDERS.values():
+        monkeypatch.setenv(info["env_key"], "")
+    monkeypatch.setenv("AGENT_PROVIDER", "")
+    monkeypatch.setenv("AGENT_MODEL", "")
+    monkeypatch.setenv("MOMMY_CONFIG_DIR", str(tmp_path / "user-config"))
 
 
 def make_input(answers: Sequence[str]):
@@ -72,7 +83,9 @@ def test_wizard_writes_env_deepseek(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["1", "sk-my-deepseek-key", "n"]),
+        input_func=make_input(["1", "", "sk-my-deepseek-key", "n"]),
+        verify_llm=False,
+        offer_weixin=False,
     )
     assert result is True
     content = env.read_text(encoding="utf-8")
@@ -80,11 +93,13 @@ def test_wizard_writes_env_deepseek(tmp_path: Path):
     # 选中 provider 取消注释
     assert "DEEPSEEK_API_KEY=sk-my-deepseek-key" in content
     assert "AGENT_PROVIDER=deepseek" in content
+    assert "AGENT_MODEL=deepseek-chat" in content
 
     # 其余 provider 保持注释
-    assert "#OPENAI_API_KEY=sk-my-deepseek-key" in content
-    assert "#MOONSHOT_API_KEY=sk-my-deepseek-key" in content
-    assert "#ZAI_API_KEY=sk-my-deepseek-key" in content
+    assert "#OPENAI_API_KEY=" in content
+    assert "#MOONSHOT_API_KEY=" in content
+    assert "#ZAI_API_KEY=" in content
+    assert content.count("sk-my-deepseek-key") == 1
 
     # 没配置 Server酱，保持注释
     assert "#SERVER_CHAN_KEY" in content
@@ -95,20 +110,25 @@ def test_wizard_writes_env_zai(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["4", "zai-token-xyz", "n"]),
+        input_func=make_input(["4", "glm-5", "zai-token-xyz", "n"]),
+        verify_llm=False,
+        offer_weixin=False,
     )
     assert result is True
     content = env.read_text(encoding="utf-8")
     assert "ZAI_API_KEY=zai-token-xyz" in content
-    assert "#DEEPSEEK_API_KEY=zai-token-xyz" in content
+    assert "#DEEPSEEK_API_KEY=" in content
     assert "AGENT_PROVIDER=zai" in content
+    assert "AGENT_MODEL=glm-5" in content
 
 
 def test_wizard_writes_env_nova(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["5", "dummy", "n"]),
+        input_func=make_input(["5", "", "dummy", "n"]),
+        verify_llm=False,
+        offer_weixin=False,
     )
     assert result is True
     content = env.read_text(encoding="utf-8")
@@ -120,7 +140,9 @@ def test_wizard_with_server_chan(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["1", "sk-key", "y", "SCT-my-sck"]),
+        input_func=make_input(["1", "", "sk-key", "y", "SCT-my-sck"]),
+        verify_llm=False,
+        offer_weixin=False,
     )
     assert result is True
     content = env.read_text(encoding="utf-8")
@@ -154,7 +176,12 @@ def test_wizard_non_numeric_choice(tmp_path: Path):
 
 def test_wizard_empty_api_key(tmp_path: Path):
     env = tmp_path / ".env"
-    result = run_setup_wizard(env, input_func=make_input(["1", "", "n"]))
+    result = run_setup_wizard(
+        env,
+        input_func=make_input(["1", "", ""]),
+        verify_llm=False,
+        offer_weixin=False,
+    )
     assert result is False
 
 
@@ -180,16 +207,88 @@ def test_write_env_file_all_providers_present(tmp_path: Path):
     for info in _PROVIDERS.values():
         assert info["env_key"] in content
 
-    # 恰好一行无注释（选中的），三行带注释（其余）
+    # 恰好一行无注释（选中的），其余 provider 只保留空占位，不复制 key
     moonshot_lines = [ln for ln in content.splitlines() if "MOONSHOT_API_KEY" in ln]
     assert len(moonshot_lines) == 1
     assert moonshot_lines[0].startswith("MOONSHOT_API_KEY=")
+    assert content.count("moonshot-key") == 1
 
 
 def test_write_env_file_creates_parents(tmp_path: Path):
     env = tmp_path / "nested" / "dir" / ".env"
     _write_env_file(env, "deepseek", "sk-x", None)
     assert env.is_file()
+    assert env.stat().st_mode & 0o777 == 0o600
+
+
+def test_write_env_file_preserves_unmanaged_and_existing_provider_keys(tmp_path: Path):
+    env = tmp_path / ".env"
+    env.write_text("CUSTOM_SETTING=keep\nOPENAI_API_KEY=existing-openai\n", encoding="utf-8")
+
+    _write_env_file(env, "zai", "new-zai", None, model="glm-5")
+    content = env.read_text(encoding="utf-8")
+
+    assert "CUSTOM_SETTING=keep" in content
+    assert "OPENAI_API_KEY=existing-openai" in content
+    assert "ZAI_API_KEY=new-zai" in content
+    assert content.count("OPENAI_API_KEY=") == 1
+
+    _write_env_file(env, "zai", "newer-zai", None, model="glm-5")
+    rewritten = env.read_text(encoding="utf-8")
+    assert rewritten.count("mommy-chaogu managed configuration") == 2
+    assert rewritten.count("# mommy-chaogu 密钥配置") == 1
+    assert "ZAI_API_KEY=newer-zai" in rewritten
+    assert "new-zai" not in rewritten
+
+
+def test_setup_parser_and_preferred_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    args = build_setup_parser().parse_args(["--local", "--no-verify", "--no-weixin"])
+    assert args.local is True
+    assert args.no_verify is True
+    assert args.no_weixin is True
+    assert preferred_setup_env_path() != Path(".env")
+
+    Path(".env.example").write_text("", encoding="utf-8")
+    Path(".env").write_text("", encoding="utf-8")
+    assert preferred_setup_env_path() == Path(".env")
+
+
+def test_wizard_can_pair_weixin_in_same_flow(tmp_path: Path):
+    env = tmp_path / ".env"
+    paired: list[bool] = []
+
+    result = run_setup_wizard(
+        env,
+        input_func=make_input(["4", "glm-5", "zai-key", "n", "y"]),
+        verify_llm=False,
+        weixin_connector=lambda: paired.append(True) or True,
+    )
+
+    assert result is True
+    assert paired == [True]
+    assert "AGENT_MODEL=glm-5" in env.read_text(encoding="utf-8")
+
+
+def test_wizard_retries_after_failed_validation(tmp_path: Path):
+    env = tmp_path / ".env"
+    attempts: list[tuple[str, str, str]] = []
+
+    def validate(provider: str, model: str, key: str) -> tuple[bool, str]:
+        attempts.append((provider, model, key))
+        return (len(attempts) > 1, "连接成功" if len(attempts) > 1 else "API key 无效")
+
+    result = run_setup_wizard(
+        env,
+        input_func=make_input(["4", "glm-5", "bad-key", "y", "4", "glm-5", "good-key", "n"]),
+        offer_weixin=False,
+        validator=validate,
+    )
+
+    assert result is True
+    assert [item[2] for item in attempts] == ["bad-key", "good-key"]
+    assert "ZAI_API_KEY=good-key" in env.read_text(encoding="utf-8")
+    assert "bad-key" not in env.read_text(encoding="utf-8")
 
 
 # ---------- check_and_run_setup ----------
@@ -216,6 +315,21 @@ def test_check_and_run_setup_runs_wizard(tmp_path: Path, monkeypatch: pytest.Mon
     from mommy_chaogu import setup
 
     monkeypatch.setattr(setup, "run_setup_wizard", lambda *a, **kw: True)
+    assert setup.check_and_run_setup() is True
+
+
+def test_check_and_run_setup_accepts_shell_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT_PROVIDER", "zai")
+    monkeypatch.setenv("ZAI_API_KEY", "shell-key")
+
+    from mommy_chaogu import setup
+
+    monkeypatch.setattr(
+        setup, "run_setup_wizard", lambda *a, **kw: pytest.fail("wizard should not run")
+    )
     assert setup.check_and_run_setup() is True
 
 

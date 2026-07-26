@@ -6,7 +6,10 @@
 ## 使用
 
 ```bash
-# 第一次连接：显示二维码，微信扫码后把授权保存在本机
+# 推荐：一次配置 Provider、模型、Key，并继续微信扫码
+uv run mommy setup
+
+# 已有 AI 配置时，也可只连接微信
 uv run mommy channel weixin login
 
 # 启动消息网关
@@ -34,7 +37,6 @@ uv run mommy channel weixin logout
 
 ## 后续增强
 
-- 首次微信连接后提供 owner-only 配置流程，引导选择 Provider、模型并验证 API key。
 - 支持扫码账号在微信中查看和切换模型；模型来自受控列表，同时保留手动填写兼容模型名的入口。
 - 切换配置需要明确确认，不在聊天或日志中回显 API key，并与 Web、TUI、CLI 共用同一份配置。
 

@@ -79,7 +79,7 @@ def _run_gateway(store: WeixinStore, client: WeixinClient, *, once: bool) -> Non
 
     agent = get_agent_service()
     if agent is None:
-        raise WeixinApiError("尚未配置 LLM，请先运行 mommy --setup")
+        raise WeixinApiError("尚未配置 LLM，请先运行 mommy setup")
     memory = ConversationMemory(get_agent_db())
 
     def respond(session_id: str, message: str) -> str:

@@ -15,6 +15,7 @@
     MINIMAX_API_KEY   → agent.api_key（provider=minimax 时）
     SERVER_CHAN_KEY   → push.server_chan_key
     AGENT_PROVIDER    → agent.provider
+    AGENT_MODEL       → agent.model
     MOMMY_API_TOKEN   → web.api_token
     MOMMY_CORS_ORIGINS → web.cors_origins（逗号分隔）
 """
@@ -34,6 +35,34 @@ from mommy_chaogu.agent.llm import normalize_provider as validate_agent_provider
 from mommy_chaogu.db_paths import MARKET_DB
 
 DEFAULT_CONFIG_PATH = Path("config.toml")
+
+
+def default_user_config_dir() -> Path:
+    """Return the per-user configuration directory used by installed CLIs."""
+    override = os.environ.get("MOMMY_CONFIG_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".config" / "mommy-chaogu"
+
+
+def default_user_env_path() -> Path:
+    """Return the private user-level env file populated by onboarding."""
+    return default_user_config_dir() / ".env"
+
+
+def load_runtime_env() -> None:
+    """Load project-local settings first, then user-level fallback settings.
+
+    Existing process environment variables always win. A repository ``.env``
+    can override the user default because it is loaded first without replacing
+    shell values; the user file only fills variables that remain missing.
+    """
+    local_env = Path(".env")
+    load_dotenv(local_env, override=False)
+    user_env = default_user_env_path()
+    if user_env.absolute() != local_env.absolute():
+        load_dotenv(user_env, override=False)
+
 
 # provider → 对应的环境变量名（单一真相源在 agent/llm.py，这里派生）
 _PROVIDER_ENV_KEYS: dict[str, str] = {
@@ -130,6 +159,10 @@ def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
 
     cfg.agent.provider = validate_agent_provider(cfg.agent.provider)
 
+    env_model = os.environ.get("AGENT_MODEL", "").strip()
+    if env_model:
+        cfg.agent.model = env_model
+
     # 根据当前 provider 取对应 key
     env_key = _PROVIDER_ENV_KEYS.get(cfg.agent.provider, "")
     if env_key:
@@ -163,7 +196,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     - path 为 None 时使用默认路径 config.toml
     - 文件不存在不报错，返回全默认值 + 环境变量
     """
-    load_dotenv()  # 从 .env 加载，但不覆盖已有的 env var
+    load_runtime_env()
 
     config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
     data = _load_toml(config_path)
@@ -200,6 +233,7 @@ _CONFIG_TEMPLATE = """\
 #   MINIMAX_API_KEY   (provider=minimax)
 #   SERVER_CHAN_KEY   → push.server_chan_key
 #   AGENT_PROVIDER    → agent.provider
+#   AGENT_MODEL       → agent.model
 #   MOMMY_API_TOKEN   → web.api_token
 #   MOMMY_CORS_ORIGINS → web.cors_origins
 

@@ -154,11 +154,10 @@ class AgentService:
 
         # 解析 provider 配置（单一真相源：agent/llm.py）
         provider = llm_provider.resolve_provider(provider)
-        config = llm_provider.provider_config(provider)
         self._provider = provider
         self._completion_options = llm_provider.completion_options(provider)
 
-        self._model = model or config["default_model"]
+        self._model = llm_provider.resolve_model(provider, model)
 
         # 构造 OpenAI client（显式 timeout + 关闭 SDK 内置重试，重试由
         # _create_with_retry 统一负责，避免双层重试叠加）

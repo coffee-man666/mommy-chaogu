@@ -10,7 +10,7 @@ from __future__ import annotations
 def friendly_error(error: object) -> str:
     """把异常/错误消息映射为人话。
 
-    - 401 / Unauthorized → API key 无效，请检查 .env
+    - 401 / Unauthorized → API key 无效，请重新运行配置向导
     - 429 / RateLimit → 限流，请稍后再试
     - timeout / 超时 → 网络超时，请稍后重试
     - connection → 网络连接失败，请检查网络
@@ -24,7 +24,7 @@ def friendly_error(error: object) -> str:
         or "authentication" in low
         or "invalid api key" in low
     ):
-        return "API key 无效，请检查 .env 配置"
+        return "API key 无效，请运行 mommy setup 重新配置"
     if "429" in text or "rate limit" in low or "ratelimit" in low or "限流" in text:
         return "请求被限流，请稍后再试"
     if "timeout" in low or "timed out" in low or "超时" in text:

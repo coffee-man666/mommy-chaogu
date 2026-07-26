@@ -39,7 +39,7 @@ A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自�
 | 能力 | 说明 |
 |---|---|
 | **自然语言入口** | `mommy` 命令：用自然语言描述需求，自动匹配 9 个预定义工作流，未命中 fallback 到 LLM agent |
-| **首次配置引导** | `mommy --setup` 交互式选择 LLM provider + 填入 API key，零配置门槛上手 |
+| **统一首次配置** | 首次运行 `mommy` 自动引导选择 Provider / 模型、隐藏输入并验证 Key，可继续微信扫码；用户级配置换目录仍生效 |
 | **工具调用可视化** | `--verbose` 显示完整路由决策 + 工具调用过程（`🔧 调用: get_quote...`），消除 AI 黑盒感 |
 | **行情数据** | 多源 fallback（东财 + 腾讯 + 缓存），报价 / K 线 / 资金流 / 板块排行 / 基本面 |
 | **资金流分析** | 主力净流入比率 (bp) 信号、板块扫描、收盘日报、历史回测 |
@@ -62,8 +62,8 @@ A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自�
 git clone https://github.com/coffee-man666/mommy-chaogu.git
 cd mommy-chaogu
 
-# 2. 配置密钥（可选；AI 分析功能需要一个 LLM provider 的 key）
-cp .env.example .env   # 编辑填入 key，或启动后运行 mommy --setup 交互式配置
+# 2. 一次配置 AI + 微信（也可直接运行 mommy 自动进入）
+uv run mommy setup
 
 # 3a. Docker 一键启动 Web 服务（推荐，无需安装 Python / Node / uv）
 docker compose up -d
@@ -83,8 +83,8 @@ uv run mommy "今天大盘怎么样"
 # 需要 Python 3.12+
 uv sync --frozen --extra dev
 
-# 配置密钥（交互式引导或手动编辑 .env）
-uv run mommy --setup
+# 配置 Provider、模型、Key 和可选微信连接
+uv run mommy setup
 
 # 跑质量门确认环境正常
 ./scripts/quality.sh
@@ -214,8 +214,8 @@ Cache   Agent    Data Sources
 | 指标 | 值 |
 |---|---|
 | 代码量 | ~51,000 行（src ~27,000 + tests ~16,000 + web ~7,000） |
-| 测试 | 1,550 collected；1,537 个确定性离线测试 + 13 个定时网络探针 |
-| CLI 入口 | `mommy` 统一入口 + 11 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui / channel），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
+| 测试 | 1,559 collected；1,546 个确定性离线测试 + 13 个定时网络探针 |
+| CLI 入口 | `mommy` 统一入口 + 12 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui / channel / setup），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
 | Agent 工具 | 25 个 function-calling tools |
 | 数据库 | 4 个（market / portfolio / agent / reference） |
 | LLM Provider | 6 个（deepseek / openai / kimi / z.ai / Nova Bridge / MiniMax） |

@@ -82,6 +82,14 @@ class TestAgentServiceInit:
         assert svc._model == "gpt-4o-mini"
 
     @patch("openai.OpenAI")
+    def test_init_uses_onboarding_model_from_env(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        with patch.dict("os.environ", {"AGENT_MODEL": "glm-5"}):
+            svc = AgentService(mock_ctx, provider="zai", api_key="sk-test")
+        assert svc._model == "glm-5"
+
+    @patch("openai.OpenAI")
     def test_init_with_minimax_provider(
         self, mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:

@@ -42,6 +42,7 @@ mommy-chaogu = "mommy_chaogu.cli:main"
 mommy = "mommy_chaogu.cli:main_mommy"
 mommy-tui = "mommy_chaogu.tui.app:main"
 mommy-channel = "mommy_chaogu.cli:main_channel"
+mommy-setup = "mommy_chaogu.setup:main_setup"
 
 [project.optional-dependencies]
 dev = [

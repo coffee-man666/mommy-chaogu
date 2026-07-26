@@ -41,15 +41,16 @@ def _build_llm() -> tuple[Any | None, str | None, str | None]:
     embedding 接口（向量检索显式降级为关键词搜索）。
     """
     from mommy_chaogu.agent import llm
+    from mommy_chaogu.config import load_runtime_env
 
+    load_runtime_env()
     provider = llm.detect_provider()
     if provider is None:
         return None, None, None
     try:
-        config = llm.provider_config(provider)
         return (
             llm.create_client(provider),
-            str(config["default_model"]),
+            llm.resolve_model(provider),
             llm.embedding_model_for(provider),
         )
     except Exception as e:

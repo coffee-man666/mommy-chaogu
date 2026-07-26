@@ -19,6 +19,7 @@ from mommy_chaogu.cli_commands.report import *
 from mommy_chaogu.cli_commands.semicon import *
 from mommy_chaogu.cli_commands.watchlist import *
 from mommy_chaogu.cli_commands.web import *
+from mommy_chaogu.setup import main_setup
 
 # ============================================================
 # mommy — 面向用户的自然语言入口
@@ -140,7 +141,7 @@ def _run_mommy_repl(
             if agent is None:
                 print(
                     "⚠️ AI 助手不可用（未配置 API key）。\n"
-                    "   运行 mommy --setup 进行配置，或在 .env 文件中设置 API key。\n"
+                    "   运行 mommy setup 配置 Provider、模型和 API key。\n"
                     "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
                 )
                 continue
@@ -167,7 +168,7 @@ def _run_mommy_repl(
                 elif "quota" in err_msg.lower() or "insufficient" in err_msg.lower():
                     print("⚠️ API 额度已用完，请检查账户余额。\n")
                 elif "authentication" in err_msg.lower() or "401" in err_msg:
-                    print("⚠️ API key 无效，请检查 .env 配置。\n")
+                    print("⚠️ API key 无效，请运行 mommy setup 重新配置。\n")
                 else:
                     print(f"⚠️ 出错了: {e}\n")
 
@@ -228,9 +229,9 @@ def main_mommy() -> NoReturn:
     # 加载 .env 里的 API key（与 mommy-agent 的 load_config、TUI bootstrap
     # 对齐——主入口漏了这步时，只配 .env 的用户会被误报「未配置 API key」）。
     # 不覆盖已有的 shell 环境变量。
-    from dotenv import load_dotenv
+    from mommy_chaogu.config import load_runtime_env
 
-    load_dotenv()
+    load_runtime_env()
 
     # 子命令 → 对应 main_* 函数 / entry point 的分发表
     # mommy watchlist list / mommy --raw watchlist list 共用同一张表
@@ -239,6 +240,7 @@ def main_mommy() -> NoReturn:
         "monitor": ("mommy-monitor", main_monitor),
         "cache": ("mommy-cache", main_cache),
         "channel": ("mommy-channel", main_channel),
+        "setup": ("mommy-setup", main_setup),
         "semicon": ("mommy-semicon", main_semicon),
         "flows": ("mommy-flows", main_flows),
         "report": ("mommy-report", main_report),
@@ -297,7 +299,7 @@ def main_mommy() -> NoReturn:
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
-            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, web, tui"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, setup, web, tui"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -320,7 +322,7 @@ def main_mommy() -> NoReturn:
     parser.add_argument(
         "--setup",
         action="store_true",
-        help="运行首次配置引导（选择 LLM provider + 填入 API key）",
+        help="运行首次配置引导（Provider + 模型 + API key + 微信）",
     )
     # 解析已知参数，剩余的忽略（避免 argparse 报错）
     args, _unknown = parser.parse_known_args()
@@ -329,11 +331,13 @@ def main_mommy() -> NoReturn:
     if args.setup:
         from mommy_chaogu.setup import run_setup_wizard
 
-        if run_setup_wizard():
-            print("\n✅ 配置完成！现在可以开始使用了：")
-            print("  mommy              # 进入交互式对话")
-            print('  mommy "今天怎么样"  # 单次查询')
-        sys.exit(0)
+        sys.exit(0 if run_setup_wizard() else 1)
+
+    # 安装后第一次直接运行 mommy 时自动进入统一 onboarding；已有项目级
+    # 或用户级配置时是一次无交互的快速检查。
+    from mommy_chaogu.setup import check_and_run_setup
+
+    check_and_run_setup()
 
     # 构建工具链
     from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
@@ -433,7 +437,7 @@ def main_mommy() -> NoReturn:
             if agent is None:
                 print(
                     "⚠️ AI 助手不可用（未配置 API key）。\n"
-                    "   运行 mommy --setup 进行配置，或在 .env 文件中设置 API key。\n"
+                    "   运行 mommy setup 配置 Provider、模型和 API key。\n"
                     "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
                 )
             else:
@@ -461,7 +465,7 @@ def main_mommy() -> NoReturn:
                     elif "quota" in err_msg.lower() or "insufficient" in err_msg.lower():
                         print("\n⚠️ API 额度已用完，请检查账户余额。\n")
                     elif "authentication" in err_msg.lower() or "401" in err_msg:
-                        print("\n⚠️ API key 无效，请检查 .env 配置。\n")
+                        print("\n⚠️ API key 无效，请运行 mommy setup 重新配置。\n")
                     else:
                         print(f"\n⚠️ 出错了: {e}\n")
         sys.exit(0)

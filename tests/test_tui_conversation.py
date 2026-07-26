@@ -35,7 +35,10 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
 
 class TestFriendlyError:
     def test_401(self) -> None:
-        assert friendly_error(Exception("401 Unauthorized")) == "API key 无效，请检查 .env 配置"
+        assert (
+            friendly_error(Exception("401 Unauthorized"))
+            == "API key 无效，请运行 mommy setup 重新配置"
+        )
         assert "API key" in friendly_error(Exception("Error code: 401 - invalid api key"))
 
     def test_429(self) -> None:

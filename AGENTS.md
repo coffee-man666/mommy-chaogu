@@ -6,14 +6,17 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,537 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（1,546 个离线用例，另有 13 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
 
 ## 密钥配置
 
-LLM API key 和推送 key 通过 `.env` 文件持久化（不入仓）：
+推荐运行 `uv run mommy setup`，交互式选择 Provider / 模型、隐藏输入并验证 Key，
+还可继续扫码连接微信。安装用户的配置默认保存到
+`~/.config/mommy-chaogu/.env`（`0600`，不入仓）；若当前 mommy-chaogu 仓库已存在
+项目 `.env`，重新配置时会就地更新它：
 
 ```bash
 cp .env.example .env       # 复制模板
@@ -32,8 +35,9 @@ cp .env.example .env       # 复制模板
 | minimax | `MINIMAX_API_KEY` | MiniMax（M2.7） |
 | — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
+| — | `AGENT_MODEL` | 覆盖聊天模型名 |
 
-优先级：shell 环境变量 > `.env` 文件 > `config.toml`。provider 配置表
+优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > `config.toml`。provider 配置表
 （base_url / 默认模型 / env key / 温度 / embedding 模型）的单一真相源是
 `src/mommy_chaogu/agent/llm.py`——改 provider 只动它，不要另起表。
 
@@ -81,7 +85,7 @@ src/mommy_chaogu/
 ├── push/            # Server酱微信推送
 ├── channels/        # 本地消息网关（微信二维码授权 + 私聊长轮询）
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 10 个透传子命令）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 12 个透传子命令）
 ```
 
 ## 自然语言入口
@@ -93,7 +97,7 @@ src/mommy_chaogu/
    - `uv run mommy` → 交互式 REPL
    - `uv run mommy 今天怎么样` → 单次查询
    - `uv run mommy watchlist list` → 结构化子命令（直接透传，不需要 --raw）
-   - `uv run mommy --setup` → 首次配置引导
+   - `uv run mommy setup` → Provider / 模型 / Key / 微信统一配置引导
    - `uv run mommy -v "今天怎么样"` → 显示详细路由 + 工具调用信息
 
 2. **底层 CLI 子命令**（向后兼容，高级用户 + CI）

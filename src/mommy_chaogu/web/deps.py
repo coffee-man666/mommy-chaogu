@@ -173,9 +173,8 @@ def get_memory_service() -> object:
     provider = llm_provider.detect_provider()
     if provider is not None:
         try:
-            config = llm_provider.provider_config(provider)
             client = llm_provider.create_client(provider)
-            model = str(config["default_model"])
+            model = llm_provider.resolve_model(provider)
             embedding_model = llm_provider.embedding_model_for(provider)
             if embedding_model is not None and episodic is not None:
                 from mommy_chaogu.agent.vector_search import VectorSearch
