@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { agentStream, agentRoute } from '@/api/agent'
-import type { AgentStreamState } from '@/api/agent'
+import type { AgentStreamState, ToolCallEvent, ToolResultEvent } from '@/api/agent'
 import { Button } from '@/components/ui/button'
 import { ArrowDown } from 'lucide-vue-next'
 import StatusBar from '@/components/chat/StatusBar.vue'
@@ -19,6 +19,14 @@ import { toolDisplayName } from '@/lib/toolNames'
 
 marked.setOptions({ breaks: true, gfm: true })
 
+interface ToolEvent {
+  tool: string
+  args?: Record<string, unknown>
+  status: 'running' | 'done' | 'fail'
+  result?: string
+  elapsedMs?: number
+}
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
@@ -26,6 +34,7 @@ interface Message {
   steps?: string[]
   stepsRaw?: { name: string; success: boolean }[]
   workflowId?: string
+  toolEvents?: ToolEvent[]
   streaming?: boolean
   error?: boolean
 }
@@ -291,6 +300,33 @@ async function send(message: string) {
     (state) => {
       if (requestId === activeRequestId) connectionState.value = state
     },
+    (e: ToolCallEvent) => {
+      if (requestId !== activeRequestId) return
+      const msg = messages.value[assistantIdx]
+      if (!msg.toolEvents) msg.toolEvents = []
+      msg.toolEvents.push({ tool: e.tool, args: e.args, status: 'running' })
+      scrollToBottom()
+    },
+    (e: ToolResultEvent) => {
+      if (requestId !== activeRequestId) return
+      const msg = messages.value[assistantIdx]
+      if (!msg.toolEvents) msg.toolEvents = []
+      // 找最后一个同名 running 项，更新为完成；找不到则追加
+      const target = [...msg.toolEvents].reverse().find((t) => t.tool === e.tool && t.status === 'running')
+      if (target) {
+        target.status = e.status
+        target.result = e.result
+        target.elapsedMs = e.elapsedMs
+      } else {
+        msg.toolEvents.push({
+          tool: e.tool,
+          status: e.status,
+          result: e.result,
+          elapsedMs: e.elapsedMs,
+        })
+      }
+      scrollToBottom()
+    },
   )
 
   stream.value.send(text, history)
@@ -459,13 +495,25 @@ function handleSlash(raw: string) {
                 :steps="toWorkflowSteps(msg.stepsRaw)"
               />
 
-              <!-- 工具调用行（done.tools_used 是事后列表；后端补 tool 事件前用 done 态展示） -->
+              <!-- 实时工具调用行（后端 tool_call_started/finished 事件驱动，运行→完成） -->
               <ToolRow
-                v-for="t in msg.toolsUsed ?? []"
-                :key="t"
-                :tool="t"
-                status="done"
+                v-for="(t, ti) in msg.toolEvents ?? []"
+                :key="`${t.tool}-${ti}`"
+                :tool="t.tool"
+                :args="t.args"
+                :status="t.status"
+                :result="t.result"
+                :elapsed-ms="t.elapsedMs"
               />
+              <!-- 兜底：没有 toolEvents 时（工作流路径），用 toolsUsed 事后列表 -->
+              <template v-if="!msg.toolEvents || msg.toolEvents.length === 0">
+                <ToolRow
+                  v-for="t in msg.toolsUsed ?? []"
+                  :key="t"
+                  :tool="t"
+                  status="done"
+                />
+              </template>
 
               <!-- 消息正文 -->
               <MessageBubble
@@ -477,10 +525,10 @@ function handleSlash(raw: string) {
 
               <!-- 单轮脚注 -->
               <div
-                v-if="msg.toolsUsed && msg.toolsUsed.length"
+                v-if="(msg.toolEvents && msg.toolEvents.length) || (msg.toolsUsed && msg.toolsUsed.length)"
                 class="pl-4 font-mono text-[11px] text-muted-foreground/70"
               >
-                {{ msg.toolsUsed.map(toolDisplayName).join(' · ') }}
+                {{ (msg.toolEvents ?? []).map((t) => t.tool).concat(msg.toolsUsed ?? []).map(toolDisplayName).join(' · ') }}
               </div>
             </div>
           </template>
