@@ -63,7 +63,7 @@ class MarketDataAdapter(Protocol):
 ```
 [DB] ←→ [CachedMarketDataAdapter] ←→ [业务层 (Monitor / Signals)]
               ↓
-       [MarketDataAdapter] (efinance / tencent / mock)
+       [MarketDataAdapter] (efinance / tencent / akshare / mock)
 ```
 
 每条缓存记录带**双时间戳**：
@@ -78,7 +78,7 @@ class MarketDataAdapter(Protocol):
 
 | 层 | 降级策略 |
 |---|---|
-| **数据源层** | `FallbackAdapter([Efinance, Tencent])`：主源失败 → 次源 |
+| **数据源层** | `build_default_adapter()` → `FallbackAdapter([Efinance, Tencent, AkShare])`：主源失败 → 次源 → 字段补全 |
 | **缓存层** | 拉新失败 → 静默返回旧数据 + warning 日志 |
 | **业务层** | 单股拉取失败 → 标 `-`，不中断整批 |
 
@@ -89,13 +89,16 @@ class MarketDataAdapter(Protocol):
 能力以**装饰器**形式叠加，每层独立可测：
 
 ```
-EfinanceAdapter  ←  TencentAdapter
+EfinanceAdapter  ←  TencentAdapter  ←  AkShareAdapter（akshare 已安装时）
        ↓
 FallbackAdapter  ←  任何方法都按顺序 fallback
        ↓
 CachedMarketDataAdapter  ←  加 DB 缓存 + 节流
        ↓
 业务层（Monitor / Signals / CLI）
+
+装配统一走 market_data.builder.build_default_adapter()，
+不要在业务层直接 FallbackAdapter([...])。
 ```
 
 **好处**：
@@ -201,14 +204,18 @@ src/mommy_chaogu/
 - 节流可以降低东财被封 IP 的风险
 **反悔条件**：如果妈妈需要「逐笔」级监控 → 改 30s
 
-### ADR-003: Fallback 链 efinance → tencent
-**日期**：2026-06-27（M2.5）
-**结论**：efinance 优先，tencent 兜底
+### ADR-003: Fallback 链 efinance → tencent → akshare
+**日期**：2026-06-27（M2.5），2026-07-25 扩展
+**结论**：efinance 优先，tencent 兜底，akshare 字段补全
 **原因**：
-- efinance 数据更全（K线/资金流/板块）
-- tencent 在 efinance 挂时稳定（凌晨实战验证）
-- 腾讯的 5 档盘口直接嵌在行情里，少一次 HTTP
-**代价**：tencent 不支持 K线/资金流/板块 → 这些方法在 tencent 永远走 efinance
+- efinance 数据最全（K线/资金流/板块）
+- tencent 在 efinance 挂时稳定（凌晨实战验证），5 档盘口直接嵌在行情里
+- akshare 与 efinance 共享东财后端（非故障兜底），但 `stock_zh_a_spot_em`
+  的 PE/PB/市值字段更稳，资金流接口历史更全（~100 天）
+**代价**：
+- tencent 不支持 K线/资金流/板块 → 这些方法永远走 efinance/akshare
+- akshare 依赖体积大（~100MB），放 dev extra，运行时探测未安装则跳过
+**装配**：统一走 `market_data.builder.build_default_adapter()`（详见 `docs/adr/0002`）
 
 ### ADR-004: SQLite + SQLAlchemy 2.0 async
 **日期**：2026-06-26（M1）

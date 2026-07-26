@@ -178,14 +178,15 @@ class Services:
     def bootstrap(cls) -> Services:
         """生产环境装配：从项目内部构建 adapter + agent。"""
         load_dotenv()
-        from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+        from mommy_chaogu.cache import CacheStore
         from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-        from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+        from mommy_chaogu.market_data import build_default_adapter
         from mommy_chaogu.portfolio.store import PortfolioStore
         from mommy_chaogu.watchlist.store import WatchlistStore
 
-        base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])  # type: ignore[list-item]
-        adapter = CachedMarketDataAdapter(base, CacheStore(MARKET_DB))  # type: ignore[arg-type]
+        adapter = build_default_adapter(
+            with_cache=True, cache_store=CacheStore(MARKET_DB)
+        )
         data_svc = DataService(
             adapter=adapter,
             watchlist_store=WatchlistStore(PORTFOLIO_DB),

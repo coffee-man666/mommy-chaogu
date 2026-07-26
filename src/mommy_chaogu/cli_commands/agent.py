@@ -44,15 +44,14 @@ def build_agent_parser() -> argparse.ArgumentParser:
 def _build_agent_context() -> object:
     """从项目默认配置构造 agent ToolContext。"""
     from mommy_chaogu.agent.tools import ToolContext
-    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.cache import CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.market_data import build_default_adapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
 
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(MARKET_DB)
-    adapter = CachedMarketDataAdapter(base, store)
+    adapter = build_default_adapter(with_cache=True, cache_store=store)
 
     return ToolContext(
         adapter=adapter,
@@ -103,16 +102,15 @@ def run_verify(db: Path, market_db: Path | None = None) -> dict[str, int]:
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
     from mommy_chaogu.agent.prediction_tracker import PredictionTracker
     from mommy_chaogu.agent.verify_engine import verify_pending
-    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.cache import CacheStore
     from mommy_chaogu.db_paths import MARKET_DB
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.market_data import build_default_adapter
 
     tracker = PredictionTracker(db)
     episodic = EpisodicMemory(db)
 
     store = CacheStore(market_db or MARKET_DB)
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
-    adapter = CachedMarketDataAdapter(base, store)
+    adapter = build_default_adapter(with_cache=True, cache_store=store)
 
     return verify_pending(
         tracker=tracker,

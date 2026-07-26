@@ -5,6 +5,28 @@
 
 ---
 
+## [Unreleased]
+
+### 新增
+
+- **AKShare 数据源集成** — 开源、无 token 的 A 股数据接口库，作为 fallback 链第三档接入（akshare 已安装时启用，否则自动跳过）。定位为**字段补全源**而非故障兜底（与 efinance 共享东财后端，故障同源）。
+  - 新增 `AkShareAdapter` 实现 `MarketDataAdapter` Protocol：
+    - **实时报价**：`stock_zh_a_spot_em` 一次性给 PE/PB/总市值/流通市值/换手率/量比（efinance 单股接口这些字段常缺）
+    - **K 线**：日/周/月走 `stock_zh_a_hist`，分钟走 `stock_zh_a_hist_min_em`，复权直接传 `qfq`/`hfq`/`""`
+    - **资金流**：`stock_individual_fund_flow` 返回 ~100 天，含主力/超大/大/中/小单净额 + 占比
+    - **健康检查**：拉一行 spot
+    - 盘口/逐笔/板块反查有意不实现（akshare 无稳定接口 / 反查太重），留给 efinance 兜底
+  - **装配工厂** `build_default_adapter()`：业务层不再直接 `FallbackAdapter([...])`，统一调工厂。链顺序 `Efinance → Tencent → AkShare`，由工厂集中管。
+  - 9 个生产调用点 + 1 个脚本（CLI/monitor/agent/MCP/TUI/web/flows/cron_verify）已迁移到工厂。
+  - 决策记录见 `docs/adr/0002-akshare-integration.md`。
+
+### 改进
+
+- **akshare 作为可选依赖**：体积大（~100MB），放 `[project.optional-dependencies].dev`，运行时 `builder._akshare_available()` 探测，普通用户 `uv sync` 不被强加这个重量。
+- mypy override 加 `akshare` / `akshare.*`（ignore_missing_imports）。
+
+---
+
 ## [1.1.0] - 2026-07-19
 
 ### 新增

@@ -16,14 +16,9 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+from mommy_chaogu.cache import CacheStore
 from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-from mommy_chaogu.market_data import (
-    EfinanceAdapter,
-    FallbackAdapter,
-    MarketDataAdapter,
-    TencentAdapter,
-)
+from mommy_chaogu.market_data import MarketDataAdapter
 from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.signals import Alerter, SignalStore
 from mommy_chaogu.watchlist import WatchlistStore
@@ -62,11 +57,9 @@ def get_adapter() -> MarketDataAdapter:
     - Fallback：主源挂 → 备源
     - Cache：DB 有就用，没有才拉新，失败 fallback 旧数据
     """
-    adapter = CachedMarketDataAdapter(
-        FallbackAdapter([EfinanceAdapter(), TencentAdapter()]),
-        CacheStore(get_market_db()),
-    )
-    return adapter
+    from mommy_chaogu.market_data import build_default_adapter
+
+    return build_default_adapter(with_cache=True, cache_store=CacheStore(get_market_db()))
 
 
 @lru_cache(maxsize=1)

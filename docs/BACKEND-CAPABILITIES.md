@@ -82,7 +82,7 @@ CLI 对照见 §7；完整 REST 契约见 §4；Python 签名见 §6。
 - bars 参数：interval ∈ `1m/5m/15m/30m/60m/1d/1w/1M`；adjustment ∈ `none/forward/backward`；limit ≤ 500
 - **边界**：涨跌榜已过滤 ST/退市/涨跌幅>11%；`get_quote` 未找到返回 404；多空盘接口（orderbook）仅交易时段有数据。
 
-**Fallback 语义**：适配器按 `[东财 → 腾讯]` 顺序逐源尝试，单方法独立 fallback；`FallbackAdapter.stats()` 暴露 `{primary_hits, fallback_hits, all_fail}`（`market_data/fallback_adapter.py`）。前端无需感知，只需展示 `format_source_label()`。
+**Fallback 语义**：适配器按 `[东财 → 腾讯 → AKShare（akshare 已安装时）]` 顺序逐源尝试，单方法独立 fallback；akshare 与东财同后端，定位为**字段补全源**（PE/PB/市值 + 历史资金流 ~100 天）而非故障兜底。装配统一走 `market_data.builder.build_default_adapter()`（详见 `docs/adr/0002`）。`FallbackAdapter.stats()` 暴露 `{primary_hits, fallback_hits, all_fail}`（`market_data/fallback_adapter.py`）。前端无需感知，只需展示 `format_source_label()`。
 
 ### 3.2 资金流（flows）
 
@@ -254,8 +254,10 @@ CLI 对照见 §7；完整 REST 契约见 §4；Python 签名见 §6。
 `src/mommy_chaogu/tui/services/bootstrap.py:Services.bootstrap()`：
 
 ```python
-base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
-adapter = CachedMarketDataAdapter(base, CacheStore(MARKET_DB))
+# 装配统一走 build_default_adapter()，不要直接 FallbackAdapter([...])
+# 链顺序：EfinanceAdapter → TencentAdapter → AkShareAdapter（akshare 已安装时）
+# 详见 docs/adr/0002-akshare-integration.md
+adapter = build_default_adapter(with_cache=True, cache_store=CacheStore(MARKET_DB))
 # adapter: get_quote/get_quotes/get_bars/get_today_money_flow/... + format_source_label()
 watchlist_store = WatchlistStore(PORTFOLIO_DB)
 portfolio_store = PortfolioStore(PORTFOLIO_DB)

@@ -328,18 +328,17 @@ def main_mommy() -> NoReturn:
 
     # 构建工具链
     from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
-    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.cache import CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.market_data import build_default_adapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
     from mommy_chaogu.workflow.engine import WorkflowExecutor
     from mommy_chaogu.workflow.definitions import get_default_registry
     from mommy_chaogu.workflow.router import NLRouter
 
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(MARKET_DB)
-    adapter = CachedMarketDataAdapter(base, store)
+    adapter = build_default_adapter(with_cache=True, cache_store=store)
     ctx = ToolContext(
         adapter=adapter,
         watchlist_store=WatchlistStore(PORTFOLIO_DB),

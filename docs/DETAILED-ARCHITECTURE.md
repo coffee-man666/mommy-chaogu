@@ -250,9 +250,10 @@ mommy flows pull --pool semicon --days 30
 |---|---|---|
 | **东方财富 (efinance)** | 主力数据源（行情 / K 线 / 资金流 / 业绩） | `ef.stock.*` |
 | **腾讯财经 (Tencent)** | 备援（行情） | `qt.gtimg.cn` |
+| **AKShare** | 字段补全（PE/PB/市值、历史资金流 ~100 天、备援 K 线） | `ak.stock_zh_a_spot_em` 等 |
 | **巨潮资讯 (cninfo)** | 公告日历 | `hisAnnouncement/query` |
 
-多源 fallback 链：`CachedMarketDataAdapter(FallbackAdapter([EfinanceAdapter, TencentAdapter]))`
+多源 fallback 链：`build_default_adapter()` → `CachedMarketDataAdapter(FallbackAdapter([EfinanceAdapter, TencentAdapter, AkShareAdapter]))`（akshare 未安装时自动跳过）。详见 `docs/adr/0002`。
 
 ---
 
@@ -261,7 +262,7 @@ mommy flows pull --pool semicon --days 30
 ```
 mommy-chaogu/
 ├── src/mommy_chaogu/
-│   ├── market_data/         # 数据源适配层（efinance + tencent + fallback）
+│   ├── market_data/         # 数据源适配层（efinance + tencent + akshare + fallback + builder 工厂）
 │   ├── cache/               # SQLite 缓存（5 表 + 节流 + freshness）
 │   ├── watchlist/           # 自选股 ORM（SQLAlchemy 2.0）
 │   ├── monitor/             # 实时监控

@@ -59,15 +59,14 @@ def _build_llm() -> tuple[Any | None, str | None, str | None]:
 
 def _build_context() -> ToolContext:
     """从项目默认配置构造 ToolContext（含记忆服务 + LLM client）。"""
-    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.cache import CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.market_data import build_default_adapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
 
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(MARKET_DB)
-    adapter = CachedMarketDataAdapter(base, store)
+    adapter = build_default_adapter(with_cache=True, cache_store=store)
 
     client, model, embedding_model = _build_llm()
 

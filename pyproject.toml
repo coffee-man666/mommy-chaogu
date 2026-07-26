@@ -49,6 +49,7 @@ dev = [
     "mypy>=1.11",
     "types-requests",
     "httpx>=0.27",  # FastAPI 测试客户端
+    "akshare>=1.18",  # AkShareAdapter 数据源（运行时按需启用，测试需要）
 ]
 
 [build-system]
@@ -80,6 +81,7 @@ module = [
     "efinance", "pandas", "pandas.*", "rich", "retry", "tqdm", "multitasking",
     "jsonpath", "requests", "requests.*",
     "sqlalchemy", "sqlalchemy.*",
+    "akshare", "akshare.*",
 ]
 ignore_missing_imports = true
 

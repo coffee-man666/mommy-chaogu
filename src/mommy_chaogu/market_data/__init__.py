@@ -5,6 +5,8 @@ from mommy_chaogu.market_data.adapter import (
     filter_by_market,
     find_quote,
 )
+from mommy_chaogu.market_data.akshare_adapter import AkShareAdapter
+from mommy_chaogu.market_data.builder import build_default_adapter
 from mommy_chaogu.market_data.efinance_adapter import EfinanceAdapter
 from mommy_chaogu.market_data.fallback_adapter import FallbackAdapter
 from mommy_chaogu.market_data.tencent_adapter import TencentAdapter
@@ -25,6 +27,7 @@ from mommy_chaogu.market_data.types import (
 
 __all__ = [
     "AdjustmentType",
+    "AkShareAdapter",
     "Bar",
     "BarInterval",
     "Board",
@@ -40,6 +43,7 @@ __all__ = [
     "QuoteType",
     "TencentAdapter",
     "Tick",
+    "build_default_adapter",
     "filter_by_market",
     "find_quote",
 ]

@@ -63,7 +63,7 @@ uv run python scripts/migrate_db_layout.py            # 执行迁移
 
 ```
 src/mommy_chaogu/
-├── market_data/     # 数据源适配层（efinance + tencent + fallback）
+├── market_data/     # 数据源适配层（efinance + tencent + akshare + fallback + builder 工厂）
 ├── cache/           # SQLite 缓存（5 张表 + 节流 + freshness）
 ├── watchlist/       # 自选股（SQLite + SQLAlchemy 2.0）
 ├── monitor/         # 实时监控
@@ -137,7 +137,7 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 - **mypy --strict** — 类型检查（豁免模块清单与收敛方向见 `docs/TECH-DEBT.md`）
 - **Conventional Commits** — `feat / fix / docs / refactor / chore`
 - 数据金额一律 `Decimal`，不用 `float`
-- 数据源走 `MarketDataAdapter` Protocol，加新源只实现 Protocol
+- 数据源走 `MarketDataAdapter` Protocol，加新源只实现 Protocol；装配 fallback 链一律调 `market_data.builder.build_default_adapter()`，不要在业务层直接 `FallbackAdapter([...])`（顺序/启停条件由 builder 统一管）
 - provider 配置只改 `agent/llm.py` 的 `SUPPORTED_PROVIDERS`（service/config/backtest/MCP 全部引用它）；LLM client 一律经 `llm.create_client()` 构造（显式 timeout + 关 SDK 内置重试，重试由应用层统一）
 - 新增 agent 工具：在 `agent/tools/` 对应域模块（quote/sector/flows/bars/holdings/intel/alerts/memory/themes）的 `DEFS` 与 `HANDLERS` 各加一项，`registry.py` 自动聚合（import 时校验两边名字一致），无需改注册表
 - 拉新失败保留旧数据（数据库是唯一真相源）

@@ -12,17 +12,16 @@ from mommy_chaogu.cli_support import *
 
 
 def _make_adapter(args: argparse.Namespace) -> object:
-    """构造 adapter，默认用 fallback + 缓存包装。
+    """构造 adapter，默认用 fallback 链 + 缓存包装。
 
-    顺序：EfinanceAdapter (主) → TencentAdapter (fallback) → CachedMarketDataAdapter (外层)
-    东财接口挂了 → 自动降级到腾讯财经（数据稳定）
+    顺序：EfinanceAdapter → TencentAdapter → AkShareAdapter（已安装时）
+    → CachedMarketDataAdapter (外层)。东财接口挂了自动降级。
     """
-    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.cache import CacheStore
+    from mommy_chaogu.market_data import build_default_adapter
 
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(Path(args.db))
-    return CachedMarketDataAdapter(base, store)
+    return build_default_adapter(with_cache=True, cache_store=store)
 
 
 def cmd_monitor_snapshot(args: argparse.Namespace) -> int:
