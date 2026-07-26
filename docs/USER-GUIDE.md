@@ -497,28 +497,13 @@ uv run python scripts/backtest_evolution.py --db /tmp/backtest.db
 
 ---
 
-## 场景八：信号告警与微信推送
+## 场景八：信号告警与本地监控
 
 ### 你的需求
 
-你想在盘中自动收到信号告警，不用一直盯盘。
+你想在盘中自动记录信号告警，并随时从 Web 或 TUI 查看。
 
-### Step 1：配置推送
-
-```bash
-uv run mommy setup
-# 选择 "是否配置微信推送？" → y
-# 输入 SERVER_CHAN_KEY（去 sct.ftqq.com 申请）
-```
-
-或手动在 `.env` 中添加：
-
-```bash
-SERVER_CHAN_KEY=SCTxxxxxxxxxxxxxxxxxxxxxxxx
-WEB_BASE_URL=http://192.168.1.100:8765
-```
-
-### Step 2：添加自定义告警
+### Step 1：添加自定义告警
 
 ```bash
 # 价格告警：贵州茅台跌破 1600 提醒
@@ -528,19 +513,19 @@ uv run mommy watchlist add-alert 600519 --rule "price <= 1600" --severity warnin
 uv run mommy watchlist add-alert 002129 --rule "change_pct >= 5" --severity info
 ```
 
-### Step 3：启动监控
+### Step 2：启动监控
 
 ```bash
 # CLI 监控（每 30 秒轮询）
 uv run mommy monitor run --interval 30
 
-# 或启动 Web 服务（后台自动监控 + 推送）
+# 或启动 Web 服务（后台自动监控）
 uv run mommy web
 ```
 
 ### 告警效果
 
-微信收到的推送消息：
+打开 Web 信号页，或在 TUI 输入 `/signals`，即可看到类似记录：
 
 ```
 ℹ️ [INFO] TCL中环(002129)

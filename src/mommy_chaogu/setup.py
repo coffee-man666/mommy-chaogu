@@ -224,25 +224,15 @@ def run_setup_wizard(
             return False
         break
 
-    # --- 4. Server酱（可选，高级推送能力）---
-    server_chan_key: str | None = None
-    configure_push = _ask_yes_no(input_func, "\n是否配置 Server酱行情推送？", default=False)
-    if configure_push:
-        sck = _safe_input(secret_input_func, "SERVER_CHAN_KEY（输入不会显示）：")
-        if sck is not None and sck.strip():
-            server_chan_key = sck.strip()
-
-    # --- 5. 私密写入配置并让当前进程立即可用 ---
-    _write_env_file(env_path, provider, api_key, server_chan_key, model=model)
+    # --- 4. 私密写入配置并让当前进程立即可用 ---
+    _write_env_file(env_path, provider, api_key, model=model)
     os.environ[str(info["env_key"])] = api_key
     os.environ["AGENT_PROVIDER"] = provider
     os.environ["AGENT_MODEL"] = model
-    if server_chan_key:
-        os.environ["SERVER_CHAN_KEY"] = server_chan_key
     print(f"\n✅ AI 配置已保存：{provider} / {model}")
     print(f"   私有配置文件：{env_path.resolve()}")
 
-    # --- 6. 微信扫码（可选）---
+    # --- 5. 微信扫码（可选）---
     if offer_weixin:
         pair_weixin = _ask_yes_no(input_func, "\n现在连接微信？", default=True)
         if pair_weixin:
@@ -262,7 +252,6 @@ def _write_env_file(
     env_path: Path,
     provider: str,
     api_key: str,
-    server_chan_key: str | None,
     *,
     model: str | None = None,
 ) -> None:
@@ -327,14 +316,10 @@ def _write_env_file(
     lines.append(f"AGENT_PROVIDER={provider}")
     lines.append(f"AGENT_MODEL={resolved_model}")
 
-    lines.append("")
-    lines.append("# Server酱 微信推送")
-    if server_chan_key:
-        lines.append(f"SERVER_CHAN_KEY={server_chan_key}")
-    elif active_values.get("SERVER_CHAN_KEY"):
+    # Server酱不再属于新用户 onboarding；旧配置若已有 key，仅无损保留。
+    if active_values.get("SERVER_CHAN_KEY"):
+        lines.append("")
         lines.append(f"SERVER_CHAN_KEY={active_values['SERVER_CHAN_KEY']}")
-    else:
-        lines.append("#SERVER_CHAN_KEY=SCTxxxxxxxxxxxxxxxxxxxxxxxx")
 
     lines.append(_MANAGED_END)
     lines.append("")

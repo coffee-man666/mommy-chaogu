@@ -47,7 +47,7 @@ A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自�
 | **自进化记忆** | 5 层记忆架构（工作/情景/预测验证/语义知识/向量检索），`mommy memory` 命令查看记忆 |
 | **回测引擎** | 规则回测 + LLM 回测 + 组合分析 + walk-forward 过拟合检测 + 市场环境分组分析 |
 | **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分，4 种 verdict 分级 |
-| **信号告警** | 7 条内置规则 + 自定义价格/涨跌幅告警 + Server酱微信推送 |
+| **信号告警** | 7 条内置规则 + 自定义价格/涨跌幅告警，可在 Web 信号页和 TUI `/signals` 查看 |
 | **Web UI** | 移动优先的对话首页 + 投研上下文栏，支持名称搜股、对话排队、语音输入、预测/信号闭环与 WebSocket 流式推送 |
 | **终端 TUI** | `mommy tui`：Claude Code 风格单屏投研对话，富卡片、`@` 股票联想、slash 命令、忙时排队与 Esc 中断 |
 | **安全边界** | 单用户 Bearer 令牌 + WebSocket 短期签名 ticket + 受限 CORS；Web 服务默认仅监听 127.0.0.1 |
@@ -214,7 +214,7 @@ Cache   Agent    Data Sources
 | 指标 | 值 |
 |---|---|
 | 代码量 | ~51,000 行（src ~27,000 + tests ~16,000 + web ~7,000） |
-| 测试 | 1,559 collected；1,546 个确定性离线测试 + 13 个定时网络探针 |
+| 测试 | 1,558 collected；1,545 个确定性离线测试 + 13 个定时网络探针 |
 | CLI 入口 | `mommy` 统一入口 + 12 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui / channel / setup），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
 | Agent 工具 | 25 个 function-calling tools |
 | 数据库 | 4 个（market / portfolio / agent / reference） |

@@ -83,7 +83,7 @@ def test_wizard_writes_env_deepseek(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["1", "", "sk-my-deepseek-key", "n"]),
+        input_func=make_input(["1", "", "sk-my-deepseek-key"]),
         verify_llm=False,
         offer_weixin=False,
     )
@@ -101,16 +101,14 @@ def test_wizard_writes_env_deepseek(tmp_path: Path):
     assert "#ZAI_API_KEY=" in content
     assert content.count("sk-my-deepseek-key") == 1
 
-    # 没配置 Server酱，保持注释
-    assert "#SERVER_CHAN_KEY" in content
-    assert "SERVER_CHAN_KEY=" not in content.split("\n")  # 不会出现无注释版本
+    assert "SERVER_CHAN_KEY" not in content
 
 
 def test_wizard_writes_env_zai(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["4", "glm-5", "zai-token-xyz", "n"]),
+        input_func=make_input(["4", "glm-5", "zai-token-xyz"]),
         verify_llm=False,
         offer_weixin=False,
     )
@@ -126,7 +124,7 @@ def test_wizard_writes_env_nova(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["5", "", "dummy", "n"]),
+        input_func=make_input(["5", "", "dummy"]),
         verify_llm=False,
         offer_weixin=False,
     )
@@ -134,19 +132,6 @@ def test_wizard_writes_env_nova(tmp_path: Path):
     content = env.read_text(encoding="utf-8")
     assert "NOVA_API_KEY=dummy" in content
     assert "AGENT_PROVIDER=nova" in content
-
-
-def test_wizard_with_server_chan(tmp_path: Path):
-    env = tmp_path / ".env"
-    result = run_setup_wizard(
-        env,
-        input_func=make_input(["1", "", "sk-key", "y", "SCT-my-sck"]),
-        verify_llm=False,
-        offer_weixin=False,
-    )
-    assert result is True
-    content = env.read_text(encoding="utf-8")
-    assert "SERVER_CHAN_KEY=SCT-my-sck" in content
 
 
 def test_wizard_cancel_at_provider(tmp_path: Path):
@@ -200,7 +185,7 @@ def test_wizard_keyboard_interrupt(tmp_path: Path):
 
 def test_write_env_file_all_providers_present(tmp_path: Path):
     env = tmp_path / ".env"
-    _write_env_file(env, "kimi", "moonshot-key", None)
+    _write_env_file(env, "kimi", "moonshot-key")
     content = env.read_text(encoding="utf-8")
 
     # 所有 provider 的 env key 都应出现（选中或注释）
@@ -216,24 +201,28 @@ def test_write_env_file_all_providers_present(tmp_path: Path):
 
 def test_write_env_file_creates_parents(tmp_path: Path):
     env = tmp_path / "nested" / "dir" / ".env"
-    _write_env_file(env, "deepseek", "sk-x", None)
+    _write_env_file(env, "deepseek", "sk-x")
     assert env.is_file()
     assert env.stat().st_mode & 0o777 == 0o600
 
 
 def test_write_env_file_preserves_unmanaged_and_existing_provider_keys(tmp_path: Path):
     env = tmp_path / ".env"
-    env.write_text("CUSTOM_SETTING=keep\nOPENAI_API_KEY=existing-openai\n", encoding="utf-8")
+    env.write_text(
+        "CUSTOM_SETTING=keep\nOPENAI_API_KEY=existing-openai\nSERVER_CHAN_KEY=legacy\n",
+        encoding="utf-8",
+    )
 
-    _write_env_file(env, "zai", "new-zai", None, model="glm-5")
+    _write_env_file(env, "zai", "new-zai", model="glm-5")
     content = env.read_text(encoding="utf-8")
 
     assert "CUSTOM_SETTING=keep" in content
     assert "OPENAI_API_KEY=existing-openai" in content
     assert "ZAI_API_KEY=new-zai" in content
+    assert "SERVER_CHAN_KEY=legacy" in content
     assert content.count("OPENAI_API_KEY=") == 1
 
-    _write_env_file(env, "zai", "newer-zai", None, model="glm-5")
+    _write_env_file(env, "zai", "newer-zai", model="glm-5")
     rewritten = env.read_text(encoding="utf-8")
     assert rewritten.count("mommy-chaogu managed configuration") == 2
     assert rewritten.count("# mommy-chaogu 密钥配置") == 1
@@ -260,7 +249,7 @@ def test_wizard_can_pair_weixin_in_same_flow(tmp_path: Path):
 
     result = run_setup_wizard(
         env,
-        input_func=make_input(["4", "glm-5", "zai-key", "n", "y"]),
+        input_func=make_input(["4", "glm-5", "zai-key", "y"]),
         verify_llm=False,
         weixin_connector=lambda: paired.append(True) or True,
     )
@@ -280,7 +269,7 @@ def test_wizard_retries_after_failed_validation(tmp_path: Path):
 
     result = run_setup_wizard(
         env,
-        input_func=make_input(["4", "glm-5", "bad-key", "y", "4", "glm-5", "good-key", "n"]),
+        input_func=make_input(["4", "glm-5", "bad-key", "y", "4", "glm-5", "good-key"]),
         offer_weixin=False,
         validator=validate,
     )
