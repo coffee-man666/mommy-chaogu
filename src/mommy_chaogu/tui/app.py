@@ -318,9 +318,7 @@ class MommyTuiApp(App[None]):
             )
         except Exception as e:
             _log.warning("工作流执行失败: %s", e)
-            self.call_from_thread(
-                self._on_chat_error, turn_id, f"工作流出错：{friendly_error(e)}"
-            )
+            self.call_from_thread(self._on_chat_error, turn_id, f"工作流出错：{friendly_error(e)}")
             return
 
         summary = ""
@@ -381,9 +379,7 @@ class MommyTuiApp(App[None]):
             self.call_from_thread(self._post_tool_started, turn_id, fn_name, fn_args)
 
         def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None:
-            self.call_from_thread(
-                self._post_tool_result, turn_id, fn_name, ok, elapsed_ms, result
-            )
+            self.call_from_thread(self._post_tool_result, turn_id, fn_name, ok, elapsed_ms, result)
 
         def on_status(status: str, info: dict[str, Any]) -> None:
             if status == "retry":

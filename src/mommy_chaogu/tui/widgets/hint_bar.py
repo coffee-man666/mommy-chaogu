@@ -44,9 +44,7 @@ class HintBar(Static):
         )
         for i, (name, desc) in enumerate(matches[start : start + _MAX_SUGGESTIONS], start=start):
             if i == selected:
-                lines.append(
-                    f"[#79b8ff]> /{escape(name)}[/][#8a8f98] — {escape(desc)}[/]"
-                )
+                lines.append(f"[#79b8ff]> /{escape(name)}[/][#8a8f98] — {escape(desc)}[/]")
             else:
                 lines.append(f"[#8a8f98]  /{escape(name)} — {escape(desc)}[/]")
         self.update("\n".join(lines))
@@ -59,9 +57,7 @@ class HintBar(Static):
             max(0, selected - _MAX_SUGGESTIONS + 1),
             max(0, len(matches) - _MAX_SUGGESTIONS),
         )
-        for i, (code, name) in enumerate(
-            matches[start : start + _MAX_SUGGESTIONS], start=start
-        ):
+        for i, (code, name) in enumerate(matches[start : start + _MAX_SUGGESTIONS], start=start):
             label = escape(f"{code} {name}".rstrip())
             if i == selected:
                 lines.append(f"[#79b8ff]> {label}[/]")

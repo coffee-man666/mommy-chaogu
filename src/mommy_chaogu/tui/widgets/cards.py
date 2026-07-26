@@ -323,9 +323,7 @@ def prediction_lines(preds: list[dict[str, Any]], theme: str = "dark") -> list[s
     for p in preds:
         name = _text(p.get("name") or p.get("code", ""))
         direction = _DIRECTION_LABEL.get(str(p.get("direction", "")), "➡️  震荡")
-        status = _text(
-            _STATUS_LABEL.get(str(p.get("status", "")), str(p.get("status", "")))
-        )
+        status = _text(_STATUS_LABEL.get(str(p.get("status", "")), str(p.get("status", ""))))
         tf = _text(p.get("timeframe", ""))
         countdown = _verify_countdown(p.get("verify_after")) if p.get("status") == "pending" else ""
         tail = f" · {countdown}" if countdown else ""
@@ -464,9 +462,7 @@ def status_card(
 ) -> Static:
     """服务状态卡：AI provider/key 状态、缓存命中、DB 路径。"""
     lines = ["[bold cyan]🔌 服务状态[/]"]
-    lines.append(
-        f"  AI：{_text(ai_label)}" + (f"（模型 {_text(model)}）" if model else "")
-    )
+    lines.append(f"  AI：{_text(ai_label)}" + (f"（模型 {_text(model)}）" if model else ""))
     lines.append(f"  数据源：{_text(source_label or '未知')}")
     if cache_counters:
         hits = cache_counters.get("hits", 0)

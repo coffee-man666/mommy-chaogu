@@ -127,9 +127,7 @@ class ToolIndicator(Vertical):
 
     def _render_header(self, color: str, *, blink: bool = False) -> None:
         circle = _CIRCLE if (not blink or self._blink_on) else " "
-        self.query_one(".ti-header", Static).update(
-            f"[{color}]{circle}[/] {escape(self._title)}"
-        )
+        self.query_one(".ti-header", Static).update(f"[{color}]{circle}[/] {escape(self._title)}")
 
     def set_complete(self, digest: str, elapsed_ms: int, truncated: bool = False) -> None:
         """完成：圈点定型 + 追加 ⎿ 摘要 · 耗时 行。
