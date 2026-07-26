@@ -16,7 +16,7 @@
 第一步实现范围（最小可用）：
 - ``list_market_quotes`` / ``get_quote`` / ``get_quotes``：走 ``stock_zh_a_spot_em``
 - ``get_bars``：日/周/月走 ``stock_zh_a_hist``，分钟走 ``stock_zh_a_hist_min_em``
-- ``health_check``：拉一行 spot
+- ``health_check``：单股基本信息接口（``stock_individual_info_em``）
 
 其余方法返回 None/[] 让 fallback 接管（资金流 / 板块 / 盘口 / tick）。
 """
@@ -466,12 +466,18 @@ class AkShareAdapter:
         return flows
 
     def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
-        """当日资金流：取接口返回的最新一行（盘后更新）。"""
+        """当日资金流：取接口返回的最新一行（盘后更新）。
+
+        akshare 的 ``stock_individual_fund_flow`` 走东财 klines 端点，返回的是
+        **升序**（最早在前，源码 stock_fund_em.py 不重新排序），所以不能用
+        ``iloc[0]``。这里显式取 ``日期`` 最大那行，不依赖输入顺序，防止上游
+        字段/排序漂移导致取到 ~100 天前的旧行。
+        """
         df = self._fetch_fund_flow_df(code)
         if df is None:
             return []
         try:
-            latest = df.iloc[0:1]  # akshare 默认降序，最新在前
+            latest = df.sort_values("日期", ascending=False).iloc[0:1]
         except Exception:
             return []
         return self._fund_flow_df_to_flows(latest, code)
@@ -499,6 +505,16 @@ class AkShareAdapter:
     # ---------- 健康检查 ----------
 
     def health_check(self) -> bool:
-        """拉一行 spot，能拿到就算 OK。"""
-        df = self._fetch_spot_df()
-        return df is not None
+        """轻量健康检查：单股基本信息接口（1 次 HTTP），不拉全市场 spot。
+
+        用 ``stock_individual_info_em(symbol="600519")`` 探测——单股静态信息，
+        比 ``stock_zh_a_spot_em``（全市场 5000+ 行、1-3 秒）快得多，适合启动 /
+        心跳场景。
+        """
+        try:
+            ak = _safe_akshare()
+            df = ak.stock_individual_info_em(symbol="600519")
+        except Exception as e:
+            _log.debug("akshare health_check failed: %s", e)
+            return False
+        return df is not None and not df.empty

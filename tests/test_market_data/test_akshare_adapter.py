@@ -32,13 +32,14 @@ from mommy_chaogu.market_data.types import (
 
 @pytest.fixture
 def fake_akshare(monkeypatch: pytest.MonkeyPatch):
-    """注入一个假的 akshare 模块，提供 stock_zh_a_spot_em / stock_zh_a_hist /
-    stock_zh_a_hist_min_em 三个函数，各自返回值由测试通过 monkeypatch 设置。"""
+    """注入一个假的 akshare 模块，提供 spot/hist/min_em/fund_flow/individual_info
+    等函数，各自返回值由测试通过 monkeypatch 设置。"""
     mod = types.ModuleType("akshare")
     mod.stock_zh_a_spot_em = MagicMock(return_value=pd.DataFrame())  # type: ignore[attr-defined]
     mod.stock_zh_a_hist = MagicMock(return_value=pd.DataFrame())  # type: ignore[attr-defined]
     mod.stock_zh_a_hist_min_em = MagicMock(return_value=pd.DataFrame())  # type: ignore[attr-defined]
     mod.stock_individual_fund_flow = MagicMock(return_value=pd.DataFrame())  # type: ignore[attr-defined]
+    mod.stock_individual_info_em = MagicMock(return_value=pd.DataFrame())  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "akshare", mod)
     return mod
 
@@ -158,7 +159,7 @@ def _min_hist_df() -> pd.DataFrame:
 
 
 def _fund_flow_df() -> pd.DataFrame:
-    """模拟 stock_individual_fund_flow 返回（2 天，降序：最新在前）。
+    """模拟 stock_individual_fund_flow 返回（2 天，升序：最早在前，与真实 akshare 一致）。
 
     字段名严格按 akshare 源码 stock_fund_em.py:52-68；
     日期列是 date 对象（源码第 86 行 .dt.date）。日期相对今天，保证 days 过滤可测。
@@ -171,21 +172,6 @@ def _fund_flow_df() -> pd.DataFrame:
     d_older = today - _td(days=10)
     return pd.DataFrame(
         [
-            {
-                "日期": d_recent,
-                "收盘价": 100.0,
-                "涨跌幅": -1.96,
-                "主力净流入-净额": -2000000.0,
-                "主力净流入-净占比": -5.2,
-                "超大单净流入-净额": -1000000.0,
-                "超大单净流入-净占比": -2.6,
-                "大单净流入-净额": -1000000.0,
-                "大单净流入-净占比": -2.6,
-                "中单净流入-净额": 500000.0,
-                "中单净流入-净占比": 1.3,
-                "小单净流入-净额": 1500000.0,
-                "小单净流入-净占比": 3.9,
-            },
             {
                 "日期": d_older,
                 "收盘价": 102.0,
@@ -200,6 +186,21 @@ def _fund_flow_df() -> pd.DataFrame:
                 "中单净流入-净占比": -2.0,
                 "小单净流入-净额": -2200000.0,
                 "小单净流入-净占比": -5.5,
+            },
+            {
+                "日期": d_recent,
+                "收盘价": 100.0,
+                "涨跌幅": -1.96,
+                "主力净流入-净额": -2000000.0,
+                "主力净流入-净占比": -5.2,
+                "超大单净流入-净额": -1000000.0,
+                "超大单净流入-净占比": -2.6,
+                "大单净流入-净额": -1000000.0,
+                "大单净流入-净占比": -2.6,
+                "中单净流入-净额": 500000.0,
+                "中单净流入-净占比": 1.3,
+                "小单净流入-净额": 1500000.0,
+                "小单净流入-净占比": 3.9,
             },
         ]
     )
@@ -423,19 +424,21 @@ def test_get_bars_respects_date_range(fake_akshare) -> None:
 
 
 def test_health_check_ok(fake_akshare) -> None:
-    fake_akshare.stock_zh_a_spot_em.return_value = _spot_df_two_rows()
+    fake_akshare.stock_individual_info_em.return_value = pd.DataFrame(
+        [{"item": "股票简称", "value": "贵州茅台"}]
+    )
     a = AkShareAdapter()
     assert a.health_check() is True
 
 
 def test_health_check_empty_is_false(fake_akshare) -> None:
-    fake_akshare.stock_zh_a_spot_em.return_value = pd.DataFrame()
+    fake_akshare.stock_individual_info_em.return_value = pd.DataFrame()
     a = AkShareAdapter()
     assert a.health_check() is False
 
 
 def test_health_check_exception_is_false(fake_akshare) -> None:
-    fake_akshare.stock_zh_a_spot_em.side_effect = Exception("down")
+    fake_akshare.stock_individual_info_em.side_effect = Exception("down")
     a = AkShareAdapter()
     assert a.health_check() is False
 
@@ -444,7 +447,7 @@ def test_health_check_exception_is_false(fake_akshare) -> None:
 
 
 def test_get_today_money_flow_returns_latest(fake_akshare) -> None:
-    """当日资金流取接口返回的第一行（最新，akshare 默认降序）。"""
+    """当日资金流：取日期最大那行（today-1），不管 fixture 里它排在第几位。"""
     fake_akshare.stock_individual_fund_flow.return_value = _fund_flow_df()
     a = AkShareAdapter()
     flows = a.get_today_money_flow("600519")
@@ -457,11 +460,29 @@ def test_get_today_money_flow_returns_latest(fake_akshare) -> None:
     assert f.medium_net.amount == Decimal("500000.0")
     assert f.small_net.amount == Decimal("1500000.0")
     assert f.main_net_ratio == Decimal("-5.2")
-    # 最新一行是 today-1
+    # 日期最大那行是 today-1
     from datetime import date as _date
     from datetime import timedelta as _td
 
     assert f.timestamp.date() == _date.today() - _td(days=1)
+
+
+def test_get_today_money_flow_returns_max_date_regardless_of_input_order(
+    fake_akshare,
+) -> None:
+    """回归保护：fixture 是升序（最早在前，真实 akshare 顺序），第一行是 today-10。
+    get_today_money_flow 必须取日期最大那行（today-1），而不是 iloc[0]。
+    """
+    fake_akshare.stock_individual_fund_flow.return_value = _fund_flow_df()
+    a = AkShareAdapter()
+    flows = a.get_today_money_flow("600519")
+    assert len(flows) == 1
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    # 取最大日期 today-1，而非第一行 today-10
+    assert flows[0].timestamp.date() == _date.today() - _td(days=1)
+    assert flows[0].timestamp.date() != _date.today() - _td(days=10)
 
 
 def test_get_today_money_flow_passes_market_suffix(fake_akshare) -> None:
