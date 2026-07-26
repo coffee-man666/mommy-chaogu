@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { apiGet, apiPost, apiDelete, getApiToken, setApiToken } from '@/api/client'
+import {
+  apiGet,
+  apiPost,
+  apiDelete,
+  authMode,
+  getApiToken,
+  loadAuthStatus,
+  setApiToken,
+} from '@/api/client'
 import { useTheme } from '@/composables/useTheme'
 import { useWatchlistStore } from '@/stores/watchlist'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -43,6 +51,7 @@ async function saveApiToken() {
   setApiToken(apiToken.value)
   tokenSaved.value = true
   window.setTimeout(() => (tokenSaved.value = false), 2000)
+  await loadAuthStatus()
   await load()
 }
 
@@ -220,7 +229,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 主题切换 -->
-    <Card>
+    <Card v-if="authMode === 'token'">
       <CardHeader>
         <CardTitle class="text-base">🎨 主题</CardTitle>
         <CardDescription>深色 / 浅色模式切换</CardDescription>

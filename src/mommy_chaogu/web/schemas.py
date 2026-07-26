@@ -130,6 +130,13 @@ class HealthOut(BaseModel):
     last_snapshot_at: datetime | None = None
 
 
+class AuthStatusOut(BaseModel):
+    """Browser authentication mode without exposing credential material."""
+
+    mode: Literal["none", "token"]
+    authenticated: bool
+
+
 # ---------- Market Ranking ----------
 
 

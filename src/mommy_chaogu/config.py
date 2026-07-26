@@ -225,7 +225,7 @@ interval_seconds = 30.0        # 监控轮询间隔
 with_signals = true            # 同时评估告警信号
 
 [web]
-api_token = ""                         # 远程访问必填；建议使用 MOMMY_API_TOKEN
+api_token = ""                         # 远程访问必填；本机默认忽略此值
 cors_origins = []                     # 例如 ["https://stocks.example.com"]
 ws_ticket_ttl_seconds = 60
 agent_max_concurrency = 2

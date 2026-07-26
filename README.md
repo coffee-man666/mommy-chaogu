@@ -139,6 +139,20 @@ uv run mommy web --host 0.0.0.0 --port 8765
 
 浏览器打开「我的 → 访问令牌」后输入同一令牌。令牌仅保存在当前浏览器会话；WebSocket 使用短期签名 ticket，不会把长期令牌放在 URL 中。
 
+本机启动默认免登录，即使 `.env` 中保留了公网部署使用的 `MOMMY_API_TOKEN` 也不会要求
+浏览器再次输入；确需在本机测试令牌认证时使用 `mommy-web --require-auth`。
+
+### 微信远程对话（Beta）
+
+无需开放公网端口即可把本地助手连接到微信：
+
+```bash
+uv run mommy channel weixin connect
+```
+
+终端会显示二维码。扫码确认后，授权只保存在本机，且默认只接受扫码账号的私聊。
+完整安全边界和分步命令见 [微信本地频道](docs/WEIXIN-CHANNEL.md)。
+
 **4. 终端 TUI（单屏对话）**
 
 ```bash
@@ -200,8 +214,8 @@ Cache   Agent    Data Sources
 | 指标 | 值 |
 |---|---|
 | 代码量 | ~51,000 行（src ~27,000 + tests ~16,000 + web ~7,000） |
-| 测试 | 1,541 collected；1,528 个确定性离线测试 + 13 个定时网络探针 |
-| CLI 入口 | `mommy` 统一入口 + 10 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
+| 测试 | 1,550 collected；1,537 个确定性离线测试 + 13 个定时网络探针 |
+| CLI 入口 | `mommy` 统一入口 + 11 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui / channel），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
 | Agent 工具 | 25 个 function-calling tools |
 | 数据库 | 4 个（market / portfolio / agent / reference） |
 | LLM Provider | 6 个（deepseek / openai / kimi / z.ai / Nova Bridge / MiniMax） |

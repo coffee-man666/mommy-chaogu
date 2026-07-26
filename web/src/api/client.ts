@@ -30,6 +30,12 @@ export class ApiError extends Error {
 
 /** 401 全局标记：任一请求返回 401 置位，任一请求成功后清除（App.vue 顶部横幅用） */
 export const authRequired = ref(false)
+export const authMode = ref<'unknown' | 'none' | 'token'>('unknown')
+
+export interface AuthStatus {
+  mode: 'none' | 'token'
+  authenticated: boolean
+}
 
 function friendlyForStatus(status: number): string {
   if (status === 401) return '需要访问令牌'
@@ -60,6 +66,13 @@ export function setApiToken(token: string): void {
   const normalized = token.trim()
   if (normalized) window.sessionStorage.setItem(TOKEN_KEY, normalized)
   else window.sessionStorage.removeItem(TOKEN_KEY)
+}
+
+export async function loadAuthStatus(): Promise<AuthStatus> {
+  const status = await apiGet<AuthStatus>('/api/auth/status')
+  authMode.value = status.mode
+  authRequired.value = status.mode === 'token' && !status.authenticated
+  return status
 }
 
 export function getChatSessionId(): string {

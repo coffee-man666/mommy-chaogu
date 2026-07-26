@@ -1,0 +1,46 @@
+# 微信本地频道
+
+微信频道把微信作为本地个人助手的远程对话入口。行情、持仓、记忆和 LLM 凭据仍由
+用户自己的电脑保存；本地进程主动长轮询微信服务，不开放公网端口。
+
+## 使用
+
+```bash
+# 第一次连接：显示二维码，微信扫码后把授权保存在本机
+uv run mommy channel weixin login
+
+# 启动消息网关
+uv run mommy channel weixin run
+
+# 也可以一次完成登录并启动
+uv run mommy channel weixin connect
+
+# 查看状态 / 解除本地授权
+uv run mommy channel weixin status
+uv run mommy channel weixin logout
+```
+
+凭据默认保存在 `~/.config/mommy-chaogu/channels/weixin/credentials.json`，目录权限尽量
+设置为 `0700`，文件权限设置为 `0600`。可以通过 `MOMMY_CHANNEL_STATE_DIR` 或
+`--state-dir` 覆盖根目录。凭据不会写入仓库、`.env` 或浏览器存储。
+
+## 信任边界
+
+- 只接受扫码者的私聊；其他发送者、群聊和机器人消息默认丢弃。
+- 每个微信账号和发送者映射到独立的 Agent 对话 session。
+- 日志不打印 bot token、context token 或完整授权响应。
+- 微信消息会经过腾讯服务；发送给 LLM 的内容会经过用户配置的模型 Provider。
+- 当前版本只支持文本收发；图片、语音、文件和高风险操作确认尚未开放。
+
+## 后续增强
+
+- 首次微信连接后提供 owner-only 配置流程，引导选择 Provider、模型并验证 API key。
+- 支持扫码账号在微信中查看和切换模型；模型来自受控列表，同时保留手动填写兼容模型名的入口。
+- 切换配置需要明确确认，不在聊天或日志中回显 API key，并与 Web、TUI、CLI 共用同一份配置。
+
+## 协议来源
+
+二维码登录、iLink 请求头、`getupdates`、`sendmessage` 和本地 allowlist 设计参考
+[Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin)。该项目由腾讯以
+MIT License 发布。这里没有引入 OpenClaw 运行时，只实现本项目所需的最小 Python
+适配层。

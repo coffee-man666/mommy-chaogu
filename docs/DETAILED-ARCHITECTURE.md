@@ -85,7 +85,7 @@ pipeline.consolidate()
 
 | 入口 | 读取记忆 | 写入记忆 | 提炼知识 |
 |---|---|---|---|
-| Web/CLI 聊天 | build_prompt | record_analysis | cron |
+| Web/CLI/微信聊天 | build_prompt | record_analysis | cron |
 | LLM 回测 | build_prompt | episodic + source_event_id | 内联 |
 | 收盘报告 | build_prompt | analysis_record | cron |
 | 监控告警 | build_prompt | signal_event | cron |
@@ -177,6 +177,7 @@ mommy semicon ...       # 半导体产业链查询
 mommy earnings ...      # 财报前瞻 vs 实际 比对
 mommy agent ...         # AI 行情助手（chat / report / scan / verify / consolidate ...）
 mommy memory ...        # 记忆系统（stats / events / predictions / knowledge / history）
+mommy channel weixin ... # 微信二维码登录 / 本地消息网关
 mommy web ...           # Web 服务（REST API + WebSocket）
 mommy tui               # 终端 UI（Textual 单屏对话 + 内联数据卡片）
 mommy mcp               # MCP Server（stdio 协议，可接入 Claude Desktop）

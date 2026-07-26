@@ -6,9 +6,11 @@ import {
   apiGet,
   apiPost,
   authenticatedWsUrl,
+  authMode,
   authRequired,
   getApiToken,
   getChatSessionId,
+  loadAuthStatus,
   setApiToken,
   toApiError,
 } from './client'
@@ -21,6 +23,7 @@ describe('authenticated API state', () => {
   beforeEach(() => {
     sessionStorage.clear()
     authRequired.value = false
+    authMode.value = 'unknown'
     vi.stubGlobal('fetch', vi.fn())
   })
 
@@ -63,6 +66,17 @@ describe('authenticated API state', () => {
     await expect(authenticatedWsUrl('/ws/quotes')).resolves.toContain(
       '/ws/quotes?ticket=signed%20ticket',
     )
+  })
+
+  it('discovers local no-auth mode without storing a credential', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ mode: 'none', authenticated: true }), { status: 200 }),
+    )
+
+    await expect(loadAuthStatus()).resolves.toEqual({ mode: 'none', authenticated: true })
+    expect(authMode.value).toBe('none')
+    expect(authRequired.value).toBe(false)
+    expect(getApiToken()).toBe('')
   })
 })
 

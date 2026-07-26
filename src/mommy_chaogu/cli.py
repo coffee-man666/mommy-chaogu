@@ -11,6 +11,7 @@ from __future__ import annotations
 from mommy_chaogu.cli_support import *
 from mommy_chaogu.cli_commands.agent import *
 from mommy_chaogu.cli_commands.cache import *
+from mommy_chaogu.cli_commands.channel import *
 from mommy_chaogu.cli_commands.flows import *
 from mommy_chaogu.cli_commands.memory import *
 from mommy_chaogu.cli_commands.monitor import *
@@ -237,6 +238,7 @@ def main_mommy() -> NoReturn:
         "watchlist": ("mommy-watchlist", main_watchlist),
         "monitor": ("mommy-monitor", main_monitor),
         "cache": ("mommy-cache", main_cache),
+        "channel": ("mommy-channel", main_channel),
         "semicon": ("mommy-semicon", main_semicon),
         "flows": ("mommy-flows", main_flows),
         "report": ("mommy-report", main_report),
@@ -295,7 +297,7 @@ def main_mommy() -> NoReturn:
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
-            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, web, tui"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, web, tui"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

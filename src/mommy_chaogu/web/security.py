@@ -13,7 +13,7 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
-_PUBLIC_API_PATHS = frozenset({"/api/health"})
+_PUBLIC_API_PATHS = frozenset({"/api/health", "/api/auth/status"})
 
 
 @dataclass(slots=True)

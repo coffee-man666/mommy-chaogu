@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,528 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（1,537 个离线用例，另有 13 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -79,6 +79,7 @@ src/mommy_chaogu/
 ├── tui/             # Textual 终端 UI（单屏对话即界面的投研 Coding Agent CLI）
 ├── services/        # 统一数据服务层（工具层和 API 层共用）
 ├── push/            # Server酱微信推送
+├── channels/        # 本地消息网关（微信二维码授权 + 私聊长轮询）
 ├── db_paths.py      # 统一数据库路径管理
 └── cli.py           # argparse 入口（含 mommy 自然语言入口 + 10 个透传子命令）
 ```

@@ -52,6 +52,23 @@ class TestRestAuthentication:
         response = client.post("/api/auth/ws-ticket")
         assert response.status_code == 200
 
+    def test_auth_status_is_public_and_reports_mode(self) -> None:
+        protected, _ = _client("owner-secret")
+        missing = protected.get("/api/auth/status")
+        authenticated = protected.get(
+            "/api/auth/status", headers={"Authorization": "Bearer owner-secret"}
+        )
+
+        assert missing.status_code == 200
+        assert missing.json() == {"mode": "token", "authenticated": False}
+        assert authenticated.json() == {"mode": "token", "authenticated": True}
+
+        local, _ = _client("")
+        assert local.get("/api/auth/status").json() == {
+            "mode": "none",
+            "authenticated": True,
+        }
+
 
 class TestWebSocketTickets:
     def test_socket_rejects_missing_ticket(self) -> None:

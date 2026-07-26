@@ -48,7 +48,16 @@ def build_web_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--reload", action="store_true", help="开发模式热重载")
     p.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
-    p.add_argument("--api-token", default=os.environ.get("MOMMY_API_TOKEN", ""))
+    p.add_argument(
+        "--api-token",
+        default=None,
+        help="显式启用 Bearer 认证；本机模式默认忽略配置文件中的旧令牌",
+    )
+    p.add_argument(
+        "--require-auth",
+        action="store_true",
+        help="本机监听也启用认证（默认仅远程监听要求认证）",
+    )
     p.add_argument(
         "--cors-origin",
         action="append",
@@ -71,8 +80,18 @@ def cmd_web_serve(args: argparse.Namespace) -> int:
     from mommy_chaogu.web import create_app
 
     cfg = load_config()
-    api_token = args.api_token or cfg.web.api_token
     is_loopback = args.host in {"127.0.0.1", "localhost", "::1"}
+    explicit_token = (args.api_token or "").strip()
+    if is_loopback and not explicit_token and not args.require_auth:
+        # 本机浏览器由操作系统用户边界保护。不要让曾为公网部署配置过的
+        # MOMMY_API_TOKEN 污染日常本地开发体验。
+        api_token = ""
+    else:
+        api_token = explicit_token or cfg.web.api_token
+
+    if args.require_auth and not api_token:
+        print("❌ --require-auth 需要配置 MOMMY_API_TOKEN（或 --api-token）。", file=sys.stderr)
+        return 2
     if not is_loopback and not api_token and not args.allow_unauthenticated_remote:
         print(
             "❌ 非本机 Web 监听必须设置 MOMMY_API_TOKEN（或 --api-token）。",

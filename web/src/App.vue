@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { MessageSquareText, TrendingUp, UserRound, Wallet, KeyRound } from 'lucide-vue-next'
-import { authRequired } from '@/api/client'
+import { authRequired, loadAuthStatus } from '@/api/client'
 
 const navigation = [
   { to: '/', label: '对话', icon: MessageSquareText },
@@ -13,6 +14,10 @@ const navigation = [
 function focusMainContent() {
   document.getElementById('main-content')?.focus()
 }
+
+onMounted(() => {
+  loadAuthStatus().catch((error: unknown) => console.warn('读取认证模式失败', error))
+})
 </script>
 
 <template>
