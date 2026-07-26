@@ -5,7 +5,7 @@ import { getIndexes, getGainers, getLosers, getSectors } from '@/api/market'
 import { getPortfolio } from '@/api/portfolio'
 import { toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan, pnlColor, pnlSign } from '@/utils/format'
-import type { IndexQuote, RankingQuote, SectorQuote, PortfolioSummary } from '@/api/types'
+import type { IndexQuote, RankingQuote, SectorQuote, PortfolioSummary, StockSearchResult } from '@/api/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
@@ -19,6 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import ErrorState from '@/components/ErrorState.vue'
+import StockSearch from '@/components/StockSearch.vue'
 
 const router = useRouter()
 
@@ -89,6 +90,10 @@ function goDetail(code: string) {
   router.push({ name: 'detail', params: { code } })
 }
 
+function onSearchSelect(stock: StockSearchResult) {
+  goDetail(stock.code)
+}
+
 function isUp(pct: string | number | null | undefined): boolean {
   return Number(pct) > 0
 }
@@ -154,10 +159,10 @@ onUnmounted(() => {
   <div class="min-h-screen bg-background pb-6">
     <!-- 顶部头部 -->
     <header
-      class="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground px-4 pt-4 pb-0"
+      class="bg-gradient-to-br from-primary to-primary/80 px-4 pb-4 pt-4 text-primary-foreground"
     >
       <div class="flex items-baseline justify-between mb-3">
-        <h1 class="text-2xl font-bold">📊 盘面</h1>
+        <h1 class="text-2xl font-bold">📈 行情</h1>
         <div class="flex items-center gap-1.5">
           <span class="inline-block w-2 h-2 rounded-full" :class="loading ? 'animate-pulse bg-yellow-500' : errorCount >= 5 ? 'bg-red-500' : errorCount > 0 ? 'bg-yellow-500' : 'bg-green-500'" />
           <span class="text-xs font-mono opacity-85">
@@ -165,6 +170,12 @@ onUnmounted(() => {
           </span>
         </div>
       </div>
+
+      <StockSearch
+        class="mb-3 max-w-lg text-foreground"
+        placeholder="搜索股票名称或代码"
+        @select="onSearchSelect"
+      />
 
       <!-- 持仓快览条 -->
       <div
@@ -180,7 +191,7 @@ onUnmounted(() => {
             v-if="resourceStatus.portfolio.error"
             class="text-xs text-yellow-200"
           >
-            {{ resourceStatusText('portfolio') }}
+          {{ resourceStatusText('portfolio') }}
           </span>
         </div>
         <div class="flex items-center gap-2">

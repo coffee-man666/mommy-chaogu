@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -154,6 +155,68 @@ class TestGetSectors:
         body = resp.json()
         # price 缺失 → Decimal("0") → str "0"
         assert body[0]["price"] == "0"
+
+
+# ---------- GET /api/stocks/search ----------
+
+
+class TestStockSearch:
+    def test_matches_name_and_code_with_source_priority(
+        self,
+        client: TestClient,
+        mock_watchlist_store: MagicMock,
+        mock_cache_store: MagicMock,
+        mock_semicon_store: MagicMock,
+    ) -> None:
+        mock_watchlist_store.list_entries.return_value = [
+            SimpleNamespace(code="600519", name="贵州茅台"),
+        ]
+        mock_semicon_store.list_all.return_value = [
+            SimpleNamespace(code="688981", name="中芯国际"),
+            SimpleNamespace(code="600519", name="重复名称"),
+        ]
+        mock_cache_store.get_all_quote_entries.return_value = [
+            SimpleNamespace(
+                code="000858",
+                quote=SimpleNamespace(name="五粮液"),
+            ),
+            SimpleNamespace(
+                code="600519",
+                quote=SimpleNamespace(name="缓存茅台"),
+            ),
+        ]
+
+        by_name = client.get("/api/stocks/search?q=茅台")
+        assert by_name.status_code == 200
+        assert by_name.json() == [{"code": "600519", "name": "贵州茅台", "source": "watchlist"}]
+
+        by_code = client.get("/api/stocks/search?q=688")
+        assert by_code.status_code == 200
+        assert by_code.json()[0] == {
+            "code": "688981",
+            "name": "中芯国际",
+            "source": "semicon",
+        }
+
+    def test_uses_cached_name_for_unnamed_watchlist_entry(
+        self,
+        client: TestClient,
+        mock_watchlist_store: MagicMock,
+        mock_cache_store: MagicMock,
+    ) -> None:
+        mock_watchlist_store.list_entries.return_value = [SimpleNamespace(code="000858", name=None)]
+        mock_cache_store.get_all_quote_entries.return_value = [
+            SimpleNamespace(code="000858", quote=SimpleNamespace(name="五粮液"))
+        ]
+
+        response = client.get("/api/stocks/search?q=五粮")
+        assert response.status_code == 200
+        assert response.json()[0]["source"] == "watchlist"
+
+    def test_validates_query_and_limit(self, client: TestClient) -> None:
+        assert client.get("/api/stocks/search?q=").status_code == 422
+        assert client.get("/api/stocks/search?q=6&limit=11").status_code == 422
+        assert client.get("/api/stocks/search?q=%20%20").json() == []
 
 
 # ---------- GET /api/market/gainers + losers ----------

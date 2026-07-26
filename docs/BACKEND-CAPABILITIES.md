@@ -381,10 +381,10 @@ def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None
 
 ---
 
-## 10. 现有两个前端样板
+## 10. 现有两个前端
 
-- **Web**（`web/src`，Vue 3 + shadcn/vue + Tailwind v4，hash 路由）：9 页——仪表盘/行情/主题/持仓/AI对话/个股详情/信号/设置/主题详情。消费 REST + `/ws/quotes` + `/ws/agent`；token 存浏览器会话（设置页输入）。
-- **TUI**（`src/mommy_chaogu/tui`，Textual，双模式 Tab 切换）：AI 对话（工作流路由 + 工具事件可视化 + slash 命令）+ 数据看板（自选/持仓/主题/信号四页）。全部走 Python in-proc 服务层（§6）。
+- **Web**（`web/src`，Vue 3 + shadcn/vue + Tailwind v4，hash 路由）：4 个主入口——对话/行情/持仓/我的；个股、预测、信号、主题保留深链。对话页聚合自选、预测与信号上下文，消费 REST + `/ws/agent`；token 存浏览器会话（「我的」页输入）。
+- **TUI**（`src/mommy_chaogu/tui`，Textual）：单屏对话流，工作流路由、工具事件、slash 命令、`@` 股票联想与数据富卡片全部内联显示。全部走 Python in-proc 服务层（§6）。
 
 **新前端最小功能集建议**：① 自选股快照 + 来源标签 ② AI 对话（route → chat，展示 `[匹配: X]` 与工具调用）③ 持仓盈亏 ④ 空态/降级处理（§8）。其余能力按 §3 目录逐步叠加。
 

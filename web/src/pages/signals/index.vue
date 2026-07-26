@@ -93,19 +93,19 @@ const severityConfig: Record<
 > = {
   critical: {
     icon: '🚨',
-    label: 'CRIT',
+    label: '紧急',
     badge: 'bg-destructive text-white',
     border: 'border-l-destructive',
   },
   warning: {
     icon: '⚠️',
-    label: 'WARN',
+    label: '注意',
     badge: 'bg-yellow-500 text-white',
     border: 'border-l-yellow-500',
   },
   info: {
     icon: 'ℹ️',
-    label: 'INFO',
+    label: '提示',
     badge: 'bg-blue-500 text-white',
     border: 'border-l-blue-500',
   },

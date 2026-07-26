@@ -5,8 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
-[![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-1%2C488-brightgreen.svg)](#项目数据)
+[![Release: v1.2.0](https://img.shields.io/badge/release-v1.2.0-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-1%2C541-brightgreen.svg)](#项目数据)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type check: mypy strict (core)](https://img.shields.io/badge/mypy-strict%20%E6%A0%B8%E5%BF%83%E6%A8%A1%E5%9D%97-blue.svg)](docs/TECH-DEBT.md)
 
@@ -14,7 +14,23 @@
 
 A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自进化记忆系统、回测引擎。
 
-从一个「给妈妈用的手机行情工具」起步，逐步演进为涵盖数据采集、信号告警、LLM 分析、预测验证闭环、回测评估的完整投研框架。当前版本 **v1.1.0**，变更记录见 [CHANGELOG](CHANGELOG.md)。
+从一个「给妈妈用的手机行情工具」起步，逐步演进为涵盖数据采集、信号告警、LLM 分析、预测验证闭环、回测评估的完整投研框架。当前版本 **v1.2.0**，变更记录见 [CHANGELOG](CHANGELOG.md)。
+
+---
+
+## 界面一览
+
+**Web 对话首页（桌面）**
+
+![Web 对话首页：对话主轴与投研上下文栏](docs/images/web-conversation.png)
+
+**Web 投研上下文（移动端）**
+
+<img src="docs/images/web-context-drawer.png" alt="移动端投研上下文抽屉" width="390" />
+
+**终端 TUI 单屏对话**
+
+![TUI 单屏对话与今日总览卡片](docs/images/tui-conversation.svg)
 
 ---
 
@@ -32,8 +48,8 @@ A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自�
 | **回测引擎** | 规则回测 + LLM 回测 + 组合分析 + walk-forward 过拟合检测 + 市场环境分组分析 |
 | **财报窗口** | 业绩前瞻入库 + actual vs predicted 自动打分，4 种 verdict 分级 |
 | **信号告警** | 7 条内置规则 + 自定义价格/涨跌幅告警 + Server酱微信推送 |
-| **Web UI** | Vite + Vue 3 + FastAPI，手机可访问，默认聊天界面 + WebSocket 实时推送 + 连接状态指示 |
-| **终端 TUI** | `mommy tui`：Claude Code 风格沉浸式双模式（AI 对话 / 数据看板），Markdown 流式渲染 + 工具调用折叠 + slash 命令补全 |
+| **Web UI** | 移动优先的对话首页 + 投研上下文栏，支持名称搜股、对话排队、语音输入、预测/信号闭环与 WebSocket 流式推送 |
+| **终端 TUI** | `mommy tui`：Claude Code 风格单屏投研对话，富卡片、`@` 股票联想、slash 命令、忙时排队与 Esc 中断 |
 | **安全边界** | 单用户 Bearer 令牌 + WebSocket 短期签名 ticket + 受限 CORS；Web 服务默认仅监听 127.0.0.1 |
 | **Docker 部署** | `docker compose up -d` 一键启动，可复现构建 + 非 root 运行 |
 
@@ -101,7 +117,7 @@ uv run mommy memory stats          # 查看记忆系统统计
 uv run mommy memory events         # 查看近期事件
 uv run mommy agent "中芯国际资金流怎么样？"
 uv run mommy web --port 8765       # 启动 Web UI
-uv run mommy tui                   # 终端 UI（双模式：AI 对话 + 数据看板）
+uv run mommy tui                   # 终端 UI（单屏对话 + 内联数据卡片）
 ```
 
 > 旧的独立命令（`mommy-watchlist`、`mommy-monitor` 等）仍向后兼容。
@@ -112,7 +128,7 @@ uv run mommy tui                   # 终端 UI（双模式：AI 对话 + 数据�
 uv run mommy web --port 8765
 ```
 
-移动端底部 Tab 导航（首页/行情/持仓/AI对话/信号），AI 对话页含 WebSocket 连接状态指示器 + 失败重试。
+移动端底部 4 Tab（对话/行情/持仓/我的）；桌面端对话页常驻自选、预测和信号上下文。对话支持多行输入、忙时排队、语音输入、断线解锁与失败重试。
 
 Web 服务默认只监听 `127.0.0.1`。需要在局域网或公网访问时，必须配置业主令牌：
 
@@ -121,15 +137,15 @@ export MOMMY_API_TOKEN="$(openssl rand -hex 32)"
 uv run mommy web --host 0.0.0.0 --port 8765
 ```
 
-浏览器打开「设置 → 访问令牌」后输入同一令牌。令牌仅保存在当前浏览器会话；WebSocket 使用短期签名 ticket，不会把长期令牌放在 URL 中。
+浏览器打开「我的 → 访问令牌」后输入同一令牌。令牌仅保存在当前浏览器会话；WebSocket 使用短期签名 ticket，不会把长期令牌放在 URL 中。
 
-**4. 终端 TUI（沉浸式双模式）**
+**4. 终端 TUI（单屏对话）**
 
 ```bash
 uv run mommy tui
 ```
 
-Tab 键切换双模式：AI 对话（Markdown 流式渲染 + 工具调用折叠 + 底部输入框）/ 数据看板（自选股 / 持仓 / 主题 / 信号），支持 Claude Code 风格 slash 命令内联补全。
+行情、自选、持仓、资金流、预测和信号都以内联卡片进入同一条对话流；支持 Claude Code 风格 slash 命令、`@` 股票联想、忙时排队与 Esc 中断。
 
 > 📖 更多功能：[场景化使用指南](docs/USER-GUIDE.md) | [CLI 速查](docs/DETAILED-ARCHITECTURE.md#cli-速查) | [记忆系统](docs/DETAILED-ARCHITECTURE.md#自进化记忆系统) | [回测引擎](docs/DETAILED-ARCHITECTURE.md#回测引擎)
 
@@ -184,7 +200,7 @@ Cache   Agent    Data Sources
 | 指标 | 值 |
 |---|---|
 | 代码量 | ~51,000 行（src ~27,000 + tests ~16,000 + web ~7,000） |
-| 测试 | 1,488 collected；1,475 个确定性离线测试 + 13 个定时网络探针 |
+| 测试 | 1,541 collected；1,528 个确定性离线测试 + 13 个定时网络探针 |
 | CLI 入口 | `mommy` 统一入口 + 10 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
 | Agent 工具 | 25 个 function-calling tools |
 | 数据库 | 4 个（market / portfolio / agent / reference） |

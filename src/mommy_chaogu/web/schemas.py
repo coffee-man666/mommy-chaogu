@@ -152,6 +152,14 @@ class SectorOut(BaseModel):
     price: Decimal
 
 
+class StockSearchOut(BaseModel):
+    """股票名称/代码联想结果。"""
+
+    code: str
+    name: str
+    source: Literal["watchlist", "semicon", "cache"]
+
+
 # ---------- Portfolio ----------
 
 

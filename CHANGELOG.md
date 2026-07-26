@@ -7,14 +7,26 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-25
+
 ### 新增
 
+- **Web 对话即界面**——根路由即投研对话，导航收敛为「对话 / 行情 / 持仓 / 我的」；桌面常驻上下文栏，移动端抽屉聚合自选、预测和信号。
+- **股票名称联想**——新增 `/api/stocks/search`，聚合自选、半导体参考库和报价缓存；行情页、「我的」加自选与对话 `@` 统一复用可键盘操作的搜索组件。
+- **移动端投研闭环**——持仓卡片、详情页「加自选 / 问问 AI」、对话历史恢复、新对话、语音输入与忙时消息排队。
 - **MiniMax provider**（MiniMax-M2.7）——第 6 个 LLM provider。
 - **`manage_watchlist` 工具**（第 25 个）——agent 可直接增删自选股，`add_watchlist` 工作流从空壳变为真功能。
 - **装配冒烟测试**（`tests/test_agent/test_assembly_smoke.py`）——TUI bootstrap / MCP stdio 真实入口回归。
 
+### 改进
+
+- **TUI 单屏重写**——删除看板模式，slash 命令、工具结果、重试/记忆回执全部回到对话流；补齐 `@` 联想、排队、Esc 中断和三主题。
+- **Web 细节打磨**——移动持仓卡片化，K 线跟随深浅主题，成交量单位与信号/工作流徽章中文化，关键术语增加解释。
+- **发布验证**——搜索端点、WebSocket 降级/断连、股票联想组件与桌面/移动关键路径均有自动化回归。
+
 ### 修复（后端评估 EVALUATION-2026-07-18 全部 17 项）
 
+- **WebSocket 对话**：非流式降级的 `done.text` 不再被前端丢弃；生成中途断连立即解锁输入并提示重试，仅首次建连失败允许一次自动重试。
 - **记忆系统**：`mommy-agent verify/consolidate` 启动崩溃；预测验证窗口为零导致从未真正验证（现在宽限期 = verify_after + 一个 timeframe）；方向验证改用相对 entry_price 的窗口涨跌幅、neutral 不再灌水命中率；`store_extraction` 补写 `trade_date`（存量 137 行已回填，`scripts/backfill_trade_date.py`）；对话后提取改后台线程不再阻塞响应。
 - **LLM 连接层**：流式空串覆盖完整答案；流式双重调用消除（单次 stream 带 tools，不再双倍计费）；显式 120s 超时 + 关 SDK 内置重试 + 读 Retry-After；TokenTracker 接线进调用链并补全在产 provider 定价；TUI 密钥探测链与 AGENT_PROVIDER 对齐；提取调用 temperature=0 且计入 token 统计。
 - **工具与工作流**：`ctx.db_path` 一物三用拆为 agent_db/market_db/portfolio_db（agent 设的告警监控进程读得到了）；工作流错误不再被当成功（`flow_check`/`add_watchlist`/`stock_analysis` 三处定义 bug 修复）；`ctx.client` 接线（向量检索、LLM 叙事从死代码变为可用，无 embedding 接口的 provider 显式降级）；工具结果 8KB 统一截断 + `get_bars` 上限 120 + JSON Schema 参数校验 + handler 层数值钳制；MCP 调用不再阻塞 event loop。

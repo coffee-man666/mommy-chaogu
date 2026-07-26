@@ -1,5 +1,6 @@
 // Agent API client
-import { apiPost, authenticatedWsUrl, getChatSessionId } from './client'
+import { apiGet, apiPost, authenticatedWsUrl, getChatSessionId } from './client'
+import type { AgentHistoryMessage } from './types'
 
 export interface ChatResponse {
   reply: string
@@ -40,10 +41,17 @@ export async function agentRoute(
   return apiPost<RouteResponse>('/api/agent/route', { message }, signal)
 }
 
+export function getAgentHistory(limit = 50): Promise<AgentHistoryMessage[]> {
+  const sessionId = encodeURIComponent(getChatSessionId())
+  return apiGet<{ messages: AgentHistoryMessage[]; total: number }>(
+    `/api/agent/history?session_id=${sessionId}&limit=${limit}`,
+  ).then((response) => response.messages)
+}
+
 // WebSocket 流式对话
 export function agentStream(
   onChunk: (text: string) => void,
-  onDone: (toolsUsed: string[], rounds: number) => void,
+  onDone: (text: string, toolsUsed: string[], rounds: number) => void,
   onThinking: () => void,
   onError: (msg: string) => void,
   onStateChange: (state: AgentStreamState) => void = () => {},
@@ -62,6 +70,8 @@ export function agentStream(
   let closedByClient = false
   let retryTimer: number | null = null
   let ws: WebSocket | null = null
+  let hasConnected = false
+  let turnInFlight = false
 
   function reconnectOrFail(message: string) {
     if (closedByClient) return
@@ -97,6 +107,7 @@ export function agentStream(
         socket.close()
         return
       }
+      hasConnected = true
       onStateChange('connected')
       if (pendingMessage) {
         socket.send(JSON.stringify(pendingMessage))
@@ -111,10 +122,12 @@ export function agentStream(
         if (msg.type === 'chunk') {
           onChunk(msg.text)
         } else if (msg.type === 'done') {
-          onDone(msg.tools_used || [], msg.rounds || 0)
+          turnInFlight = false
+          onDone(msg.text || '', msg.tools_used || [], msg.rounds || 0)
         } else if (msg.type === 'thinking') {
           onThinking()
         } else if (msg.type === 'error') {
+          turnInFlight = false
           onStateChange('disconnected')
           onError(msg.message || '未知错误')
         }
@@ -127,7 +140,16 @@ export function agentStream(
       // Browsers provide no useful detail here; onclose owns retry/failure UI.
     }
     socket.onclose = () => {
-      reconnectOrFail('WebSocket 连接失败，请检查服务是否正常运行')
+      if (closedByClient) return
+      if (!hasConnected) {
+        reconnectOrFail('WebSocket 连接失败，请检查服务是否正常运行')
+        return
+      }
+      onStateChange('disconnected')
+      if (turnInFlight) {
+        turnInFlight = false
+        onError('连接中断，请重试')
+      }
     }
   }
 
@@ -140,9 +162,11 @@ export function agentStream(
         return
       }
       if (ws?.readyState === WebSocket.OPEN) {
+        turnInFlight = true
         ws.send(JSON.stringify({ message, history, session_id: getChatSessionId() }))
       } else if (ws == null || ws.readyState === WebSocket.CONNECTING) {
         // 连接还没建立，缓冲等 onopen
+        turnInFlight = true
         pendingMessage = { message, history, session_id: getChatSessionId() }
       } else {
         // CLOSING / CLOSED
@@ -152,6 +176,7 @@ export function agentStream(
     },
     close() {
       closedByClient = true
+      turnInFlight = false
       pendingMessage = null
       if (retryTimer != null) {
         window.clearTimeout(retryTimer)

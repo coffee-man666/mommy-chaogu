@@ -178,7 +178,7 @@ mommy earnings ...      # 财报前瞻 vs 实际 比对
 mommy agent ...         # AI 行情助手（chat / report / scan / verify / consolidate ...）
 mommy memory ...        # 记忆系统（stats / events / predictions / knowledge / history）
 mommy web ...           # Web 服务（REST API + WebSocket）
-mommy tui               # 终端 UI（Textual 双模式：AI 对话 + 数据看板）
+mommy tui               # 终端 UI（Textual 单屏对话 + 内联数据卡片）
 mommy mcp               # MCP Server（stdio 协议，可接入 Claude Desktop）
 ```
 

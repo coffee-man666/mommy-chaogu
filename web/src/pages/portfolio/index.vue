@@ -61,6 +61,12 @@ function pnlSigned(v: string | number | null | undefined): string {
   return `${n >= 0 ? '+' : ''}${fmtWan(v)}`
 }
 
+function positionWeight(position: PositionDetail): string {
+  const total = Number(summary.value?.total_market_value || 0)
+  const value = Number(position.market_value || 0)
+  return total > 0 ? `${((value / total) * 100).toFixed(1)}%` : '-'
+}
+
 // ---------- 录入表单 ----------
 const showAdd = ref(false)
 const adding = ref(false)
@@ -359,7 +365,72 @@ onUnmounted(() => {
           </Button>
         </div>
 
-        <Table v-else>
+        <template v-else>
+        <div class="space-y-3 p-3 md:hidden">
+          <article v-for="p in positions" :key="p.id" class="rounded-xl border bg-card p-4 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <RouterLink :to="`/detail/${p.code}`" class="min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                <h3 class="truncate font-semibold hover:text-primary">{{ p.name || p.code }}</h3>
+                <p class="font-mono text-xs text-muted-foreground">{{ p.code }} · {{ p.shares }}股</p>
+              </RouterLink>
+              <div class="text-right">
+                <p class="font-mono text-sm font-semibold">{{ p.current_price ? fmtPrice(p.current_price) : '-' }}</p>
+                <p class="text-[11px] text-muted-foreground">现价</p>
+              </div>
+            </div>
+
+            <div class="mt-4 rounded-lg bg-muted/50 p-3">
+              <p class="text-xs text-muted-foreground">浮盈亏</p>
+              <div class="mt-1 flex items-baseline justify-between gap-2">
+                <p class="font-mono text-2xl font-bold" :class="pnlClass(p.unrealized_pnl)">{{ pnlSigned(p.unrealized_pnl) }}</p>
+                <p class="font-mono text-sm font-semibold" :class="pnlClass(p.unrealized_pnl_pct)">{{ fmtPct(p.unrealized_pnl_pct) }}</p>
+              </div>
+            </div>
+
+            <dl class="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <div><dt class="text-muted-foreground">成本</dt><dd class="mt-0.5 font-mono">{{ fmtPrice(p.avg_cost) }}</dd></div>
+              <div><dt class="text-muted-foreground">市值</dt><dd class="mt-0.5 font-mono">{{ fmtWan(p.market_value) }}</dd></div>
+              <div><dt class="text-muted-foreground">占比</dt><dd class="mt-0.5 font-mono">{{ positionWeight(p) }}</dd></div>
+            </dl>
+
+            <div class="mt-3 flex items-center gap-2 border-t pt-3">
+              <Button variant="outline" size="sm" class="flex-1" @click="toggleExpand(p)">
+                {{ expandedId === p.id ? '收起调仓' : '记录调仓' }}
+              </Button>
+              <Button variant="ghost" size="sm" @click="goDetail(p.code)">详情</Button>
+              <Button variant="ghost" size="sm" class="text-muted-foreground hover:text-destructive" @click="removePosition(p)">清仓</Button>
+            </div>
+
+            <div v-if="expandedId === p.id" class="mt-3 space-y-3 border-t pt-3">
+              <div class="grid grid-cols-3 gap-2">
+                <Select v-model="adjForm.action">
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="buy">加仓</SelectItem>
+                    <SelectItem value="sell">减仓</SelectItem>
+                    <SelectItem value="dividend">分红</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input v-model="adjForm.price" placeholder="价格" inputmode="decimal" />
+                <Input v-model="adjForm.shares" placeholder="股数" inputmode="numeric" />
+              </div>
+              <Input v-model="adjForm.note" placeholder="备注（可选）" />
+              <p v-if="adjError" class="text-xs text-destructive">{{ adjError }}</p>
+              <Button class="w-full" size="sm" :disabled="adjusting" @click="submitAdjust(p)">
+                {{ adjusting ? '提交中…' : '提交调仓' }}
+              </Button>
+              <div v-if="store.adjustmentsMap[p.id]?.length" class="space-y-2 rounded-lg bg-muted/40 p-3">
+                <div v-for="adj in store.adjustmentsMap[p.id]" :key="adj.id" class="flex items-center justify-between text-xs">
+                  <Badge variant="secondary" :class="actionBadgeClass(adj.action)">{{ actionLabel(adj.action) }}</Badge>
+                  <span class="font-mono">{{ fmtPrice(adj.price) }} × {{ adj.shares }}股</span>
+                  <span class="text-muted-foreground">{{ fmtTimestamp(adj.timestamp).slice(5) }}</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <Table class="hidden md:table">
           <TableHeader>
             <TableRow>
               <TableHead class="pl-6">名称 / 代码</TableHead>
@@ -526,6 +597,7 @@ onUnmounted(() => {
             </template>
           </TableBody>
         </Table>
+        </template>
       </CardContent>
     </Card>
 

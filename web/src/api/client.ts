@@ -71,6 +71,12 @@ export function getChatSessionId(): string {
   return generated
 }
 
+export function resetChatSessionId(): string {
+  if (typeof window === 'undefined') return 'web-default'
+  window.sessionStorage.removeItem(CHAT_SESSION_KEY)
+  return getChatSessionId()
+}
+
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const token = getApiToken()
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
