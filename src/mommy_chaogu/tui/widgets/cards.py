@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from rich.markup import escape
 from textual.widgets import Static
 
 from mommy_chaogu.tui.services.formatting import (
@@ -25,6 +26,11 @@ from mommy_chaogu.tui.services.formatting import (
 )
 
 CARD_CLASS = "card"
+
+
+def _text(value: Any) -> str:
+    """把外部数据安全嵌入 Rich markup。"""
+    return escape(str(value))
 
 
 def _styled_change(val: Any, theme: str) -> str:
@@ -62,7 +68,7 @@ def overview_card(
     if indexes:
         idx_parts = []
         for idx in indexes[:3]:
-            name = idx.get("name", "")
+            name = _text(idx.get("name", ""))
             pct = idx.get("change_pct")
             idx_parts.append(f"{name} {_styled_change(pct, theme)}")
         lines.append("  " + " · ".join(idx_parts))
@@ -92,8 +98,8 @@ def quote_card(data: dict[str, Any], theme: str = "dark") -> Static:
 
     data 字段与 agent tools 的 _quote_to_dict 对齐（slash /quote 也组装成同样形态）。
     """
-    code = data.get("code", "")
-    name = data.get("name", code)
+    code = _text(data.get("code", ""))
+    name = _text(data.get("name", code))
     price = data.get("price")
     pct = data.get("change_pct")
     lines = [
@@ -129,12 +135,12 @@ def quote_card(data: dict[str, Any], theme: str = "dark") -> Static:
 def bars_card(bars: list[dict[str, Any]], theme: str = "dark") -> Static:
     """迷你 K 线表：最近 ≤10 根，列 = 日期/收盘/涨跌/成交量。"""
     rows = bars[-10:]
-    name = rows[-1].get("name", "") if rows else ""
-    code = rows[-1].get("code", "") if rows else ""
+    name = _text(rows[-1].get("name", "")) if rows else ""
+    code = _text(rows[-1].get("code", "")) if rows else ""
     title = f"[bold cyan]{name}（{code}）近期走势[/]" if name or code else "[bold cyan]近期走势[/]"
     lines = [title, "  [dim]日期          收盘      涨跌      成交量[/]"]
     for b in rows:
-        ts = str(b.get("timestamp", ""))[:10]
+        ts = _text(str(b.get("timestamp", ""))[:10])
         close = format_price(b.get("close"))
         pct = b.get("change_pct")
         vol = format_amount(b.get("volume"))
@@ -149,8 +155,8 @@ def bars_card(bars: list[dict[str, Any]], theme: str = "dark") -> Static:
 
 def flow_tool_card(data: dict[str, Any], theme: str = "dark") -> Static:
     """单只今日资金流卡（agent get_money_flow_today 单 code 返回形态）。"""
-    code = data.get("code", "")
-    name = data.get("name", code)
+    code = _text(data.get("code", ""))
+    name = _text(data.get("name", code))
     lines = [f"[bold cyan]💰 {name}（{code}）今日资金流[/]"]
     lines.append(f"  主力净流入 {_styled_flow(data.get('main_net'), theme)}")
     lines.append(
@@ -173,7 +179,7 @@ def flow_multi_card(items: list[dict[str, Any]], theme: str = "dark") -> Static:
     for item in items[:10]:
         if not isinstance(item, dict) or "error" in item:
             continue
-        name = item.get("name", item.get("code", ""))
+        name = _text(item.get("name", item.get("code", "")))
         lines.append(f"  {name:<10} 主力 {_styled_flow(item.get('main_net'), theme)}")
     if len(lines) == 1:
         lines.append("  [dim]暂无数据[/]")
@@ -185,7 +191,8 @@ def flows_command_card(code: str, info: dict[str, Any], theme: str = "dark") -> 
     today = info.get("today")
     history = info.get("history")
     days = int(info.get("history_days_cached", 0) or 0)
-    name = getattr(today or history, "name", code)
+    name = _text(getattr(today or history, "name", code))
+    code = _text(code)
 
     def _summary_line(label: str, fs: Any) -> str:
         main = _styled_flow(getattr(fs, "main_net", None), theme)
@@ -217,15 +224,21 @@ def flows_command_card(code: str, info: dict[str, Any], theme: str = "dark") -> 
 def watch_card(rows: list[dict[str, Any]], theme: str = "dark") -> Static:
     """自选股表格卡：名称/现价/涨跌/主力净流入。"""
     lines = ["[bold cyan]👀 自选股[/]", "  [dim]代码      名称        现价      涨跌       主力[/]"]
+    unavailable = bool(rows) and all(r.get("quote_unavailable") for r in rows)
     for r in rows:
-        code = r.get("code", "")
-        name = str(r.get("name", code))[:6]
+        code = _text(r.get("code", ""))
+        name = _text(str(r.get("name", code))[:6])
         price = format_price(r.get("price"))
         pct = _styled_change(r.get("change_pct"), theme)
         flow = _styled_flow(r.get("main_flow"), theme)
-        lines.append(f"  {code}  {name:<8}  {price:>8}  {pct}  {flow}")
+        if r.get("quote_unavailable"):
+            lines.append(f"  {code}  {name:<8}  [dim]行情暂不可用[/]")
+        else:
+            lines.append(f"  {code}  {name:<8}  {price:>8}  {pct}  {flow}")
     if not rows:
         lines.append("  [dim]还没有自选股（mommy watchlist add 600519）[/]")
+    elif unavailable:
+        lines.append("  [yellow]行情源暂时不可用，请稍后重试[/]")
     return _card(lines, classes=f"{CARD_CLASS} watch-card")
 
 
@@ -251,14 +264,17 @@ def portfolio_card(summary: dict[str, Any], theme: str = "dark") -> Static:
         lines.append("  [dim]代码      名称        成本      现价      盈亏[/]")
         for p in positions:
             if isinstance(p, dict):
-                code = p.get("code", "")
-                name = str(p.get("name", code))[:6]
+                position = p.get("position")
+                code = p.get("code") or getattr(position, "code", "")
+                name_value = p.get("name") or getattr(position, "name", None) or code
+                code = _text(code)
+                name = _text(str(name_value)[:6])
                 cost = format_price(p.get("avg_cost") or p.get("cost_price"))
                 price = format_price(p.get("current_price") or p.get("price"))
                 pnl_val = p.get("unrealized_pnl")
             else:
-                code = getattr(p, "code", "")
-                name = str(getattr(p, "name", code))[:6]
+                code = _text(getattr(p, "code", ""))
+                name = _text(str(getattr(p, "name", code))[:6])
                 cost = format_price(getattr(p, "cost_price", None))
                 price = format_price(getattr(p, "current_price", None))
                 pnl_val = getattr(p, "unrealized_pnl", None)
@@ -305,13 +321,15 @@ def prediction_lines(preds: list[dict[str, Any]], theme: str = "dark") -> list[s
     """预测记录行（/predictions 卡与工具结果卡共用）。"""
     lines: list[str] = []
     for p in preds:
-        name = p.get("name") or p.get("code", "")
+        name = _text(p.get("name") or p.get("code", ""))
         direction = _DIRECTION_LABEL.get(str(p.get("direction", "")), "➡️  震荡")
-        status = _STATUS_LABEL.get(str(p.get("status", "")), str(p.get("status", "")))
-        tf = p.get("timeframe", "")
+        status = _text(
+            _STATUS_LABEL.get(str(p.get("status", "")), str(p.get("status", "")))
+        )
+        tf = _text(p.get("timeframe", ""))
         countdown = _verify_countdown(p.get("verify_after")) if p.get("status") == "pending" else ""
         tail = f" · {countdown}" if countdown else ""
-        pred_text = str(p.get("prediction", ""))[:30]
+        pred_text = _text(str(p.get("prediction", ""))[:30])
         lines.append(f"  {name} {direction}（{tf}） {status}{tail}")
         if pred_text:
             lines.append(f"    [dim]{pred_text}[/]")
@@ -368,9 +386,9 @@ def signals_card(signals: list[dict[str, Any]], theme: str = "dark") -> Static:
         lines.append("  [dim]暂无信号记录[/]")
     for s in signals[:8]:
         badge = _SEVERITY_BADGE.get(str(s.get("severity", "")), "[#8a8f98]📊 提示[/]")
-        ts = str(s.get("timestamp", ""))[5:16]
-        name = s.get("name") or s.get("code", "")
-        title = str(s.get("title", ""))[:28]
+        ts = _text(str(s.get("timestamp", ""))[5:16])
+        name = _text(s.get("name") or s.get("code", ""))
+        title = _text(str(s.get("title", ""))[:28])
         lines.append(f"  {badge} {name} {title} [dim]{ts}[/]")
     return _card(lines, classes=f"{CARD_CLASS} signals-card")
 
@@ -402,7 +420,7 @@ def memory_card(
     lines = ["[bold cyan]🧠 记忆系统[/]"]
     ep = _call("episodic")
     if ep:
-        by_type = ", ".join(f"{k} {v}" for k, v in ep.get("by_type", {}).items())
+        by_type = ", ".join(f"{_text(k)} {v}" for k, v in ep.get("by_type", {}).items())
         lines.append(f"  事件：{ep.get('total', 0)} 条（{by_type}）")
     pred = _call("predictions")
     if pred:
@@ -446,8 +464,10 @@ def status_card(
 ) -> Static:
     """服务状态卡：AI provider/key 状态、缓存命中、DB 路径。"""
     lines = ["[bold cyan]🔌 服务状态[/]"]
-    lines.append(f"  AI：{ai_label}" + (f"（模型 {model}）" if model else ""))
-    lines.append(f"  数据源：{source_label or '未知'}")
+    lines.append(
+        f"  AI：{_text(ai_label)}" + (f"（模型 {_text(model)}）" if model else "")
+    )
+    lines.append(f"  数据源：{_text(source_label or '未知')}")
     if cache_counters:
         hits = cache_counters.get("hits", 0)
         misses = cache_counters.get("miss", 0)
@@ -455,7 +475,7 @@ def status_card(
         rate = f"{hits / total:.0%}" if total else "—"
         lines.append(f"  缓存：命中 {hits}/{total}（{rate}）")
     for label, path in db_paths.items():
-        lines.append(f"  [dim]{label}: {path}[/]")
+        lines.append(f"  [dim]{_text(label)}: {_text(path)}[/]")
     return _card(lines, classes=f"{CARD_CLASS} status-card")
 
 
@@ -483,7 +503,7 @@ def welcome_text(
         for idx in indexes[:3]:
             name = str(idx.get("name", ""))
             # 指数名取前两个字（上证指数→上证）保持紧凑
-            short = name.replace("指数", "")[:2] if name else ""
+            short = _text(name.replace("指数", "")[:2] if name else "")
             idx_parts.append(f"{short} {_styled_change(idx.get('change_pct'), theme)}")
         summary.append("今日：" + " ".join(idx_parts))
     elif indexes is None:

@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -40,7 +41,7 @@ from mommy_chaogu.tui.widgets.working_indicator import WorkingIndicator
 
 _log = logging.getLogger(__name__)
 
-_CODE_RE = re.compile(r"\d{6}")
+_CODE_RE = re.compile(r"[0-9]{6}")
 _AT_TOKEN_RE = re.compile(r"@([^\s@]*)$")
 
 
@@ -170,7 +171,7 @@ class ChatView(Vertical):
         self._working: WorkingIndicator | None = None
         self._tool_widgets: dict[int, ToolIndicator] = {}
         self._tool_names: dict[int, str] = {}
-        self._step_widgets: dict[int, Static] = {}
+        self._step_widgets: dict[tuple[int, int], Static] = {}
         # slash / @ 候选选择态
         self._slash_matches: list[SlashCommand] = []
         self._slash_sel: int = 0
@@ -190,12 +191,17 @@ class ChatView(Vertical):
         with VerticalScroll(id="chat-log"):
             yield Static("", id="chat-welcome", classes="welcome-card")
         yield HintBar()
-        yield ChatInput(placeholder="输入消息… (/ 命令 · @ 股票 · Esc 中断)", id="prompt")
+        yield ChatInput(
+            placeholder="输入消息… (/ 命令 · @ 股票 · Esc 中断)",
+            id="prompt",
+        )
 
     def on_mount(self) -> None:
         """启动焦点落在输入框；欢迎卡先渲染骨架，数据由 app 的 worker 回填。"""
         self.update_welcome(None, None, 0, 0, self._has_agent())
-        self.query_one("#prompt", ChatInput).focus()
+        prompt = self.query_one("#prompt", ChatInput)
+        prompt.cursor_blink = False
+        prompt.focus()
 
     # ------------------------------------------------------------------
     # 服务访问 / 主题
@@ -504,7 +510,7 @@ class ChatView(Vertical):
         self.run_worker(_work, thread=True)
 
     def _hint_static(self, text: str) -> Static:
-        return Static(f"[yellow]⚠[/] {text}", classes="hint-card")
+        return Static(f"[yellow]⚠[/] {escape(text)}", classes="hint-card")
 
     def _build_today_card(self) -> Static | None:
         svc = self._services()
@@ -664,7 +670,7 @@ class ChatView(Vertical):
         log = self.query_one("#chat-log", VerticalScroll)
         with contextlib.suppress(Exception):
             log.query_one("#chat-welcome").remove()
-        log.mount(Static(f"[bold]❯ {text}[/]", classes="user-msg"))
+        log.mount(Static(f"[bold]❯ {escape(text)}[/]", classes="user-msg"))
         log.scroll_end(animate=False)
 
     def append_assistant(self, text: str) -> None:
@@ -677,10 +683,10 @@ class ChatView(Vertical):
     def append_workflow_match(self, title: str, steps: list[str]) -> None:
         """追加工作流匹配卡片。"""
         log = self.query_one("#chat-log", VerticalScroll)
-        steps_str = "  ".join(f"⠹ {s}" for s in steps)
+        steps_str = "  ".join(f"⠹ {escape(s)}" for s in steps)
         log.mount(
             Static(
-                f"[yellow]⚡ 匹配工作流：{title}[/]\n{steps_str}",
+                f"[yellow]⚡ 匹配工作流：{escape(title)}[/]\n{steps_str}",
                 classes="workflow-card",
             )
         )
@@ -736,7 +742,7 @@ class ChatView(Vertical):
     def append_hint(self, text: str) -> None:
         """追加提示卡片。"""
         log = self.query_one("#chat-log", VerticalScroll)
-        log.mount(Static(f"[yellow]⚠[/] {text}", classes="hint-card"))
+        log.mount(Static(f"[yellow]⚠[/] {escape(text)}", classes="hint-card"))
         log.scroll_end(animate=False)
 
     def append_memory_receipt(self) -> None:
@@ -829,14 +835,15 @@ class ChatView(Vertical):
         """接收 StepStatus 消息并原地更新步骤进度行。"""
         mark = {"ok": "✓", "fail": "✗", "running": "⠹"}.get(msg.state, "?")
         color = {"ok": "green", "fail": "red", "running": "yellow"}.get(msg.state, "white")
-        content = f"  [{color}]{mark}[/{color}] {msg.detail}"
-        existing = self._step_widgets.get(msg.idx)
+        content = f"  [{color}]{mark}[/{color}] {escape(msg.detail)}"
+        key = (msg.turn_id, msg.idx)
+        existing = self._step_widgets.get(key)
         if existing is not None:
             existing.update(content)
             return
         log = self.query_one("#chat-log", VerticalScroll)
         widget = Static(content, classes="step-status")
-        self._step_widgets[msg.idx] = widget
+        self._step_widgets[key] = widget
         log.mount(widget)
         log.scroll_end(animate=False)
 
@@ -844,8 +851,14 @@ class ChatView(Vertical):
     # 清屏 / 取消 / 滚动
     # ------------------------------------------------------------------
 
-    def clear_messages(self) -> None:
-        """清空对话区（重新挂载欢迎卡）。"""
+    async def _clear_messages(self) -> None:
+        """原子清空对话区：等待旧 widget detach 后再挂欢迎卡。"""
+        cancel = getattr(self.app, "cancel_active_turn", None)
+        if callable(cancel):
+            cancel()
+        if self._cancel_callback is not None:
+            with contextlib.suppress(Exception):
+                self._cancel_callback()
         if self._working is not None:
             self._working.stop_timer()
             self._working = None
@@ -856,10 +869,22 @@ class ChatView(Vertical):
         self._stream_widget = None
         self._stream_buffer = ""
         self._stream_dirty = False
+        self._busy = False
+        self._cancelled = False
+        self._cancel_callback = None
         log = self.query_one("#chat-log", VerticalScroll)
-        log.query("*").remove()
+        await log.query("*").remove()
         log.mount(Static("", id="chat-welcome", classes="welcome-card"))
         self.update_welcome(None, None, 0, 0, self._has_agent())
+        refresh = getattr(self.app, "_refresh_market", None)
+        if callable(refresh):
+            refresh()
+
+    def clear_messages(self) -> None:
+        """调度原子清屏任务（slash / Ctrl+L 共用）。"""
+        self.run_worker(
+            self._clear_messages(), name="clear-chat", group="clear-chat", exclusive=True
+        )
 
     def action_clear_log(self) -> None:
         """Ctrl+L 清屏。"""
@@ -885,7 +910,6 @@ class ChatView(Vertical):
             text = self.finalize_stream()
             if text:
                 widget.update(f"⏺ {text.lstrip()}\n\n[dim]（已中断）[/]")
-        self.set_busy(False)
         if not text:
             log = self.query_one("#chat-log", VerticalScroll)
             log.mount(
