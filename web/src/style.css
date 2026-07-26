@@ -33,52 +33,68 @@
   --font-mono: "SF Mono", "Menlo", "Monaco", monospace;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Kimi Code 视觉契约（已验证）
+   来源: https://www.kimi.com/code/docs/en/kimi-code-cli/customization/themes.html
+   + 本机 ~/.kimi-code/bin/kimi strings 校验 (hex 全部命中)
+   + `kimi -p` 确认助手消息用 • (U+2022) bullet
+
+   设计原则: shadcn 语义 token 绑定 Kimi 调色板 —— 这样整个 app
+   的所有 shadcn 组件天然长得像 Kimi。A 股红涨绿跌走专用 --up/--down，
+   与 Kimi 的 success/error(绿/红=操作成败) 语义分离，绝不混用。
+
+   HSL 值由 Kimi hex 经标准转换得到。背景 token 是 Kimi TUI 没有的
+   (它透明继承终端底色)，这里按 Dracula 系推断并标注 [推断]。
+   ───────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
   --mobile-nav-height: calc(3.5rem + env(safe-area-inset-bottom));
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --primary: 0 72.2% 50.6%;        /* A 股红 */
-  --primary-foreground: 0 0% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
+
+  /* light 主题 — 近白带微蓝（用户偏好），基于 Kimi light 列 */
+  --background: 215 45% 97%;               /* #F4F7FB 近白带蓝调 */
+  --foreground: 215 35% 12%;               /* #141821 加深，高对比正文 */
+  --card: 0 0% 100%;                        /* 卡片用纯白，与微蓝背景分层 */
+  --card-foreground: 215 35% 12%;
+  --primary: 211 100% 42%;                 /* #1565C0 Kimi light primary ✓ */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 215 40% 94%;
+  --secondary-foreground: 215 35% 12%;
+  --muted: 215 40% 93%;
+  --muted-foreground: 215 15% 28%;         /* #3D4756 加深灰字，提高对比 */
+  --accent: 187 100% 28%;                  /* #00838F Kimi light accent ✓ */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 74% 42%;                /* #B91C1C error light ✓ */
   --destructive-foreground: 0 0% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 0 72.2% 50.6%;
-  --up: 0 72.2% 50.6%;              /* 红涨 */
-  --down: 142 71% 45%;              /* 绿跌 */
+  --border: 215 20% 82%;                   /* #C4CBD6 更清晰边框 */
+  --input: 215 20% 82%;
+  --ring: 211 100% 42%;
+  --up: 353 78% 56%;                       /* #E5484D 红涨 (A 股，非 Kimi) */
+  --down: 142 68% 38%;                     /* #21A040 绿跌 (A 股，非 Kimi) */
   --radius: 0.5rem;
 }
 
 .dark {
   color-scheme: dark;
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 6.9%;
-  --card-foreground: 210 40% 98%;
-  --primary: 0 72.2% 55%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 50%;
+  /* dark 主题 — Kimi 官方 dark 列（默认终端感） */
+  --background: 231 24% 12%;               /* #1A1B26 [推断] Tokyo Night，匹配 role/shell 配色系 */
+  --foreground: 0 0% 88%;                  /* #E0E0E0 text ✓ */
+  --card: 231 24% 16%;                     /* 略抬一层 */
+  --card-foreground: 0 0% 88%;
+  --primary: 211 100% 66%;                 /* #4FA8FF Kimi dark primary ✓ */
+  --primary-foreground: 222 47% 11%;
+  --secondary: 231 20% 20%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 231 20% 18%;
+  --muted-foreground: 0 0% 53%;            /* #888888 text-dim ✓ */
+  --accent: 176 39% 55%;                   /* #5BC0BE Kimi dark accent ✓ */
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 76% 62%;                /* #E85454 error ✓ */
   --destructive-foreground: 0 0% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 0 72.2% 55%;
-  --up: 0 72.2% 55%;
-  --down: 142 71% 50%;
+  --border: 0 0% 36%;                      /* #5A5A5A border ✓ */
+  --input: 0 0% 36%;
+  --ring: 211 100% 66%;
+  --up: 353 76% 58%;                       /* #E5484D 红涨 (A 股) */
+  --down: 142 67% 38%;                     /* #21A040 绿跌 (A 股) */
 }
 
 * {

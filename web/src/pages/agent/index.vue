@@ -5,12 +5,17 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { agentStream, agentRoute } from '@/api/agent'
 import type { AgentStreamState } from '@/api/agent'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { cn } from '@/lib/utils'
-import { ArrowDown, Bot, Send, User, Wrench, CheckCircle2, Zap, RotateCcw, Square } from 'lucide-vue-next'
+import { ArrowDown } from 'lucide-vue-next'
+import StatusBar from '@/components/chat/StatusBar.vue'
+import MessageBubble from '@/components/chat/MessageBubble.vue'
+import ToolRow from '@/components/chat/ToolRow.vue'
+import WorkflowCard from '@/components/chat/WorkflowCard.vue'
+import type { WorkflowStep } from '@/components/chat/WorkflowCard.vue'
+import WorkingIndicator from '@/components/chat/WorkingIndicator.vue'
+import InputBar from '@/components/chat/InputBar.vue'
+import { randomVerb } from '@/lib/workingVerbs'
+import { toolDisplayName } from '@/lib/toolNames'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -19,6 +24,7 @@ interface Message {
   content: string
   toolsUsed?: string[]
   steps?: string[]
+  stepsRaw?: { name: string; success: boolean }[]
   workflowId?: string
   streaming?: boolean
   error?: boolean
@@ -36,6 +42,12 @@ const lastFailedMessage = ref('')
 let activeRequestId = 0
 let activeAssistantIdx: number | null = null
 let routeAbortController: AbortController | null = null
+
+// Kimi 风工作指示
+const currentVerb = ref(randomVerb())
+const turnStart = ref(0)
+const nowTick = ref(0) // 触发 WorkingIndicator 耗时刷新
+let nowTimer: number | null = null
 
 const CHAT_STORAGE_KEY = 'mommy_chat_messages_v1'
 const CHAT_DRAFT_KEY = 'mommy_chat_draft_v1'
@@ -55,6 +67,31 @@ const wsDotColor = computed(() => {
       return 'bg-yellow-500'
   }
 })
+
+const connectionLevel = computed<'live' | 'degraded' | 'offline' | 'idle'>(() => {
+  switch (wsStatus.value) {
+    case 'connected':
+      return 'live'
+    case 'disconnected':
+      return 'offline'
+    case 'idle':
+      return 'idle'
+    default:
+      return 'degraded'
+  }
+})
+
+const turnElapsedMs = computed(() => (turnStart.value ? Math.max(0, nowTick.value - turnStart.value) : 0))
+
+/** 把 RouteStep[] 转成 WorkflowCard 需要的 WorkflowStep[]。
+ *  后端 RouteStep 只有 success 布尔；没有 running 信息，已完成的标 ok，其余标 todo。 */
+function toWorkflowSteps(steps: { name: string; success: boolean }[] | undefined): WorkflowStep[] {
+  if (!steps) return []
+  return steps.map((s) => ({
+    display_name: s.name,
+    status: s.success ? 'ok' : 'fail',
+  }))
+}
 
 const wsStatusText = computed(() => {
   switch (wsStatus.value) {
@@ -112,6 +149,14 @@ function renderMarkdown(text: string): string {
   return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
 }
 
+function stopWorkingTimer() {
+  if (nowTimer != null) {
+    window.clearInterval(nowTimer)
+    nowTimer = null
+  }
+  turnStart.value = 0
+}
+
 function stopGeneration() {
   const assistantIdx = activeAssistantIdx
   activeRequestId += 1
@@ -125,6 +170,7 @@ function stopGeneration() {
   connectionState.value = 'idle'
   loading.value = false
   activeAssistantIdx = null
+  stopWorkingTimer()
 
   if (assistantIdx != null) {
     const assistant = messages.value[assistantIdx]
@@ -157,6 +203,11 @@ async function send(message: string) {
   messages.value.push({ role: 'user', content: text })
   input.value = ''
   loading.value = true
+  currentVerb.value = randomVerb()
+  turnStart.value = Date.now()
+  nowTimer ??= window.setInterval(() => {
+    nowTick.value = Date.now()
+  }, 100)
 
   // 创建 assistant 占位
   const assistantIdx = messages.value.length
@@ -176,11 +227,13 @@ async function send(message: string) {
         content: res.reply,
         workflowId: res.workflow_id,
         steps: res.steps?.filter((s) => s.success).map((s) => s.name),
+        stepsRaw: res.steps?.map((s) => ({ name: s.name, success: s.success })),
         streaming: false,
       }
       loading.value = false
       connectionState.value = 'idle'
       activeAssistantIdx = null
+      stopWorkingTimer()
       scrollToBottom()
       return
     }
@@ -215,6 +268,7 @@ async function send(message: string) {
       messages.value[assistantIdx].streaming = false
       loading.value = false
       activeAssistantIdx = null
+      stopWorkingTimer()
       scrollToBottom()
     },
     () => {
@@ -231,6 +285,7 @@ async function send(message: string) {
       connectionState.value = 'disconnected'
       lastFailedMessage.value = text
       activeAssistantIdx = null
+      stopWorkingTimer()
       scrollToBottom()
     },
     (state) => {
@@ -315,7 +370,7 @@ onMounted(() => {
     messages.value.push({
       role: 'assistant',
       content:
-        '你好！我是妈妈的行情助手 📋\n\n我可以帮你：\n· 看行情 — "今天怎么样"\n· 分析股票 — "分析比亚迪"\n· 看板块 — "半导体板块怎么样"\n· 看资金 — "主力在买什么"\n· 看持仓 — "我的持仓怎么样"\n· 写报告 — "今日总结"\n\n试试下面的快捷按钮，或者直接问我！',
+        '你好，我是妈妈的行情助手。\n\n我可以帮你：\n- 看行情 — "今天怎么样"\n- 分析股票 — "分析比亚迪"\n- 看板块 — "半导体板块怎么样"\n- 看资金 — "主力在买什么"\n- 看持仓 — "我的持仓怎么样"\n- 写报告 — "今日总结"\n\n试试下面的快捷按钮，或直接问我。',
     })
   }
   // dashboard 跳转带 q 参数 → 自动发送
@@ -335,165 +390,103 @@ onUnmounted(() => {
     stream.value.close()
     stream.value = null
   }
+  stopWorkingTimer()
 })
+
+/** slash 命令处理（来自 InputBar 的 / 命令） */
+const SLASH_ALIASES: Record<string, string> = {
+  morning: '今天怎么样',
+  market: '大盘怎么样',
+  portfolio: '我的持仓怎么样',
+  flows: '主力在买什么',
+  signals: '最近触发了哪些信号',
+  earnings: '最近有哪些业绩披露',
+}
+function handleSlash(raw: string) {
+  const body = raw.replace(/^\//, '').trim()
+  const [name, ...rest] = body.split(/\s+/)
+  const lower = name.toLowerCase()
+  if (lower === 'clear' || lower === 'new') {
+    messages.value = []
+    return
+  }
+  if (lower === 'watch' && rest.length) {
+    void send(rest.join(' '))
+    return
+  }
+  if (lower === 'theme' && rest.length) {
+    // 简单透传：toggle 主题留给 App.vue 的设置入口，这里只给提示
+    messages.value.push({
+      role: 'assistant',
+      content: '主题切换请在 设置 里操作（深色/浅色）。',
+    })
+    return
+  }
+  const alias = SLASH_ALIASES[lower]
+  if (alias) {
+    void send(alias)
+    return
+  }
+  // 未识别：当作普通问题发给 agent
+  void send(raw)
+}
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-var(--mobile-nav-height))] flex-col bg-muted/30 md:h-dvh">
-    <!-- 顶栏 -->
-    <header
-      class="flex shrink-0 items-center gap-2 border-b bg-card px-4 py-3"
-    >
-      <div
-        class="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary"
-      >
-        <Bot class="size-5" aria-hidden="true" />
-      </div>
-      <h1 class="text-base font-semibold tracking-tight">AI 对话</h1>
-      <span
-        class="inline-flex items-center gap-1 text-xs text-muted-foreground"
-        :title="wsStatusText"
-        role="status"
-        aria-live="polite"
-      >
-        <span class="inline-block w-2 h-2 rounded-full" :class="wsDotColor" />
-        {{ wsStatusText }}
-      </span>
-      <Badge
-        v-if="loading"
-        variant="secondary"
-        class="gap-1"
-      >
-        <span class="size-1.5 animate-pulse rounded-full bg-primary" />
-        思考中
-      </Badge>
-    </header>
+  <div class="flex h-[calc(100dvh-var(--mobile-nav-height))] flex-col bg-background md:h-dvh">
+    <!-- 顶栏：Kimi 风状态栏 -->
+    <StatusBar :connection="connectionLevel" brand="mommy-chaogu" />
 
     <!-- 对话消息区 -->
     <div class="relative min-h-0 flex-1">
-      <div ref="scrollContainerRef" class="h-full overflow-y-auto" :aria-busy="loading" @scroll="onScroll">
-        <div class="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
-        <div
-          v-for="(msg, i) in messages"
-          :key="i"
-          :class="
-            cn(
-              'flex gap-3',
-              msg.role === 'user' ? 'flex-row-reverse' : 'flex-row',
-            )
-          "
-        >
-          <!-- 头像 -->
-          <div
-            :class="
-              cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-full',
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-card border text-muted-foreground',
-              )
-            "
-          >
-            <User v-if="msg.role === 'user'" class="size-4" aria-hidden="true" />
-            <Bot v-else class="size-4" aria-hidden="true" />
-          </div>
+      <div
+        ref="scrollContainerRef"
+        class="h-full overflow-y-auto"
+        :aria-busy="loading"
+        @scroll="onScroll"
+      >
+        <div class="mx-auto w-full max-w-3xl space-y-3.5 px-3.5 py-4">
+          <template v-for="(msg, i) in messages" :key="i">
+            <!-- 用户消息 -->
+            <MessageBubble v-if="msg.role === 'user'" role="user" :content="msg.content" />
 
-          <!-- 气泡 + 元信息 -->
-          <div
-            :class="
-              cn(
-                'flex min-w-0 max-w-[80%] flex-col gap-1',
-                msg.role === 'user' ? 'items-end' : 'items-start',
-              )
-            "
-          >
-            <!-- 工作流来源标签 -->
-            <Badge
-              v-if="msg.workflowId"
-              variant="outline"
-              class="gap-1 text-up"
-            >
-              <Zap class="size-3" aria-hidden="true" />
-              {{ msg.workflowId }}
-            </Badge>
+            <!-- 助手消息 -->
+            <div v-else class="space-y-2">
+              <!-- 工作流匹配卡（命中工作流时，step 来自后端 RouteStep） -->
+              <WorkflowCard
+                v-if="msg.workflowId && msg.stepsRaw"
+                :title="msg.workflowId"
+                :steps="toWorkflowSteps(msg.stepsRaw)"
+              />
 
-            <!-- 气泡 -->
-            <div
-              :class="
-                cn(
-                  'break-words px-4 py-2.5 text-sm leading-relaxed shadow-sm',
-                  msg.role === 'user' && 'whitespace-pre-wrap',
-                  msg.role === 'user'
-                    ? 'rounded-2xl rounded-tr-sm bg-primary text-primary-foreground'
-                    : msg.error
-                      ? 'rounded-2xl rounded-tl-sm border-destructive/30 bg-destructive/5 text-destructive'
-                      : 'rounded-2xl rounded-tl-sm border bg-card text-card-foreground',
-                )
-              "
-            >
-              <!-- 打字中指示器 -->
-              <span
-                v-if="msg.streaming && !msg.content"
-                class="inline-flex items-center gap-1 py-0.5"
+              <!-- 工具调用行（done.tools_used 是事后列表；后端补 tool 事件前用 done 态展示） -->
+              <ToolRow
+                v-for="t in msg.toolsUsed ?? []"
+                :key="t"
+                :tool="t"
+                status="done"
+              />
+
+              <!-- 消息正文 -->
+              <MessageBubble
+                role="assistant"
+                :html="msg.error ? undefined : renderMarkdown(msg.content)"
+                :content="msg.error ? msg.content : undefined"
+                :streaming="msg.streaming && !msg.content"
+              />
+
+              <!-- 单轮脚注 -->
+              <div
+                v-if="msg.toolsUsed && msg.toolsUsed.length"
+                class="pl-4 font-mono text-[11px] text-muted-foreground/70"
               >
-                <span
-                  class="size-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]"
-                />
-                <span
-                  class="size-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]"
-                />
-                <span class="size-2 animate-bounce rounded-full bg-muted-foreground/50" />
-              </span>
-              <template v-else-if="msg.role === 'user'">{{ msg.content }}</template>
-              <div v-else class="markdown-body" v-html="renderMarkdown(msg.content)" />
-            </div>
-
-            <!-- 工作流步骤标签 -->
-            <div
-              v-if="msg.steps && msg.steps.length > 0"
-              class="flex flex-wrap gap-1"
-            >
-              <Badge
-                v-for="s in msg.steps"
-                :key="s"
-                variant="outline"
-                class="gap-1 text-up"
-              >
-                <CheckCircle2 class="size-3" aria-hidden="true" />
-                {{ s }}
-              </Badge>
-            </div>
-
-            <!-- 工具调用折叠展示 -->
-            <details
-              v-if="msg.toolsUsed && msg.toolsUsed.length > 0"
-              class="group"
-            >
-              <summary
-                class="inline-flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Wrench class="size-3" aria-hidden="true" />
-                <span>
-                  工具调用 ({{ msg.toolsUsed.length }})
-                </span>
-                <span class="text-muted-foreground/60 group-open:rotate-180 transition-transform">▾</span>
-              </summary>
-              <div class="mt-1.5 flex flex-wrap gap-1">
-                <Badge
-                  v-for="t in msg.toolsUsed"
-                  :key="t"
-                  variant="secondary"
-                  class="font-mono text-xs"
-                >
-                  {{ t }}
-                </Badge>
+                {{ msg.toolsUsed.map(toolDisplayName).join(' · ') }}
               </div>
-            </details>
-          </div>
-        </div>
-
+            </div>
+          </template>
         </div>
       </div>
+
       <Button
         v-if="userScrolledUp"
         variant="secondary"
@@ -503,73 +496,68 @@ onUnmounted(() => {
         @click="jumpToLatest"
       >
         <ArrowDown class="size-4" aria-hidden="true" />
-        最新消息
+        最新
       </Button>
     </div>
 
-    <!-- 底部：快捷问题 + 输入区 -->
-    <div class="shrink-0 border-t bg-card">
-      <div class="mx-auto w-full max-w-3xl">
-        <!-- 快捷问题 -->
-        <div class="flex gap-2 overflow-x-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <Button
-            v-for="q in quickQuestions"
-            :key="q"
-            variant="outline"
-            size="sm"
-            class="min-h-11 shrink-0 rounded-full"
-            :disabled="loading"
-            @click="handleQuick(q)"
-          >
-            {{ q }}
-          </Button>
-        </div>
+    <!-- 工作中指示 -->
+    <WorkingIndicator
+      v-if="loading && !lastFailedMessage"
+      :verb="currentVerb"
+      :elapsed-ms="turnElapsedMs"
+    />
 
-        <Separator />
-
-        <!-- 输入区 -->
-        <div class="mobile-safe-input flex items-center gap-2 px-4 pt-3">
-          <Input
-            id="agent-prompt"
-            v-model="input"
-            name="message"
-            autocomplete="off"
-            aria-label="给 AI 助手的消息"
-            placeholder="例如：分析一下比亚迪…"
-            :disabled="loading"
-            class="flex-1"
-            enterkeyhint="send"
-            @keydown.enter="handleSend"
-          />
-          <Button
-            v-if="loading && !lastFailedMessage"
-            variant="destructive"
-            size="icon"
-            aria-label="停止生成"
-            @click="stopGeneration"
-          >
-            <Square class="size-4" aria-hidden="true" />
-          </Button>
-          <Button
-            v-if="lastFailedMessage"
-            variant="outline"
-            size="icon"
-            aria-label="重试"
-            @click="retry"
-          >
-            <RotateCcw class="size-4" aria-hidden="true" />
-          </Button>
-          <Button
-            :disabled="loading || !input.trim()"
-            size="icon"
-            aria-label="发送"
-            @click="handleSend"
-          >
-            <Send class="size-4" aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
+    <!-- 快捷 chips -->
+    <div
+      class="flex gap-2 overflow-x-auto px-3.5 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      <button
+        v-for="q in quickQuestions"
+        :key="q"
+        :disabled="loading"
+        class="min-h-9 shrink-0 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+        @click="handleQuick(q)"
+      >
+        {{ q }}
+      </button>
     </div>
+
+    <!-- 停止/重试 操作条 -->
+    <div
+      v-if="(loading && !lastFailedMessage) || lastFailedMessage"
+      class="flex justify-center px-3.5 pt-1.5"
+    >
+      <Button
+        v-if="loading && !lastFailedMessage"
+        variant="destructive"
+        size="sm"
+        class="gap-1.5 font-mono"
+        aria-label="停止生成"
+        @click="stopGeneration"
+      >
+        ■ 停止
+      </Button>
+      <Button
+        v-else-if="lastFailedMessage"
+        variant="outline"
+        size="sm"
+        class="gap-1.5 font-mono"
+        aria-label="重试"
+        @click="retry"
+      >
+        ↻ 重试
+      </Button>
+    </div>
+
+    <!-- 底部输入栏 -->
+    <InputBar
+      v-model="input"
+      :disabled="loading && !lastFailedMessage"
+      :busy="!!(loading && !lastFailedMessage)"
+      :placeholder="loading ? '处理中…' : '问点什么…  / 看命令'"
+      @send="(t) => send(t)"
+      @slash="(c) => handleSlash(c)"
+    />
   </div>
 </template>
 
