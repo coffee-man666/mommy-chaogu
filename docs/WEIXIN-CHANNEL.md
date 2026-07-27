@@ -6,13 +6,16 @@
 ## 使用
 
 ```bash
-# 推荐：一次配置 Provider、模型、Key，并继续微信扫码
+# 推荐：一次配置 Provider、模型、Key；扫码后自动在后台上线
 uv run mommy setup
 
 # 已有 AI 配置时，也可只连接微信
 uv run mommy channel weixin login
 
-# 启动消息网关
+# 在后台启动消息网关（终端可以关闭）
+uv run mommy channel weixin start
+
+# 前台运行消息网关（调试用，Ctrl+C 停止）
 uv run mommy channel weixin run
 
 # 也可以一次完成登录并启动
@@ -20,8 +23,13 @@ uv run mommy channel weixin connect
 
 # 查看状态 / 解除本地授权
 uv run mommy channel weixin status
+uv run mommy channel weixin stop
 uv run mommy channel weixin logout
 ```
+
+`login` 只保存扫码授权；`setup` 会在扫码成功后自动启动后台网关。`status` 会明确显示
+“未授权”“已授权但离线”或“在线”，不再把保存了凭据误报成已经上线。后台日志保存在
+同一私有目录下的 `gateway.log`。
 
 凭据默认保存在 `~/.config/mommy-chaogu/channels/weixin/credentials.json`，目录权限尽量
 设置为 `0700`，文件权限设置为 `0600`。可以通过 `MOMMY_CHANNEL_STATE_DIR` 或

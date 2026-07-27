@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import NoReturn
 
 from mommy_chaogu.channels import WeixinClient, WeixinCredentials, WeixinGateway, WeixinStore
+from mommy_chaogu.channels.process import (
+    gateway_process_pid,
+    start_gateway_process,
+    stop_gateway_process,
+)
 from mommy_chaogu.channels.weixin import WeixinApiError
 
 
@@ -21,9 +26,11 @@ def build_channel_parser() -> argparse.ArgumentParser:
     channel = parser.add_subparsers(dest="channel", required=True)
     weixin = channel.add_parser("weixin", help="腾讯微信 iLink（二维码登录）")
     action = weixin.add_subparsers(dest="action", required=True)
-    action.add_parser("login", help="显示二维码并保存本地授权")
+    action.add_parser("login", help="仅显示二维码并保存本地授权")
     action.add_parser("status", help="查看本地连接状态")
     action.add_parser("logout", help="删除本地微信授权")
+    action.add_parser("start", help="在后台启动微信消息网关")
+    action.add_parser("stop", help="停止后台微信消息网关")
     run = action.add_parser("run", help="启动微信消息网关")
     run.add_argument("--once", action="store_true", help="只轮询一次（诊断用）")
     connect = action.add_parser("connect", help="未登录时扫码，然后启动消息网关")
@@ -122,6 +129,15 @@ def _run_gateway(store: WeixinStore, client: WeixinClient, *, once: bool) -> Non
         close_cached_dependencies()
 
 
+def _start_background_gateway(store: WeixinStore) -> None:
+    process = start_gateway_process(store)
+    if process.started:
+        print(f"✅ 微信助手已在后台上线（PID {process.pid}）。")
+    else:
+        print(f"✅ 微信助手已经在线（PID {process.pid}）。")
+    print(f"   日志：{process.log_path}")
+
+
 def cmd_channel(args: argparse.Namespace) -> int:
     if args.channel != "weixin":
         return 2
@@ -133,12 +149,25 @@ def cmd_channel(args: argparse.Namespace) -> int:
         elif args.action == "status":
             credentials = store.load_credentials()
             if credentials is None:
-                print("微信未连接。")
+                print("微信未授权。")
             else:
-                print(f"微信已连接：{credentials.account_id}（凭据保存在 {store.root}）")
+                pid = gateway_process_pid(store)
+                if pid is None:
+                    print(f"微信已授权但助手离线：{credentials.account_id}")
+                    print("运行 `mommy channel weixin start` 上线。")
+                else:
+                    print(f"微信助手在线：{credentials.account_id}（PID {pid}）")
         elif args.action == "logout":
+            stop_gateway_process(store)
             store.clear()
             print("✅ 已删除当前设备上的微信授权。")
+        elif args.action == "start":
+            _start_background_gateway(store)
+        elif args.action == "stop":
+            if stop_gateway_process(store):
+                print("✅ 已通知微信助手停止。")
+            else:
+                print("微信助手当前没有运行。")
         elif args.action == "connect":
             if store.load_credentials() is None:
                 _login(store, client)

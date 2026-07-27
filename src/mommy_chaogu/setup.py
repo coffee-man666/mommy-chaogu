@@ -136,11 +136,13 @@ def validate_llm_connection(provider: str, model: str, api_key: str) -> tuple[bo
 
 
 def connect_weixin() -> bool:
-    """Run the existing QR login flow and persist authorization locally."""
+    """Authorize Weixin and immediately start its detached local gateway."""
     from mommy_chaogu.channels import WeixinClient, WeixinStore
-    from mommy_chaogu.cli_commands.channel import _login
+    from mommy_chaogu.cli_commands.channel import _login, _start_background_gateway
 
-    _login(WeixinStore(), WeixinClient())
+    store = WeixinStore()
+    _login(store, WeixinClient())
+    _start_background_gateway(store)
     return True
 
 
@@ -240,11 +242,12 @@ def run_setup_wizard(
                 weixin_connector()
             except Exception as exc:
                 print(f"⚠️ 微信连接暂未完成（{type(exc).__name__}），AI 配置已经保存。")
-                print("   稍后运行 `mommy channel weixin login` 可继续扫码。")
+                print("   稍后运行 `mommy channel weixin connect` 可继续扫码并上线。")
 
     print("\n🎉 配置完成！")
     print("   mommy                         打开交互式助手")
-    print("   mommy channel weixin run      启动微信助手\n")
+    print("   mommy channel weixin status   查看微信助手状态")
+    print("   mommy channel weixin stop     停止后台微信助手\n")
     return True
 
 
