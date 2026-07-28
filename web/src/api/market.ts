@@ -1,6 +1,6 @@
 // 市场排行 API
 import { apiGet } from './client'
-import type { IndexQuote, SectorQuote, RankingQuote } from './types'
+import type { IndexQuote, SectorQuote, RankingQuote, StockSearchResult } from './types'
 
 export function getIndexes(): Promise<IndexQuote[]> {
   return apiGet('/api/market/indexes')
@@ -16,4 +16,9 @@ export function getGainers(limit = 20): Promise<RankingQuote[]> {
 
 export function getLosers(limit = 20): Promise<RankingQuote[]> {
   return apiGet(`/api/market/losers?limit=${limit}`)
+}
+
+export function searchStocks(query: string, limit = 10): Promise<StockSearchResult[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) })
+  return apiGet(`/api/stocks/search?${params}`)
 }

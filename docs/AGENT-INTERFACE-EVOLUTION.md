@@ -111,7 +111,7 @@ LLM 再聪明，没有工具就拿不到数据。agent 能做什么，完全取�
 
 ### 工具粒度 vs 工具数量
 
-当前 24 个工具，粒度偏细（`get_quote` 和 `get_quotes` 分开、`get_money_flow_today` 和 `get_money_flow_history` 分开）。这对 LLM 选择工具是好事——schema 清晰、职责单一。但如果工具继续增长到 30+，LLM 需要扫描更多工具定义才能选对，准确率会下降。
+当前 25 个工具，粒度偏细（`get_quote` 和 `get_quotes` 分开、`get_money_flow_today` 和 `get_money_flow_history` 分开）。这对 LLM 选择工具是好事——schema 清晰、职责单一。但如果工具继续增长到 30+，LLM 需要扫描更多工具定义才能选对，准确率会下降。
 
 **可能的演进方向**：
 - 引入工具分组（行情类 / 资金流类 / 记忆类），先选组再选具体工具

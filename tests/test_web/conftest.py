@@ -223,18 +223,53 @@ def mock_service() -> MagicMock:
 
 
 @pytest.fixture()
-def client(mock_adapter: MagicMock, mock_service: MagicMock) -> TestClient:
+def mock_cache_store() -> MagicMock:
+    store = MagicMock()
+    store.get_all_quote_entries.return_value = []
+    return store
+
+
+@pytest.fixture()
+def mock_watchlist_store() -> MagicMock:
+    store = MagicMock()
+    store.list_entries.return_value = []
+    return store
+
+
+@pytest.fixture()
+def mock_semicon_store() -> MagicMock:
+    store = MagicMock()
+    store.list_all.return_value = []
+    return store
+
+
+@pytest.fixture()
+def client(
+    mock_adapter: MagicMock,
+    mock_service: MagicMock,
+    mock_watchlist_store: MagicMock,
+    mock_cache_store: MagicMock,
+    mock_semicon_store: MagicMock,
+) -> TestClient:
     """带 mock 依赖的 FastAPI TestClient（不走 lifespan）。"""
     from mommy_chaogu.web.app import create_app
     from mommy_chaogu.web.background import set_service
-    from mommy_chaogu.web.deps import get_adapter, get_alerter, get_watchlist_store
+    from mommy_chaogu.web.deps import (
+        get_adapter,
+        get_alerter,
+        get_cache_store,
+        get_semicon_store,
+        get_watchlist_store,
+    )
 
     set_service(mock_service)
 
     app = create_app()
     app.dependency_overrides[get_adapter] = lambda: mock_adapter
     app.dependency_overrides[get_alerter] = MagicMock()
-    app.dependency_overrides[get_watchlist_store] = MagicMock()
+    app.dependency_overrides[get_watchlist_store] = lambda: mock_watchlist_store
+    app.dependency_overrides[get_cache_store] = lambda: mock_cache_store
+    app.dependency_overrides[get_semicon_store] = lambda: mock_semicon_store
 
     # 不触发 lifespan（避免真实 polling）
     return TestClient(app, raise_server_exceptions=False)

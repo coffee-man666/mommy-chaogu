@@ -17,7 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
+from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 from mommy_chaogu.market_data import (
     EfinanceAdapter,
     FallbackAdapter,
@@ -25,6 +25,7 @@ from mommy_chaogu.market_data import (
     TencentAdapter,
 )
 from mommy_chaogu.portfolio import PortfolioStore
+from mommy_chaogu.semicon import SemiconStore
 from mommy_chaogu.signals import Alerter, SignalStore
 from mommy_chaogu.watchlist import WatchlistStore
 
@@ -47,6 +48,12 @@ def get_agent_db() -> Path:
     return AGENT_DB
 
 
+@lru_cache(maxsize=1)
+def get_reference_db() -> Path:
+    """只读参考数据库路径。"""
+    return REFERENCE_DB
+
+
 # 向后兼容：旧代码引用 get_db_path() 的地方
 @lru_cache(maxsize=1)
 def get_db_path() -> Path:
@@ -67,6 +74,18 @@ def get_adapter() -> MarketDataAdapter:
         CacheStore(get_market_db()),
     )
     return adapter
+
+
+@lru_cache(maxsize=1)
+def get_cache_store() -> CacheStore:
+    """供只读 Web 查询复用的行情缓存存储。"""
+    return CacheStore(get_market_db())
+
+
+@lru_cache(maxsize=1)
+def get_semicon_store() -> SemiconStore:
+    """半导体产业链参考库。"""
+    return SemiconStore(get_reference_db())
 
 
 @lru_cache(maxsize=1)
@@ -154,9 +173,8 @@ def get_memory_service() -> object:
     provider = llm_provider.detect_provider()
     if provider is not None:
         try:
-            config = llm_provider.provider_config(provider)
             client = llm_provider.create_client(provider)
-            model = str(config["default_model"])
+            model = llm_provider.resolve_model(provider)
             embedding_model = llm_provider.embedding_model_for(provider)
             if embedding_model is not None and episodic is not None:
                 from mommy_chaogu.agent.vector_search import VectorSearch
@@ -231,6 +249,8 @@ def close_cached_dependencies() -> None:
 
     resource_factories = (
         get_adapter,
+        get_cache_store,
+        get_semicon_store,
         get_watchlist_store,
         get_portfolio_store,
         get_signal_store,

@@ -75,4 +75,93 @@ describe('agent websocket lifecycle', () => {
     )
     client.close()
   })
+
+  it('forwards done.text so non-streaming fallbacks are visible', async () => {
+    const onDone = vi.fn()
+    const client = agentStream(vi.fn(), onDone, vi.fn(), vi.fn())
+    client.send('你好')
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'done',
+        text: 'AI 助手未配置。',
+        tools_used: [],
+        rounds: 0,
+      }),
+    })
+
+    expect(onDone).toHaveBeenCalledWith('AI 助手未配置。', [], 0)
+    client.close()
+  })
+
+  it('forwards live tool call lifecycle events', async () => {
+    const onToolCall = vi.fn()
+    const onToolResult = vi.fn()
+    const client = agentStream(
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      onToolCall,
+      onToolResult,
+    )
+    client.send('分析 600519')
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'tool_call_started',
+        tool: 'get_quote',
+        args: { code: '600519' },
+      }),
+    })
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'tool_call_finished',
+        tool: 'get_quote',
+        status: 'done',
+        elapsed_ms: 1200,
+        result: '{"price":1689.5}',
+      }),
+    })
+
+    expect(onToolCall).toHaveBeenCalledWith({
+      tool: 'get_quote',
+      args: { code: '600519' },
+    })
+    expect(onToolResult).toHaveBeenCalledWith({
+      tool: 'get_quote',
+      status: 'done',
+      elapsedMs: 1200,
+      result: '{"price":1689.5}',
+    })
+    client.close()
+  })
+
+  it('fails an interrupted turn immediately without reconnecting', async () => {
+    const onError = vi.fn()
+    const onStateChange = vi.fn()
+    const client = agentStream(vi.fn(), vi.fn(), vi.fn(), onError, onStateChange)
+    client.send('分析 600519')
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+    socket.onclose?.()
+
+    expect(onStateChange).toHaveBeenLastCalledWith('disconnected')
+    expect(onError).toHaveBeenCalledWith('连接中断，请重试')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(MockWebSocket.instances).toHaveLength(1)
+    client.close()
+  })
 })

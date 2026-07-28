@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiGet } from '@/api/client'
+import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import ErrorState from '@/components/ErrorState.vue'
 
 interface Theme {
   id: string
@@ -26,17 +27,23 @@ const themeIcons: Record<string, string> = {
 const router = useRouter()
 const themes = ref<Theme[]>([])
 const loading = ref(true)
+/** 拉取失败原因（成功时清空，失败时保留旧数据） */
+const error = ref<ApiError | null>(null)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
   try {
     const data = await apiGet<{ items: Theme[]; total: number }>('/api/themes')
     themes.value = data.items
-  } catch {
-    themes.value = []
+    error.value = null
+  } catch (e) {
+    error.value = toApiError(e)
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
 </script>
 
 <template>
@@ -69,6 +76,13 @@ onMounted(async () => {
           </CardContent>
         </Card>
       </div>
+
+      <!-- 加载失败且没有旧数据：错误态 + 重试（不再伪装"暂无主题数据"） -->
+      <ErrorState
+        v-else-if="error && themes.length === 0"
+        :message="error?.friendly"
+        @retry="load"
+      />
 
       <!-- 主题卡片网格 -->
       <div
@@ -116,9 +130,9 @@ onMounted(async () => {
         </Card>
       </div>
 
-      <!-- 空状态 -->
+      <!-- 空状态（确认不是加载失败后，才显示真的"暂无数据"） -->
       <div
-        v-if="!loading && themes.length === 0"
+        v-if="!loading && !error && themes.length === 0"
         class="py-16 text-center"
       >
         <span class="text-4xl">📂</span>

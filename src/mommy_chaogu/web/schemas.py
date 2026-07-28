@@ -130,6 +130,13 @@ class HealthOut(BaseModel):
     last_snapshot_at: datetime | None = None
 
 
+class AuthStatusOut(BaseModel):
+    """Browser authentication mode without exposing credential material."""
+
+    mode: Literal["none", "token"]
+    authenticated: bool
+
+
 # ---------- Market Ranking ----------
 
 
@@ -150,6 +157,14 @@ class SectorOut(BaseModel):
     name: str
     change_pct: Decimal
     price: Decimal
+
+
+class StockSearchOut(BaseModel):
+    """股票名称/代码联想结果。"""
+
+    code: str
+    name: str
+    source: Literal["watchlist", "semicon", "cache"]
 
 
 # ---------- Portfolio ----------

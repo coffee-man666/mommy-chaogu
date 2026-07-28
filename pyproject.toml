@@ -23,6 +23,7 @@ dependencies = [
     "sqlite-vec>=0.1.9",
     "python-dotenv>=1.0",
     "textual>=8.2.8",
+    "qrcode>=8.0",
 ]
 
 [project.scripts]
@@ -40,6 +41,8 @@ mommy-mcp = "mommy_chaogu.agent.mcp_server:main_mcp"
 mommy-chaogu = "mommy_chaogu.cli:main"
 mommy = "mommy_chaogu.cli:main_mommy"
 mommy-tui = "mommy_chaogu.tui.app:main"
+mommy-channel = "mommy_chaogu.cli:main_channel"
+mommy-setup = "mommy_chaogu.setup:main_setup"
 
 [project.optional-dependencies]
 dev = [

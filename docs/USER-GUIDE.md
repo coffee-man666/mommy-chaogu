@@ -52,10 +52,10 @@ cd mommy-chaogu
 uv sync --extra dev
 ```
 
-### Step 2：配置 LLM（交互式引导）
+### Step 2：配置 AI 与微信（统一交互式引导）
 
 ```bash
-uv run mommy --setup
+uv run mommy setup
 ```
 
 系统会引导你完成：
@@ -71,8 +71,11 @@ uv run mommy --setup
 │                        │
 ╰────────────────────────╯
 
-请选择 [1-4]: 1
-请输入 DEEPSEEK_API_KEY: sk-xxxxxxxx
+请选择 [1-6]: 1
+模型名（回车使用 deepseek-chat）:
+API key（输入不会显示）:
+✅ 连接成功
+现在连接微信？(Y/n):
 
 是否配置微信推送？(y/n): n
 
@@ -363,7 +366,7 @@ uv run mommy memory history --limit 10
 uv run mommy agent tools
 ```
 
-24 个 function-calling 工具一览：
+25 个 function-calling 工具一览：
 
 | 类别 | 工具 | 用途 |
 |------|------|------|
@@ -372,7 +375,7 @@ uv run mommy agent tools
 | | `get_sector_ranking` / `search_sector` / `get_sector_stocks` | 板块行情 |
 | **资金流** | `get_money_flow_today` / `get_money_flow_history` | 主力资金流 |
 | **基本面** | `get_fundamentals` | PE/PB/ROE/市值等 |
-| **组合** | `get_watchlist` / `get_portfolio` / `get_portfolio_analysis` | 自选股/持仓/组合分析 |
+| **组合** | `get_watchlist` / `manage_watchlist` / `get_portfolio` / `get_portfolio_analysis` | 自选股/持仓/组合分析 |
 | **资讯** | `search_news` / `get_announcements` / `get_longhuban` | 新闻/公告/龙虎榜 |
 | **告警** | `manage_alert` | 价格/涨跌幅告警 |
 | **记忆** | `search_similar_events` / `get_prediction_history` / `get_market_narrative` | 记忆检索 |
@@ -494,28 +497,13 @@ uv run python scripts/backtest_evolution.py --db /tmp/backtest.db
 
 ---
 
-## 场景八：信号告警与微信推送
+## 场景八：信号告警与本地监控
 
 ### 你的需求
 
-你想在盘中自动收到信号告警，不用一直盯盘。
+你想在盘中自动记录信号告警，并随时从 Web 或 TUI 查看。
 
-### Step 1：配置推送
-
-```bash
-uv run mommy --setup
-# 选择 "是否配置微信推送？" → y
-# 输入 SERVER_CHAN_KEY（去 sct.ftqq.com 申请）
-```
-
-或手动在 `.env` 中添加：
-
-```bash
-SERVER_CHAN_KEY=SCTxxxxxxxxxxxxxxxxxxxxxxxx
-WEB_BASE_URL=http://192.168.1.100:8765
-```
-
-### Step 2：添加自定义告警
+### Step 1：添加自定义告警
 
 ```bash
 # 价格告警：贵州茅台跌破 1600 提醒
@@ -525,19 +513,19 @@ uv run mommy watchlist add-alert 600519 --rule "price <= 1600" --severity warnin
 uv run mommy watchlist add-alert 002129 --rule "change_pct >= 5" --severity info
 ```
 
-### Step 3：启动监控
+### Step 2：启动监控
 
 ```bash
 # CLI 监控（每 30 秒轮询）
 uv run mommy monitor run --interval 30
 
-# 或启动 Web 服务（后台自动监控 + 推送）
+# 或启动 Web 服务（后台自动监控）
 uv run mommy web
 ```
 
 ### 告警效果
 
-微信收到的推送消息：
+打开 Web 信号页，或在 TUI 输入 `/signals`，即可看到类似记录：
 
 ```
 ℹ️ [INFO] TCL中环(002129)
@@ -734,7 +722,8 @@ print(f"数据来源: {adapter.format_source_label()}")  # "东方财富 实时"
 mommy                           # 交互式 REPL
 mommy "今天怎么样"               # 单次自然语言查询
 mommy -v "分析 600519"          # --verbose 显示工具调用详情
-mommy --setup                   # 首次配置引导
+mommy setup                     # Provider + 模型 + Key + 微信统一配置
+mommy --setup                   # 兼容入口
 ```
 
 ### 结构化子命令
@@ -790,7 +779,7 @@ AGENT_PROVIDER=zai uv run mommy "今天怎么样"
 # 确保对应的 key 已填入: ZAI_API_KEY=xxx
 
 # 重新运行配置向导
-uv run mommy --setup
+uv run mommy setup
 ```
 
 ### 数据库位置

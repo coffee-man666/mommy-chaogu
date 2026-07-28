@@ -6,14 +6,17 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,090 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（1,545 个离线用例，另有 13 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
 
 ## 密钥配置
 
-LLM API key 和推送 key 通过 `.env` 文件持久化（不入仓）：
+推荐运行 `uv run mommy setup`，交互式选择 Provider / 模型、隐藏输入并验证 Key，
+还可继续扫码连接微信。安装用户的配置默认保存到
+`~/.config/mommy-chaogu/.env`（`0600`，不入仓）；若当前 mommy-chaogu 仓库已存在
+项目 `.env`，重新配置时会就地更新它：
 
 ```bash
 cp .env.example .env       # 复制模板
@@ -32,8 +35,9 @@ cp .env.example .env       # 复制模板
 | minimax | `MINIMAX_API_KEY` | MiniMax（M2.7） |
 | — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
+| — | `AGENT_MODEL` | 覆盖聊天模型名 |
 
-优先级：shell 环境变量 > `.env` 文件 > `config.toml`。provider 配置表
+优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > `config.toml`。provider 配置表
 （base_url / 默认模型 / env key / 温度 / embedding 模型）的单一真相源是
 `src/mommy_chaogu/agent/llm.py`——改 provider 只动它，不要另起表。
 
@@ -76,11 +80,12 @@ src/mommy_chaogu/
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库
 ├── web/             # FastAPI + WebSocket
-├── tui/             # Textual 终端 UI（沉浸式 AI 对话 + 数据看板双模式）
+├── tui/             # Textual 终端 UI（单屏对话即界面的投研 Coding Agent CLI）
 ├── services/        # 统一数据服务层（工具层和 API 层共用）
 ├── push/            # Server酱微信推送
+├── channels/        # 本地消息网关（微信二维码授权 + 私聊长轮询）
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 10 个透传子命令）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 12 个透传子命令）
 ```
 
 ## 自然语言入口
@@ -92,7 +97,7 @@ src/mommy_chaogu/
    - `uv run mommy` → 交互式 REPL
    - `uv run mommy 今天怎么样` → 单次查询
    - `uv run mommy watchlist list` → 结构化子命令（直接透传，不需要 --raw）
-   - `uv run mommy --setup` → 首次配置引导
+   - `uv run mommy setup` → Provider / 模型 / Key / 微信统一配置引导
    - `uv run mommy -v "今天怎么样"` → 显示详细路由 + 工具调用信息
 
 2. **底层 CLI 子命令**（向后兼容，高级用户 + CI）
@@ -108,17 +113,25 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 
 ## TUI 终端界面
 
-`uv run mommy-tui` → 沉浸式双模式终端（类似 Claude Code CLI），Tab 键切换：
+`uv run mommy-tui` → 单屏对话即界面的投研 Coding Agent CLI（类似 Claude Code CLI），
+无模式切换：TopBar（指数 + AI 状态 + 时钟）+ 对话流 + 输入框，启动焦点在输入框。
 
-- **模式 A：AI 对话** — Markdown 流式渲染 + 工具调用折叠 + 底部输入框
-- **模式 B：数据看板** — TabbedContent（自选股/持仓/主题/信号）+ 状态栏
+- 对话流内渲染富卡片（不跳屏）：slash 命令 `/today` `/watch` `/portfolio`
+  `/flows [code]` `/quote <code>` `/predictions` `/signals` `/memory` `/status`
+  `/help` `/clear` `/theme` `/quit`
+- `@` 股票联想（自选股 + 半导体库 + quote_cache 名称模糊匹配，Tab 插入代码）；
+  直接输入 6 位代码 Enter 看报价卡
+- agent 工具结果 → 富卡片渲染器（`tui/services/renderers.py`）：get_quote→报价卡、
+  get_money_flow_today→资金流卡、get_bars→迷你表、get_prediction_history→预测卡
+- 键盘：Enter 发送（busy 时排队，轮次结束自动发）；Esc 中断当前轮（保留已流部分）；
+  PgUp/PgDn 滚动；Ctrl+P 命令面板；Ctrl+C 双击退出
 
-- `src/mommy_chaogu/tui/app.py` — App 主类（ContentSwitcher 双模式）+ `main()` 入口
-- `tui/services/bootstrap.py` — Services 容器（DataService / AgentBridge / FakeServices）
-- `tui/views/chat.py` — AI 对话视图（dexter 风格工具指示 + slash 命令 + HintBar）
-- `tui/views/dashboard.py` — 数据看板视图（TabbedContent：自选/持仓/主题/信号）
-- `tui/screens/stock_detail.py` — 个股详情屏（报价 + K 线表）
-- `tui/widgets/` — TopBar / ToolIndicator / WorkingIndicator / HintBar
+- `src/mommy_chaogu/tui/app.py` — App 主类（单屏 compose）+ `main()` 入口
+- `tui/services/bootstrap.py` — Services 容器（DataService / AgentBridge / FakeServices
+  + 指数/信号/@联想数据源）
+- `tui/services/renderers.py` — 工具结果 → 卡片分发；`tui/services/errors.py` — 错误文案友好映射
+- `tui/views/chat.py` — 对话视图（流式 + 卡片容器 + slash/@ 联想 + busy 排队 + Esc）
+- `tui/widgets/` — TopBar / cards（10 种富卡片）/ ToolIndicator / WorkingIndicator / HintBar
 
 ## Web 前端
 

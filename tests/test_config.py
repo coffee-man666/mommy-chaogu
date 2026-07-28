@@ -22,6 +22,8 @@ _ENV_KEYS = (
     "MINIMAX_API_KEY",
     "SERVER_CHAN_KEY",
     "AGENT_PROVIDER",
+    "AGENT_MODEL",
+    "MOMMY_CONFIG_DIR",
     "MOMMY_API_TOKEN",
     "MOMMY_CORS_ORIGINS",
 )
@@ -31,7 +33,7 @@ _ENV_KEYS = (
 def _isolate_env(monkeypatch: pytest.MonkeyPatch):
     """每个测试前清除所有相关 env var，mock 掉 load_dotenv 防止 .env 泄漏。"""
     for key in _ENV_KEYS:
-        monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv(key, "")
     monkeypatch.setattr("mommy_chaogu.config.load_dotenv", lambda *a, **kw: False)
 
 
@@ -88,6 +90,7 @@ quote_fetch_interval_seconds = 120
     [
         ("DEEPSEEK_API_KEY", "env_secret", "agent.api_key", "env_secret"),
         ("AGENT_PROVIDER", "openai", "agent.provider", "openai"),
+        ("AGENT_MODEL", "gpt-5-mini", "agent.model", "gpt-5-mini"),
         ("SERVER_CHAN_KEY", "env_sck", "push.server_chan_key", "env_sck"),
     ],
 )
@@ -124,6 +127,58 @@ def test_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     cfg = load_config(tmp_path / "missing.toml")
     assert cfg.agent.api_key == "kimi_env_key"
     assert cfg.agent.provider == "kimi"
+
+
+def test_user_env_is_fallback_when_project_env_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    user_config = tmp_path / "user-config"
+    user_config.mkdir()
+    (user_config / ".env").write_text(
+        "AGENT_PROVIDER=zai\nAGENT_MODEL=glm-5\nZAI_API_KEY=user-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MOMMY_CONFIG_DIR", str(user_config))
+    monkeypatch.delenv("AGENT_PROVIDER")
+    monkeypatch.delenv("AGENT_MODEL")
+    monkeypatch.delenv("ZAI_API_KEY")
+
+    # Exercise the real dotenv loader for this integration case.
+    from dotenv import load_dotenv as real_load_dotenv
+
+    monkeypatch.setattr("mommy_chaogu.config.load_dotenv", real_load_dotenv)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_config(tmp_path / "missing.toml")
+
+    assert cfg.agent.provider == "zai"
+    assert cfg.agent.model == "glm-5"
+    assert cfg.agent.api_key == "user-key"
+
+
+def test_project_env_overrides_user_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    user_config = tmp_path / "user-config"
+    user_config.mkdir()
+    (user_config / ".env").write_text(
+        "AGENT_PROVIDER=zai\nAGENT_MODEL=glm-5\nZAI_API_KEY=user-key\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        "AGENT_PROVIDER=openai\nAGENT_MODEL=gpt-5-mini\nOPENAI_API_KEY=project-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MOMMY_CONFIG_DIR", str(user_config))
+    for key in ("AGENT_PROVIDER", "AGENT_MODEL", "ZAI_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(key)
+
+    from dotenv import load_dotenv as real_load_dotenv
+
+    monkeypatch.setattr("mommy_chaogu.config.load_dotenv", real_load_dotenv)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_config(tmp_path / "missing.toml")
+
+    assert cfg.agent.provider == "openai"
+    assert cfg.agent.model == "gpt-5-mini"
+    assert cfg.agent.api_key == "project-key"
 
 
 def test_nova_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

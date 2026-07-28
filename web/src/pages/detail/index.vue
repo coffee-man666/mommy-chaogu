@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiGet } from '@/api/client'
+import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan, fmtMoney, fmtAge } from '@/utils/format'
 import type { Quote, Bar, MoneyFlowResponse } from '@/api/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,14 +17,19 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import ErrorState from '@/components/ErrorState.vue'
 import { cn } from '@/lib/utils'
+import { useWatchlistStore } from '@/stores/watchlist'
 
 const props = defineProps<{ code: string }>()
 const router = useRouter()
+const watchlistStore = useWatchlistStore()
 
 // ---------- 状态 ----------
 const quote = ref<Quote | null>(null)
 const quoteLoading = ref(true)
+/** 报价拉取失败原因（成功时清空；有旧报价时继续展示旧报价） */
+const quoteError = ref<ApiError | null>(null)
 const bars = ref<Bar[]>([])
 const klineChart = ref<any>(null)
 const interval = ref<string>('1d')
@@ -36,8 +41,12 @@ const flowDays = ref(30)
 const flowLoading = ref(false)
 
 const codeInput = ref('')
+const actionMessage = ref('')
 
 let refreshTimer: number | null = null
+let themeObserver: MutationObserver | null = null
+
+const isWatched = computed(() => watchlistStore.allCodes.includes(props.code))
 
 const intervals = [
   { key: '5m', label: '5分' },
@@ -90,12 +99,22 @@ async function loadQuote() {
   quoteLoading.value = true
   try {
     quote.value = await apiGet<Quote>(`/api/quotes/${props.code}`)
+    quoteError.value = null
   } catch (e) {
-    console.error(e)
+    const err = toApiError(e)
+    quoteError.value = err
+    console.error(err.raw)
   } finally {
     quoteLoading.value = false
   }
 }
+
+/** 报价卡错误文案：404 说明代码可能输错，其余用统一 friendly */
+const quoteErrorMessage = computed(() => {
+  const e = quoteError.value
+  if (!e) return ''
+  return e.status === 404 ? '没查到这只股票，请检查代码是否正确' : e.friendly
+})
 
 async function loadBars() {
   try {
@@ -151,21 +170,27 @@ async function drawKLine() {
     }
     const chart = klineChart.value
 
+    const rootStyles = getComputedStyle(document.documentElement)
+    const cssColor = (name: string, fallback: string) => {
+      const value = rootStyles.getPropertyValue(name).trim()
+      return value ? `hsl(${value})` : fallback
+    }
+
     chart.setStyles({
       grid: {
         show: true,
-        horizontal: { show: true, color: '#eee' },
-        vertical: { show: true, color: '#eee' },
+        horizontal: { show: true, color: cssColor('--border', '#e5e7eb') },
+        vertical: { show: true, color: cssColor('--border', '#e5e7eb') },
       },
       candle: {
         bar: {
           upColor: 'var(--color-up)',
           downColor: 'var(--color-down)',
-          noChangeColor: '#999',
+          noChangeColor: cssColor('--muted-foreground', '#737373'),
         },
       },
       indicator: {
-        tooltip: { text: { color: '#333' } },
+        tooltip: { text: { color: cssColor('--foreground', '#171717') } },
       },
     })
 
@@ -203,6 +228,26 @@ function onCodeEnter() {
 
 function goBack() {
   router.back()
+}
+
+async function addToWatchlist() {
+  if (isWatched.value) return
+  actionMessage.value = ''
+  try {
+    if (watchlistStore.groups.length === 0) {
+      await watchlistStore.addGroup('默认', '从个股详情添加')
+    }
+    const group = watchlistStore.groups[0]?.name || '默认'
+    await watchlistStore.addStock(props.code, group)
+    actionMessage.value = `已加入「${group}」`
+  } catch (error) {
+    actionMessage.value = error instanceof Error ? error.message : '添加失败，请重试'
+  }
+}
+
+function askAgent() {
+  const stockName = quote.value?.name || props.code
+  void router.push({ path: '/', query: { q: `分析一下${stockName}（${props.code}）` } })
 }
 
 // ---------- SVG 资金流图 ----------
@@ -297,6 +342,7 @@ watch(
   () => props.code,
   async () => {
     quote.value = null
+    quoteError.value = null
     bars.value = []
     flowToday.value = null
     flowHistory.value = null
@@ -308,14 +354,18 @@ watch(
 )
 
 onMounted(async () => {
+  await watchlistStore.fetchAll()
   await loadQuote()
   await loadBars()
   loadFlow()
   refreshTimer = window.setInterval(loadQuote, 10_000)
+  themeObserver = new MutationObserver(() => void drawKLine())
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
 })
 
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
+  themeObserver?.disconnect()
   if (klineChart.value) {
     klineChart.value.dispose()
     klineChart.value = null
@@ -381,6 +431,14 @@ onUnmounted(() => {
               </span>
             </div>
 
+            <div class="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" :disabled="isWatched" @click="addToWatchlist">
+                {{ isWatched ? '★ 已在自选' : '☆ 加自选' }}
+              </Button>
+              <Button size="sm" @click="askAgent">🤖 问问 AI</Button>
+              <span v-if="actionMessage" role="status" class="text-xs text-muted-foreground">{{ actionMessage }}</span>
+            </div>
+
             <Separator />
 
             <!-- 明细表格 -->
@@ -400,20 +458,20 @@ onUnmounted(() => {
                 </TableRow>
                 <TableRow>
                   <TableCell class="py-2 text-xs text-muted-foreground">成交量</TableCell>
-                  <TableCell class="py-2 text-right font-mono text-sm">{{ Number(quote.volume).toLocaleString() }}</TableCell>
+                  <TableCell class="py-2 text-right font-mono text-sm">{{ fmtWan(Number(quote.volume) / 100) }}手</TableCell>
                   <TableCell class="py-2 text-xs text-muted-foreground">成交额</TableCell>
                   <TableCell class="py-2 text-right font-mono text-sm">{{ fmtMoney(quote.turnover, 'yi') }}</TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell class="py-2 text-xs text-muted-foreground">换手</TableCell>
+                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="一定时期内股票转手买卖的频率" class="cursor-help no-underline">换手 ⓘ</abbr></TableCell>
                   <TableCell class="py-2 text-right font-mono text-sm">{{ quote.turnover_rate ? `${quote.turnover_rate}%` : '-' }}</TableCell>
-                  <TableCell class="py-2 text-xs text-muted-foreground">量比</TableCell>
+                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="当前成交量相对近期平均成交量的比值" class="cursor-help no-underline">量比 ⓘ</abbr></TableCell>
                   <TableCell class="py-2 text-right font-mono text-sm">{{ quote.volume_ratio || '-' }}</TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell class="py-2 text-xs text-muted-foreground">PE</TableCell>
+                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="市盈率：股价相对每股收益的倍数" class="cursor-help no-underline">PE ⓘ</abbr></TableCell>
                   <TableCell class="py-2 text-right font-mono text-sm">{{ quote.pe || '-' }}</TableCell>
-                  <TableCell class="py-2 text-xs text-muted-foreground">主力净流入</TableCell>
+                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="大单与超大单资金流入减流出的估算值" class="cursor-help no-underline">主力净流入 ⓘ</abbr></TableCell>
                   <TableCell :class="cn('py-2 text-right font-mono text-sm font-semibold', dirClass(quote.main_net_inflow))">
                     {{ dirSign(quote.main_net_inflow) }}{{ fmtMoney(quote.main_net_inflow, 'yi') }}
                   </TableCell>
@@ -421,6 +479,13 @@ onUnmounted(() => {
               </TableBody>
             </Table>
           </template>
+
+          <!-- 加载失败且没有旧报价：错误态 + 重试（不再是一张白卡） -->
+          <ErrorState
+            v-else-if="quoteError"
+            :message="quoteErrorMessage"
+            @retry="loadQuote"
+          />
         </CardContent>
       </Card>
 

@@ -1,25 +1,33 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { WatchlistStock, WatchlistGroup } from '../api/types'
-import { apiGet, apiPost, apiDelete } from '../api/client'
+import { apiGet, apiPost, apiDelete, toApiError, type ApiError } from '../api/client'
 
 export const useWatchlistStore = defineStore('watchlist', () => {
   const entries = ref<WatchlistStock[]>([])
   const groups = ref<WatchlistGroup[]>([])
   const loading = ref(false)
+  /** 最近一次拉取失败的原因；成功时清空。失败时保留旧数据 */
+  const error = ref<ApiError | null>(null)
 
   async function fetchAll() {
     loading.value = true
-    try {
-      const [e, g] = await Promise.all([
-        apiGet<WatchlistStock[]>('/api/watchlist').catch(() => []),
-        apiGet<WatchlistGroup[]>('/api/watchlist/groups').catch(() => []),
-      ])
-      entries.value = e
-      groups.value = g
-    } finally {
-      loading.value = false
-    }
+    let failed: ApiError | null = null
+    const [e, g] = await Promise.all([
+      apiGet<WatchlistStock[]>('/api/watchlist').catch((err: unknown) => {
+        failed = toApiError(err)
+        return null
+      }),
+      apiGet<WatchlistGroup[]>('/api/watchlist/groups').catch((err: unknown) => {
+        failed = toApiError(err)
+        return null
+      }),
+    ])
+    // 只更新成功的一侧，失败的一侧保留旧数据
+    if (e) entries.value = e
+    if (g) groups.value = g
+    error.value = failed
+    loading.value = false
   }
 
   async function addStock(code: string, group: string, note?: string) {
@@ -60,6 +68,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     entries,
     groups,
     loading,
+    error,
     entriesByGroup,
     allCodes,
     fetchAll,

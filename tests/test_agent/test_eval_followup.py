@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -21,6 +23,18 @@ def mock_ctx() -> ToolContext:
     adp = MagicMock()
     adp.get_quote.return_value = None
     return ToolContext(adapter=adp)
+
+
+def _text_response(text: str, usage: Any = None) -> MagicMock:
+    """非流式 response mock。"""
+    msg = MagicMock()
+    msg.tool_calls = None
+    msg.content = text
+    resp = MagicMock()
+    resp.choices = [MagicMock()]
+    resp.choices[0].message = msg
+    resp.usage = usage
+    return resp
 
 
 class TestRetryDelay:
@@ -243,6 +257,78 @@ class TestVectorSearchAutoWiring:
             vector_search=custom_vs,
         )
         assert svc._memory_service._pipeline._vector_search is custom_vs  # type: ignore[union-attr]
+
+
+class TestRetryStatusAndCancel:
+    """on_status 重试回调 + Esc 穿透重试等待（conversation-ui 设计配套）。"""
+
+    @patch("openai.OpenAI")
+    def test_on_status_called_with_retry_progress(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        from openai import RateLimitError
+
+        svc = AgentService(mock_ctx, api_key="sk-test", retry_base_delay=0.01)
+        response = MagicMock()
+        response.headers = {}
+        err = RateLimitError("rl", response=response, body=None)
+        ok = _text_response("好")
+        svc._client.chat.completions.create.side_effect = [err, ok]
+
+        events: list[tuple[str, dict[str, Any]]] = []
+        resp = svc.chat("hi", on_status=lambda kind, info: events.append((kind, info)))
+
+        assert resp.text == "好"
+        assert len(events) == 1
+        kind, info = events[0]
+        assert kind == "retry"
+        assert info["attempt"] == 1
+        assert info["max"] == 4  # max_retries=3 → 最多 4 次尝试
+        assert info["delay"] > 0
+
+    @patch("openai.OpenAI")
+    def test_esc_during_retry_wait_interrupts_immediately(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """重试 sleep 期间 cancel → 立即中断，不等 sleep 结束。"""
+        from openai import RateLimitError
+
+        svc = AgentService(mock_ctx, api_key="sk-test", retry_base_delay=30.0)
+        response = MagicMock()
+        response.headers = {}
+        err = RateLimitError("rl", response=response, body=None)
+        svc._client.chat.completions.create.side_effect = err
+
+        event = threading.Event()
+        started = time.monotonic()
+
+        def watcher() -> None:
+            time.sleep(0.1)
+            event.set()  # 100ms 后取消（sleep 是 30s）
+
+        threading.Thread(target=watcher, daemon=True).start()
+        resp = svc.chat("hi", cancel_event=event)
+        elapsed = time.monotonic() - started
+
+        assert resp.interrupted is True
+        assert elapsed < 5  # 远小于 30s 的 sleep
+
+    @patch("openai.OpenAI")
+    def test_retry_without_cancel_still_uses_sleep(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """不传 cancel_event 时退化为 time.sleep（向后兼容）。"""
+        from openai import RateLimitError
+
+        svc = AgentService(mock_ctx, api_key="sk-test", retry_base_delay=0.01)
+        response = MagicMock()
+        response.headers = {}
+        err = RateLimitError("rl", response=response, body=None)
+        svc._client.chat.completions.create.side_effect = [err, _text_response("好")]
+
+        resp = svc.chat("hi")
+        assert resp.text == "好"
+        assert svc._client.chat.completions.create.call_count == 2
 
 
 class TestHistoryBudget:

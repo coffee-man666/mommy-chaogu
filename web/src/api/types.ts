@@ -104,6 +104,18 @@ export interface Health {
   last_snapshot_at: string | null
 }
 
+export interface StockSearchResult {
+  code: string
+  name: string
+  source: 'watchlist' | 'semicon' | 'cache'
+}
+
+export interface AgentHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+  created_at?: string
+}
+
 // ---------- Portfolio ----------
 
 export interface PositionDetail {

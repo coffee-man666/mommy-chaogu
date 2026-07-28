@@ -34,3 +34,35 @@ def test_remote_binding_requires_token(capsys: object) -> None:
     args = build_web_parser().parse_args(["--host", "0.0.0.0"])
     assert cmd_web_serve(args) == 2
     assert "MOMMY_API_TOKEN" in capsys.readouterr().err  # type: ignore[attr-defined]
+
+
+def test_loopback_ignores_configured_token_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("MOMMY_API_TOKEN", "configured-for-remote")
+    monkeypatch.setattr(
+        "mommy_chaogu.web.create_app",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    monkeypatch.setattr("uvicorn.run", lambda *_args, **_kwargs: None)
+
+    args = build_web_parser().parse_args([])
+    assert cmd_web_serve(args) == 0
+    assert captured["api_token"] == ""
+
+
+def test_loopback_can_explicitly_require_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("MOMMY_API_TOKEN", "configured-for-remote")
+    monkeypatch.setattr(
+        "mommy_chaogu.web.create_app",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    monkeypatch.setattr("uvicorn.run", lambda *_args, **_kwargs: None)
+
+    args = build_web_parser().parse_args(["--require-auth"])
+    assert cmd_web_serve(args) == 0
+    assert captured["api_token"] == "configured-for-remote"

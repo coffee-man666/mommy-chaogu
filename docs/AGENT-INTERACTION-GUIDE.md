@@ -43,11 +43,11 @@
 
 ### 模式 2：通用 LLM 对话（fallback）
 
-当用户输入不匹配任何工作流时（如"量子计算是什么"、"帮我比较茅台和五粮液"），系统 fallback 到你 — 你有 24 个工具可自主调用。
+当用户输入不匹配任何工作流时（如"量子计算是什么"、"帮我比较茅台和五粮液"），系统 fallback 到你 — 你有 25 个工具可自主调用。
 
 ---
 
-## 你的 24 个工具
+## 你的 25 个工具
 
 ### 行情数据（7 个）
 
@@ -259,7 +259,7 @@
                   LLM 自主选工具 (function calling)
                       │
                       v
-                  ToolRegistry (24 tools)
+                  ToolRegistry (25 tools)
                       │
                       v
                   CachedMarketDataAdapter

@@ -1,139 +1,91 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { RouterView, RouterLink, useRoute } from 'vue-router'
-import { LayoutDashboard, TrendingUp, Microscope, Wallet, MessageSquare, Bell, Target, Settings, ChevronRight } from 'lucide-vue-next'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import { onMounted } from 'vue'
+import { RouterLink, RouterView } from 'vue-router'
+import { MessageSquareText, TrendingUp, UserRound, Wallet, KeyRound } from 'lucide-vue-next'
+import { authRequired, loadAuthStatus } from '@/api/client'
 
-const route = useRoute()
-const moreOpen = ref(false)
-const moreActive = computed(
-  () =>
-    route.path.startsWith('/themes') ||
-    route.path.startsWith('/settings') ||
-    route.path.startsWith('/predictions'),
-)
+const navigation = [
+  { to: '/', label: '对话', icon: MessageSquareText },
+  { to: '/market', label: '行情', icon: TrendingUp },
+  { to: '/portfolio', label: '持仓', icon: Wallet },
+  { to: '/my', label: '我的', icon: UserRound },
+]
 
 function focusMainContent() {
   document.getElementById('main-content')?.focus()
 }
+
+onMounted(() => {
+  loadAuthStatus().catch((error: unknown) => console.warn('读取认证模式失败', error))
+})
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-background text-foreground">
-    <a
-      href="#main-content"
-      class="fixed left-3 top-3 z-[100] -translate-y-20 rounded-md bg-background px-3 py-2 text-sm font-semibold shadow-lg transition-transform focus:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      @click.prevent="focusMainContent"
+  <div class="min-h-screen bg-background text-foreground">
+    <div
+      v-if="authRequired"
+      role="alert"
+      class="sticky top-0 z-[90] flex items-center justify-center gap-3 bg-destructive px-4 py-2 text-sm text-white"
     >
-      跳到主要内容
-    </a>
-    <!-- 桌面端侧边导航 -->
-    <nav aria-label="主导航" class="hidden md:flex w-16 flex-col items-center gap-2 border-r bg-card py-4 sticky top-0 h-screen">
-      <RouterLink to="/dashboard" title="仪表盘" aria-label="仪表盘" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <LayoutDashboard class="size-5" aria-hidden="true" />
+      <KeyRound class="size-4 shrink-0" aria-hidden="true" />
+      <span>需要访问令牌才能查看数据</span>
+      <RouterLink to="/my" class="font-semibold underline underline-offset-2 hover:opacity-90">
+        前往我的
       </RouterLink>
-      <RouterLink to="/market" title="行情" aria-label="行情" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <TrendingUp class="size-5" aria-hidden="true" />
-      </RouterLink>
-      <RouterLink to="/themes" title="主题" aria-label="主题" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <Microscope class="size-5" aria-hidden="true" />
-      </RouterLink>
-      <RouterLink to="/portfolio" title="持仓" aria-label="持仓" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <Wallet class="size-5" aria-hidden="true" />
-      </RouterLink>
-      <RouterLink to="/agent" title="AI对话" aria-label="AI对话" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <MessageSquare class="size-5" aria-hidden="true" />
-      </RouterLink>
-      <RouterLink to="/signals" title="信号" aria-label="信号" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <Bell class="size-5" aria-hidden="true" />
-      </RouterLink>
-      <RouterLink to="/predictions" title="预测跟踪" aria-label="预测跟踪" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <Target class="size-5" aria-hidden="true" />
-      </RouterLink>
-      <div class="flex-1" />
-      <RouterLink to="/settings" title="设置" aria-label="设置" class="app-nav-link" active-class="!bg-primary/10 !text-primary">
-        <Settings class="size-5" aria-hidden="true" />
-      </RouterLink>
-    </nav>
+    </div>
 
-    <!-- 主内容区 -->
-    <main id="main-content" tabindex="-1" class="mobile-main flex-1 min-w-0">
-      <RouterView />
-    </main>
+    <div class="flex min-h-screen">
+      <a
+        href="#main-content"
+        class="fixed left-3 top-3 z-[100] -translate-y-20 rounded-md bg-background px-3 py-2 text-sm font-semibold shadow-lg transition-transform focus:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        @click.prevent="focusMainContent"
+      >
+        跳到主要内容
+      </a>
 
-    <!-- 移动端底部 tab -->
-    <nav aria-label="移动端主导航" class="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-50 flex border-t bg-card md:hidden">
-      <RouterLink to="/dashboard" title="首页" aria-label="首页" class="mobile-nav-link" active-class="!text-primary font-medium">
-        <LayoutDashboard class="size-5" aria-hidden="true" /><span>首页</span>
-      </RouterLink>
-      <RouterLink to="/market" title="行情" aria-label="行情" class="mobile-nav-link" active-class="!text-primary font-medium">
-        <TrendingUp class="size-5" aria-hidden="true" /><span>行情</span>
-      </RouterLink>
-      <RouterLink to="/portfolio" title="持仓" aria-label="持仓" class="mobile-nav-link" active-class="!text-primary font-medium">
-        <Wallet class="size-5" aria-hidden="true" /><span>持仓</span>
-      </RouterLink>
-      <RouterLink to="/agent" title="AI对话" aria-label="AI对话" class="mobile-nav-link" active-class="!text-primary font-medium">
-        <MessageSquare class="size-5" aria-hidden="true" /><span>问</span>
-      </RouterLink>
-      <RouterLink to="/signals" title="信号" aria-label="信号" class="mobile-nav-link" active-class="!text-primary font-medium">
-        <Bell class="size-5" aria-hidden="true" /><span>信号</span>
-      </RouterLink>
-      <Dialog v-model:open="moreOpen">
-        <DialogTrigger as-child>
-          <button
-            type="button"
-            class="mobile-nav-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
-            :class="moreActive ? 'font-medium text-primary' : 'text-muted-foreground'"
-            aria-label="打开更多导航"
+      <nav
+        aria-label="主导航"
+        class="sticky top-0 hidden h-screen w-40 shrink-0 flex-col border-r bg-card px-3 py-5 md:flex"
+      >
+        <RouterLink to="/" class="mb-6 flex items-center gap-2 px-3 text-sm font-semibold">
+          <span class="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground">妈</span>
+          <span>妈妈炒股</span>
+        </RouterLink>
+        <div class="space-y-1">
+          <RouterLink
+            v-for="item in navigation"
+            :key="item.to"
+            :to="item.to"
+            class="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            active-class="!bg-primary/10 !text-primary"
+            :exact-active-class="item.to === '/' ? '!bg-primary/10 !text-primary' : ''"
           >
-            <Settings class="size-5" aria-hidden="true" />
-            <span>更多</span>
-          </button>
-        </DialogTrigger>
-        <DialogContent
-          class="mobile-more-dialog top-auto translate-y-0 gap-2 p-4 md:hidden"
+            <component :is="item.icon" class="size-5" aria-hidden="true" />
+            <span>{{ item.label }}</span>
+          </RouterLink>
+        </div>
+      </nav>
+
+      <main id="main-content" tabindex="-1" class="mobile-main min-w-0 flex-1">
+        <RouterView />
+      </main>
+
+      <nav
+        aria-label="移动端主导航"
+        class="mobile-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t bg-card md:hidden"
+      >
+        <RouterLink
+          v-for="item in navigation"
+          :key="item.to"
+          :to="item.to"
+          class="mobile-nav-link min-h-14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+          active-class="!text-primary font-medium"
+          :exact-active-class="item.to === '/' ? '!text-primary font-medium' : ''"
         >
-          <DialogTitle class="text-base">更多</DialogTitle>
-          <DialogDescription class="sr-only">
-            前往主题研究或应用设置
-          </DialogDescription>
-          <nav aria-label="更多导航" class="grid gap-2">
-            <RouterLink
-              to="/predictions"
-              class="flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              @click="moreOpen = false"
-            >
-              <Target class="size-5 text-primary" aria-hidden="true" />
-              <span class="flex-1">预测跟踪</span>
-              <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
-            </RouterLink>
-            <RouterLink
-              to="/themes"
-              class="flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              @click="moreOpen = false"
-            >
-              <Microscope class="size-5 text-primary" aria-hidden="true" />
-              <span class="flex-1">主题研究</span>
-              <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
-            </RouterLink>
-            <RouterLink
-              to="/settings"
-              class="flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              @click="moreOpen = false"
-            >
-              <Settings class="size-5 text-primary" aria-hidden="true" />
-              <span class="flex-1">应用设置</span>
-              <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
-            </RouterLink>
-          </nav>
-        </DialogContent>
-      </Dialog>
-    </nav>
+          <component :is="item.icon" class="size-5" aria-hidden="true" />
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </nav>
+    </div>
   </div>
 </template>

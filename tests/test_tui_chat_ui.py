@@ -2,20 +2,21 @@
 
 Covers:
 - format helpers (tool display names, args, digest, elapsed)
-- ToolIndicator start → complete / error lifecycle
-- WorkingIndicator mount/remove driven by set_busy
-- HintBar contextual states (default / busy / slash suggestions)
+- ToolIndicator start → complete / error lifecycle（含截断标注）
+- WorkingIndicator mount/remove driven by set_busy（含重试态/排队数）
+- HintBar contextual states (default / busy / slash / @ / 6 位代码)
 - Full agent-chat flow with tool_call + tool_result callbacks
-- Theme fix: action_cycle_theme uses app.theme (textual 8.x API)
-- Dashboard empty-state wiring
+- Theme cycling uses app.theme (textual 8.x API)
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 from types import SimpleNamespace
+from typing import Any, ClassVar
 
-from mommy_chaogu.tui.views.chat import match_slash_commands
+from mommy_chaogu.tui.views.chat import match_slash_commands, match_stocks
 from mommy_chaogu.tui.widgets.hint_bar import HintBar
 from mommy_chaogu.tui.widgets.tool_indicator import (
     ToolIndicator,
@@ -26,6 +27,11 @@ from mommy_chaogu.tui.widgets.tool_indicator import (
     truncate_at_word,
 )
 from mommy_chaogu.tui.widgets.working_indicator import WorkingIndicator
+
+
+def _run(coro: Coroutine[Any, Any, None]) -> None:
+    asyncio.run(coro)
+
 
 # ---------------------------------------------------------------------------
 # format helpers
@@ -102,11 +108,15 @@ class TestTruncateAtWord:
 
 class TestMatchSlashCommands:
     def test_all_on_bare_slash(self) -> None:
-        assert len(match_slash_commands("/")) == 10
+        assert len(match_slash_commands("/")) == 13
 
     def test_prefix(self) -> None:
-        names = [c.name for c in match_slash_commands("/re")]
-        assert names == ["refresh"]
+        names = [c.name for c in match_slash_commands("/to")]
+        assert names == ["today"]
+
+    def test_prefix_multiple(self) -> None:
+        names = [c.name for c in match_slash_commands("/s")]
+        assert names == ["signals", "status"]
 
     def test_non_slash(self) -> None:
         assert match_slash_commands("hello") == []
@@ -115,13 +125,32 @@ class TestMatchSlashCommands:
         assert match_slash_commands("/xyz") == []
 
 
+class TestMatchStocks:
+    _CANDIDATES: ClassVar[list[tuple[str, str]]] = [
+        ("688981", "中芯国际"),
+        ("600519", "贵州茅台"),
+        ("002129", "TCL中环"),
+    ]
+
+    def test_name_substring(self) -> None:
+        assert match_stocks(self._CANDIDATES, "茅") == [("600519", "贵州茅台")]
+
+    def test_code_prefix(self) -> None:
+        assert match_stocks(self._CANDIDATES, "60") == [("600519", "贵州茅台")]
+
+    def test_empty_query_returns_all_capped(self) -> None:
+        assert len(match_stocks(self._CANDIDATES, "")) == 3
+
+    def test_casefold_latin(self) -> None:
+        assert match_stocks(self._CANDIDATES, "tcl") == [("002129", "TCL中环")]
+
+    def test_no_match(self) -> None:
+        assert match_stocks(self._CANDIDATES, "平安") == []
+
+
 # ---------------------------------------------------------------------------
 # Pilot: ToolIndicator lifecycle
 # ---------------------------------------------------------------------------
-
-
-def _run(pilot_coro) -> None:  # type: ignore[no-untyped-def]
-    asyncio.run(pilot_coro)
 
 
 class TestToolIndicatorLifecycle:
@@ -131,7 +160,7 @@ class TestToolIndicatorLifecycle:
         from mommy_chaogu.tui.views.chat import ChatView
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
                 chat = app.query_one(ChatView)
                 chat.tool_call_started(1, "get_quote", {"code": "600519"})
@@ -154,13 +183,36 @@ class TestToolIndicatorLifecycle:
 
         _run(_test())
 
+    def test_truncated_result_annotated(self) -> None:
+        """结果含 [truncated 时工具行追加「（结果过大已截断）」。"""
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
+            async with app.run_test() as pilot:
+                chat = app.query_one(ChatView)
+                chat.tool_call_started(1, "get_bars", {"code": "688981"})
+                await pilot.pause()
+                chat.tool_call_finished(
+                    1, True, 800, '[{"open": 1}... "[truncated, 9000 bytes omitted]"'
+                )
+                await pilot.pause()
+
+                indicator = chat.query_one(ToolIndicator)
+                detail = str(indicator.query_one(".ti-detail").content)  # type: ignore[attr-defined]
+                assert "（结果过大已截断）" in detail
+
+        _run(_test())
+
     def test_error_path(self) -> None:
         from mommy_chaogu.tui.app import MommyTuiApp
         from mommy_chaogu.tui.services.bootstrap import FakeServices
         from mommy_chaogu.tui.views.chat import ChatView
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
                 chat = app.query_one(ChatView)
                 chat.tool_call_started(2, "get_bars", {"code": "688981"})
@@ -187,7 +239,7 @@ class TestBusyIndicators:
         from mommy_chaogu.tui.views.chat import ChatView
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
                 chat = app.query_one(ChatView)
                 chat.set_busy(True)
@@ -200,6 +252,31 @@ class TestBusyIndicators:
 
         _run(_test())
 
+    def test_working_indicator_retry_and_queue(self) -> None:
+        """重试态显示「正在重试 (1/3)」，排队数显示「已排队 N 条」。"""
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
+            async with app.run_test() as pilot:
+                chat = app.query_one(ChatView)
+                chat.set_busy(True)
+                await pilot.pause()
+                working = chat.query_one(WorkingIndicator)
+
+                chat.set_retry_status(1, 3)
+                await pilot.pause()
+                assert "正在重试 (1/3)" in str(working.content)  # type: ignore[attr-defined]
+
+                chat.enqueue("排队的消息")
+                await pilot.pause()
+                assert "已排队 1 条" in str(working.content)  # type: ignore[attr-defined]
+                assert "Esc 中断" in str(working.content)  # type: ignore[attr-defined]
+
+        _run(_test())
+
     def test_hint_bar_states(self) -> None:
         from textual.widgets import Input
 
@@ -208,7 +285,7 @@ class TestBusyIndicators:
         from mommy_chaogu.tui.views.chat import ChatView
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
                 chat = app.query_one(ChatView)
                 hint = chat.query_one(HintBar)
@@ -216,11 +293,11 @@ class TestBusyIndicators:
 
                 # 输入 / 前缀 → 候选列表
                 prompt = chat.query_one("#prompt", Input)
-                prompt.value = "/re"
+                prompt.value = "/to"
                 await pilot.pause()
                 assert hint.mode == "suggestions"
                 content = str(hint.content)  # type: ignore[attr-defined]
-                assert "/refresh" in content
+                assert "/today" in content
 
                 # busy → esc 提示
                 chat.set_busy(True)
@@ -236,6 +313,27 @@ class TestBusyIndicators:
                 prompt.value = ""
                 await pilot.pause()
                 assert hint.mode == "default"
+
+        _run(_test())
+
+    def test_hint_bar_code_hint(self) -> None:
+        """输入 6 位代码 → HintBar 提示 Enter 看报价。"""
+        from textual.widgets import Input
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+        from mommy_chaogu.tui.services.bootstrap import FakeServices
+        from mommy_chaogu.tui.views.chat import ChatView
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
+            async with app.run_test() as pilot:
+                chat = app.query_one(ChatView)
+                hint = chat.query_one(HintBar)
+                prompt = chat.query_one("#prompt", Input)
+                prompt.value = "600519"
+                await pilot.pause()
+                assert hint.mode == "code-hint"
+                assert "600519" in str(hint.content)  # type: ignore[attr-defined]
 
         _run(_test())
 
@@ -257,11 +355,17 @@ class _FakeAgent:
         on_chunk=None,
         cancel_event=None,
         usage_out=None,
+        on_status=None,
     ):
         if on_tool_call is not None:
             on_tool_call("get_quote", {"code": "600519"})
         if on_tool_result is not None:
-            on_tool_result("get_quote", True, 1230, "贵州茅台 1680.00 +0.5%")
+            on_tool_result(
+                "get_quote",
+                True,
+                1230,
+                '{"code": "600519", "name": "贵州茅台", "price": 1680.0, "change_pct": 0.5}',
+            )
         return SimpleNamespace(
             text="茅台最新报价 1680 元。",
             tool_calls=[],
@@ -272,10 +376,11 @@ class _FakeAgent:
 
 
 class TestAgentChatFlow:
-    def test_full_turn_renders_tool_and_stats(self) -> None:
+    def test_full_turn_renders_tool_card_and_stats(self) -> None:
         from mommy_chaogu.tui.app import MommyTuiApp
         from mommy_chaogu.tui.services.bootstrap import FakeServices
         from mommy_chaogu.tui.views.chat import ChatView
+        from tests.test_tui_smoke import _wait_for
 
         async def _test() -> None:
             services = FakeServices.create()
@@ -284,18 +389,17 @@ class TestAgentChatFlow:
             async with app.run_test() as pilot:
                 chat = app.query_one(ChatView)
                 app.handle_chat_message("茅台怎么样")
-                # 等 worker 线程 + call_from_thread 完成
-                for _ in range(100):
-                    await pilot.pause(0.05)
-                    if not chat._busy:
-                        break
+                assert await _wait_for(pilot, lambda: not chat._busy)
 
-                assert not chat._busy
                 # 工具指示器已完成（⎿ 摘要 · 耗时）
                 indicator = chat.query_one(ToolIndicator)
                 detail = str(indicator.query_one(".ti-detail").content)  # type: ignore[attr-defined]
-                assert "贵州茅台" in detail
                 assert "1.2s" in detail
+                # 工具结果渲染出报价卡（get_quote → quote-card）
+                assert await _wait_for(pilot, lambda: len(chat.query(".quote-card")) == 1)
+                card = str(chat.query(".quote-card")[0].content)  # type: ignore[attr-defined]
+                assert "贵州茅台" in card
+                assert "1680" in card
                 # 助手回复（⏺ + Markdown）
                 assistant = chat.query(".assistant-msg")
                 assert len(assistant) == 1
@@ -311,7 +415,7 @@ class TestAgentChatFlow:
 
 
 # ---------------------------------------------------------------------------
-# Pilot: 主题修复（app.theme API）+ 看板空态
+# Pilot: 主题（app.theme API）
 # ---------------------------------------------------------------------------
 
 
@@ -321,7 +425,7 @@ class TestThemeFix:
         from mommy_chaogu.tui.services.bootstrap import FakeServices
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
                 app.ui_theme = "dark"
                 app.action_cycle_theme()
@@ -338,16 +442,11 @@ class TestThemeFix:
 
 
 # ---------------------------------------------------------------------------
-# Pilot: slash 候选 ↑↓ 循环选择
+# Pilot: slash 候选 ↑↓ 循环 + Tab 接受
 # ---------------------------------------------------------------------------
 
 
 class TestSlashCycling:
-    def _to_chat(self, app) -> None:  # type: ignore[no-untyped-def]
-        from textual.widgets import ContentSwitcher
-
-        app.query_one("#main", ContentSwitcher).current = "chat"
-
     def test_up_down_cycles_candidates(self) -> None:
         from textual.widgets import Input
 
@@ -356,21 +455,20 @@ class TestSlashCycling:
         from mommy_chaogu.tui.views.chat import ChatView
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
-                self._to_chat(app)
                 chat = app.query_one(ChatView)
                 prompt = chat.query_one("#prompt", Input)
                 prompt.value = "/"
                 await pilot.pause()
 
-                assert len(chat._slash_matches) == 10
+                assert len(chat._slash_matches) == 13
                 assert chat._slash_sel == 0
 
                 await pilot.press("down")
                 await pilot.pause()
                 assert chat._slash_sel == 1
-                assert chat.selected_slash_completion() == "/refresh"
+                assert chat.selected_completion() == "/watch"
 
                 await pilot.press("up")
                 await pilot.pause()
@@ -379,37 +477,32 @@ class TestSlashCycling:
                 # 继续 up → 环绕到最后一项
                 await pilot.press("up")
                 await pilot.pause()
-                assert chat._slash_sel == 9
-                assert chat.selected_slash_completion() == "/quit"
+                assert chat._slash_sel == 12
+                assert chat.selected_completion() == "/quit"
 
         _run(_test())
 
     def test_tab_completes_selected_candidate(self) -> None:
-        from textual.widgets import ContentSwitcher, Input
+        from textual.widgets import Input
 
         from mommy_chaogu.tui.app import MommyTuiApp
         from mommy_chaogu.tui.services.bootstrap import FakeServices
         from mommy_chaogu.tui.views.chat import ChatView
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
-                self._to_chat(app)
-                await pilot.pause()
                 chat = app.query_one(ChatView)
                 prompt = chat.query_one("#prompt", Input)
                 prompt.value = "/"
                 await pilot.pause()
 
-                # ↓ 移到 /refresh，Tab 接受选中项
+                # ↓ 移到 /watch，Tab 接受选中项
                 await pilot.press("down")
                 await pilot.pause()
                 await pilot.press("tab")
                 await pilot.pause()
-                assert prompt.value == "/refresh"
-                # 仍在对话模式（Tab 被补全拦截）
-                switcher = app.query_one("#main", ContentSwitcher)
-                assert switcher.current == "chat"
+                assert prompt.value == "/watch"
 
         _run(_test())
 
@@ -421,50 +514,13 @@ class TestSlashCycling:
         from mommy_chaogu.tui.views.chat import ChatView
 
         async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
             async with app.run_test() as pilot:
-                self._to_chat(app)
                 chat = app.query_one(ChatView)
                 prompt = chat.query_one("#prompt", Input)
-                prompt.value = "/watch "
+                prompt.value = "/flows "
                 await pilot.pause()
-                assert not chat.in_slash_selection()
-                assert chat.selected_slash_completion() is None
-
-        _run(_test())
-
-
-class TestDashboardEmptyState:
-    def test_empty_watchlist_shows_hint(self) -> None:
-        from textual.widgets import Static
-
-        from mommy_chaogu.tui.app import MommyTuiApp
-        from mommy_chaogu.tui.services.bootstrap import FakeServices
-        from mommy_chaogu.tui.views.dashboard import DashboardView
-
-        async def _test() -> None:
-            app = MommyTuiApp(services=FakeServices.create())
-            async with app.run_test() as pilot:
-                dashboard = app.query_one(DashboardView)
-                empty = dashboard.query_one("#watch-empty", Static)
-
-                dashboard.update_watchlist([])
-                await pilot.pause()
-                assert empty.display is True
-
-                dashboard.update_watchlist(
-                    [
-                        {
-                            "code": "600519",
-                            "name": "贵州茅台",
-                            "price": None,
-                            "change_pct": None,
-                            "change_amount": None,
-                            "main_flow": None,
-                        }
-                    ]
-                )
-                await pilot.pause()
-                assert empty.display is False
+                assert not chat.in_selection()
+                assert chat.selected_completion() is None
 
         _run(_test())

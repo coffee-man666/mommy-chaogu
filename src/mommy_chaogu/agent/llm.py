@@ -90,6 +90,17 @@ def provider_config(provider: str) -> dict[str, Any]:
     return SUPPORTED_PROVIDERS[normalize_provider(provider)]
 
 
+def resolve_model(provider: str, model: str | None = None) -> str:
+    """Resolve chat model: explicit argument > ``AGENT_MODEL`` > provider default."""
+    explicit = (model or "").strip()
+    if explicit:
+        return explicit
+    env_model = os.environ.get("AGENT_MODEL", "").strip()
+    if env_model:
+        return env_model
+    return str(provider_config(provider)["default_model"])
+
+
 def resolve_api_key(provider: str, api_key: str | None = None) -> str:
     """解析 API key：显式参数 > provider 对应的环境变量。找不到抛 ValueError。"""
     config = provider_config(provider)

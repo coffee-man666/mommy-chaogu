@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { apiGet, apiPost, apiDelete, getApiToken, setApiToken } from '@/api/client'
+import {
+  apiGet,
+  apiPost,
+  apiDelete,
+  authMode,
+  getApiToken,
+  loadAuthStatus,
+  setApiToken,
+} from '@/api/client'
 import { useTheme } from '@/composables/useTheme'
 import { useWatchlistStore } from '@/stores/watchlist'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -8,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import StockSearch from '@/components/StockSearch.vue'
 import {
   Select,
   SelectContent,
@@ -42,6 +51,7 @@ async function saveApiToken() {
   setApiToken(apiToken.value)
   tokenSaved.value = true
   window.setTimeout(() => (tokenSaved.value = false), 2000)
+  await loadAuthStatus()
   await load()
 }
 
@@ -208,7 +218,7 @@ onUnmounted(() => {
   <div class="mx-auto w-full max-w-3xl space-y-4 p-4 lg:p-6">
     <!-- 页头 -->
     <div class="flex items-center justify-between">
-      <h1 class="text-xl font-bold tracking-tight">⚙️ 设置</h1>
+      <h1 class="text-xl font-bold tracking-tight">👤 我的</h1>
       <div class="flex items-center gap-2">
         <span class="text-xs text-muted-foreground">上次刷新 {{ fmtLastRefresh() }}</span>
         <Button variant="outline" size="sm" :disabled="refreshing" @click="refreshNow">
@@ -219,7 +229,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 主题切换 -->
-    <Card>
+    <Card v-if="authMode === 'token'">
       <CardHeader>
         <CardTitle class="text-base">🎨 主题</CardTitle>
         <CardDescription>深色 / 浅色模式切换</CardDescription>
@@ -397,12 +407,12 @@ onUnmounted(() => {
           :key="`${s.code}-${s.group}`"
           class="flex items-center justify-between border-b border-border py-3 last:border-b-0"
         >
-          <div class="min-w-0 flex-1">
+          <RouterLink :to="`/detail/${s.code}`" class="min-w-0 flex-1 rounded-sm hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <p class="font-semibold">{{ s.name }}</p>
             <p class="text-xs text-muted-foreground">
               {{ s.code }} · {{ s.group }}<span v-if="s.note"> · {{ s.note }}</span>
             </p>
-          </div>
+          </RouterLink>
           <Button
             variant="outline"
             size="sm"
@@ -444,14 +454,12 @@ onUnmounted(() => {
       <DialogContent class="max-w-md">
         <DialogHeader>
           <DialogTitle>添加自选股</DialogTitle>
-          <DialogDescription>填写股票代码、分组和备注</DialogDescription>
+          <DialogDescription>搜索股票名称或代码，再选择分组</DialogDescription>
         </DialogHeader>
         <div class="space-y-3">
-          <Input
+          <StockSearch
             v-model="stockForm.code"
-            placeholder="股票代码（如 600519）"
-            inputmode="numeric"
-            maxlength="6"
+            placeholder="搜索名称或代码（如 贵州茅台）"
           />
           <Select v-model="stockForm.group">
             <SelectTrigger>

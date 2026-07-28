@@ -3,19 +3,88 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 
+from mommy_chaogu.cache import CacheStore
 from mommy_chaogu.market_data import MarketDataAdapter
 from mommy_chaogu.market_data.rankings import (
     fetch_indexes,
     fetch_sector_ranking,
 )
-from mommy_chaogu.web.deps import get_adapter
-from mommy_chaogu.web.schemas import IndexOut, SectorOut
+from mommy_chaogu.semicon import SemiconStore
+from mommy_chaogu.watchlist import WatchlistStore
+from mommy_chaogu.web.deps import (
+    get_adapter,
+    get_cache_store,
+    get_semicon_store,
+    get_watchlist_store,
+)
+from mommy_chaogu.web.schemas import IndexOut, SectorOut, StockSearchOut
 
 router = APIRouter(prefix="/api/market", tags=["market"])
+stocks_router = APIRouter(prefix="/api/stocks", tags=["market"])
+
+
+@stocks_router.get("/search", response_model=list[StockSearchOut])
+def search_stocks(
+    q: Annotated[str, Query(min_length=1, max_length=64)],
+    watchlist: Annotated[WatchlistStore, Depends(get_watchlist_store)],
+    cache: Annotated[CacheStore, Depends(get_cache_store)],
+    semicon: Annotated[SemiconStore, Depends(get_semicon_store)],
+    limit: Annotated[int, Query(ge=1, le=10)] = 10,
+) -> list[StockSearchOut]:
+    """按名称子串或代码前缀联想股票，优先返回自选股。"""
+    needle = q.strip().casefold()
+    if not needle:
+        return []
+    candidates: dict[str, StockSearchOut] = {}
+    cached_names: dict[str, str] = {}
+
+    for entry in cache.get_all_quote_entries():
+        name = str(getattr(entry.quote, "name", "") or "")
+        cached_names[entry.code] = name
+
+    def add(
+        code: str,
+        name: str,
+        source: Literal["watchlist", "semicon", "cache"],
+    ) -> None:
+        if not code or code in candidates:
+            return
+        candidates[code] = StockSearchOut(
+            code=code, name=name or cached_names.get(code, ""), source=source
+        )
+
+    for entry in watchlist.list_entries():
+        add(entry.code, entry.name or "", "watchlist")
+    for stock in semicon.list_all():
+        add(stock.code, stock.name, "semicon")
+    for code, name in cached_names.items():
+        add(code, name, "cache")
+
+    source_order = {"watchlist": 0, "semicon": 1, "cache": 2}
+
+    def score(item: StockSearchOut) -> tuple[int, int, str]:
+        code = item.code.casefold()
+        name = item.name.casefold()
+        if code == needle or name == needle:
+            match_rank = 0
+        elif code.startswith(needle):
+            match_rank = 1
+        elif name.startswith(needle):
+            match_rank = 2
+        else:
+            match_rank = 3
+        return match_rank, source_order[item.source], item.code
+
+    matched = [
+        item
+        for item in candidates.values()
+        if item.code.casefold().startswith(needle) or needle in item.name.casefold()
+    ]
+    return sorted(matched, key=score)[:limit]
 
 
 @router.get("/indexes", response_model=list[IndexOut])

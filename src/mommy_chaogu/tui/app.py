@@ -1,10 +1,11 @@
 """Textual TUI 主入口。
 
-MommyTuiApp — 类 Claude Code CLI 的沉浸式体验。
+MommyTuiApp — 投研 Coding Agent CLI：单屏对话即界面。
 
-单个 MainScreen 持有 ContentSwitcher，Tab 快捷键在两个视图间切换：
-  - ChatView（对话）：沉浸式 AI 对话
-  - DashboardView（看板）：自选股/持仓/主题/信号
+布局（无 ContentSwitcher、无看板模式）：
+    TopBar（指数快照 + AI 状态 + 时钟）
+    ChatView（对话流 + HintBar + 输入框）
+    Footer
 """
 
 from __future__ import annotations
@@ -22,14 +23,13 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.reactive import reactive
-from textual.widgets import ContentSwitcher, Input
+from textual.widgets import Footer
 
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.screens.help import HelpScreen
-from mommy_chaogu.tui.screens.main import MainScreen
 from mommy_chaogu.tui.services.bootstrap import Services
+from mommy_chaogu.tui.services.errors import friendly_error
 from mommy_chaogu.tui.views.chat import ChatView
-from mommy_chaogu.tui.views.dashboard import DashboardView
 from mommy_chaogu.tui.widgets.top_bar import TopBar
 
 _log = logging.getLogger(__name__)
@@ -51,35 +51,24 @@ def build_tui_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _switch_mode(app: Any, mode: str) -> None:
-    """切换 ContentSwitcher 到 chat / dashboard。"""
-    switcher = app.query_one("#main", ContentSwitcher)
-    switcher.current = mode
-
-
-def _switch_tab(app: Any, tab_id: str) -> None:
-    """切换看板到指定 tab。"""
-    _switch_mode(app, "dashboard")
-    from textual.widgets import TabbedContent
-
-    dashboard = app.query_one(DashboardView)
-    dashboard.query_one("#dashboard-tabs", TabbedContent).active = tab_id
-
-
 class _MommyCommandProvider(Provider):
-    """命令面板 Provider：refresh / 切模式 / 切 tab / 帮助。"""
+    """命令面板 Provider：slash 命令的图形入口。"""
 
     def _commands(self) -> list[tuple[str, Any]]:
         app: Any = self.app
         return [
-            ("刷新数据", app.action_refresh),
-            ("切换到 AI 对话", lambda: _switch_mode(app, "chat")),
-            ("切换到数据看板", lambda: _switch_mode(app, "dashboard")),
-            ("看板 · 自选股", lambda: _switch_tab(app, "watch")),
-            ("看板 · 持仓", lambda: _switch_tab(app, "hold")),
-            ("看板 · 主题", lambda: _switch_tab(app, "theme")),
-            ("看板 · 信号", lambda: _switch_tab(app, "signal")),
+            ("今日总览 /today", lambda: app.run_slash("today")),
+            ("自选股 /watch", lambda: app.run_slash("watch")),
+            ("持仓 /portfolio", lambda: app.run_slash("portfolio")),
+            ("资金流 /flows", lambda: app.run_slash("flows")),
+            ("预测跟踪 /predictions", lambda: app.run_slash("predictions")),
+            ("近期信号 /signals", lambda: app.run_slash("signals")),
+            ("记忆系统 /memory", lambda: app.run_slash("memory")),
+            ("服务状态 /status", lambda: app.run_slash("status")),
+            ("清空对话 /clear", lambda: app.run_slash("clear")),
             ("帮助", app.action_help),
+            ("切换主题", app.action_cycle_theme),
+            ("退出", app.action_quit_request),
         ]
 
     async def search(self, query: str) -> Hits:
@@ -100,7 +89,7 @@ class _MommyCommandProvider(Provider):
 
 
 class MommyTuiApp(App[None]):
-    """Mommy Chaogu TUI 主应用。
+    """Mommy Chaogu TUI 主应用（单屏对话）。
 
     用法：
         mommy-tui          # 命令行启动
@@ -113,21 +102,30 @@ class MommyTuiApp(App[None]):
     COMMANDS: ClassVar[set[type[Provider] | Any]] = {_MommyCommandProvider}
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("tab", "toggle_mode", "切换模式", priority=True),
         Binding("ctrl+p", "app.command_palette", "命令面板"),
+        Binding("ctrl+c", "quit_request", "退出", priority=True),
+        Binding("ctrl+q", "quit", "退出", show=False),
         Binding("ctrl+t", "cycle_theme", "主题", show=False),
-        Binding("ctrl+q", "quit", "退出"),
-        Binding("r", "refresh", "刷新"),
         Binding("question_mark", "help", "帮助", show=False),
     ]
 
     services: Services
     ui_theme: reactive[str] = reactive("dark")
     _THEMES: ClassVar[list[str]] = ["dark", "light", "colorblind"]
+    _INDEX_REFRESH_S: ClassVar[float] = 60.0
 
     def __init__(self, services: Services | None = None) -> None:
         super().__init__()
-        self.services = services or Services.bootstrap()
+        self._startup_error: str | None = None
+        if services is not None:
+            self.services = services
+        else:
+            try:
+                self.services = Services.bootstrap()
+            except Exception as e:
+                _log.exception("TUI 服务初始化失败，已进入降级模式")
+                self.services = Services()
+                self._startup_error = friendly_error(e)
         self._turn_started: float = 0.0
         self._tool_seq: int = 0
         self._pending_tool_ids: dict[str, deque[int]] = defaultdict(deque)
@@ -137,61 +135,52 @@ class MommyTuiApp(App[None]):
         # WorkingIndicator 的 stats_provider 在主线程实时读它。
         self._stream_usage: dict[str, int] = {}
         self._stream_flush_timer: Any = None
+        self._last_ctrl_c: float = 0.0
+        self._turn_seq: int = 0
+        self._active_turn_id: int | None = None
+        self._conversation_history: list[dict[str, str]] = []
 
     def compose(self) -> ComposeResult:
-        """挂载主屏。"""
-        yield MainScreen()
+        """单屏：TopBar + ChatView + Footer。"""
+        yield TopBar()
+        yield ChatView()
+        yield Footer()
 
     def on_mount(self) -> None:
-        """主屏已由 compose 挂载；此处触发首次数据拉取。"""
+        """设置主题 / AI 状态点，启动行情回填 worker + 周期刷新。"""
         self.ui_theme = os.environ.get("MOMMY_TUI_THEME", "dark")
-        self._apply_theme()
-        self._refresh_data()
-
-    # ------------------------------------------------------------------
-    # 模式切换
-    # ------------------------------------------------------------------
-
-    def action_toggle_mode(self) -> None:
-        """Tab 切换：对话 ⇄ 看板。
-
-        在对话模式中如果输入框有斜杠补全建议，优先接受补全而非切换。
-        """
-        switcher = self.query_one("#main", ContentSwitcher)
-        if switcher.current == "chat":
-            if self._try_accept_slash_suggestion():
-                return
-            switcher.current = "dashboard"
-        else:
-            switcher.current = "chat"
-            with contextlib.suppress(Exception):
-                self.query_one("#prompt", Input).focus()
-
-    def _try_accept_slash_suggestion(self) -> bool:
-        """如果对话输入框处于 slash 选择态，Tab 接受当前选中的候选。"""
-        try:
-            chat = self.query_one(ChatView)
-            prompt = chat.query_one("#prompt", Input)
-        except Exception:
-            return False
-        completion = chat.selected_slash_completion()
-        if completion is None or completion == prompt.value:
-            return False
-        prompt.value = completion
-        prompt.cursor_position = len(completion)
-        return True
+        self._apply_theme(notify=False)
+        provider = self.services.agent.provider_name()
+        top = self.query_one(TopBar)
+        top.ai_label = f"AI🟢 {provider}" if provider else "AI⚪ 未配置"
+        self._refresh_market()
+        self.set_interval(self._INDEX_REFRESH_S, self._refresh_market)
+        if self._startup_error:
+            self.query_one(ChatView).append_hint(
+                f"部分服务初始化失败，已进入降级模式：{self._startup_error}"
+            )
 
     # ------------------------------------------------------------------
     # 全局动作
     # ------------------------------------------------------------------
 
-    def action_refresh(self) -> None:
-        """刷新当前视图数据。"""
-        self._refresh_data()
-
     def action_help(self) -> None:
         """弹出帮助。"""
         self.push_screen(HelpScreen())
+
+    def action_quit_request(self) -> None:
+        """Ctrl+C：第一次提示「再按一次退出」，2 秒内第二次退出。"""
+        now = time.monotonic()
+        if now - self._last_ctrl_c < 2.0:
+            self.exit()
+            return
+        self._last_ctrl_c = now
+        self.notify("再按一次 Ctrl+C 退出", timeout=2)
+
+    def run_slash(self, name: str, args: str = "") -> None:
+        """命令面板入口：执行 slash 命令。"""
+        chat = self.query_one(ChatView)
+        chat._dispatch_slash(name, args)
 
     # ------------------------------------------------------------------
     # 主题切换
@@ -205,14 +194,8 @@ class MommyTuiApp(App[None]):
             idx = -1
         self.ui_theme = self._THEMES[(idx + 1) % len(self._THEMES)]
         self._apply_theme()
-        with contextlib.suppress(Exception):
-            from mommy_chaogu.tui.screens.stock_detail import StockDetailScreen
 
-            screen = self.screen
-            if isinstance(screen, StockDetailScreen):
-                screen.refresh_theme()
-
-    def _apply_theme(self) -> None:
+    def _apply_theme(self, notify: bool = True) -> None:
         """应用当前主题：dark → textual-dark；light → textual-light。
 
         colorblind 模式下保留深色底，实际颜色重映射由
@@ -223,6 +206,10 @@ class MommyTuiApp(App[None]):
             self.theme = "textual-light"
         else:
             self.theme = "textual-dark"
+        with contextlib.suppress(Exception):
+            self.query_one(TopBar).set_theme(theme)
+        if not notify:
+            return
         labels = {"dark": "深色", "light": "浅色", "colorblind": "色盲友好"}
         label = labels.get(theme, theme)
         self.notify(f"主题已切换：{label}", timeout=3)
@@ -238,10 +225,16 @@ class MommyTuiApp(App[None]):
         chat.set_busy(True)
         self._turn_started = time.monotonic()
 
+        self._turn_seq += 1
+        turn_id = self._turn_seq
+        self._active_turn_id = turn_id
+
         # 每轮重置 cancel + usage 状态
-        self._cancel_event = threading.Event()
-        self._stream_usage = {}
-        chat.set_cancel_callback(self._cancel_event.set)
+        cancel_event = threading.Event()
+        usage: dict[str, int] = {}
+        self._cancel_event = cancel_event
+        self._stream_usage = usage
+        chat.set_cancel_callback(cancel_event.set)
 
         # 1. 尝试工作流路由
         route = self.services.agent.route(text)
@@ -252,7 +245,7 @@ class MommyTuiApp(App[None]):
                 chat.append_workflow_match(workflow.description, step_names)
 
                 def _run_workflow() -> None:
-                    self._do_workflow(route, text)
+                    self._do_workflow(route, text, turn_id, cancel_event)
 
                 self.run_worker(_run_workflow, name="workflow", thread=True)
                 return
@@ -261,29 +254,46 @@ class MommyTuiApp(App[None]):
         if self.services.agent.has_agent():
 
             def _run_agent() -> None:
-                self._do_agent_chat(text)
+                self._do_agent_chat(text, turn_id, cancel_event, usage)
 
             self.run_worker(_run_agent, name="agent-chat", thread=True)
             return
 
-        # 3. 无 Agent → 提示配置
+        # 3. 无 Agent → 提示配置（降级说明）
         chat.set_busy(False)
-        chat.append_hint(
-            "未配置 AI agent。请在 .env 中设置 API key"
-            "（如 DEEPSEEK_API_KEY），或运行 `mommy --setup` 进行配置。"
-        )
+        self._active_turn_id = None
+        chat.append_hint("AI 未配置：仅数据命令可用，配置见 .env（如 DEEPSEEK_API_KEY）")
+        self._drain_queue()
 
-    def open_stock_detail(self, code: str) -> None:
-        """打开个股详情屏。"""
-        from mommy_chaogu.tui.screens.stock_detail import StockDetailScreen
+    # ------------------------------------------------------------------
+    # busy 排队（轮次结束自动发出）
+    # ------------------------------------------------------------------
 
-        self.push_screen(StockDetailScreen(code=code))
+    def _drain_queue(self) -> None:
+        """轮次结束后自动发出排队消息（一次一条，递归触发下一轮）。"""
+        chat = self.query_one(ChatView)
+        text = chat.drain_queue()
+        if text is not None:
+            self.handle_chat_message(text)
+
+    def cancel_active_turn(self) -> None:
+        """取消并作废当前轮；后续旧 worker 回调会被 turn id 丢弃。"""
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        self._active_turn_id = None
+        self._turn_seq += 1
+        self._pending_tool_ids.clear()
+        if self._stream_flush_timer is not None:
+            self._stream_flush_timer.stop()
+            self._stream_flush_timer = None
 
     # ------------------------------------------------------------------
     # 工作流执行（worker 线程）
     # ------------------------------------------------------------------
 
-    def _do_workflow(self, route: Any, text: str) -> None:
+    def _do_workflow(
+        self, route: Any, text: str, turn_id: int, cancel_event: threading.Event
+    ) -> None:
         """worker 线程内执行工作流，通过 call_from_thread 回主线程更新 UI。"""
         step_idx = 0
 
@@ -291,60 +301,92 @@ class MommyTuiApp(App[None]):
             nonlocal step_idx
             idx = step_idx
             step_idx += 1
-            self.call_from_thread(self._post_step, idx, "running", display_name)
+            self.call_from_thread(self._post_step, turn_id, idx, "running", display_name)
 
         def on_step_done(display_name: str, success: bool) -> None:
             idx = step_idx - 1
             state = "ok" if success else "fail"
-            self.call_from_thread(self._post_step, idx, state, display_name)
+            self.call_from_thread(self._post_step, turn_id, idx, state, display_name)
 
         try:
-            result = self.services.agent.execute_workflow(route, text, on_step_start, on_step_done)
+            result = self.services.agent.execute_workflow(
+                route,
+                text,
+                on_step_start,
+                on_step_done,
+                is_cancelled=cancel_event.is_set,
+            )
         except Exception as e:
             _log.warning("工作流执行失败: %s", e)
-            self.call_from_thread(self._on_chat_error, f"工作流出错：{e}")
+            self.call_from_thread(self._on_chat_error, turn_id, f"工作流出错：{friendly_error(e)}")
             return
 
         summary = ""
         if result is not None:
             summary = getattr(result, "summary", "") or ""
-        self.call_from_thread(self._on_workflow_done, summary)
+            if not summary and getattr(result, "steps", None):
+                from mommy_chaogu.workflow.engine import _format_fallback
 
-    def _post_step(self, idx: int, state: str, detail: str) -> None:
+                summary = _format_fallback(getattr(result, "workflow_id", ""), result)
+        self.call_from_thread(self._on_workflow_done, turn_id, summary)
+
+    def _post_step(self, turn_id: int, idx: int, state: str, detail: str) -> None:
         """主线程：向 ChatView 发送 StepStatus 消息。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
-        chat.post_message(StepStatus(idx=idx, state=state, detail=detail))
+        chat.post_message(StepStatus(idx=idx, state=state, detail=detail, turn_id=turn_id))
 
-    def _on_workflow_done(self, summary: str) -> None:
+    def _on_workflow_done(self, turn_id: int, summary: str) -> None:
         """主线程：工作流执行完成。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         if chat.is_cancelled():
             chat.clear_cancelled()
             chat.set_busy(False)
+            self._active_turn_id = None
+            self._drain_queue()
             return
         text = summary if summary else "工作流执行完成。"
         chat.append_assistant(text)
         chat.set_busy(False)
+        self._active_turn_id = None
         chat.finish_turn(self._turn_elapsed_ms())
+        self._drain_queue()
 
     # ------------------------------------------------------------------
     # Agent 对话（worker 线程）
     # ------------------------------------------------------------------
 
-    def _do_agent_chat(self, text: str) -> None:
-        """worker 线程内调用 agent.chat，工具调用/结果 + 流式 chunk 实时回传 UI。
+    def _do_agent_chat(
+        self,
+        text: str,
+        turn_id: int,
+        cancel_event: threading.Event,
+        usage_out: dict[str, int],
+    ) -> None:
+        """worker 线程内调用 agent.chat，工具调用/结果 + 流式 chunk + 重试状态实时回传 UI。
 
-        #4 流式：on_chunk 回调把每个 delta 转发到 ChatView 的流式 widget。
-        #5 取消：cancel_event 在 worker 开始前创建，Esc 时 set()。
-        #6 token：self._stream_usage 作为 usage_out 共享 dict 传入，agent 层
+        流式：on_chunk 回调把每个 delta 转发到 ChatView 的流式 widget。
+        取消：cancel_event 在 worker 开始前创建，Esc 时 set()。
+        token：self._stream_usage 作为 usage_out 共享 dict 传入，agent 层
            原地累加，主线程 WorkingIndicator 的 stats_provider 实时读取。
+        重试：on_status("retry", {...}) 回调驱动工作行显示重试进度。
         """
 
         def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
-            self.call_from_thread(self._post_tool_started, fn_name, fn_args)
+            self.call_from_thread(self._post_tool_started, turn_id, fn_name, fn_args)
 
         def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None:
-            self.call_from_thread(self._post_tool_result, fn_name, ok, elapsed_ms, result)
+            self.call_from_thread(self._post_tool_result, turn_id, fn_name, ok, elapsed_ms, result)
+
+        def on_status(status: str, info: dict[str, Any]) -> None:
+            if status == "retry":
+                attempt = int(info.get("attempt", 1))
+                # 回调的 max 是「总尝试次数」（重试上限 + 1），显示为重试进度
+                max_retries = max(1, int(info.get("max", 2)) - 1)
+                self.call_from_thread(self._on_retry_status, turn_id, attempt, max_retries)
 
         # 流式 chunk 回调：worker 线程调用，通过 call_from_thread 转主线程
         streaming_started = threading.Event()
@@ -352,25 +394,27 @@ class MommyTuiApp(App[None]):
         def on_chunk(delta: str) -> None:
             if not streaming_started.is_set():
                 streaming_started.set()
-                self.call_from_thread(self._start_streaming)
+                self.call_from_thread(self._start_streaming, turn_id)
 
-            self.call_from_thread(self._append_stream_chunk, delta)
+            self.call_from_thread(self._append_stream_chunk, turn_id, delta)
 
         try:
             resp = self.services.agent.chat(
                 text,
+                history=list(self._conversation_history[-20:]),
                 on_tool_call=on_tool_call,
                 on_tool_result=on_tool_result,
                 on_chunk=on_chunk,
-                cancel_event=self._cancel_event,
-                usage_out=self._stream_usage,
+                cancel_event=cancel_event,
+                usage_out=usage_out,
+                on_status=on_status,
             )
         except Exception as e:
             _log.warning("Agent chat 失败: %s", e)
-            self.call_from_thread(self._on_chat_error, f"Agent 出错：{e}")
+            self.call_from_thread(self._on_chat_error, turn_id, friendly_error(e))
             return
 
-        # 收集 usage（#6）：resp.usage 与 self._stream_usage 是同一 dict，
+        # 收集 usage：resp.usage 与 self._stream_usage 是同一 dict，
         # 但 resp 可能为 None（AgentBridge 未配置），这里仍走 getattr 兼容。
         usage = getattr(resp, "usage", {}) if resp is not None else {}
         interrupted = getattr(resp, "interrupted", False) if resp is not None else False
@@ -378,27 +422,42 @@ class MommyTuiApp(App[None]):
         if resp is not None:
             reply = getattr(resp, "text", "") or ""
 
-        self.call_from_thread(self._on_agent_done, reply, interrupted, usage)
+        self.call_from_thread(self._on_agent_done, turn_id, text, reply, interrupted, usage)
 
-    def _post_tool_started(self, name: str, args: dict[str, Any]) -> None:
+    def _post_tool_started(self, turn_id: int, name: str, args: dict[str, Any]) -> None:
         """主线程：分配 call_id 并通知 ChatView 挂载 ToolIndicator。"""
+        if turn_id != self._active_turn_id:
+            return
         self._tool_seq += 1
         self._pending_tool_ids[name].append(self._tool_seq)
         chat = self.query_one(ChatView)
         chat.tool_call_started(self._tool_seq, name, args)
 
-    def _post_tool_result(self, name: str, ok: bool, elapsed_ms: int, result: str) -> None:
+    def _post_tool_result(
+        self, turn_id: int, name: str, ok: bool, elapsed_ms: int, result: str
+    ) -> None:
         """主线程：按 FIFO 匹配同名 call_id，通知 ChatView 更新指示器。
 
         agent 循环单线程顺序执行工具，同名调用按先来先完成匹配。
         """
+        if turn_id != self._active_turn_id:
+            return
         queue = self._pending_tool_ids.get(name)
         call_id = queue.popleft() if queue else 0
         chat = self.query_one(ChatView)
         chat.tool_call_finished(call_id, ok, elapsed_ms, result)
 
-    def _start_streaming(self) -> None:
+    def _on_retry_status(self, turn_id: int, attempt: int, max_retries: int) -> None:
+        """主线程：重试状态 → 工作行显示「⏳ 网络较慢，正在重试 (1/3)…」。"""
+        if turn_id != self._active_turn_id:
+            return
+        chat = self.query_one(ChatView)
+        chat.set_retry_status(attempt, max_retries)
+
+    def _start_streaming(self, turn_id: int) -> None:
         """主线程：首个 chunk 到达时挂载流式 widget + 启动 50ms 节流 timer。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         chat.start_streaming()
         # 注册 usage 共享 dict 给 WorkingIndicator 做实时 token 统计。
@@ -419,8 +478,10 @@ class MommyTuiApp(App[None]):
         else:
             self._stream_flush_timer = None
 
-    def _append_stream_chunk(self, delta: str) -> None:
+    def _append_stream_chunk(self, turn_id: int, delta: str) -> None:
         """主线程：追加一个 chunk 到 ChatView 缓冲区。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         chat.append_chunk(delta)
 
@@ -430,9 +491,16 @@ class MommyTuiApp(App[None]):
         return int((time.monotonic() - self._turn_started) * 1000)
 
     def _on_agent_done(
-        self, reply: str, interrupted: bool = False, usage: dict[str, int] | None = None
+        self,
+        turn_id: int,
+        user_text: str,
+        reply: str,
+        interrupted: bool = False,
+        usage: dict[str, int] | None = None,
     ) -> None:
         """主线程：Agent 回复完成。"""
+        if turn_id != self._active_turn_id:
+            return
         self._stream_usage = usage or {}
         chat = self.query_one(ChatView)
 
@@ -445,16 +513,13 @@ class MommyTuiApp(App[None]):
             self._stream_flush_timer.stop()
             self._stream_flush_timer = None
 
-        if interrupted:
-            # Esc 真取消：action_cancel_chat 已显示"已中断"，这里只收尾 busy
+        if interrupted or chat.is_cancelled():
+            # Esc 中断：action_cancel_chat 已保留已流部分并标注「（已中断）」，
+            # 这里只收尾状态 + 放行排队消息。
             chat.clear_cancelled()
             chat.set_busy(False)
-            return
-
-        if chat.is_cancelled():
-            # UI 取消（旧路径兼容）
-            chat.clear_cancelled()
-            chat.set_busy(False)
+            self._active_turn_id = None
+            self._drain_queue()
             return
 
         # 如果有流式文本，流式 widget 已渲染了它（不需要再 append_assistant）；
@@ -463,64 +528,87 @@ class MommyTuiApp(App[None]):
         if not streamed_text:
             chat.append_assistant(text if text else "（无回复）")
         chat.set_busy(False)
+        self._active_turn_id = None
 
-        # token 统计（#6）：优先 total_tokens，否则 completion_tokens
+        self._conversation_history.extend(
+            [{"role": "user", "content": user_text}, {"role": "assistant", "content": text}]
+        )
+        self._conversation_history = self._conversation_history[-20:]
+
+        # token 统计：优先 total_tokens，否则 completion_tokens
         tokens = self._stream_usage.get("total_tokens") or self._stream_usage.get(
             "completion_tokens", 0
         )
         chat.finish_turn(self._turn_elapsed_ms(), tokens=tokens)
 
-    def _on_chat_error(self, error: str) -> None:
-        """主线程：对话出错。"""
+        # 记忆回执：后台提取完成后在对话流尾部追加淡色一行
+        self.services.agent.watch_background(
+            lambda: self.call_from_thread(self._on_memory_saved, turn_id)
+        )
+
+        self._drain_queue()
+
+    def _on_memory_saved(self, turn_id: int) -> None:
+        """主线程：后台记忆提取完成 → 对话流尾部追加「✎ 已记住…」。"""
+        if turn_id != self._turn_seq:
+            return
+        with contextlib.suppress(Exception):
+            chat = self.query_one(ChatView)
+            chat.append_memory_receipt()
+
+    def _on_chat_error(self, turn_id: int, error: str) -> None:
+        """主线程：对话出错（error 已是友好文案）。"""
+        if turn_id != self._active_turn_id:
+            return
         chat = self.query_one(ChatView)
         chat.append_hint(error)
         chat.set_busy(False)
+        self._active_turn_id = None
+        self._drain_queue()
 
     # ------------------------------------------------------------------
-    # 数据刷新
+    # 行情回填（TopBar 指数 + 欢迎卡红绿摘要）
     # ------------------------------------------------------------------
 
-    def _refresh_data(self) -> None:
-        """在独立 worker 线程拉取行情 + 持仓。"""
+    def _refresh_market(self) -> None:
+        """在独立 worker 线程拉取指数快照 + 自选股报价。"""
         self.run_worker(
-            self._do_refresh,
-            name="quotes",
-            group="quotes",
+            self._do_refresh_market,
+            name="market",
+            group="market",
             exclusive=True,
             thread=True,
         )
 
-    def _do_refresh(self) -> None:
+    def _do_refresh_market(self) -> None:
         """worker 线程内执行：调数据服务，回主线程应用。"""
-        t0 = time.monotonic()
+        svc = self.services
+        indexes: list[dict[str, Any]] | None = None
+        if svc.indexes is not None:
+            try:
+                indexes = svc.indexes()
+            except Exception as e:
+                _log.debug("指数快照拉取失败: %s", e)
+        rows: list[dict[str, Any]] = []
         try:
-            svc = self.services.data
-            rows = svc.watchlist_quotes()
-            summary = svc.portfolio_snapshot()
+            rows = svc.data.watchlist_quotes()
         except Exception as e:
-            _log.warning("数据刷新失败: %s", e)
-            self.call_from_thread(self._on_refresh_error, f"数据刷新失败: {e}")
-            return
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        _log.info("watchlist 刷新耗时 %.0fms", elapsed_ms)
-        self.call_from_thread(self._apply_data, rows, summary)
+            _log.debug("自选股报价拉取失败: %s", e)
+        self.call_from_thread(self._apply_market, indexes, rows)
 
-    def _on_refresh_error(self, error: str) -> None:
-        """主线程：数据刷新出错。"""
+    def _apply_market(
+        self, indexes: list[dict[str, Any]] | None, rows: list[dict[str, Any]]
+    ) -> None:
+        """主线程：更新 TopBar 指数 + 欢迎卡红绿摘要。"""
+        if indexes:
+            first = indexes[0]
+            top = self.query_one(TopBar)
+            top.set_index(first.get("name", ""), first.get("price"), first.get("change_pct"))
+        up = sum(1 for r in rows if (r.get("change_pct") or 0) > 0)
+        down = sum(1 for r in rows if (r.get("change_pct") or 0) < 0)
         with contextlib.suppress(Exception):
-            self.notify(error, severity="error", timeout=5)
-
-    def _apply_data(self, rows: list[dict[str, Any]], summary: dict[str, Any]) -> None:
-        """主线程：更新看板 + 顶栏。"""
-        with contextlib.suppress(Exception):
-            dashboard = self.query_one(DashboardView)
-            dashboard.update_watchlist(rows)
-            dashboard.update_portfolio(summary)
-
-        source = self.services.data.source_label()
-        top = self.query_one(TopBar)
-        top.source_label = source or "无数据"
-        top.connection_level = "live" if rows else "degraded"
+            chat = self.query_one(ChatView)
+            chat.update_welcome(indexes, len(rows), up, down, self.services.agent.has_agent())
 
 
 def main() -> None:
@@ -532,7 +620,7 @@ def main() -> None:
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    # 启动前检查 .env 配置，未配置则引导用户完成向导
+    # 启动前检查项目级 / 用户级配置，未配置则进入统一 onboarding
     from mommy_chaogu.setup import check_and_run_setup
 
     check_and_run_setup()

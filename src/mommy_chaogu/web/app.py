@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -42,7 +42,7 @@ from mommy_chaogu.web.routes import (
     watchlist,
     ws,
 )
-from mommy_chaogu.web.schemas import HealthOut
+from mommy_chaogu.web.schemas import AuthStatusOut, HealthOut
 from mommy_chaogu.web.security import OwnerAuthMiddleware, WebSecurity
 
 _log = logging.getLogger(__name__)
@@ -195,6 +195,7 @@ def create_app(
     # 路由
     app.include_router(quotes.router)
     app.include_router(market.router)
+    app.include_router(market.stocks_router)
     app.include_router(watchlist.router)
     app.include_router(portfolio.router)
     app.include_router(signals.router)
@@ -208,6 +209,15 @@ def create_app(
     def issue_ws_ticket() -> dict[str, str | int]:
         ticket, expires_at = security.issue_ws_ticket()
         return {"ticket": ticket, "expires_at": expires_at}
+
+    @app.get("/api/auth/status")
+    def auth_status(request: Request) -> AuthStatusOut:
+        if not security.enabled:
+            return AuthStatusOut(mode="none", authenticated=True)
+        return AuthStatusOut(
+            mode="token",
+            authenticated=security.authorize_header(request.headers.get("authorization")),
+        )
 
     # 健康检查
     @app.get("/api/health")

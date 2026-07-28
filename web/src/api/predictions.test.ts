@@ -86,6 +86,9 @@ describe('predictions API client', () => {
 
   it('surfaces non-200 responses as errors', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response('boom', { status: 500 }))
-    await expect(getPredictions()).rejects.toThrow('500: boom')
+    await expect(getPredictions()).rejects.toMatchObject({
+      status: 500,
+      friendly: '服务暂时不可用',
+    })
   })
 })

@@ -3,8 +3,9 @@ import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { getIndexes, getGainers, getLosers, getSectors } from '@/api/market'
 import { getPortfolio } from '@/api/portfolio'
+import { toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan, pnlColor, pnlSign } from '@/utils/format'
-import type { IndexQuote, RankingQuote, SectorQuote, PortfolioSummary } from '@/api/types'
+import type { IndexQuote, RankingQuote, SectorQuote, PortfolioSummary, StockSearchResult } from '@/api/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
@@ -17,6 +18,8 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import ErrorState from '@/components/ErrorState.vue'
+import StockSearch from '@/components/StockSearch.vue'
 
 const router = useRouter()
 
@@ -32,16 +35,16 @@ const ageNow = ref(Date.now())
 
 type ResourceKey = 'indexes' | 'gainers' | 'losers' | 'sectors' | 'portfolio'
 interface ResourceStatus {
-  error: boolean
+  error: ApiError | null
   updatedAt: number | null
 }
 
 const resourceStatus = reactive<Record<ResourceKey, ResourceStatus>>({
-  indexes: { error: false, updatedAt: null },
-  gainers: { error: false, updatedAt: null },
-  losers: { error: false, updatedAt: null },
-  sectors: { error: false, updatedAt: null },
-  portfolio: { error: false, updatedAt: null },
+  indexes: { error: null, updatedAt: null },
+  gainers: { error: null, updatedAt: null },
+  losers: { error: null, updatedAt: null },
+  sectors: { error: null, updatedAt: null },
+  portfolio: { error: null, updatedAt: null },
 })
 
 let refreshTimer: number | null = null
@@ -55,28 +58,40 @@ async function refreshResource<T>(
   try {
     const value = await request()
     apply(value)
-    resourceStatus[key].error = false
+    resourceStatus[key].error = null
     resourceStatus[key].updatedAt = Date.now()
-  } catch {
-    resourceStatus[key].error = true
+  } catch (e) {
+    // 保留旧数据，只记录失败原因
+    resourceStatus[key].error = toApiError(e)
   }
+}
+
+const resourceRequests: Record<ResourceKey, () => Promise<void>> = {
+  indexes: () => refreshResource('indexes', getIndexes, (value) => { indexes.value = value }),
+  gainers: () => refreshResource('gainers', () => getGainers(20), (value) => { gainers.value = value }),
+  losers: () => refreshResource('losers', () => getLosers(20), (value) => { losers.value = value }),
+  sectors: () => refreshResource('sectors', () => getSectors(20), (value) => { sectors.value = value }),
+  portfolio: () => refreshResource('portfolio', getPortfolio, (value) => { portfolio.value = value }),
 }
 
 async function load() {
   loading.value = true
-  await Promise.all([
-    refreshResource('indexes', getIndexes, (value) => { indexes.value = value }),
-    refreshResource('gainers', () => getGainers(20), (value) => { gainers.value = value }),
-    refreshResource('losers', () => getLosers(20), (value) => { losers.value = value }),
-    refreshResource('sectors', () => getSectors(20), (value) => { sectors.value = value }),
-    refreshResource('portfolio', getPortfolio, (value) => { portfolio.value = value }),
-  ])
+  await Promise.all(Object.values(resourceRequests).map((fn) => fn()))
   ageNow.value = Date.now()
   loading.value = false
 }
 
+/** 单个数据源重试（榜单 / 指数错误态的"重试"按钮） */
+function retryResource(key: ResourceKey) {
+  void resourceRequests[key]()
+}
+
 function goDetail(code: string) {
   router.push({ name: 'detail', params: { code } })
+}
+
+function onSearchSelect(stock: StockSearchResult) {
+  goDetail(stock.code)
 }
 
 function isUp(pct: string | number | null | undefined): boolean {
@@ -144,10 +159,10 @@ onUnmounted(() => {
   <div class="min-h-screen bg-background pb-6">
     <!-- 顶部头部 -->
     <header
-      class="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground px-4 pt-4 pb-0"
+      class="bg-gradient-to-br from-primary to-primary/80 px-4 pb-4 pt-4 text-primary-foreground"
     >
       <div class="flex items-baseline justify-between mb-3">
-        <h1 class="text-2xl font-bold">📊 盘面</h1>
+        <h1 class="text-2xl font-bold">📈 行情</h1>
         <div class="flex items-center gap-1.5">
           <span class="inline-block w-2 h-2 rounded-full" :class="loading ? 'animate-pulse bg-yellow-500' : errorCount >= 5 ? 'bg-red-500' : errorCount > 0 ? 'bg-yellow-500' : 'bg-green-500'" />
           <span class="text-xs font-mono opacity-85">
@@ -155,6 +170,12 @@ onUnmounted(() => {
           </span>
         </div>
       </div>
+
+      <StockSearch
+        class="mb-3 max-w-lg text-foreground"
+        placeholder="搜索股票名称或代码"
+        @select="onSearchSelect"
+      />
 
       <!-- 持仓快览条 -->
       <div
@@ -170,7 +191,7 @@ onUnmounted(() => {
             v-if="resourceStatus.portfolio.error"
             class="text-xs text-yellow-200"
           >
-            {{ resourceStatusText('portfolio') }}
+          {{ resourceStatusText('portfolio') }}
           </span>
         </div>
         <div class="flex items-center gap-2">
@@ -209,6 +230,17 @@ onUnmounted(() => {
           </CardContent>
         </Card>
       </div>
+
+      <!-- 加载失败且没有旧数据：错误态 + 重试 -->
+      <Card v-else-if="resourceStatus.indexes.error && indexes.length === 0">
+        <CardContent class="p-0">
+          <ErrorState
+            compact
+            :message="resourceStatus.indexes.error?.friendly"
+            @retry="retryResource('indexes')"
+          />
+        </CardContent>
+      </Card>
 
       <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <Card
@@ -309,8 +341,14 @@ onUnmounted(() => {
                 </TableRow>
               </TableBody>
             </Table>
-            <div v-if="!loading && gainers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
-              {{ resourceStatus.gainers.error ? '涨幅榜加载失败' : '暂无数据' }}
+            <ErrorState
+              v-if="!loading && gainers.length === 0 && resourceStatus.gainers.error"
+              compact
+              :message="resourceStatus.gainers.error?.friendly"
+              @retry="retryResource('gainers')"
+            />
+            <div v-else-if="!loading && gainers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+              暂无数据
             </div>
           </Card>
         </TabsContent>
@@ -361,8 +399,14 @@ onUnmounted(() => {
                 </TableRow>
               </TableBody>
             </Table>
-            <div v-if="!loading && losers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
-              {{ resourceStatus.losers.error ? '跌幅榜加载失败' : '暂无数据' }}
+            <ErrorState
+              v-if="!loading && losers.length === 0 && resourceStatus.losers.error"
+              compact
+              :message="resourceStatus.losers.error?.friendly"
+              @retry="retryResource('losers')"
+            />
+            <div v-else-if="!loading && losers.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+              暂无数据
             </div>
           </Card>
         </TabsContent>
@@ -412,8 +456,14 @@ onUnmounted(() => {
                 </TableRow>
               </TableBody>
             </Table>
-            <div v-if="!loading && sectors.length === 0" class="py-8 text-center text-sm text-muted-foreground">
-              {{ resourceStatus.sectors.error ? '板块榜加载失败' : '暂无数据' }}
+            <ErrorState
+              v-if="!loading && sectors.length === 0 && resourceStatus.sectors.error"
+              compact
+              :message="resourceStatus.sectors.error?.friendly"
+              @retry="retryResource('sectors')"
+            />
+            <div v-else-if="!loading && sectors.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+              暂无数据
             </div>
           </Card>
         </TabsContent>
