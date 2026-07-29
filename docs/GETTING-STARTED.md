@@ -8,7 +8,7 @@
 macOS / Linux：
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/install.sh | sh
+curl -LsSf https://github.com/coffee-man666/mommy-chaogu/raw/refs/heads/main/install.sh | sh
 mommy
 ```
 
@@ -20,7 +20,7 @@ mommy
 如需先审阅脚本：
 
 ```bash
-curl -LO https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/install.sh
+curl -LO https://github.com/coffee-man666/mommy-chaogu/raw/refs/heads/main/install.sh
 less install.sh
 sh install.sh
 ```

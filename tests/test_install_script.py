@@ -27,7 +27,7 @@ def test_installer_uses_uv_tool_and_verifies_mommy() -> None:
     assert "uv/install.sh" in text
     assert "tool install" in text
     assert '"$mommy_binary" --help' in text
-    assert "curl -LsSf https://raw.githubusercontent.com" in text
+    assert "curl -LsSf https://github.com/coffee-man666/mommy-chaogu/raw/" in text
 
 
 def test_installer_runs_with_an_existing_uv(tmp_path: Path) -> None:

@@ -3,7 +3,7 @@
 # mommy-chaogu installer for macOS and Linux.
 #
 # Usage:
-#   curl -LsSf https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/install.sh | sh
+#   curl -LsSf https://github.com/coffee-man666/mommy-chaogu/raw/refs/heads/main/install.sh | sh
 #
 # Optional overrides:
 #   MOMMY_INSTALL_SOURCE='mommy-chaogu @ https://example.com/package.whl'
