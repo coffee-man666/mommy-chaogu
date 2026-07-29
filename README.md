@@ -27,7 +27,7 @@ mommy-chaogu 把实时行情、资金流、持仓、信号、记忆和 AI Agent 
 macOS / Linux：
 
 ```bash
-curl -LsSf https://github.com/coffee-man666/mommy-chaogu/raw/refs/heads/main/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/13004434117c239aca5195d80522261ce023fab0/install.sh | sh
 mommy
 ```
 
@@ -38,7 +38,7 @@ mommy
 不喜欢直接执行远程脚本？可以先下载并检查：
 
 ```bash
-curl -LO https://github.com/coffee-man666/mommy-chaogu/raw/refs/heads/main/install.sh
+curl -LO https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/13004434117c239aca5195d80522261ce023fab0/install.sh
 less install.sh
 sh install.sh
 ```
