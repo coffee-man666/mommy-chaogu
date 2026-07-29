@@ -183,7 +183,7 @@ EVALUATION-2026-07-18（`docs/archive/EVALUATION-2026-07-18-backend.md`）的 17
 
 - [x] README 补 3 张新界面截图（TUI 对话流、Web 对话页、上下文抽屉），放 `docs/images/`。
 - [x] 版本号 v1.2.0（version.py + CHANGELOG [1.2.0] + README 徽章）。
-- [x] RELEASE-CHECKLIST 本地门禁（1,553 pytest + ruff + mypy + 40 vitest + build + 3 e2e + audit + migration）。
+- [x] RELEASE-CHECKLIST 本地门禁（1,555 pytest + ruff + mypy + 40 vitest + build + 3 e2e + audit + migration）。
 - [x] PR #28 合入，GitHub CI / Docker release gate 全绿（run `30420741759`）。
 - [ ] 打 `v1.2.0` tag 并创建 GitHub release。
 - [ ] GitHub release 完成后将本台账归档到 `docs/archive/CONVERSATION-UI-PLAN-2026-07.md`。

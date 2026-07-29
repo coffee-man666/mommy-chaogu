@@ -60,6 +60,29 @@ def test_start_gateway_process_does_not_duplicate_live_worker(
     popen.assert_not_called()
 
 
+def test_restart_gateway_process_waits_for_old_worker_and_starts_new_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _authorized_store(tmp_path)
+    restarted = gateway_process.GatewayProcess(
+        pid=9753,
+        started=True,
+        log_path=store.root / "gateway.log",
+    )
+    pid = MagicMock(side_effect=[2468, None])
+    stop = MagicMock(return_value=True)
+    start = MagicMock(return_value=restarted)
+    monkeypatch.setattr(gateway_process, "gateway_process_pid", pid)
+    monkeypatch.setattr(gateway_process, "stop_gateway_process", stop)
+    monkeypatch.setattr(gateway_process, "start_gateway_process", start)
+
+    result = gateway_process.restart_gateway_process(store)
+
+    assert result == restarted
+    stop.assert_called_once_with(store)
+    start.assert_called_once_with(store)
+
+
 def test_gateway_process_pid_clears_stale_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

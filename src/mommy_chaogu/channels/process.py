@@ -134,6 +134,21 @@ def stop_gateway_process(store: WeixinStore) -> bool:
     return True
 
 
+def restart_gateway_process(store: WeixinStore, *, timeout: float = 15.0) -> GatewayProcess:
+    """Restart a live worker so it reloads credentials and LLM configuration."""
+    if gateway_process_pid(store) is None:
+        return start_gateway_process(store)
+    if not stop_gateway_process(store):
+        raise WeixinApiError("微信网关重启失败：无法停止旧进程")
+
+    deadline = time.monotonic() + timeout
+    while gateway_process_pid(store) is not None:
+        if time.monotonic() >= deadline:
+            raise WeixinApiError("微信网关重启超时，请手动执行 stop 后再 start")
+        time.sleep(0.05)
+    return start_gateway_process(store)
+
+
 def clear_gateway_pid(store: WeixinStore, *, expected_pid: int) -> None:
     """Remove the PID file only when it still belongs to this worker."""
     if _read_pid(store) == expected_pid:
@@ -145,6 +160,7 @@ __all__ = [
     "clear_gateway_pid",
     "gateway_log_path",
     "gateway_process_pid",
+    "restart_gateway_process",
     "start_gateway_process",
     "stop_gateway_process",
 ]

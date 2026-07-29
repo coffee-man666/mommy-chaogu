@@ -27,6 +27,7 @@ def _isolate_setup_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("AGENT_PROVIDER", "")
     monkeypatch.setenv("AGENT_MODEL", "")
     monkeypatch.setenv("MOMMY_CONFIG_DIR", str(tmp_path / "user-config"))
+    monkeypatch.setenv("MOMMY_CHANNEL_STATE_DIR", str(tmp_path / "channel-state"))
 
 
 def make_input(answers: Sequence[str]):
@@ -272,6 +273,24 @@ def test_wizard_can_pair_weixin_in_same_flow(tmp_path: Path):
     assert result is True
     assert paired == [True]
     assert "AGENT_MODEL=glm-5" in env.read_text(encoding="utf-8")
+
+
+def test_wizard_restarts_online_weixin_after_llm_reconfiguration(tmp_path: Path):
+    env = tmp_path / ".env"
+    refreshed: list[bool] = []
+    paired: list[bool] = []
+
+    result = run_setup_wizard(
+        env,
+        input_func=make_input(["1", "", "new-deepseek-key"]),
+        verify_llm=False,
+        weixin_refresher=lambda: refreshed.append(True) or True,
+        weixin_connector=lambda: paired.append(True) or True,
+    )
+
+    assert result is True
+    assert refreshed == [True]
+    assert paired == []
 
 
 def test_wizard_retries_after_failed_validation(tmp_path: Path):

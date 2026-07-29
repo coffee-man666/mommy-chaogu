@@ -28,8 +28,9 @@
 - **Web 细节打磨**——移动持仓卡片化，K 线跟随深浅主题，成交量单位与信号/工作流徽章中文化，关键术语增加解释。
 - **发布验证**——搜索端点、WebSocket 降级/断连、股票联想组件与桌面/移动关键路径均有自动化回归。
 
-### 修复（后端评估 EVALUATION-2026-07-18 全部 17 项）
+### 修复
 
+- **微信配置热重载**：重新运行 `mommy setup` 修改 Provider、模型或 API Key 后，在线微信网关会等待旧进程退出并自动重启，避免继续使用进程内的旧配置。
 - **WebSocket 对话**：非流式降级的 `done.text` 不再被前端丢弃；生成中途断连立即解锁输入并提示重试，仅首次建连失败允许一次自动重试。
 - **记忆系统**：`mommy-agent verify/consolidate` 启动崩溃；预测验证窗口为零导致从未真正验证（现在宽限期 = verify_after + 一个 timeframe）；方向验证改用相对 entry_price 的窗口涨跌幅、neutral 不再灌水命中率；`store_extraction` 补写 `trade_date`（存量 137 行已回填，`scripts/backfill_trade_date.py`）；对话后提取改后台线程不再阻塞响应。
 - **LLM 连接层**：流式空串覆盖完整答案；流式双重调用消除（单次 stream 带 tools，不再双倍计费）；显式 120s 超时 + 关 SDK 内置重试 + 读 Retry-After；TokenTracker 接线进调用链并补全在产 provider 定价；TUI 密钥探测链与 AGENT_PROVIDER 对齐；提取调用 temperature=0 且计入 token 统计。

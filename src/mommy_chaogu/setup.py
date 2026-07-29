@@ -26,6 +26,7 @@ from mommy_chaogu.config import default_user_env_path, load_runtime_env
 InputFunc = Callable[[str], str]
 LLMValidator = Callable[[str, str, str], tuple[bool, str]]
 WeixinConnector = Callable[[], bool]
+WeixinRefresher = Callable[[], bool]
 
 _MANAGED_BEGIN = "# >>> mommy-chaogu managed configuration >>>"
 _MANAGED_END = "# <<< mommy-chaogu managed configuration <<<"
@@ -149,6 +150,22 @@ def connect_weixin() -> bool:
     return True
 
 
+def refresh_running_weixin_gateway() -> bool:
+    """Restart an online gateway after LLM settings change."""
+    from mommy_chaogu.channels import WeixinStore
+    from mommy_chaogu.channels.process import (
+        gateway_process_pid,
+        restart_gateway_process,
+    )
+
+    store = WeixinStore()
+    if store.load_credentials() is None or gateway_process_pid(store) is None:
+        return False
+    process = restart_gateway_process(store)
+    print(f"✅ 微信助手已重载新配置（PID {process.pid}）。")
+    return True
+
+
 def run_setup_wizard(
     env_path: Path | None = None,
     input_func: InputFunc = input,
@@ -158,6 +175,7 @@ def run_setup_wizard(
     offer_weixin: bool = True,
     validator: LLMValidator = validate_llm_connection,
     weixin_connector: WeixinConnector = connect_weixin,
+    weixin_refresher: WeixinRefresher = refresh_running_weixin_gateway,
 ) -> bool:
     """Run the unified LLM + optional Weixin onboarding wizard."""
     if env_path is None:
@@ -237,8 +255,15 @@ def run_setup_wizard(
     print(f"\n✅ AI 配置已保存：{provider} / {model}")
     print(f"   私有配置文件：{env_path.resolve()}")
 
+    weixin_reloaded = False
+    try:
+        weixin_reloaded = weixin_refresher()
+    except Exception as exc:
+        print(f"⚠️ 微信助手未能自动重载（{type(exc).__name__}）。")
+        print("   请运行 `mommy channel weixin stop` 后再运行 `mommy channel weixin start`。")
+
     # --- 5. 微信扫码（可选）---
-    if offer_weixin:
+    if offer_weixin and not weixin_reloaded:
         pair_weixin = _ask_yes_no(input_func, "\n现在连接微信？", default=True)
         if pair_weixin:
             try:
