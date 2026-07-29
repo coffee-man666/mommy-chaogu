@@ -1,18 +1,20 @@
 """MCP Server：把 agent 工具暴露为 MCP 协议。
 
 任何支持 MCP 的客户端（🦞 / Claude Desktop / Kimi Code / 等）
-都可以直接连接这个 server，调用 25 个数据工具。
+都可以直接连接这个 server。默认 ``market-only`` profile 只开放公共行情；
+``personal`` 才开放本地持仓、记忆和写操作。
 
 用法：
     # stdio 模式（最简单，Claude Desktop 等用）
-    uv run mommy-mcp
+    uv run mommy-mcp --profile market-only
 
     # 在 Claude Desktop config.json 里配：
     {
       "mcpServers": {
         "mommy-chaogu": {
           "command": "uv",
-          "args": ["run", "--directory", "/path/to/mommy-chaogu", "mommy-mcp"]
+          "args": ["run", "--directory", "/path/to/mommy-chaogu", "mommy-mcp",
+                   "--profile", "market-only"]
         }
       }
     }
@@ -20,14 +22,23 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
+import os
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import TextContent, Tool, ToolAnnotations
 
+from mommy_chaogu.agent.research_tools import (
+    WRITE_TOOL_NAMES,
+    McpProfile,
+    ResearchToolCatalog,
+    allowed_base_tool_names,
+    normalize_mcp_profile,
+)
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
 _log = logging.getLogger(__name__)
@@ -133,55 +144,108 @@ def _build_memory_service(
     return MemoryService(pipeline=pipeline, memory=memory)
 
 
-def create_mcp_server(ctx: ToolContext | None = None) -> Server:
+def create_mcp_server(
+    ctx: ToolContext | None = None,
+    *,
+    profile: McpProfile | str = "market-only",
+) -> Server:
     """创建 MCP Server 实例。
 
     Args:
         ctx: ToolContext（None 则用默认配置）
+        profile: ``market-only`` 只开放公共行情；``personal`` 额外开放
+            持仓、记忆和写操作。
     """
     if ctx is None:
         ctx = _build_context()
 
+    selected_profile = normalize_mcp_profile(profile)
     registry = ToolRegistry(ctx)
+    research = ResearchToolCatalog(ctx, registry, selected_profile)
     server = Server("mommy-chaogu")
 
-    # 把 ToolDef 转成 MCP Tool 格式
-    tool_defs = registry.definitions()
+    allowed_base = allowed_base_tool_names(selected_profile)
+    base_defs = [
+        item for item in registry.definitions() if item["function"]["name"] in allowed_base
+    ]
+    research_defs = research.definitions()
+    allowed_research = {tool.name for tool in research_defs}
+
+    def _annotations(name: str) -> ToolAnnotations:
+        is_write = name in WRITE_TOOL_NAMES
+        return ToolAnnotations(
+            readOnlyHint=not is_write,
+            destructiveHint=False,
+            idempotentHint=not is_write,
+            openWorldHint=name not in {"get_memory_context", "get_prediction_history"},
+        )
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
         tools: list[Tool] = []
-        for td in tool_defs:
+        for td in base_defs:
             fn = td["function"]
             tools.append(
                 Tool(
                     name=fn["name"],
                     description=fn["description"],
                     inputSchema=fn["parameters"],
+                    annotations=_annotations(fn["name"]),
+                )
+            )
+        for tool_def in research_defs:
+            tools.append(
+                Tool(
+                    name=tool_def.name,
+                    description=tool_def.description,
+                    inputSchema=tool_def.parameters,
+                    annotations=_annotations(tool_def.name),
                 )
             )
         return tools
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
+        if name not in allowed_base and name not in allowed_research:
+            result = (
+                '{"error":"该工具未在当前 MCP profile 中开放。'
+                '如确需个人数据，请由用户重新连接并选择 personal。"}'
+            )
+            return [TextContent(type="text", text=result)]
         # registry.call 里是同步阻塞网络 IO（行情拉取等），直接跑会把
         # 整个 MCP 会话的 event loop 卡死——挪到线程池执行。
-        result = await asyncio.to_thread(registry.call, name, arguments or {})
+        if name in allowed_base:
+            result = await asyncio.to_thread(registry.call, name, arguments or {})
+        else:
+            result = await asyncio.to_thread(research.call, name, arguments or {})
         return [TextContent(type="text", text=result)]
 
     return server
 
 
-async def run_stdio() -> None:
+async def run_stdio(profile: McpProfile | str = "market-only") -> None:
     """stdio 模式启动（MCP 标准 transport）。"""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
+    selected_profile = normalize_mcp_profile(profile)
     ctx = _build_context()
-    server = create_mcp_server(ctx)
+    server = create_mcp_server(ctx, profile=selected_profile)
     async with stdio_server() as (read_stream, write_stream):
-        _log.info("mommy-chaogu MCP server started (25 tools)")
+        _log.info("mommy-chaogu MCP server started (profile=%s)", selected_profile)
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 def main_mcp() -> None:
     """CLI 入口。"""
-    asyncio.run(run_stdio())
+    parser = argparse.ArgumentParser(prog="mommy-mcp", description="mommy-chaogu MCP server")
+    parser.add_argument(
+        "--profile",
+        choices=("market-only", "personal"),
+        default=os.environ.get("MOMMY_MCP_PROFILE", "market-only"),
+        help="隐私权限：market-only（默认）或 personal",
+    )
+    args = parser.parse_args()
+    asyncio.run(run_stdio(args.profile))
+
+
+if __name__ == "__main__":
+    main_mcp()

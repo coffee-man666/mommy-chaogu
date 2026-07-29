@@ -659,35 +659,41 @@ uv run mommy tui
 
 ### 你的需求
 
-你是另一个 AI agent（如 Claude Desktop），想通过 MCP 协议接入 mommy-chaogu 的数据能力。
+你已在 Kimi Code 或 Claude Code 登录，希望直接使用 mommy-chaogu 的投研逻辑和本地数据，
+不再配置第二套 LLM Key。
 
 ### MCP Server
 
 ```bash
-# 启动 MCP Server（stdio 协议）
-uv run mommy mcp
+# 一键注册 MCP + 安装投研 Skill + 连通测试
+uv run mommy connect kimi          # 或 claude
+
+# 查看和复测
+uv run mommy connect status
+uv run mommy connect test kimi
 ```
 
-在 Claude Desktop 的配置文件中添加：
+默认 `market-only` 只开放公共行情、K 线、资金流、基本面、板块和 4 个只读研究工作流。
+如果用户明确同意把持仓、自选和历史记忆提供给当前模型上下文，再执行：
 
-```json
-{
-  "mcpServers": {
-    "mommy-chaogu": {
-      "command": "uv",
-      "args": ["run", "mommy-mcp"],
-      "cwd": "/path/to/mommy-chaogu"
-    }
-  }
-}
+```bash
+uv run mommy connect kimi --profile personal
 ```
 
-接入后，Claude 可以：
-- 查询 A 股实时行情
-- 分析资金流
-- 获取基本面数据
-- 查看历史记忆和预测
-- 管理自选股和告警
+personal 会额外开放持仓、记忆、告警以及 `research_portfolio` 和
+`record_research_conclusion`。写回工具必须由用户明确要求或确认后调用。
+
+```bash
+# 安全断开；不会删除其他 MCP Server，修改过的 Skill 也会保留
+uv run mommy connect disconnect kimi
+```
+
+高级用户仍可手动启动 stdio server：
+
+```bash
+uv run mommy-mcp --profile market-only
+uv run mommy-mcp --profile personal
+```
 
 ### 通过 API 自动化
 

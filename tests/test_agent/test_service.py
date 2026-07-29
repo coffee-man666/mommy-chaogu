@@ -18,6 +18,12 @@ def mock_ctx() -> ToolContext:
     return ToolContext(adapter=adp)
 
 
+@pytest.fixture(autouse=True)
+def isolated_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Do not let a developer's configured onboarding model leak into unit tests."""
+    monkeypatch.setenv("AGENT_MODEL", "")
+
+
 class TestProviderConfig:
     def test_deepseek_is_default(self) -> None:
         assert "deepseek" in SUPPORTED_PROVIDERS

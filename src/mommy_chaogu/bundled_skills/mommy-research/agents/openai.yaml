@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mommy Research"
+  short_description: "Use local A-share research tools and workflows"
+  default_prompt: "Use $mommy-research to analyze today’s A-share market with evidence and risks."

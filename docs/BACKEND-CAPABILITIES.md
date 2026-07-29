@@ -334,14 +334,15 @@ def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None
 
 ## 7. CLI 入口对照
 
-`pyproject.toml [project.scripts]`，共 14 个：
+`pyproject.toml [project.scripts]`，共 17 个：
 
 | 入口 | 用途 |
 |---|---|
 | `mommy` | 自然语言主入口（REPL/单发/--setup/--verbose） |
 | `mommy-tui` / `mommy-web` | 两个前端 |
 | `mommy watchlist/monitor/cache/semicon/flows/report/agent/memory/earnings/...` | 透传子命令 |
-| `mommy-mcp` | MCP server（把 24 工具暴露给外部 MCP client） |
+| `mommy connect claude/kimi` | 注册本地 MCP、安装投研 Skill、测试与断开 |
+| `mommy-mcp` | MCP server（25 个底层工具 + 6 个研究工作流，按 privacy profile 发布） |
 
 `--verbose` 输出路由决策 + 工具调用过程，是调试前端路由展示的参考输出。
 

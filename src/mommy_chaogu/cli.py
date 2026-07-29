@@ -12,6 +12,7 @@ from mommy_chaogu.cli_support import *
 from mommy_chaogu.cli_commands.agent import *
 from mommy_chaogu.cli_commands.cache import *
 from mommy_chaogu.cli_commands.channel import *
+from mommy_chaogu.cli_commands.connect import *
 from mommy_chaogu.cli_commands.flows import *
 from mommy_chaogu.cli_commands.memory import *
 from mommy_chaogu.cli_commands.monitor import *
@@ -42,7 +43,7 @@ _WELCOME = """\
   📅 看业绩   "中报怎么样" / "业绩披露"
   📝 写报告   "今日总结" / "收盘报告"
 
-也可直接输入子命令：watchlist / monitor / cache / flows / agent / web / tui
+也可直接输入子命令：watchlist / monitor / cache / flows / agent / web / tui / connect
 
 输入问题开始，输入 q 退出。
 """
@@ -240,6 +241,7 @@ def main_mommy() -> NoReturn:
         "monitor": ("mommy-monitor", main_monitor),
         "cache": ("mommy-cache", main_cache),
         "channel": ("mommy-channel", main_channel),
+        "connect": ("mommy-connect", main_connect),
         "setup": ("mommy-setup", main_setup),
         "semicon": ("mommy-semicon", main_semicon),
         "flows": ("mommy-flows", main_flows),
@@ -299,7 +301,7 @@ def main_mommy() -> NoReturn:
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
-            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, setup, web, tui"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

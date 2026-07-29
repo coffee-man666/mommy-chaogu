@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **Coding Agent 一键接入**——`mommy connect claude/kimi` 自动注册本地 stdio MCP、安装
+  `mommy-research` Skill 并执行连通测试；提供 `status` / `test` / `disconnect`，保留用户
+  现有第三方 MCP 配置和被修改过的 Skill。
+- **MCP 确定性投研工作流**——新增市场、个股、板块、资金流、持仓和结论写回 6 个高层
+  工具。外部 Kimi/Claude 负责最终推理，不再嵌套调用项目内 LLM。
+
+### 安全
+
+- MCP 默认启用 `market-only`，不发布持仓、自选、告警和历史记忆；只有用户显式选择
+  `--profile personal` 才开放个人数据及写回工具，并在 MCP annotations 标记读写性质。
+
 ## [1.2.0] - 2026-07-28
 
 ### 新增

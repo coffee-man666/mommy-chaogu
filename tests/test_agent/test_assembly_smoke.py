@@ -40,6 +40,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr("mommy_chaogu.db_paths.MARKET_DB", tmp_path / "market.db")
     monkeypatch.setattr("mommy_chaogu.db_paths.PORTFOLIO_DB", tmp_path / "portfolio.db")
     monkeypatch.setenv("AGENT_PROVIDER", "")
+    monkeypatch.setenv("AGENT_MODEL", "")
     for env in _ALL_PROVIDER_ENVS:
         monkeypatch.setenv(env, "")
     return tmp_path
@@ -148,18 +149,16 @@ class TestMcpServerSmoke:
         self, isolated_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """list_tools 与注册表一致；call_tool 经 to_thread 执行（T5）。"""
-        from mcp.types import CallToolRequest, CallToolRequestParams
+        from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 
         from mommy_chaogu.agent.mcp_server import create_mcp_server
-        from mommy_chaogu.agent.tools import ToolRegistry
         from mommy_chaogu.agent.tools.base import ToolContext
 
         ctx = ToolContext(adapter=None, agent_db=isolated_env / "agent.db")  # type: ignore[arg-type]
         server = create_mcp_server(ctx)
 
-        # 工具数与注册表一致（docstring/日志里的工具数不能漂移）
+        # 默认隐私边界是 market-only：只发布公共工具和公共研究工作流。
         assert len(server.request_handlers) > 0
-        expected = set(ToolRegistry.tool_names())
 
         async def _call(name: str, arguments: dict[str, Any]) -> Any:
             handler = server.request_handlers[CallToolRequest]
@@ -169,10 +168,37 @@ class TestMcpServerSmoke:
             )
             return await handler(req)
 
-        # 选一个不需要 adapter 的工具验证 call_tool 全链路（线程池执行 +
-        # 真实 agent_db 读取）：空库返回空列表 JSON
+        async def _list() -> Any:
+            return await server.request_handlers[ListToolsRequest](ListToolsRequest())
+
+        listed = asyncio.run(_list())
+        names = {tool.name for tool in listed.root.tools}  # type: ignore[union-attr]
+        assert "research_stock" in names
+        assert "get_quote" in names
+        assert "get_portfolio" not in names
+        assert "get_memory_context" not in names
+
+        # 未发布的个人工具即使被手工请求，也必须在服务端拒绝。
         result = asyncio.run(_call("get_prediction_history", {"limit": 1}))
-        # CallToolResult → content[0].text 是工具返回的 JSON
         text = result.root.content[0].text  # type: ignore[union-attr]
-        assert text == "[]"
-        assert "get_prediction_history" in expected
+        assert "未在当前 MCP profile 中开放" in text
+
+    def test_personal_profile_lists_private_and_write_tools(self, isolated_env: Path) -> None:
+        from mcp.types import ListToolsRequest
+
+        from mommy_chaogu.agent.mcp_server import create_mcp_server
+        from mommy_chaogu.agent.tools.base import ToolContext
+
+        ctx = ToolContext(adapter=None, agent_db=isolated_env / "agent.db")  # type: ignore[arg-type]
+        server = create_mcp_server(ctx, profile="personal")
+
+        async def _list() -> Any:
+            return await server.request_handlers[ListToolsRequest](ListToolsRequest())
+
+        listed = asyncio.run(_list())
+        tools = {tool.name: tool for tool in listed.root.tools}  # type: ignore[union-attr]
+        assert "get_portfolio" in tools
+        assert "get_memory_context" in tools
+        assert "research_portfolio" in tools
+        assert "record_research_conclusion" in tools
+        assert tools["record_research_conclusion"].annotations.readOnlyHint is False

@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,555 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（1,570 个离线用例，另有 13 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -85,7 +85,7 @@ src/mommy_chaogu/
 ├── push/            # Server酱微信推送
 ├── channels/        # 本地消息网关（微信二维码授权 + 私聊长轮询）
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 12 个透传子命令）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个透传子命令）
 ```
 
 ## 自然语言入口
@@ -103,6 +103,8 @@ src/mommy_chaogu/
 2. **底层 CLI 子命令**（向后兼容，高级用户 + CI）
    - `mommy-watchlist` / `mommy-monitor` / `mommy-cache` / `mommy-flows` 等
    - 这些命令保留向后兼容，推荐使用 `mommy <子命令>` 风格
+   - `mommy connect claude|kimi` → 安装投研 Skill + 注册本地 MCP；默认 market-only，
+     显式 `--profile personal` 才开放持仓、记忆和写回
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：
 - `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor

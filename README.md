@@ -142,6 +142,28 @@ uv run mommy web --host 0.0.0.0 --port 8765
 本机启动默认免登录，即使 `.env` 中保留了公网部署使用的 `MOMMY_API_TOKEN` 也不会要求
 浏览器再次输入；确需在本机测试令牌认证时使用 `mommy-web --require-auth`。
 
+### 连接 Kimi Code / Claude Code
+
+让已经登录 Coding Agent 的用户直接使用本地投研能力，无需再配置一套 LLM Key：
+
+```bash
+uv run mommy connect kimi       # 或 claude
+uv run mommy connect status
+uv run mommy connect test kimi
+```
+
+接入器会注册本地 stdio MCP Server、安装 `mommy-research` 投研 Skill，并执行连通测试。
+默认 `market-only` 只开放公共行情；用户明确需要持仓和历史记忆时重新连接：
+
+```bash
+uv run mommy connect kimi --profile personal
+```
+
+personal 工具返回的个人数据会进入所选 Coding Agent 的模型上下文；数据库和密钥仍保留在
+本机。profile 约束的是 MCP 能力，不是 Coding Agent 自身的文件系统权限；不要在包含敏感
+文件的目录里给 Agent 开启跳过确认/YOLO 模式。断开使用
+`uv run mommy connect disconnect kimi`。
+
 ### 微信远程对话（Beta）
 
 无需开放公网端口即可把本地助手连接到微信：
@@ -214,9 +236,9 @@ Cache   Agent    Data Sources
 | 指标 | 值 |
 |---|---|
 | 代码量 | ~51,000 行（src ~27,000 + tests ~16,000 + web ~7,000） |
-| 测试 | 1,558 collected；1,545 个确定性离线测试 + 13 个定时网络探针 |
-| CLI 入口 | `mommy` 统一入口 + 12 个透传子命令（watchlist / monitor / cache / semicon / flows / report / agent / memory / web / tui / channel / setup），另有 `mommy-earnings`、`mommy-mcp` 独立入口 |
-| Agent 工具 | 25 个 function-calling tools |
+| 测试 | 1,583 collected；1,570 个确定性离线测试 + 13 个定时网络探针 |
+| CLI 入口 | `mommy` 统一入口 + 13 个透传子命令（新增 connect），另有 `mommy-earnings`、`mommy-mcp` 等独立入口 |
+| Agent 工具 | 内置 Agent 25 个；MCP 另有 6 个确定性研究工作流，并按 privacy profile 发布 |
 | 数据库 | 4 个（market / portfolio / agent / reference） |
 | LLM Provider | 6 个（deepseek / openai / kimi / z.ai / Nova Bridge / MiniMax） |
 | 记忆系统 | 5 层（工作/情景/预测/语义/向量） |

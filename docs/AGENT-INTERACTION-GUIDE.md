@@ -110,6 +110,25 @@
 
 ---
 
+## 外部 Coding Agent 的高层研究工具
+
+通过 `mommy connect kimi` / `mommy connect claude` 接入时，优先调用以下不含内部 LLM 的
+确定性证据包工具，而不是重复拼装底层调用：
+
+| 工具 | 证据包 |
+|---|---|
+| `research_market_brief` | 指数 + 板块排行 |
+| `research_stock` | 报价 + K线 + 当日/历史资金流 + 基本面；personal 追加记忆 |
+| `research_sector` | 板块搜索 + 排行 + 成分股 |
+| `research_money_flow` | 报价 + 当日/历史资金流 |
+| `research_portfolio` | 持仓 + 报价 + 组合风险 + 记忆（仅 personal） |
+| `record_research_conclusion` | 本地保存结论/预测（仅 personal，必须先获用户同意） |
+
+默认 `market-only` 不发布持仓、自选、告警和记忆工具。缺少这些工具是用户选择的隐私
+边界，不得通过 shell 或直接读数据库绕过。personal 工具结果会进入外部模型上下文。
+
+---
+
 ## 分析原则
 
 ### 资金流分析
