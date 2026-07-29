@@ -27,60 +27,26 @@
 
 你是第一次接触这个项目。你刚 clone 了仓库，想知道怎么最快跑起来。
 
-### Step 1：安装
-
-**方式 A：Docker（推荐，3 步搞定）**
+### Step 1：启动
 
 ```bash
 git clone https://github.com/coffee-man666/mommy-chaogu.git
 cd mommy-chaogu
-
-# 配置密钥
-cp .env.example .env
-# 编辑 .env，填入一个 LLM provider 的 key（四选一）
-
-# 启动
-docker compose up -d
-# 打开 http://localhost:8000
+uv run mommy
 ```
 
-**方式 B：本地安装**
+`uv run` 会准备运行环境。第一次启动会自动进入配置向导；没有 API Key 也可以跳过，
+继续使用行情、资金流和固定工作流。
 
-```bash
-git clone https://github.com/coffee-man666/mommy-chaogu.git
-cd mommy-chaogu
-uv sync --extra dev
-```
-
-### Step 2：配置 AI 与微信（统一交互式引导）
+### Step 2：配置 AI 与微信
 
 ```bash
 uv run mommy setup
 ```
 
-系统会引导你完成：
-
-```
-╭─ mommy-chaogu 首次配置 ─╮
-│                        │
-│  选择 LLM 提供商：       │
-│  1) DeepSeek (推荐)     │
-│  2) OpenAI             │
-│  3) Kimi / Moonshot    │
-│  4) z.ai / GLM         │
-│                        │
-╰────────────────────────╯
-
-请选择 [1-6]: 1
-模型名（回车使用 deepseek-chat）:
-API key（输入不会显示）:
-✅ 连接成功
-现在连接微信？(Y/n):
-
-是否配置微信推送？(y/n): n
-
-✅ 配置完成！.env 已生成。
-```
+向导会选择 Provider 和模型、隐藏输入并验证 Key，最后可选微信扫码。配置默认以私有权限
+保存在用户目录。Provider、配置优先级、Coding Agent、局域网和 Docker 的完整说明见
+[从安装到运行](GETTING-STARTED.md)。
 
 > **没有 API key？** 也能用。行情查询、资金流分析等 9 个预定义工作流不需要 LLM。
 > 只有 "AI 对话" 功能需要 API key。运行 `mommy "今天大盘怎么样"` 会正常工作，

@@ -5,6 +5,7 @@
 
 ## 使用与部署
 
+- [GETTING-STARTED.md](GETTING-STARTED.md) — 从安装、模型配置到各运行模式
 - [USER-GUIDE.md](USER-GUIDE.md) — 场景化使用指南（真实场景 + 命令速查）
 - [RAILWAY-DEPLOYMENT.md](RAILWAY-DEPLOYMENT.md) — Railway 部署指南
 - [EARNINGS-HANDBOOK.md](EARNINGS-HANDBOOK.md) — 财报窗口实战手册（时效：2026 中报窗口）
