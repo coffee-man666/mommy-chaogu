@@ -72,7 +72,7 @@ fi
     assert "mommy-chaogu 安装完成" in result.stdout
     calls = log.read_text(encoding="utf-8")
     assert (
-        "tool install --quiet --refresh-package mommy-chaogu --reinstall-package mommy-chaogu "
-        "--python 3.12" in calls
+        "tool install --quiet --quiet --refresh-package mommy-chaogu "
+        "--reinstall-package mommy-chaogu --python 3.12" in calls
     )
     assert "tool dir --bin" in calls

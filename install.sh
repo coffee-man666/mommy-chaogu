@@ -82,6 +82,7 @@ fi
 info "正在安装 mommy-chaogu（Python ${PYTHON_VERSION}）…"
 "$uv_binary" tool install \
     --quiet \
+    --quiet \
     --refresh-package mommy-chaogu \
     --reinstall-package mommy-chaogu \
     --python "$PYTHON_VERSION" \
