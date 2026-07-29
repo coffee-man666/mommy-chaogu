@@ -24,20 +24,27 @@ mommy-chaogu 把实时行情、资金流、持仓、信号、记忆和 AI Agent 
 
 ## 30 秒启动
 
-需要 [Python 3.12+](https://www.python.org/downloads/) 和
-[uv](https://docs.astral.sh/uv/getting-started/installation/)：
+macOS / Linux：
 
 ```bash
-git clone https://github.com/coffee-man666/mommy-chaogu.git
-cd mommy-chaogu
-uv tool install .
+curl -LsSf https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/install.sh | sh
 mommy
 ```
 
-第一次运行会自动引导你选择模型、隐藏输入并验证 API Key；配置只保存在当前设备。
-没有 Key 也可以跳过，继续使用行情、资金流和预定义工作流。
+安装脚本会自动准备独立的 Python 环境并安装完整应用。第一次运行 `mommy` 会引导你选择
+模型、隐藏输入并验证 API Key；配置只保存在当前设备。没有 Key 也可以跳过，继续使用
+行情、资金流和预定义工作流。
 
-> 官方一行安装脚本正在准备中。在正式发布前，README 只提供已经可用的安装方式。
+不喜欢直接执行远程脚本？可以先下载并检查：
+
+```bash
+curl -LO https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/install.sh
+less install.sh
+sh install.sh
+```
+
+域名安装地址上线后会替换这条 GitHub Raw URL，安装逻辑保持不变。从源码运行和 Docker
+方式见 [从安装到运行](docs/GETTING-STARTED.md)。
 
 ## 配置模型与微信
 

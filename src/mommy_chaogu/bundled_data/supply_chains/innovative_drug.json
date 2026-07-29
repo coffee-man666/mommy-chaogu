@@ -1,0 +1,368 @@
+{
+  "meta": {
+    "id": "innovative_drug",
+    "name": "创新药",
+    "name_en": "Innovative Drugs",
+    "description": "A 股创新药产业链 38 只核心标的：上游 CXO/CRO/CDMO（卖水人）+ 中游 创新药企（化药/生物药/综合/中药）+ 下游 医药商业 + 医疗服务",
+    "total_stocks": 38,
+    "updated_at": "2026-07-03",
+    "subcategories": [
+      "CXO",
+      "化药创新",
+      "生物药",
+      "综合制药",
+      "中药创新",
+      "医药商业",
+      "医疗服务"
+    ],
+    "chain_positions": [
+      "上游",
+      "中游",
+      "下游"
+    ]
+  },
+  "stocks": [
+    {
+      "code": "603259",
+      "name": "药明康德",
+      "role": "CXO龙头-CRO+CDMO",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "全球 CXO 龙头",
+      "board": "主板"
+    },
+    {
+      "code": "300759",
+      "name": "康龙化成",
+      "role": "CXO-CRO+CDMO",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300347",
+      "name": "泰格医药",
+      "role": "CXO-临床CRO龙头",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "002821",
+      "name": "凯莱英",
+      "role": "CXO-CDMO龙头",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "300363",
+      "name": "博腾股份",
+      "role": "CXO-CDMO",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "603456",
+      "name": "九洲药业",
+      "role": "CXO-CDMO",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "300725",
+      "name": "药石科技",
+      "role": "CXO-分子砌块",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "603127",
+      "name": "昭衍新药",
+      "role": "CXO-安全性评价",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "688202",
+      "name": "美迪西",
+      "role": "CXO-临床前CRO",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688621",
+      "name": "阳光诺和",
+      "role": "CXO-仿创结合",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688131",
+      "name": "皓元医药",
+      "role": "CXO-小分子工具",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688073",
+      "name": "毕得医药",
+      "role": "CXO-分子砌块",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "300404",
+      "name": "博济医药",
+      "role": "CXO-临床CRO",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "688238",
+      "name": "和元生物",
+      "role": "CXO-基因治疗CDMO",
+      "level": "上游",
+      "subcategory": "CXO",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "600276",
+      "name": "恒瑞医药",
+      "role": "化药创新龙头",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "A 股化药创新龙头",
+      "board": "主板"
+    },
+    {
+      "code": "688428",
+      "name": "诺诚健华",
+      "role": "化药创新-BTK抑制剂",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "300558",
+      "name": "贝达药业",
+      "role": "化药创新-肺癌靶向",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "688192",
+      "name": "迪哲医药-U",
+      "role": "化药创新-肿瘤",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688266",
+      "name": "泽璟制药-U",
+      "role": "化药创新-肿瘤+血液",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688578",
+      "name": "艾力斯",
+      "role": "化药创新-肺癌靶向",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688197",
+      "name": "首药控股-U",
+      "role": "化药创新-ALK靶向",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688302",
+      "name": "海创药业-U",
+      "role": "化药创新-前列腺癌",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688356",
+      "name": "键凯科技",
+      "role": "化药创新-肿瘤",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688382",
+      "name": "益方生物-U",
+      "role": "化药创新-肿瘤靶向",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688321",
+      "name": "微芯生物",
+      "role": "化药创新-原创",
+      "level": "中游",
+      "subcategory": "化药创新",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688235",
+      "name": "百济神州",
+      "role": "创新药龙头-肿瘤",
+      "level": "中游",
+      "subcategory": "生物药",
+      "note": "国产创新药出海龙头",
+      "board": "科创板"
+    },
+    {
+      "code": "688180",
+      "name": "君实生物-U",
+      "role": "创新药-肿瘤+免疫",
+      "level": "中游",
+      "subcategory": "生物药",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688520",
+      "name": "神州细胞",
+      "role": "生物药-重组蛋白",
+      "level": "中游",
+      "subcategory": "生物药",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688062",
+      "name": "迈威生物-U",
+      "role": "生物药-ADC",
+      "level": "中游",
+      "subcategory": "生物药",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "600196",
+      "name": "复星医药",
+      "role": "综合制药+投资",
+      "level": "中游",
+      "subcategory": "综合制药",
+      "note": "覆盖化药+生物药+器械+诊断",
+      "board": "主板"
+    },
+    {
+      "code": "600557",
+      "name": "康缘药业",
+      "role": "中药创新",
+      "level": "中游",
+      "subcategory": "中药创新",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "002603",
+      "name": "以岭药业",
+      "role": "中药创新-络病理论",
+      "level": "中游",
+      "subcategory": "中药创新",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "600535",
+      "name": "天士力",
+      "role": "中药+生物药",
+      "level": "中游",
+      "subcategory": "中药创新",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "601607",
+      "name": "上海医药",
+      "role": "医药商业龙头",
+      "level": "下游",
+      "subcategory": "医药商业",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "600511",
+      "name": "国药股份",
+      "role": "医药商业",
+      "level": "下游",
+      "subcategory": "医药商业",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "603368",
+      "name": "柳药集团",
+      "role": "医药商业-区域龙头",
+      "level": "下游",
+      "subcategory": "医药商业",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "300015",
+      "name": "爱尔眼科",
+      "role": "医疗服务-眼科连锁",
+      "level": "下游",
+      "subcategory": "医疗服务",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "600763",
+      "name": "通策医疗",
+      "role": "医疗服务-口腔连锁",
+      "level": "下游",
+      "subcategory": "医疗服务",
+      "note": "",
+      "board": "主板"
+    }
+  ]
+}

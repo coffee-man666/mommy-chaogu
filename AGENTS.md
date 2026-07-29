@@ -59,7 +59,9 @@ uv run python scripts/migrate_db_layout.py            # 执行迁移
 | `data/agent.db` | 记忆系统（对话 + 事件 + 预测 + 知识 + 向量） | agent_memory, episodic_events, predictions, semantic_knowledge |
 | `data/reference.db` | 参考库（半导体产业链 + 业绩） | semicon_stocks, earnings_* |
 
-路径可通过环境变量覆盖：`MOMMY_MARKET_DB` / `MOMMY_PORTFOLIO_DB` / `MOMMY_AGENT_DB` / `MOMMY_REFERENCE_DB`
+数据根目录可通过 `MOMMY_DATA_DIR` 覆盖，单库路径可通过环境变量覆盖：
+`MOMMY_MARKET_DB` / `MOMMY_PORTFOLIO_DB` / `MOMMY_AGENT_DB` / `MOMMY_REFERENCE_DB`。
+源码仓库默认使用 `data/`；全局安装默认使用 `~/.local/share/mommy-chaogu/`。
 
 定义在 `src/mommy_chaogu/db_paths.py`。
 

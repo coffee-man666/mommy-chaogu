@@ -1,0 +1,986 @@
+{
+  "meta": {
+    "name": "半导体产业链",
+    "description": "半导体产业链 106 只核心标的，覆盖上游(材料/设备/EDA/IP) + 中游(芯片设计/制造/存储/功率) + 下游(分销) + 末端(封测)",
+    "total_stocks": 106,
+    "subcategories": [
+      "EDA",
+      "FPGA",
+      "IP",
+      "MCU",
+      "传感器",
+      "分销",
+      "制造",
+      "功率",
+      "处理器",
+      "存储",
+      "封测",
+      "射频",
+      "材料",
+      "模拟",
+      "设备"
+    ],
+    "chain_positions": [
+      "上游",
+      "下游",
+      "中游",
+      "末端"
+    ]
+  },
+  "stocks": [
+    {
+      "code": "301095",
+      "name": "广立微",
+      "role": "良率/测试EDA",
+      "level": "上游",
+      "subcategory": "EDA",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "301269",
+      "name": "华大九天",
+      "role": "全流程EDA",
+      "level": "上游",
+      "subcategory": "EDA",
+      "note": "国产 EDA 龙头",
+      "board": "创业板"
+    },
+    {
+      "code": "688206",
+      "name": "概伦电子",
+      "role": "器件建模EDA",
+      "level": "上游",
+      "subcategory": "EDA",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688521",
+      "name": "芯原股份",
+      "role": "GPU/NPU/ISP IP",
+      "level": "上游",
+      "subcategory": "IP",
+      "note": "IP 授权龙头",
+      "board": "科创板"
+    },
+    {
+      "code": "002129",
+      "name": "TCL中环",
+      "role": "硅片",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "兼光伏",
+      "board": "主板"
+    },
+    {
+      "code": "002409",
+      "name": "雅克科技",
+      "role": "前驱体/光刻胶",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "002549",
+      "name": "凯美特气",
+      "role": "电子特气",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "300054",
+      "name": "鼎龙股份",
+      "role": "CMP 抛光垫",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300346",
+      "name": "南大光电",
+      "role": "ArF 光刻胶/特气",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300398",
+      "name": "飞凯材料",
+      "role": "光刻胶单体",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300576",
+      "name": "容大感光",
+      "role": "光刻胶",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300655",
+      "name": "晶瑞电材",
+      "role": "光刻胶/湿化学品",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300666",
+      "name": "江丰电子",
+      "role": "溅射靶材",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "靶材龙头",
+      "board": "创业板"
+    },
+    {
+      "code": "300706",
+      "name": "阿石创",
+      "role": "靶材",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "600206",
+      "name": "有研新材",
+      "role": "靶材/化合物衬底",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "603078",
+      "name": "江化微",
+      "role": "湿电子化学品",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "603650",
+      "name": "彤程新材",
+      "role": "光刻胶",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "605358",
+      "name": "立昂微",
+      "role": "硅片",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "兼功率器件",
+      "board": "主板"
+    },
+    {
+      "code": "688019",
+      "name": "安集科技",
+      "role": "CMP 抛光液",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688106",
+      "name": "金宏气体",
+      "role": "电子特气",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688126",
+      "name": "沪硅产业",
+      "role": "12 寸大硅片",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "国产硅片龙头",
+      "board": "科创板"
+    },
+    {
+      "code": "688268",
+      "name": "华特气体",
+      "role": "电子特气",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688399",
+      "name": "神工股份",
+      "role": "刻蚀硅材料",
+      "level": "上游",
+      "subcategory": "材料",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "002371",
+      "name": "北方华创",
+      "role": "刻蚀/薄膜沉积/炉管",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "综合设备龙头",
+      "board": "主板"
+    },
+    {
+      "code": "300567",
+      "name": "精测电子",
+      "role": "前道量测",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300604",
+      "name": "长川科技",
+      "role": "测试机",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "301369",
+      "name": "联动科技",
+      "role": "功率测试机",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "600641",
+      "name": "万业企业",
+      "role": "离子注入",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "凯世通",
+      "board": "主板"
+    },
+    {
+      "code": "688012",
+      "name": "中微公司",
+      "role": "介质刻蚀",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "刻蚀机龙头",
+      "board": "科创板"
+    },
+    {
+      "code": "688037",
+      "name": "芯源微",
+      "role": "涂胶显影",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688072",
+      "name": "拓荆科技",
+      "role": "PECVD 薄膜沉积",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688082",
+      "name": "盛美上海",
+      "role": "清洗设备",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688120",
+      "name": "华海清科",
+      "role": "CMP 抛光",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688200",
+      "name": "华峰测控",
+      "role": "模拟测试机",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688361",
+      "name": "中科飞测",
+      "role": "量测/缺陷检测",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688409",
+      "name": "富创精密",
+      "role": "零部件",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "腔体/气体管路",
+      "board": "科创板"
+    },
+    {
+      "code": "688652",
+      "name": "京仪装备",
+      "role": "温控/炉管",
+      "level": "上游",
+      "subcategory": "设备",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "000021",
+      "name": "深科技",
+      "role": "存储封测",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "002156",
+      "name": "通富微电",
+      "role": "AMD 配套封测",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "002185",
+      "name": "华天科技",
+      "role": "综合封测",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "600584",
+      "name": "长电科技",
+      "role": "综合封测",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "封测龙头",
+      "board": "主板"
+    },
+    {
+      "code": "603005",
+      "name": "晶方科技",
+      "role": "CIS 先进封装",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "688135",
+      "name": "利扬芯片",
+      "role": "专业测试",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688352",
+      "name": "颀中科技",
+      "role": "显示驱动封测",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688362",
+      "name": "甬矽电子",
+      "role": "先进封装",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688372",
+      "name": "伟测科技",
+      "role": "第三方测试",
+      "level": "下游",
+      "subcategory": "封测",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "002049",
+      "name": "紫光国微",
+      "role": "FPGA/特种 IC",
+      "level": "中游",
+      "subcategory": "FPGA",
+      "note": "兼特种 IC",
+      "board": "主板"
+    },
+    {
+      "code": "688107",
+      "name": "安路科技",
+      "role": "FPGA",
+      "level": "中游",
+      "subcategory": "FPGA",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688385",
+      "name": "复旦微电",
+      "role": "FPGA/智能卡",
+      "level": "中游",
+      "subcategory": "FPGA",
+      "note": "兼 MCU",
+      "board": "科创板"
+    },
+    {
+      "code": "300077",
+      "name": "国民技术",
+      "role": "安全 MCU",
+      "level": "中游",
+      "subcategory": "MCU",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300327",
+      "name": "中颖电子",
+      "role": "家电/电池 MCU",
+      "level": "中游",
+      "subcategory": "MCU",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "603068",
+      "name": "博通集成",
+      "role": "无线连接",
+      "level": "中游",
+      "subcategory": "MCU",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "688018",
+      "name": "乐鑫科技",
+      "role": "Wi-Fi/蓝牙 SoC",
+      "level": "中游",
+      "subcategory": "MCU",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688595",
+      "name": "芯海科技",
+      "role": "信号链 MCU",
+      "level": "中游",
+      "subcategory": "MCU",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688608",
+      "name": "恒玄科技",
+      "role": "蓝牙音频 SoC",
+      "level": "中游",
+      "subcategory": "MCU",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "002241",
+      "name": "歌尔股份",
+      "role": "MEMS 麦克风",
+      "level": "中游",
+      "subcategory": "传感器",
+      "note": "兼模组",
+      "board": "主板"
+    },
+    {
+      "code": "300007",
+      "name": "汉威科技",
+      "role": "气体传感",
+      "level": "中游",
+      "subcategory": "传感器",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "603160",
+      "name": "汇顶科技",
+      "role": "指纹/触控",
+      "level": "中游",
+      "subcategory": "传感器",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "603501",
+      "name": "韦尔股份",
+      "role": "CIS",
+      "level": "中游",
+      "subcategory": "传感器",
+      "note": "豪威 CIS 全球前三",
+      "board": "主板"
+    },
+    {
+      "code": "688213",
+      "name": "思特威",
+      "role": "CIS",
+      "level": "中游",
+      "subcategory": "传感器",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688286",
+      "name": "敏芯股份",
+      "role": "MEMS",
+      "level": "中游",
+      "subcategory": "传感器",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688322",
+      "name": "奥比中光",
+      "role": "3D 视觉",
+      "level": "中游",
+      "subcategory": "传感器",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "600460",
+      "name": "士兰微",
+      "role": "IDM 功率器件",
+      "level": "中游",
+      "subcategory": "制造",
+      "note": "IDM",
+      "board": "主板"
+    },
+    {
+      "code": "600745",
+      "name": "闻泰科技",
+      "role": "IDM 功率器件",
+      "level": "中游",
+      "subcategory": "制造",
+      "note": "安世半导体",
+      "board": "主板"
+    },
+    {
+      "code": "688172",
+      "name": "燕东微",
+      "role": "IDM",
+      "level": "中游",
+      "subcategory": "制造",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688249",
+      "name": "合肥晶合",
+      "role": "Foundry 代工",
+      "level": "中游",
+      "subcategory": "制造",
+      "note": "DDIC 代工",
+      "board": "科创板"
+    },
+    {
+      "code": "688347",
+      "name": "华虹公司",
+      "role": "Foundry 代工",
+      "level": "中游",
+      "subcategory": "制造",
+      "note": "特色工艺 功率",
+      "board": "科创板"
+    },
+    {
+      "code": "688396",
+      "name": "华润微",
+      "role": "IDM 功率器件",
+      "level": "中游",
+      "subcategory": "制造",
+      "note": "IDM",
+      "board": "科创板"
+    },
+    {
+      "code": "688981",
+      "name": "中芯国际",
+      "role": "Foundry 代工",
+      "level": "中游",
+      "subcategory": "制造",
+      "note": "大陆代工龙头",
+      "board": "科创板"
+    },
+    {
+      "code": "300373",
+      "name": "扬杰科技",
+      "role": "二极管/MOSFET",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300623",
+      "name": "捷捷微电",
+      "role": "晶闸管",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "603290",
+      "name": "斯达半导",
+      "role": "车规 IGBT",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "605111",
+      "name": "新洁能",
+      "role": "MOSFET",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "688187",
+      "name": "时代电气",
+      "role": "高压 IGBT",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "轨交 IGBT",
+      "board": "科创板"
+    },
+    {
+      "code": "688261",
+      "name": "东微半导",
+      "role": "高压超级结",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688689",
+      "name": "银河微电",
+      "role": "功率分立",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688711",
+      "name": "宏微科技",
+      "role": "IGBT/FRED",
+      "level": "中游",
+      "subcategory": "功率",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "300474",
+      "name": "景嘉微",
+      "role": "国产 GPU",
+      "level": "中游",
+      "subcategory": "处理器",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "688041",
+      "name": "海光信息",
+      "role": "x86 服务器 CPU",
+      "level": "中游",
+      "subcategory": "处理器",
+      "note": "AMD 授权",
+      "board": "科创板"
+    },
+    {
+      "code": "688047",
+      "name": "龙芯中科",
+      "role": "自主指令集 CPU",
+      "level": "中游",
+      "subcategory": "处理器",
+      "note": "LoongArch",
+      "board": "科创板"
+    },
+    {
+      "code": "688256",
+      "name": "寒武纪",
+      "role": "AI 加速卡",
+      "level": "中游",
+      "subcategory": "处理器",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "300223",
+      "name": "北京君正",
+      "role": "存储+处理器",
+      "level": "中游",
+      "subcategory": "存储",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "603986",
+      "name": "兆易创新",
+      "role": "NOR Flash",
+      "level": "中游",
+      "subcategory": "存储",
+      "note": "全球第三 兼 MCU",
+      "board": "主板"
+    },
+    {
+      "code": "688008",
+      "name": "澜起科技",
+      "role": "DDR 内存接口",
+      "level": "中游",
+      "subcategory": "存储",
+      "note": "全球前列",
+      "board": "科创板"
+    },
+    {
+      "code": "688123",
+      "name": "聚辰股份",
+      "role": "EEPROM",
+      "level": "中游",
+      "subcategory": "存储",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "002881",
+      "name": "美格智能",
+      "role": "智能模组",
+      "level": "中游",
+      "subcategory": "射频",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "300638",
+      "name": "广和通",
+      "role": "通信模组",
+      "level": "中游",
+      "subcategory": "射频",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300782",
+      "name": "卓胜微",
+      "role": "射频开关/LNA",
+      "level": "中游",
+      "subcategory": "射频",
+      "note": "射频龙头",
+      "board": "创业板"
+    },
+    {
+      "code": "301165",
+      "name": "锐捷网络",
+      "role": "网络设备芯片",
+      "level": "中游",
+      "subcategory": "射频",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "603236",
+      "name": "移远通信",
+      "role": "通信模组",
+      "level": "中游",
+      "subcategory": "射频",
+      "note": "模组龙头",
+      "board": "主板"
+    },
+    {
+      "code": "688153",
+      "name": "唯捷创芯",
+      "role": "PA",
+      "level": "中游",
+      "subcategory": "射频",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688220",
+      "name": "翱捷科技",
+      "role": "蜂窝基带",
+      "level": "中游",
+      "subcategory": "射频",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "300661",
+      "name": "圣邦股份",
+      "role": "通用模拟",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "国产模拟龙头",
+      "board": "创业板"
+    },
+    {
+      "code": "600171",
+      "name": "上海贝岭",
+      "role": "模拟/MCU",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "688052",
+      "name": "纳芯微",
+      "role": "汽车模拟",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688173",
+      "name": "希荻微",
+      "role": "电源管理",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688381",
+      "name": "帝奥微",
+      "role": "信号链",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688508",
+      "name": "芯朋微",
+      "role": "电源管理",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688536",
+      "name": "思瑞浦",
+      "role": "信号链",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688601",
+      "name": "力芯微",
+      "role": "电源管理",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "688798",
+      "name": "艾为电子",
+      "role": "消费电子模拟",
+      "level": "中游",
+      "subcategory": "模拟",
+      "note": "",
+      "board": "科创板"
+    },
+    {
+      "code": "000062",
+      "name": "深圳华强",
+      "role": "电子城+分销",
+      "level": "末端",
+      "subcategory": "分销",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "001298",
+      "name": "好上好",
+      "role": "授权分销",
+      "level": "末端",
+      "subcategory": "分销",
+      "note": "",
+      "board": "主板"
+    },
+    {
+      "code": "300184",
+      "name": "力源信息",
+      "role": "授权分销",
+      "level": "末端",
+      "subcategory": "分销",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "300997",
+      "name": "商络电子",
+      "role": "被动元件+半导体",
+      "level": "末端",
+      "subcategory": "分销",
+      "note": "",
+      "board": "创业板"
+    },
+    {
+      "code": "301099",
+      "name": "雅创电子",
+      "role": "汽车电子分销",
+      "level": "末端",
+      "subcategory": "分销",
+      "note": "",
+      "board": "创业板"
+    }
+  ]
+}

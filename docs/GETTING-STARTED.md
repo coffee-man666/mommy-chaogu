@@ -3,7 +3,31 @@
 这份文档解释 mommy-chaogu 的安装、模型配置和不同运行模式。想先体验功能，可以直接回到
 [README 的 30 秒启动](../README.md#30-秒启动)。
 
-## 1. 从源码安装
+## 1. 一行安装
+
+macOS / Linux：
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/install.sh | sh
+mommy
+```
+
+脚本会在缺少 uv 时安装 uv，再用隔离的 Python 3.12 环境安装 mommy-chaogu。重复运行同一
+命令可更新安装。第一次运行 `mommy` 会自动进入模型配置。用户配置保存在
+`~/.config/mommy-chaogu/`，数据库默认保存在 `~/.local/share/mommy-chaogu/`，不会因为
+从不同目录启动而产生多套数据。
+
+如需先审阅脚本：
+
+```bash
+curl -LO https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/install.sh
+less install.sh
+sh install.sh
+```
+
+Windows 安装脚本尚未提供。
+
+## 2. 从源码运行
 
 需要 Python 3.12+ 和 uv：
 
@@ -19,9 +43,10 @@ uv run mommy
 uv sync --frozen --extra dev
 ```
 
-官方一行安装脚本和安装包尚未发布。发布后，安装版命令不再需要 `uv run` 前缀。
+本文后续示例以源码运行展示 `uv run mommy`。通过一行脚本安装的用户直接运行 `mommy`，
+例如把 `uv run mommy setup` 写成 `mommy setup`。
 
-## 2. 配置内置 AI
+## 3. 配置内置 AI
 
 首次运行 `mommy` 会在没有可用模型配置时自动启动向导，也可以随时手动运行：
 
@@ -68,7 +93,7 @@ AGENT_MODEL=deepseek-chat
 配置优先级为：shell 环境变量 → 项目 `.env` → 用户级 `.env` → `config.toml` / 默认值。
 不要提交包含真实密钥的 `.env`。
 
-## 3. 不配置 LLM
+## 4. 不配置 LLM
 
 报价、K 线、资金流和预定义工作流不需要 LLM Key：
 
@@ -82,7 +107,7 @@ uv run mommy flows top
 第一次运行自然语言入口时可以跳过配置。固定工作流仍会返回结构化结果，但不会生成 LLM
 总结；开放式问题会提示配置模型。
 
-## 4. CLI、TUI 与本机 Web
+## 5. CLI、TUI 与本机 Web
 
 ```bash
 uv run mommy                         # 自然语言 REPL
@@ -95,7 +120,7 @@ uv run mommy web --port 8765         # 本机 Web
 本机 Web 默认只监听 `127.0.0.1`，即使配置中保留了公网令牌，也不会要求本机浏览器重复
 输入。打开 `http://127.0.0.1:8765` 即可使用。
 
-## 5. 连接 Claude Code 或 Kimi Code
+## 6. 连接 Claude Code 或 Kimi Code
 
 外部 Coding Agent 已经有自己的模型，因此不需要再给 mommy-chaogu 配一套 LLM Key：
 
@@ -124,7 +149,7 @@ uv run mommy connect disconnect claude
 uv run mommy connect disconnect all
 ```
 
-## 6. 微信本地网关
+## 7. 微信本地网关
 
 微信模式需要先配置内置 LLM：
 
@@ -145,7 +170,7 @@ uv run mommy channel weixin logout     # 删除当前设备上的授权
 微信消息会经过腾讯服务，投研问题会经过所选 LLM Provider。更多说明见
 [微信本地频道](WEIXIN-CHANNEL.md)。
 
-## 7. 局域网手机访问 Web
+## 8. 局域网手机访问 Web
 
 监听非本机地址时必须设置长随机令牌：
 
@@ -164,7 +189,7 @@ uv run mommy web --host 0.0.0.0 --port 8765
 uv run mommy web --require-auth --api-token "你的长随机令牌"
 ```
 
-## 8. Docker Web
+## 9. Docker Web
 
 Docker 默认只映射到宿主机 `127.0.0.1:8000`：
 

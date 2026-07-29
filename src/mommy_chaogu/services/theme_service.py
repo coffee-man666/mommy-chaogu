@@ -22,9 +22,19 @@ from mommy_chaogu.market_data.adapter import MarketDataAdapter
 
 _log = logging.getLogger(__name__)
 
-# 主题数据文件路径（JSON 数据文件，非 DB）。
-_DATA_DIR = Path("data/supply_chains")
-_EARNINGS_FILE = Path("data/earnings_preview.json")
+# Installed wheels carry the read-only seeds. Source checkouts and Docker can
+# still override them with repository-level data assets.
+_BUNDLED_DATA_ROOT = Path(__file__).resolve().parents[1] / "bundled_data"
+
+
+def _theme_data_dir() -> Path:
+    local = Path("data/supply_chains")
+    return local if local.is_dir() else _BUNDLED_DATA_ROOT / "supply_chains"
+
+
+def _earnings_file() -> Path:
+    local = Path("data/earnings_preview.json")
+    return local if local.is_file() else _BUNDLED_DATA_ROOT / "earnings_preview.json"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -59,8 +69,9 @@ class ThemeService:
         themes: dict[str, dict[str, Any]] = {}
 
         # supply_chains/*.json
-        if _DATA_DIR.exists():
-            for f in sorted(_DATA_DIR.glob("*.json")):
+        data_dir = _theme_data_dir()
+        if data_dir.exists():
+            for f in sorted(data_dir.glob("*.json")):
                 data = _load_json(f)
                 if not data:
                     continue
@@ -79,8 +90,9 @@ class ThemeService:
                 }
 
         # earnings_preview.json → 中报观察
-        if _EARNINGS_FILE.exists():
-            data = _load_json(_EARNINGS_FILE)
+        earnings_file = _earnings_file()
+        if earnings_file.exists():
+            data = _load_json(earnings_file)
             stocks = data.get("stocks", [])
             if stocks:
                 themes["earnings_watch"] = {

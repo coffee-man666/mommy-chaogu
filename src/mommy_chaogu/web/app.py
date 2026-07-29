@@ -59,6 +59,11 @@ def _frontend_dist_candidates() -> tuple[Path, ...]:
     for root in roots:
         candidates.extend((root / "web" / "dist", root / "frontend" / "dist"))
 
+    # Wheels and ``uv tool install`` do not retain the repository-level
+    # ``web/dist`` directory. Release builds therefore ship the compiled Vue
+    # application inside the Python package.
+    candidates.append(Path(__file__).resolve().parent / "static")
+
     return tuple(dict.fromkeys(candidates))
 
 

@@ -55,3 +55,10 @@ def test_configured_frontend_is_served_at_root(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert '<div id="app"></div>' in response.text
+
+
+def test_packaged_frontend_is_available_for_installed_wheels() -> None:
+    packaged = Path(__file__).resolve().parents[2] / "src" / "mommy_chaogu" / "web" / "static"
+
+    assert packaged in _frontend_dist_candidates()
+    assert (packaged / "index.html").is_file()

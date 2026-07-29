@@ -72,6 +72,8 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+      - name: Packaged frontend is current
+        run: diff -qr dist ../src/mommy_chaogu/web/static
       - name: Install browser
         run: npx playwright install --with-deps chromium
       - name: Browser smoke
@@ -113,6 +115,18 @@ jobs:
           timeout 30s uv run mommy-mcp --help
           timeout 30s uv run mommy-tui --help
           timeout 30s uv run mommy --help
+      - name: Installed-tool smoke
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/mommy-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/mommy-bin
+        run: |
+          diff -qr data/supply_chains src/mommy_chaogu/bundled_data/supply_chains
+          cmp data/earnings_preview.json src/mommy_chaogu/bundled_data/earnings_preview.json
+          uv tool install --python 3.12 .
+          cd "$RUNNER_TEMP"
+          "$UV_TOOL_BIN_DIR/mommy" --help
+          "$UV_TOOL_DIR/mommy-chaogu/bin/python" -c "from mommy_chaogu.web.app import _resolve_frontend_dist; p = _resolve_frontend_dist(); assert p is not None and (p / 'index.html').is_file()"
+          "$UV_TOOL_DIR/mommy-chaogu/bin/python" -c "from mommy_chaogu.services.theme_service import ThemeService; assert len(ThemeService().list_themes()) >= 5"
 
   docker:
     name: Docker build and smoke

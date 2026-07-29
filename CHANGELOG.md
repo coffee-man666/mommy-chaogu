@@ -9,6 +9,10 @@
 
 ### 新增
 
+- **GitHub 一行安装**——macOS / Linux 可通过 `curl .../install.sh | sh` 安装；脚本自动准备
+  uv 与隔离的 Python 3.12 工具环境，重复运行可更新，并在结束前验证 `mommy` 入口。
+- **安装包内置 Web 前端**——Vue 生产构建随 Python wheel 发布，`uv tool install` 后运行
+  `mommy web` 不再退化为仅 API；CI 校验提交的静态资源与前端源码构建完全一致。
 - **Coding Agent 一键接入**——`mommy connect claude/kimi` 自动注册本地 stdio MCP、安装
   `mommy-research` Skill 并执行连通测试；提供 `status` / `test` / `disconnect`，保留用户
   现有第三方 MCP 配置和被修改过的 Skill。
