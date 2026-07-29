@@ -375,6 +375,18 @@ class TestTokenCost:
         # deepseek input 0.27 > gpt-4o-mini input 0.15
         assert cost["by_model"]["deepseek-chat"]["usd"] > cost["by_model"]["gpt-4o-mini"]["usd"]
 
+    def test_cost_estimate_minimax_m3(self, tracker: TokenTracker) -> None:
+        """MiniMax-M3 使用开放平台按量标准档估算。"""
+        tracker.record(
+            model="MiniMax-M3",
+            prompt_tokens=1_000_000,
+            completion_tokens=1_000_000,
+            cached_tokens=500_000,
+        )
+        cost = tracker.cost_estimate()
+        expected = 0.5 * 0.30 + 0.5 * 0.06 + 1.0 * 1.20
+        assert cost["total_usd"] == pytest.approx(expected, rel=1e-6)
+
     def test_cost_estimate_custom_pricing(self, tracker: TokenTracker) -> None:
         """自定义定价表覆盖默认。"""
         tracker.record(model="my-model", prompt_tokens=2_000_000, completion_tokens=0)

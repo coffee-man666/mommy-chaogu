@@ -59,7 +59,7 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "minimax": {
         "base_url": "https://api.minimaxi.com/v1",
-        "default_model": "MiniMax-M2.7",
+        "default_model": "MiniMax-M3",
         "env_key": "MINIMAX_API_KEY",
         "temperature": 1.0,
         "embedding_model": None,

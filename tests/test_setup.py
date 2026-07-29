@@ -134,6 +134,21 @@ def test_wizard_writes_env_nova(tmp_path: Path):
     assert "AGENT_PROVIDER=nova" in content
 
 
+def test_wizard_writes_env_minimax_paygo(tmp_path: Path):
+    env = tmp_path / ".env"
+    result = run_setup_wizard(
+        env,
+        input_func=make_input(["6", "", "minimax-paygo-key"]),
+        verify_llm=False,
+        offer_weixin=False,
+    )
+    assert result is True
+    content = env.read_text(encoding="utf-8")
+    assert "MINIMAX_API_KEY=minimax-paygo-key" in content
+    assert "AGENT_PROVIDER=minimax" in content
+    assert "AGENT_MODEL=MiniMax-M3" in content
+
+
 def test_wizard_cancel_at_provider(tmp_path: Path):
     """EOFError 视为取消。"""
     env = tmp_path / ".env"

@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,545 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（1,553 个离线用例，另有 13 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -32,7 +32,7 @@ cp .env.example .env       # 复制模板
 | kimi | `MOONSHOT_API_KEY` | Moonshot / Kimi |
 | zai | `ZAI_API_KEY` | z.ai / GLM-4.7 |
 | nova | `NOVA_API_KEY` | Nova Bridge（本地桥接） |
-| minimax | `MINIMAX_API_KEY` | MiniMax（M2.7） |
+| minimax | `MINIMAX_API_KEY` | MiniMax 开放平台按量 API（M3，非 Coding Plan） |
 | — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
 | — | `AGENT_MODEL` | 覆盖聊天模型名 |

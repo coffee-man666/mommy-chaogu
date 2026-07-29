@@ -45,7 +45,7 @@ class TestProviderConfig:
     def test_minimax_configuration(self) -> None:
         assert SUPPORTED_PROVIDERS["minimax"] == {
             "base_url": "https://api.minimaxi.com/v1",
-            "default_model": "MiniMax-M2.7",
+            "default_model": "MiniMax-M3",
             "env_key": "MINIMAX_API_KEY",
             "temperature": 1.0,
             "embedding_model": None,
@@ -94,7 +94,7 @@ class TestAgentServiceInit:
         self, mock_openai: MagicMock, mock_ctx: ToolContext
     ) -> None:
         svc = AgentService(mock_ctx, provider="minimax", api_key="minimax-test")
-        assert svc._model == "MiniMax-M2.7"
+        assert svc._model == "MiniMax-M3"
         mock_openai.assert_called_once_with(
             api_key="minimax-test",
             base_url="https://api.minimaxi.com/v1",

@@ -7,9 +7,9 @@
 - [x] `uv run pytest tests/test_db_lifecycle.py -W error::ResourceWarning`
 - [x] `uv run python scripts/smoke_migration.py`
 - [x] `npm audit --audit-level=high` in `web/`
-- [ ] `./scripts/smoke_docker.sh` on a Docker-capable host（当前机器未安装 Docker）
-- [ ] GitHub CI release gate is green on Python 3.12 and 3.13
-- [ ] Scheduled network probe status is reviewed separately from deterministic CI
+- [x] Docker build + health/permissions smoke（GitHub CI；当前机器未安装 Docker）
+- [x] GitHub CI release gate is green on Python 3.12 and 3.13（merge run `30420741759`）
+- [x] Scheduled network probe status reviewed separately; current branch 13 probes also pass
 
 ## Release hygiene
 

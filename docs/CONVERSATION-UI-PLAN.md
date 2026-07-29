@@ -1,6 +1,6 @@
 # 对话即界面（Conversation as Interface）实施台账
 
-> 创建：2026-07-24。状态：Phase 0–2 已完成，Phase 3 本地门禁已完成（待提交后的 GitHub CI / tag）。
+> 创建：2026-07-24。状态：Phase 0–2 已完成，Phase 3 发布门禁已完成（待 v1.2.0 tag）。
 > 本文档跟踪「对话即界面」重构的阶段划分、已完成工作与接下来的实施方案。
 > 完成后归档到 `docs/archive/`。
 
@@ -20,7 +20,7 @@
 | Phase 0 | 后端评估修复（EVALUATION-2026-07-18 全部 17 项） | ✅ 已合并 main | PR #23 + `fix/eval-backlog`（`812c647`，merge `ef434fe`） |
 | Phase 1 | TUI 单屏重写 + 后端配套 + Web 错误约定 + 文档同步 | ✅ 已合并 | PR #27 → `feat/conversation-ui` |
 | Phase 2 | Web 对话为主轴重构 | ✅ 已完成 | 根路由对话 + 上下文栏 + 搜股/详情/持仓闭环 |
-| Phase 3 | 截图 / 发版 / 文档收尾 | 🟡 本地完成 | v1.2.0、3 张截图、全量门禁；待 GitHub CI / tag |
+| Phase 3 | 截图 / 发版 / 文档收尾 | 🟡 门禁完成 | v1.2.0、3 张截图、全量门禁；待 tag |
 
 ---
 
@@ -183,8 +183,9 @@ EVALUATION-2026-07-18（`docs/archive/EVALUATION-2026-07-18-backend.md`）的 17
 
 - [x] README 补 3 张新界面截图（TUI 对话流、Web 对话页、上下文抽屉），放 `docs/images/`。
 - [x] 版本号 v1.2.0（version.py + CHANGELOG [1.2.0] + README 徽章）。
-- [x] RELEASE-CHECKLIST 本地门禁（1,528 pytest + ruff + mypy + 38 vitest + build + 3 e2e + audit + migration）。
-- [ ] 提交后确认 GitHub CI / Docker release gate，打 `v1.2.0` tag。
+- [x] RELEASE-CHECKLIST 本地门禁（1,553 pytest + ruff + mypy + 40 vitest + build + 3 e2e + audit + migration）。
+- [x] PR #28 合入，GitHub CI / Docker release gate 全绿（run `30420741759`）。
+- [ ] 打 `v1.2.0` tag 并创建 GitHub release。
 - [ ] GitHub release 完成后将本台账归档到 `docs/archive/CONVERSATION-UI-PLAN-2026-07.md`。
 
 ## 5. 关键设计决策（已定论，不再回头）

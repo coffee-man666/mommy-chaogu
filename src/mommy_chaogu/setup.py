@@ -52,8 +52,11 @@ _PROVIDER_DETAILS: dict[str, dict[str, str]] = {
         "hint": "先启动 localhost:9999 的 Nova Bridge，key 可为任意非空值",
     },
     "minimax": {
-        "label": "MiniMax（国内 OpenAI 兼容接口）",
-        "hint": "去 platform.minimaxi.com 获取 API key",
+        "label": "MiniMax 开放平台（按量 API）",
+        "hint": (
+            "去 platform.minimaxi.com/user-center/basic-information/interface-key "
+            "获取普通 API Key（非 Coding Plan）"
+        ),
     },
 }
 
