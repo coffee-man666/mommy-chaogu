@@ -57,131 +57,233 @@ A 股投研工具集 — 行情监控、资金流分析、AI agent 对话、自�
 
 ## 5 分钟快速上手
 
+需要 [Python 3.12+](https://www.python.org/downloads/) 和
+[uv](https://docs.astral.sh/uv/getting-started/installation/)：
+
 ```bash
-# 1. 克隆
 git clone https://github.com/coffee-man666/mommy-chaogu.git
 cd mommy-chaogu
+uv sync --frozen
 
-# 2. 一次配置 AI + 微信（也可直接运行 mommy 自动进入）
+# 交互式配置 Provider、模型和 API Key；最后可选微信扫码
 uv run mommy setup
 
-# 3a. Docker 一键启动 Web 服务（推荐，无需安装 Python / Node / uv）
-docker compose up -d
-# 打开 http://localhost:8000
-
-# 3b. 或者用 CLI 直接查询（uv 会自动处理依赖）
-uv run mommy "今天大盘怎么样"
+# 任选一个入口开始使用
+uv run mommy                         # 自然语言 REPL
+uv run mommy tui                     # 单屏终端界面
+uv run mommy web                     # Web UI：http://127.0.0.1:8000
+uv run mommy "分析一下比亚迪"       # 单次查询
 ```
 
-> 🔧 无 API key？行情查询、资金流等工作流仍可正常使用，AI 分析功能需要配置 key。
-> 部署到 Railway 需额外配置公网令牌和持久化卷，见 [Railway 部署指南](docs/RAILWAY-DEPLOYMENT.md)。
+配置向导会验证模型是否可用，并把密钥写入当前用户的私有配置文件，输入时不会回显。
+如果当前仓库已经有 `.env`，向导会更新它；否则默认写入
+`~/.config/mommy-chaogu/.env`。换到其他目录后仍可使用。
 
-<details>
-<summary>本地开发安装（uv）</summary>
-
-```bash
-# 需要 Python 3.12+
-uv sync --frozen --extra dev
-
-# 配置 Provider、模型、Key 和可选微信连接
-uv run mommy setup
-
-# 跑质量门确认环境正常
-./scripts/quality.sh
-```
-
-</details>
+> 没有 API Key 也能使用报价、K 线、资金流和预定义工作流；自由对话、AI 总结、Web AI
+> 对话和微信助手需要 LLM。已经使用 Claude Code 或 Kimi Code 的用户也可以复用 Coding
+> Agent 的登录，见下方“模式 C”。
 
 ---
 
-## 使用示例
+## 选择使用模式
 
-**1. 自然语言查询（推荐）**
+| 模式 | 适合场景 | 是否需要 mommy 的 LLM Key | 数据边界 | 启动方式 |
+|---|---|---:|---|---|
+| **A. 本地内置助手** | CLI / TUI / Web 的完整 AI 体验 | 是 | Key、数据库和记忆保存在本机；请求发往所选 Provider | `mommy` / `mommy tui` / `mommy web` |
+| **B. 无 AI 数据工具** | 只看行情、资金流、自选和固定工作流 | 否 | 数据保存在本机 | 结构化命令或能命中工作流的自然语言 |
+| **C. Claude/Kimi 接入** | 在已有 Coding Agent 中调用本项目投研逻辑 | 否，复用 Agent 登录 | 默认只开放公共行情；可显式开放个人数据 | `mommy connect claude` / `mommy connect kimi` |
+| **D. 微信本地网关** | 电脑运行服务，微信远程对话 | 是 | 不开放公网端口；消息经过微信和所选 LLM Provider | `mommy channel weixin connect` |
+| **E. Docker Web** | 不安装本地 Python/Node，浏览器使用 | AI 对话需要 | 容器数据保存在 Docker volume | `docker compose up -d` |
+
+以下命令从源码仓库运行，因此使用 `uv run`。如果以后通过安装包安装，可直接去掉
+`uv run`，例如运行 `mommy setup`、`mommy tui`。
+
+### 模式 A：配置并使用内置 AI
+
+推荐使用统一配置向导：
 
 ```bash
-uv run mommy          # 进入交互式 REPL
-uv run mommy "今天大盘怎么样"
-uv run mommy "分析一下比亚迪"
-uv run mommy "半导体板块怎么样"
-uv run mommy -v "分析 600519"   # --verbose 显示工具调用过程
+uv run mommy setup
 ```
 
-`mommy` 入口会自动匹配 9 个预定义工作流（零延迟快速路径），未命中则 fallback 到 LLM agent 对话。匹配时会显示 `[匹配: 大盘指数 + 板块行情]`，让用户了解路由决策。
+向导依次完成：
 
-**2. 结构化子命令**
+1. 选择 LLM Provider。
+2. 接受默认模型，或填写该 Provider 支持的其他模型名。
+3. 隐藏输入 API Key，并发起一次最小请求验证配置。
+4. 以 `0600` 权限保存配置。
+5. 可选：显示微信二维码，扫码后启动本地微信网关。
+
+当前内置 Provider：
+
+| Provider | Key 环境变量 | 默认模型 | 说明 |
+|---|---|---|---|
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` | 默认推荐 |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | 支持向量检索 |
+| Kimi | `MOONSHOT_API_KEY` | `kimi-k2.6` | Kimi Coding API |
+| z.ai | `ZAI_API_KEY` | `glm-4.7` | GLM Coding API |
+| Nova Bridge | `NOVA_API_KEY` | `nova-bridge` | 本机 `127.0.0.1:9999/v1` 桥接 |
+| MiniMax | `MINIMAX_API_KEY` | `MiniMax-M3` | 开放平台按量 API，非 Coding Plan |
+
+重新配置时再次运行 `mommy setup` 即可。常用选项：
 
 ```bash
+uv run mommy setup --local       # 强制写入当前项目 .env
+uv run mommy setup --no-weixin   # 只配置 LLM，不询问微信连接
+uv run mommy setup --no-verify   # 暂时无法联网时跳过验证
+```
+
+也可以复制 `.env.example` 手动配置。至少填写所选 Provider 的 Key、
+`AGENT_PROVIDER` 和可选的 `AGENT_MODEL`：
+
+```dotenv
+DEEPSEEK_API_KEY=sk-xxxxxxxx
+AGENT_PROVIDER=deepseek
+AGENT_MODEL=deepseek-chat
+```
+
+配置优先级为：shell 环境变量 → 项目 `.env` → 用户级 `.env` → 项目默认配置。
+不要提交包含真实密钥的 `.env`。
+
+配置完成后可选择任一界面：
+
+```bash
+# 自然语言 REPL / 单次问题
+uv run mommy
+uv run mommy "今天大盘怎么样"
+uv run mommy -v "分析 600519"     # 显示路由和工具调用
+
+# Claude Code 风格单屏 TUI
+uv run mommy tui
+
+# 本机 Web：默认免登录，只监听 127.0.0.1
+uv run mommy web --port 8765
+# 打开 http://127.0.0.1:8765
+```
+
+`mommy` 会先匹配 9 个预定义工作流；未命中时再交给 LLM Agent。TUI 支持富卡片、
+slash 命令、`@` 股票联想、忙时排队和 Esc 中断。Web 提供移动端底部导航与桌面端
+投研上下文栏。
+
+### 模式 B：不配置 LLM，只使用本地数据能力
+
+行情和固定工作流不依赖 LLM Key：
+
+```bash
+uv run mommy "今天大盘怎么样"
 uv run mommy watchlist add 600519 --group 白酒
 uv run mommy watchlist list
-uv run mommy memory stats          # 查看记忆系统统计
-uv run mommy memory events         # 查看近期事件
-uv run mommy agent "中芯国际资金流怎么样？"
-uv run mommy web --port 8765       # 启动 Web UI
-uv run mommy tui                   # 终端 UI（单屏对话 + 内联数据卡片）
+uv run mommy flows top
 ```
 
-> 旧的独立命令（`mommy-watchlist`、`mommy-monitor` 等）仍向后兼容。
+命中固定工作流时会返回结构化结果，但不会生成 LLM 总结；自由提问会提示先运行
+`mommy setup`。旧的独立命令（`mommy-watchlist`、`mommy-monitor` 等）仍向后兼容。
 
-**3. Web UI（手机访问）**
+### 模式 C：连接 Claude Code 或 Kimi Code
+
+如果用户已经安装并登录 Claude Code 或 Kimi Code，可以让它直接调用本地投研工具，
+不需要再给 mommy-chaogu 配置 LLM Key：
 
 ```bash
-uv run mommy web --port 8765
+uv run mommy connect claude          # 或：uv run mommy connect kimi
+uv run mommy connect status
+uv run mommy connect test claude
 ```
 
-移动端底部 4 Tab（对话/行情/持仓/我的）；桌面端对话页常驻自选、预测和信号上下文。对话支持多行输入、忙时排队、语音输入、断线解锁与失败重试。
+连接命令会注册本地 stdio MCP Server、安装 `mommy-research` Skill，并做连通测试。
+重启或新开对应 Coding Agent 后，可以直接说“用 mommy 分析 600519”。
 
-Web 服务默认只监听 `127.0.0.1`。需要在局域网或公网访问时，必须配置业主令牌：
+默认 profile 是更安全的 `market-only`，只发布公共行情和研究工具，不读取持仓、
+自选、对话记忆，也不写入结论。明确需要个人投研闭环时才切换：
+
+```bash
+uv run mommy connect claude --profile personal
+uv run mommy connect test claude
+```
+
+`personal` 工具返回的数据会进入所选 Coding Agent 的模型上下文。MCP 工具不会把 API
+Key 作为结果返回，数据库文件仍保留在本机；但 Coding Agent 本身仍能看到工具返回值，
+也可能拥有独立的文件系统权限。profile 只约束 MCP 工具，因此不要在敏感目录中开启
+跳过确认/YOLO 模式。
+
+```bash
+uv run mommy connect disconnect claude   # 只移除托管的 Claude 配置和 Skill
+uv run mommy connect disconnect all      # 断开全部 Coding Agent
+```
+
+### 模式 D：微信作为本地远程入口（Beta）
+
+先按模式 A 配置 LLM，然后运行：
+
+```bash
+uv run mommy channel weixin connect
+uv run mommy channel weixin status
+```
+
+终端会显示二维码；扫码确认后，本地网关在后台主动长轮询，不需要公网 IP、域名或开放
+端口。它默认只接受扫码账号的私聊，授权信息仅保存在当前设备。
+
+```bash
+uv run mommy channel weixin stop       # 停止后台网关，保留授权
+uv run mommy channel weixin start      # 使用已有授权重新上线
+uv run mommy channel weixin logout     # 删除本机微信授权
+```
+
+微信消息会经过腾讯服务，投研问题会经过所选 LLM Provider。完整信任边界和诊断方法见
+[微信本地频道](docs/WEIXIN-CHANNEL.md)。
+
+### 局域网手机访问 Web
+
+只在本机打开 Web 不需要口令。只有监听非本机地址时才强制配置访问令牌：
 
 ```bash
 export MOMMY_API_TOKEN="$(openssl rand -hex 32)"
 uv run mommy web --host 0.0.0.0 --port 8765
 ```
 
-浏览器打开「我的 → 访问令牌」后输入同一令牌。令牌仅保存在当前浏览器会话；WebSocket 使用短期签名 ticket，不会把长期令牌放在 URL 中。
+让手机与电脑连接同一可信局域网，打开 `http://电脑局域网IP:8765`，然后在
+“我的 → 访问令牌”输入同一令牌。令牌只保存在当前浏览器会话；WebSocket 使用短期
+ticket，不把长期令牌放进 URL。不要把这个 HTTP 端口直接暴露到公网；公网使用应在前面
+增加 HTTPS 反向代理或私有网络隧道，并限制 CORS。
 
-本机启动默认免登录，即使 `.env` 中保留了公网部署使用的 `MOMMY_API_TOKEN` 也不会要求
-浏览器再次输入；确需在本机测试令牌认证时使用 `mommy-web --require-auth`。
-
-### 连接 Kimi Code / Claude Code
-
-让已经登录 Coding Agent 的用户直接使用本地投研能力，无需再配置一套 LLM Key：
+本机确需测试认证时使用：
 
 ```bash
-uv run mommy connect kimi       # 或 claude
-uv run mommy connect status
-uv run mommy connect test kimi
+uv run mommy web --require-auth --api-token "你的长随机令牌"
 ```
 
-接入器会注册本地 stdio MCP Server、安装 `mommy-research` 投研 Skill，并执行连通测试。
-默认 `market-only` 只开放公共行情；用户明确需要持仓和历史记忆时重新连接：
+### 模式 E：Docker Web
+
+Docker 默认只映射到宿主机 `127.0.0.1:8000`，因此本机浏览器免登录：
 
 ```bash
-uv run mommy connect kimi --profile personal
+docker compose up -d
+# 打开 http://127.0.0.1:8000
 ```
 
-personal 工具返回的个人数据会进入所选 Coding Agent 的模型上下文；数据库和密钥仍保留在
-本机。profile 约束的是 MCP 能力，不是 Coding Agent 自身的文件系统权限；不要在包含敏感
-文件的目录里给 Agent 开启跳过确认/YOLO 模式。断开使用
-`uv run mommy connect disconnect kimi`。
-
-### 微信远程对话（Beta）
-
-无需开放公网端口即可把本地助手连接到微信：
+不配置 Key 时可使用数据页面。要使用 AI 对话，可先编辑项目 `.env`：
 
 ```bash
-uv run mommy channel weixin connect
+cp .env.example .env
+# 编辑 .env，填写 Provider Key、AGENT_PROVIDER 和 AGENT_MODEL
+docker compose up -d --build
 ```
 
-终端会显示二维码。扫码确认后，授权只保存在本机，且默认只接受扫码账号的私聊。
-完整安全边界和分步命令见 [微信本地频道](docs/WEIXIN-CHANNEL.md)。
+如果本机已有 Python 和 uv，也可用 `uv run mommy setup --local --no-weixin` 生成容器读取的
+项目 `.env`。部署到 Railway 时还需要公网令牌和持久化卷，见
+[Railway 部署指南](docs/RAILWAY-DEPLOYMENT.md)。
 
-**4. 终端 TUI（单屏对话）**
+<details>
+<summary>开发者安装与质量门</summary>
 
 ```bash
-uv run mommy tui
+uv sync --frozen --extra dev
+uv run pytest -m "not network"
+uv run ruff check .
+uv run mypy --strict src
 ```
 
-行情、自选、持仓、资金流、预测和信号都以内联卡片进入同一条对话流；支持 Claude Code 风格 slash 命令、`@` 股票联想、忙时排队与 Esc 中断。
+</details>
 
 > 📖 更多功能：[场景化使用指南](docs/USER-GUIDE.md) | [CLI 速查](docs/DETAILED-ARCHITECTURE.md#cli-速查) | [记忆系统](docs/DETAILED-ARCHITECTURE.md#自进化记忆系统) | [回测引擎](docs/DETAILED-ARCHITECTURE.md#回测引擎)
 
