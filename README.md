@@ -30,7 +30,8 @@ mommy-chaogu 把实时行情、资金流、持仓、信号、记忆和 AI Agent 
 ```bash
 git clone https://github.com/coffee-man666/mommy-chaogu.git
 cd mommy-chaogu
-uv run mommy
+uv tool install .
+mommy
 ```
 
 第一次运行会自动引导你选择模型、隐藏输入并验证 API Key；配置只保存在当前设备。
@@ -40,10 +41,10 @@ uv run mommy
 
 ## 配置模型与微信
 
-首次启动会自动进入配置，也可以随时重新运行：
+首次运行 `mommy` 会自动进入配置，也可以随时重新运行：
 
 ```bash
-uv run mommy setup
+mommy setup
 ```
 
 向导会让你选择 Provider 和模型、隐藏输入并验证 API Key，然后询问是否连接微信。当前支持
@@ -53,9 +54,9 @@ DeepSeek、OpenAI、Kimi、z.ai、Nova Bridge 和 MiniMax。配置默认以 `060
 如果首次配置时跳过了微信，之后可以单独扫码连接：
 
 ```bash
-uv run mommy channel weixin connect   # 显示二维码，扫码后在后台上线
-uv run mommy channel weixin status    # 查看授权和运行状态
-uv run mommy channel weixin stop      # 停止网关，但保留本机授权
+mommy channel weixin connect   # 显示二维码，扫码后在后台上线
+mommy channel weixin status    # 查看授权和运行状态
+mommy channel weixin stop      # 停止网关，但保留本机授权
 ```
 
 微信模式不需要公网 IP、域名或开放端口，只接受扫码账号的私聊。消息会经过微信服务，投研
@@ -66,23 +67,23 @@ uv run mommy channel weixin stop      # 停止网关，但保留本机授权
 
 | 你想要的体验 | 启动命令 | 说明 |
 |---|---|---|
-| 连续自然语言对话 | `uv run mommy` | 最轻量的交互式入口 |
-| Coding Agent 风格终端 | `uv run mommy tui` | 富卡片、slash 命令、`@` 股票联想、流式状态 |
-| 本机网页 | `uv run mommy web` | 打开 `http://127.0.0.1:8000`，本机默认免登录 |
-| Claude Code | `uv run mommy connect claude` | 复用 Claude 登录，不再配置一套 LLM Key |
-| Kimi Code | `uv run mommy connect kimi` | 安装本地 MCP 和 `mommy-research` Skill |
-| 微信远程对话 | `uv run mommy channel weixin connect` | 扫码连接本地网关，不开放公网端口 |
+| 连续自然语言对话 | `mommy` | 最轻量的交互式入口 |
+| Coding Agent 风格终端 | `mommy tui` | 富卡片、slash 命令、`@` 股票联想、流式状态 |
+| 本机网页 | `mommy web` | 打开 `http://127.0.0.1:8000`，本机默认免登录 |
+| Claude Code | `mommy connect claude` | 复用 Claude 登录，不再配置一套 LLM Key |
+| Kimi Code | `mommy connect kimi` | 安装本地 MCP 和 `mommy-research` Skill |
+| 微信远程对话 | `mommy channel weixin connect` | 扫码连接本地网关，不开放公网端口 |
 
-已经通过安装包安装时，去掉命令前的 `uv run`，直接使用 `mommy`。
+开发者如果不想安装全局命令，可以在源码仓库中把 `mommy` 替换为 `uv run mommy`。
 
 ## 直接试试
 
 ```bash
-uv run mommy "今天大盘怎么样"
-uv run mommy "分析一下比亚迪"
-uv run mommy "半导体板块最近强不强"
-uv run mommy "主力资金在买什么"
-uv run mommy -v "分析 600519"       # 展开路由和工具调用
+mommy "今天大盘怎么样"
+mommy "分析一下比亚迪"
+mommy "半导体板块最近强不强"
+mommy "主力资金在买什么"
+mommy -v "分析 600519"       # 展开路由和工具调用
 ```
 
 命中固定工作流时，mommy 会直接获取结构化数据；需要开放式判断时，再交给 LLM Agent
