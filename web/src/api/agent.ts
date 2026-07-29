@@ -23,6 +23,18 @@ export interface RouteResponse {
 
 export type AgentStreamState = 'connecting' | 'connected' | 'disconnected'
 
+/** 工具调用事件（后端 ws.py 推送） */
+export interface ToolCallEvent {
+  tool: string
+  args?: Record<string, unknown>
+}
+export interface ToolResultEvent {
+  tool: string
+  status: 'done' | 'fail'
+  elapsedMs: number
+  result?: string
+}
+
 export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
@@ -55,6 +67,8 @@ export function agentStream(
   onThinking: () => void,
   onError: (msg: string) => void,
   onStateChange: (state: AgentStreamState) => void = () => {},
+  onToolCall: (e: ToolCallEvent) => void = () => {},
+  onToolResult: (e: ToolResultEvent) => void = () => {},
 ): {
   send: (message: string, history?: Array<{ role: string; content: string }>) => void
   close: () => void
@@ -126,6 +140,15 @@ export function agentStream(
           onDone(msg.text || '', msg.tools_used || [], msg.rounds || 0)
         } else if (msg.type === 'thinking') {
           onThinking()
+        } else if (msg.type === 'tool_call_started') {
+          onToolCall({ tool: msg.tool, args: msg.args })
+        } else if (msg.type === 'tool_call_finished') {
+          onToolResult({
+            tool: msg.tool,
+            status: msg.status === 'fail' ? 'fail' : 'done',
+            elapsedMs: msg.elapsed_ms ?? 0,
+            result: msg.result,
+          })
         } else if (msg.type === 'error') {
           turnInFlight = false
           onStateChange('disconnected')

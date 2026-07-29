@@ -95,11 +95,13 @@ async def ws_signals(
 
 @router.websocket("/ws/agent")
 async def ws_agent(websocket: WebSocket) -> None:
-    """AI 对话流式 WebSocket（真流式：逐 LLM delta 转发，#4）。
+    """AI 对话流式 WebSocket（真流式：逐 LLM delta 转发 + 工具调用事件）。
 
-    消息格式（前端零改动，纯累加 chunk.text）：
-    - 客户端发: {"message": "...", "history": [...]}
+    消息格式：
+    - 客户端发: {"message": "...", "history": [...], "session_id": "..."}
     - 服务端回: {"type": "thinking"} (一次)
+    - 服务端回: {"type": "tool_call_started", "tool": "...", "args": {...}} (每次工具执行前)
+    - 服务端回: {"type": "tool_call_finished", "tool": "...", "status": "done|fail", "elapsed_ms": N, "result": "..."} (每次工具执行后)
     - 服务端回: {"type": "chunk", "text": "..."} (多次，真实 LLM delta)
     - 服务端回: {"type": "done", "tools_used": [...], "rounds": N}
 
@@ -158,42 +160,60 @@ async def ws_agent(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "error", "message": "AI 助手忙，请稍后重试"})
                 continue
 
-            # 真流式：asyncio.Queue 桥接 worker 线程的 on_chunk → 事件循环发送
+            # 真流式：asyncio.Queue 桥接 worker 线程的所有回调 → 事件循环发送。
+            # 一个 queue 承载 chunk + tool_call_started + tool_call_finished，保证顺序。
             loop = asyncio.get_running_loop()
-            chunk_queue: asyncio.Queue[str | None] = asyncio.Queue()
+            event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
             streamed_any = False  # on_chunk 是否真的推过 delta（流式不可用时为 False）
 
+            def _emit(event: dict[str, Any]) -> None:
+                """worker 线程内调用，线程安全地把事件推入 queue。"""
+                loop.call_soon_threadsafe(event_queue.put_nowait, event)  # noqa: B023
+
             def on_chunk(delta: str) -> None:
-                """worker 线程内调用，线程安全地把 delta 推入 asyncio Queue。"""
                 nonlocal streamed_any
                 streamed_any = True
-                loop.call_soon_threadsafe(chunk_queue.put_nowait, delta)  # noqa: B023
+                _emit({"type": "chunk", "text": delta})
+
+            def on_tool_call(fn_name: str, fn_args: dict[str, Any]) -> None:
+                _emit({"type": "tool_call_started", "tool": fn_name, "args": fn_args})
+
+            def on_tool_result(fn_name: str, success: bool, elapsed_ms: int, digest: str) -> None:
+                _emit(
+                    {
+                        "type": "tool_call_finished",
+                        "tool": fn_name,
+                        "status": "done" if success else "fail",
+                        "elapsed_ms": elapsed_ms,
+                        "result": digest,
+                    }
+                )
 
             async def _drain_stream() -> None:
-                """持续从 queue 取 delta 发给前端，直到收到 None sentinel。"""
+                """持续从 queue 取事件发给前端，直到收到 None sentinel。"""
                 while True:
-                    delta = await chunk_queue.get()  # noqa: B023
-                    if delta is None:
+                    event = await event_queue.get()  # noqa: B023
+                    if event is None:
                         break
-                    await websocket.send_json({"type": "chunk", "text": delta})
+                    await websocket.send_json(event)
 
             # 启动 drain task，与 agent.chat worker 并发
             drain_task = asyncio.create_task(_drain_stream())
             try:
-                # agent.chat 在 worker 线程跑，on_chunk 实时推 delta
+                # agent.chat 在 worker 线程跑，三个回调实时推事件
                 resp = await asyncio.to_thread(
                     agent.chat,
                     user_message,
                     None,
                     None,
                     session_memory,
-                    None,  # on_tool_call
-                    None,  # on_tool_result
+                    on_tool_call,
+                    on_tool_result,
                     on_chunk,
                 )
             finally:
-                # 通知 drain 结束 + 等 drain 把剩余 delta 发完
-                loop.call_soon_threadsafe(chunk_queue.put_nowait, None)
+                # 通知 drain 结束 + 等 drain 把剩余事件发完
+                loop.call_soon_threadsafe(event_queue.put_nowait, None)
                 await drain_task
                 await security.release_agent()
 

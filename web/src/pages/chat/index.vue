@@ -18,7 +18,7 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import { agentRoute, agentStream, getAgentHistory } from '@/api/agent'
-import type { AgentStreamState } from '@/api/agent'
+import type { AgentStreamState, ToolCallEvent, ToolResultEvent } from '@/api/agent'
 import { getSnapshot } from '@/api'
 import { getIndexes } from '@/api/market'
 import { getPredictions } from '@/api/predictions'
@@ -29,6 +29,7 @@ import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import { fmtPct, fmtPrice } from '@/utils/format'
 import ContextPanel from '@/components/ContextPanel.vue'
 import StockSearch from '@/components/StockSearch.vue'
+import ToolRow from '@/components/chat/ToolRow.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +43,14 @@ import { cn } from '@/lib/utils'
 
 marked.setOptions({ breaks: true, gfm: true })
 
+interface ToolEvent {
+  tool: string
+  args?: Record<string, unknown>
+  status: 'running' | 'done' | 'fail'
+  result?: string
+  elapsedMs?: number
+}
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
@@ -49,6 +58,7 @@ interface Message {
   rounds?: number
   steps?: string[]
   workflowId?: string
+  toolEvents?: ToolEvent[]
   streaming?: boolean
   error?: boolean
 }
@@ -275,6 +285,38 @@ async function sendNow(text: string) {
     },
     (state) => {
       if (requestId === activeRequestId) connectionState.value = state
+    },
+    (event: ToolCallEvent) => {
+      if (requestId !== activeRequestId) return
+      const assistant = messages.value[assistantIdx]
+      assistant.toolEvents ??= []
+      assistant.toolEvents.push({
+        tool: event.tool,
+        args: event.args,
+        status: 'running',
+      })
+      scrollToBottom()
+    },
+    (event: ToolResultEvent) => {
+      if (requestId !== activeRequestId) return
+      const assistant = messages.value[assistantIdx]
+      assistant.toolEvents ??= []
+      const runningEvent = [...assistant.toolEvents]
+        .reverse()
+        .find((item) => item.tool === event.tool && item.status === 'running')
+      if (runningEvent) {
+        runningEvent.status = event.status
+        runningEvent.result = event.result
+        runningEvent.elapsedMs = event.elapsedMs
+      } else {
+        assistant.toolEvents.push({
+          tool: event.tool,
+          status: event.status,
+          result: event.result,
+          elapsedMs: event.elapsedMs,
+        })
+      }
+      scrollToBottom()
     },
   )
   stream.value.send(text, history)
@@ -525,13 +567,25 @@ onUnmounted(() => {
                 <Badge v-if="message.workflowId" variant="outline" class="text-[10px]">
                   {{ workflowLabels[message.workflowId] || message.workflowId }}
                 </Badge>
+                <template v-if="message.role === 'assistant'">
+                  <ToolRow
+                    v-for="(event, eventIndex) in message.toolEvents ?? []"
+                    :key="`${event.tool}-${eventIndex}`"
+                    :tool="event.tool"
+                    :args="event.args"
+                    :status="event.status"
+                    :result="event.result"
+                    :error="event.status === 'fail' ? event.result : undefined"
+                    :elapsed-ms="event.elapsedMs"
+                  />
+                </template>
                 <div :class="cn('rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed', message.role === 'user' ? 'rounded-tr-sm bg-primary text-primary-foreground' : message.error ? 'rounded-tl-sm border border-destructive/30 bg-destructive/5 text-foreground' : 'rounded-tl-sm border bg-card text-card-foreground')">
                   <div v-if="message.content" class="markdown-body break-words" v-html="renderMarkdown(message.content)" />
                   <div v-else-if="message.streaming" class="flex items-center gap-1 py-1" role="status" aria-label="AI 正在思考">
                     <span v-for="dot in 3" :key="dot" class="size-1.5 animate-pulse rounded-full bg-muted-foreground" :style="{ animationDelay: `${dot * 120}ms` }" />
                   </div>
                 </div>
-                <div v-if="message.toolsUsed?.length" class="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                <div v-if="message.toolsUsed?.length && !message.toolEvents?.length" class="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
                   <Wrench class="size-3" aria-hidden="true" />
                   <span>{{ message.toolsUsed.join(' · ') }}</span>
                   <CheckCircle2 class="size-3 text-green-600" aria-hidden="true" />

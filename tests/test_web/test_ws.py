@@ -143,6 +143,60 @@ class TestAgentWebSocket:
         memory.for_session.assert_called_once_with("web-default")
         agent.chat.assert_called_once()
 
+    def test_streams_tool_call_events(self, client: TestClient, monkeypatch: object) -> None:
+        """验证 on_tool_call/on_tool_result 回调被桥接成 tool_call_started/finished WS 帧。"""
+        from mommy_chaogu.web import deps
+
+        agent = MagicMock()
+
+        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
+            # 位置参数顺序: on_tool_call, on_tool_result, on_chunk
+            on_tool_call = args[0] if len(args) > 0 else kwargs.get("on_tool_call")
+            on_tool_result = args[1] if len(args) > 1 else kwargs.get("on_tool_result")
+            on_chunk = args[2] if len(args) > 2 else kwargs.get("on_chunk")
+            # 模拟一次工具调用：started → finished(done)
+            if on_tool_call is not None:
+                on_tool_call("get_quote", {"code": "600519"})
+            if on_tool_result is not None:
+                on_tool_result("get_quote", True, 1200, '{"price": 1689.5}')
+            if on_chunk is not None:
+                on_chunk("茅台涨了")
+            return SimpleNamespace(
+                text="茅台涨了",
+                tool_calls=[SimpleNamespace(name="get_quote")],
+                rounds=1,
+            )
+
+        agent.chat.side_effect = fake_chat
+        memory = MagicMock()
+        session_memory = MagicMock()
+        memory.for_session.return_value = session_memory
+        monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+
+        with client.websocket_connect("/ws/agent") as ws:
+            ws.send_json({"message": "茅台"})
+            assert ws.receive_json() == {"type": "thinking"}
+            # 工具事件帧必须在 chunk 之前（agent 先调工具再产出文本）
+            assert ws.receive_json() == {
+                "type": "tool_call_started",
+                "tool": "get_quote",
+                "args": {"code": "600519"},
+            }
+            assert ws.receive_json() == {
+                "type": "tool_call_finished",
+                "tool": "get_quote",
+                "status": "done",
+                "elapsed_ms": 1200,
+                "result": '{"price": 1689.5}',
+            }
+            assert ws.receive_json() == {"type": "chunk", "text": "茅台涨了"}
+            assert ws.receive_json() == {
+                "type": "done",
+                "tools_used": ["get_quote"],
+                "rounds": 1,
+            }
+
     def test_fallback_sends_full_text_when_streaming_unsupported(
         self, client: TestClient, monkeypatch: object
     ) -> None:
