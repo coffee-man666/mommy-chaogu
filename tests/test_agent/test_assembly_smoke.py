@@ -202,3 +202,22 @@ class TestMcpServerSmoke:
         assert "research_portfolio" in tools
         assert "record_research_conclusion" in tools
         assert tools["record_research_conclusion"].annotations.readOnlyHint is False
+
+    def test_mcp_v2_registers_constructor_callbacks(self, isolated_env: Path) -> None:
+        """MCP 2.x 删除装饰器后，工具仍通过构造函数 callback 注册。"""
+        from mommy_chaogu.agent.mcp_server import create_mcp_server
+        from mommy_chaogu.agent.tools.base import ToolContext
+
+        class FakeMcp2Server:
+            def __init__(self, name: str, **handlers: Any) -> None:
+                self.name = name
+                self.handlers = handlers
+
+        ctx = ToolContext(adapter=None, agent_db=isolated_env / "agent.db")  # type: ignore[arg-type]
+        with patch("mommy_chaogu.agent.mcp_server.Server", FakeMcp2Server):
+            server = create_mcp_server(ctx)
+
+        listed = asyncio.run(server.handlers["on_list_tools"](None, None))  # type: ignore[attr-defined]
+        names = {tool.name for tool in listed.tools}
+        assert "get_quote" in names
+        assert "get_portfolio" not in names

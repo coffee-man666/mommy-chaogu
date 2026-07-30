@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import importlib.metadata
 import json
 import os
 import shutil
@@ -362,11 +363,23 @@ async def _probe(spec: ConnectionSpec) -> list[str]:
             async with ClientSession(
                 read_stream,
                 write_stream,
-                read_timeout_seconds=timedelta(seconds=15),
+                read_timeout_seconds=_mcp_read_timeout(),
             ) as session:
                 await session.initialize()
                 tools = await session.list_tools()
                 return [tool.name for tool in tools.tools]
+
+
+def _mcp_read_timeout() -> Any:
+    """Return the timeout shape expected by the installed MCP SDK.
+
+    MCP 1.x accepts ``timedelta`` while MCP 2.x changed the same parameter to
+    a numeric seconds value.  ``Any`` is intentional so one source tree can
+    type-check against the locked 1.x SDK and still run in independently
+    resolved uv tool environments using 2.x.
+    """
+    major = int(importlib.metadata.version("mcp").partition(".")[0])
+    return 15.0 if major >= 2 else timedelta(seconds=15)
 
 
 def _probe_sync(spec: ConnectionSpec) -> list[str]:
