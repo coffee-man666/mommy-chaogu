@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ import pytest
 from mommy_chaogu.cli_commands.connect import (
     ConnectionSpec,
     _connection_spec,
+    _mcp_read_timeout,
     _probe_sync,
     build_connect_parser,
     cmd_connect,
@@ -48,6 +50,13 @@ def test_connection_spec_keeps_virtualenv_python_fallback() -> None:
         spec = _connection_spec("market-only")
     assert spec.command == sys.executable
     assert spec.args[:2] == ["-m", "mommy_chaogu.agent.mcp_server"]
+
+
+def test_probe_timeout_matches_mcp_sdk_major_version() -> None:
+    with patch("mommy_chaogu.cli_commands.connect.importlib.metadata.version", return_value="1.28.1"):
+        assert _mcp_read_timeout() == timedelta(seconds=15)
+    with patch("mommy_chaogu.cli_commands.connect.importlib.metadata.version", return_value="2.0.0"):
+        assert _mcp_read_timeout() == 15.0
 
 
 def test_kimi_connect_preserves_other_servers_and_installs_skill(
