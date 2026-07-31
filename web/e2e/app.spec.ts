@@ -32,6 +32,22 @@ async function mockApi(page: Page) {
     const json = (body: unknown, status = 200) =>
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 
+    if (path === '/api/auth/status') return json({ mode: 'none', authenticated: true })
+    if (path === '/api/setup/status') return json({
+      auth_mode: 'none', llm_configured: true, provider: 'deepseek', model: 'deepseek-chat',
+      weixin: { connected: false, online: false }, data_ok: true,
+    })
+    if (path === '/api/setup/providers') return json([
+      { id: 'deepseek', label: 'DeepSeek', default_model: 'deepseek-chat', env_key: 'DEEPSEEK_API_KEY' },
+    ])
+    if (path === '/api/auth/pair' && request.method() === 'POST') return json({ ok: true, message: '配对成功' })
+    if (path === '/api/setup/weixin/start' && request.method() === 'POST') return json({
+      pairing_id: 'test-pid', qr_data_url: 'data:image/svg+xml;base64,PHN2Zy8+',
+      expires_in_seconds: 480, status: 'waiting', message: '请扫码',
+    })
+    if (path === '/api/setup/weixin/poll' && request.method() === 'POST') return json({
+      status: 'connected', message: '成功', gateway_started: true, gateway_online: true,
+    })
     if (path === '/api/health') return json({ ok: true, adapter_name: 'Mock', uptime_seconds: 42, last_snapshot_at: null })
     if (path === '/api/agent/history') return json({ messages: [], total: 0 })
     if (path === '/api/agent/predictions') return json({ predictions: [], total: 0 })
@@ -82,7 +98,12 @@ test('desktop starts with conversation and exposes four clear destinations', asy
 
   await navigation.getByRole('link', { name: '我的' }).click()
   await expect(page).toHaveURL(/#\/my$/)
-  await expect(page.getByText('🔐 访问令牌')).toBeVisible()
+  // Token UI removed — status center visible instead
+  await expect(page.getByText('⚙️ 配置状态')).toBeVisible()
+  // Theme is always visible now (not gated on authMode === 'token')
+  await expect(page.getByText('🎨 主题')).toBeVisible()
+  // No access token UI
+  await expect(page.getByText('🔐 访问令牌')).not.toBeVisible()
 })
 
 test('mobile four-tab navigation preserves a multiline chat draft', async ({ page }) => {
@@ -130,4 +151,147 @@ test('capture release screenshots', async ({ page }) => {
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.waitForTimeout(300)
   await page.screenshot({ path: '../docs/images/web-context-drawer.png', fullPage: true })
+})
+
+// ---------- Phase 3B: onboarding / pairing tests ----------
+
+test('configured app /my shows status center with reconfigure targets', async ({ page }) => {
+  await page.goto('/#/my')
+  await expect(page.getByText('⚙️ 配置状态')).toBeVisible()
+  await expect(page.getByText('AI 助手')).toBeVisible()
+  await expect(page.getByText('已配置')).toBeVisible()
+  await expect(page.getByText('微信通道', { exact: true })).toBeVisible()
+  await expect(page.getByText('未连接')).toBeVisible()
+  // No token UI
+  await expect(page.getByText('🔐 访问令牌')).not.toBeVisible()
+  // Theme always visible
+  await expect(page.getByText('🎨 主题')).toBeVisible()
+  // Reconfigure links use correct labels + query params
+  const aiBtn = page.getByRole('link', { name: '重新配置 AI' })
+  await expect(aiBtn).toBeVisible()
+  await expect(aiBtn).toHaveAttribute('href', /step=ai/)
+  const wxBtn = page.getByRole('link', { name: '连接微信' })
+  await expect(wxBtn).toBeVisible()
+  await expect(wxBtn).toHaveAttribute('href', /step=weixin/)
+})
+
+test('remote pairing: redirect from normal route, code entry, transition', async ({ page }) => {
+  // State: unauthenticated pairing mode, setup/status returns 401 until paired
+  let paired = false
+  let unauthorizedSetupCalls = 0
+  await page.route('**/api/auth/status', async (route) => {
+    if (paired) {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ mode: 'pairing', authenticated: true }),
+      })
+    } else {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ mode: 'pairing', authenticated: false }),
+      })
+    }
+  })
+  await page.route('**/api/setup/status', async (route) => {
+    if (!paired) {
+      unauthorizedSetupCalls++
+      await route.fulfill({ status: 401, body: JSON.stringify({ detail: 'unauthorized' }) })
+    } else {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          auth_mode: 'pairing', llm_configured: true, provider: 'deepseek', model: 'deepseek-chat',
+          weixin: { connected: false, online: false }, data_ok: true,
+        }),
+      })
+    }
+  })
+  await page.route('**/api/auth/pair', async (route) => {
+    paired = true
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, message: '配对成功' }),
+    })
+  })
+
+  // Navigate to a normal route — should redirect to /setup
+  await page.goto('/#/market')
+  await expect(page).toHaveURL(/#\/setup/)
+  // Pairing code entry visible
+  await expect(page.getByRole('heading', { name: '输入配对码' })).toBeVisible()
+  // /setup is outside nav shell — no sidebar nav
+  await expect(page.getByRole('navigation', { name: '主导航' })).not.toBeVisible()
+  await expect(page.getByRole('navigation', { name: '移动端主导航' })).not.toBeVisible()
+  expect(unauthorizedSetupCalls).toBe(0)
+
+  // Enter code and submit
+  await page.getByRole('textbox', { name: '6 位配对码' }).fill('123456')
+  await page.getByRole('button', { name: '配对' }).click()
+
+  // After pairing, should transition to weixin step (authenticated, llm_configured)
+  await expect(page.getByRole('heading', { name: '连接微信消息通道' })).toBeVisible()
+})
+
+test('setup query targets open the requested reconfiguration step outside the app shell', async ({ page }) => {
+  await page.goto('/#/setup?step=ai&returnTo=/my')
+  await expect(page.getByRole('heading', { name: '配置 AI 助手' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '连接微信消息通道' })).not.toBeVisible()
+  await expect(page.getByRole('navigation', { name: '主导航' })).not.toBeVisible()
+
+  await page.goto('/#/setup?step=weixin&returnTo=/my')
+  await expect(page.getByRole('heading', { name: '连接微信消息通道' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '配置 AI 助手' })).not.toBeVisible()
+  await expect(page.getByRole('navigation', { name: '主导航' })).not.toBeVisible()
+})
+
+test('first-run without LLM config shows AI step on /setup', async ({ page }) => {
+  await page.route('**/api/auth/status', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ mode: 'none', authenticated: true }),
+    })
+  })
+  await page.route('**/api/setup/status', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        auth_mode: 'none', llm_configured: false, provider: 'deepseek', model: '',
+        weixin: { connected: false, online: false }, data_ok: true,
+      }),
+    })
+  })
+
+  await page.goto('/#/setup')
+  await expect(page.getByRole('heading', { name: '配置 AI 助手' })).toBeVisible()
+})
+
+test('Weixin start is not requested before explicit user click', async ({ page }) => {
+  await page.route('**/api/auth/status', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ mode: 'none', authenticated: true }),
+    })
+  })
+  await page.route('**/api/setup/status', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        auth_mode: 'none', llm_configured: true, provider: 'deepseek', model: 'deepseek-chat',
+        weixin: { connected: false, online: false }, data_ok: true,
+      }),
+    })
+  })
+
+  let weixinStartCount = 0
+  page.on('request', (request) => {
+    if (request.url().includes('/api/setup/weixin/start')) weixinStartCount++
+  })
+
+  await page.goto('/#/setup')
+  await expect(page.getByRole('heading', { name: '连接微信消息通道' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '显示微信二维码' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '以后再说' })).toBeVisible()
+
+  await page.waitForTimeout(1000)
+  expect(weixinStartCount).toBe(0)
 })

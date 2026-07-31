@@ -2,6 +2,9 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 const router = createRouter({
   history: createWebHashHistory(),
+  scrollBehavior(_to, _from, savedPosition) {
+    return savedPosition ?? { top: 0 }
+  },
   routes: [
     {
       path: '/',
@@ -10,6 +13,11 @@ const router = createRouter({
     },
     { path: '/agent', redirect: '/' },
     { path: '/dashboard', redirect: '/market' },
+    {
+      path: '/setup',
+      component: () => import('../pages/setup/index.vue'),
+      name: 'setup',
+    },
     { path: '/market', component: () => import('../pages/market/index.vue'), name: 'market' },
     { path: '/portfolio', component: () => import('../pages/portfolio/index.vue'), name: 'portfolio' },
     { path: '/detail/:code', component: () => import('../pages/detail/index.vue'), name: 'detail', props: true },

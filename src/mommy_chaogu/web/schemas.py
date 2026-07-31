@@ -133,8 +133,120 @@ class HealthOut(BaseModel):
 class AuthStatusOut(BaseModel):
     """Browser authentication mode without exposing credential material."""
 
-    mode: Literal["none", "token"]
+    mode: Literal["none", "token", "pairing"]
     authenticated: bool
+
+
+# ---------- Setup wizard ----------
+
+
+class SetupProviderOut(BaseModel):
+    """One selectable LLM provider (no secrets)."""
+
+    id: str
+    label: str
+    default_model: str
+    env_key: str
+
+
+class SetupWeixinStatusOut(BaseModel):
+    """Weixin messaging-channel pairing status (no secrets/paths)."""
+
+    connected: bool
+    online: bool
+
+
+class SetupStatusOut(BaseModel):
+    """Aggregate onboarding/config status for the setup wizard (no secrets)."""
+
+    auth_mode: Literal["none", "token", "pairing"]
+    llm_configured: bool
+    provider: str
+    model: str
+    weixin: SetupWeixinStatusOut
+    data_ok: bool
+
+
+class SetupValidateIn(BaseModel):
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=256)
+    api_key: str = Field(min_length=1, max_length=512)
+
+
+class SetupResultOut(BaseModel):
+    ok: bool
+    message: str
+
+
+class SetupSaveIn(BaseModel):
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=256)
+    api_key: str = Field(min_length=1, max_length=512)
+
+
+# ---------- Remote browser pairing ----------
+
+
+class PairCodeIn(BaseModel):
+    """6-digit one-time pairing code payload (manual validation at endpoint).
+
+    The endpoint validates the code is exactly 6 ASCII digits using
+    ``str.isascii()`` + ``str.isdigit()`` rather than a regex pattern, so
+    Arabic-Indic and full-width digits are rejected. The submitted value is
+    never echoed in any error response.
+    """
+
+    code: str
+
+
+class PairResultOut(BaseModel):
+    """Pairing result — safe enum + fixed message, no secrets."""
+
+    ok: bool
+    message: str
+
+
+# ---------- Setup: Weixin messaging-channel pairing ----------
+
+
+class WeixinStartOut(BaseModel):
+    """Browser-safe QR pairing start response (no secrets/IDs)."""
+
+    pairing_id: str
+    qr_data_url: str
+    expires_in_seconds: int
+    status: Literal[
+        "waiting",
+        "scanned",
+        "verification_required",
+        "connected",
+        "already_connected",
+        "expired",
+        "error",
+    ]
+    message: str
+
+
+class WeixinPollIn(BaseModel):
+    pairing_id: str = Field(min_length=1, max_length=128)
+    verify_code: str = Field(default="", max_length=8, pattern=r"^\d*$")
+
+
+class WeixinPollOut(BaseModel):
+    """Poll result with safe enum + friendly message (no raw payloads)."""
+
+    status: Literal[
+        "waiting",
+        "scanned",
+        "verification_required",
+        "connected",
+        "already_connected",
+        "expired",
+        "error",
+    ]
+    message: str
+    gateway_started: bool = False
+    gateway_online: bool = False
 
 
 # ---------- Market Ranking ----------

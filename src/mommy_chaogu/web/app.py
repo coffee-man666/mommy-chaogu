@@ -18,6 +18,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from mommy_chaogu import __version__
@@ -37,13 +38,18 @@ from mommy_chaogu.web.routes import (
     market,
     portfolio,
     quotes,
+    setup,
     signals,
     themes,
     watchlist,
     ws,
 )
 from mommy_chaogu.web.schemas import AuthStatusOut, HealthOut
-from mommy_chaogu.web.security import OwnerAuthMiddleware, WebSecurity
+from mommy_chaogu.web.security import (
+    SESSION_COOKIE_NAME,
+    OwnerAuthMiddleware,
+    WebSecurity,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -89,12 +95,19 @@ def create_app(
     ws_ticket_ttl_seconds: int = 60,
     agent_max_concurrency: int = 2,
     session_retention_days: int = 30,
+    local_setup_enabled: bool = False,
+    pairing_digest: str = "",
 ) -> FastAPI:
     """FastAPI app 工厂。
 
     参数：
         db_path: 自选股/缓存数据库路径（None 用默认 data/portfolio.db）
         poll_interval_seconds: 后台轮询间隔（秒）
+        local_setup_enabled: 允许本机 loopback 免令牌访问 /api/setup/*。
+            仅当服务器绑定到回环地址时由 cli 设为 True；默认 False 保持保守。
+        pairing_digest: 一次性配对码的 HMAC-SHA256 摘要（以 api_token 为密钥）。
+            非空时启用 pairing 模式：浏览器可用配对码换取 HttpOnly 会话 cookie。
+            明文配对码绝不进入 WebSecurity；仅摘要。
     """
     if db_path is not None:
         # 覆盖默认 db 路径
@@ -183,9 +196,15 @@ def create_app(
         api_token=api_token,
         ticket_ttl_seconds=ws_ticket_ttl_seconds,
         agent_max_concurrency=agent_max_concurrency,
+        local_setup_enabled=local_setup_enabled,
+        pairing_digest=pairing_digest,
     )
     app.state.web_security = security
     app.add_middleware(OwnerAuthMiddleware, security=security)
+
+    # Weixin pairing manager — lazily built on first use (tests inject fakes
+    # by setting app.state.weixin_pairing before requests).
+    app.state.weixin_pairing = None
 
     # CORS（开发期 H5 跨域）
     if cors_origins:
@@ -209,6 +228,93 @@ def create_app(
     app.include_router(earnings.router)
     app.include_router(themes.router)
     app.include_router(ws.router)
+    app.include_router(setup.router)
+
+    @app.post("/api/auth/pair")
+    async def pair(request: Request) -> Response:
+        """Exchange a one-time 6-digit code for an HttpOnly session cookie.
+
+        Validates manually that the submitted code is exactly 6 ASCII digits.
+        Never echoes the submitted value in any response. Malformed input,
+        non-ASCII digits (Arabic-Indic, full-width), wrong length, or
+        malformed JSON all return the same fixed safe message.
+        """
+        import json
+
+        from mommy_chaogu.web.security import PairResult
+
+        _msg_malformed = "配对码格式不正确，请输入 6 位数字"
+        _max_pair_body_bytes = 1024
+
+        content_type = request.headers.get("content-type", "")
+        if content_type.partition(";")[0].strip().lower() != "application/json":
+            return JSONResponse(
+                status_code=415,
+                content={"ok": False, "message": _msg_malformed},
+            )
+
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > _max_pair_body_bytes:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"ok": False, "message": _msg_malformed},
+                    )
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"ok": False, "message": _msg_malformed},
+                )
+
+        # Parse body manually so we control the error response entirely.
+        try:
+            raw = await request.body()
+        except Exception:
+            return JSONResponse(status_code=400, content={"ok": False, "message": _msg_malformed})
+        if len(raw) > _max_pair_body_bytes:
+            return JSONResponse(status_code=413, content={"ok": False, "message": _msg_malformed})
+        try:
+            body = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse(status_code=400, content={"ok": False, "message": _msg_malformed})
+        if not isinstance(body, dict) or "code" not in body:
+            return JSONResponse(status_code=400, content={"ok": False, "message": _msg_malformed})
+        code = body["code"]
+        # Reject non-string, wrong length, or non-ASCII digits.
+        # str.isdigit() alone accepts Arabic-Indic/full-width; we require
+        # str.isascii() AND str.isdigit() AND len == 6.
+        if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
+            return JSONResponse(status_code=400, content={"ok": False, "message": _msg_malformed})
+
+        result = security.consume_pairing_code(code)
+        if result == PairResult.SUCCESS:
+            session = security.issue_session_cookie()
+            response = JSONResponse(
+                status_code=200,
+                content={"ok": True, "message": "配对成功"},
+            )
+            response.set_cookie(
+                key=SESSION_COOKIE_NAME,
+                value=session.cookie_value,
+                max_age=security.session_ttl_seconds,
+                path="/",
+                httponly=True,
+                samesite="strict",
+                secure=request.url.scheme == "https",
+            )
+            return response
+        # Map results to fixed safe messages — never echo the submitted code.
+        messages = {
+            PairResult.INVALID: "配对码无效或已过期，请重启服务获取新码",
+            PairResult.EXHAUSTED: "配对尝试次数过多，请重启服务获取新码",
+            PairResult.USED: "配对码已使用，请重启服务获取新码",
+            PairResult.NOT_READY: "当前服务未启用浏览器配对，请使用访问令牌",
+        }
+        return JSONResponse(
+            status_code=401,
+            content={"ok": False, "message": messages[result]},
+        )
 
     @app.post("/api/auth/ws-ticket")
     def issue_ws_ticket() -> dict[str, str | int]:
@@ -219,9 +325,11 @@ def create_app(
     def auth_status(request: Request) -> AuthStatusOut:
         if not security.enabled:
             return AuthStatusOut(mode="none", authenticated=True)
+        bearer_ok = security.authorize_header(request.headers.get("authorization"))
+        cookie_ok = security.authorize_cookie(request.headers.get("cookie"))
         return AuthStatusOut(
-            mode="token",
-            authenticated=security.authorize_header(request.headers.get("authorization")),
+            mode=security.auth_mode,
+            authenticated=bearer_ok or cookie_ok,
         )
 
     # 健康检查

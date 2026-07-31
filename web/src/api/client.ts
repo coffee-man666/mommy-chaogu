@@ -1,6 +1,12 @@
 // 轻量 fetch wrapper
 // 开发：走 Vite/Taro proxy（/api/*, /ws/*）
 // 生产：用环境变量 VITE_API_BASE
+//
+// 认证模式：
+// - none: 本地无认证（loopback 默认）
+// - token: 传统 Bearer 令牌（sessionStorage 兼容保留，不暴露 UI）
+// - pairing: 一次性配对码换 HttpOnly cookie（远程首选）
+// 所有请求默认带 credentials: 'include' 以支持 cookie 认证。
 
 import { ref } from 'vue'
 
@@ -30,10 +36,10 @@ export class ApiError extends Error {
 
 /** 401 全局标记：任一请求返回 401 置位，任一请求成功后清除（App.vue 顶部横幅用） */
 export const authRequired = ref(false)
-export const authMode = ref<'unknown' | 'none' | 'token'>('unknown')
+export const authMode = ref<'unknown' | 'none' | 'token' | 'pairing'>('unknown')
 
 export interface AuthStatus {
-  mode: 'none' | 'token'
+  mode: 'none' | 'token' | 'pairing'
   authenticated: boolean
 }
 
@@ -71,7 +77,7 @@ export function setApiToken(token: string): void {
 export async function loadAuthStatus(): Promise<AuthStatus> {
   const status = await apiGet<AuthStatus>('/api/auth/status')
   authMode.value = status.mode
-  authRequired.value = status.mode === 'token' && !status.authenticated
+  authRequired.value = status.mode !== 'none' && !status.authenticated
   return status
 }
 
@@ -95,15 +101,24 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
 }
 
-async function doFetch(method: string, path: string, init: RequestInit): Promise<Response> {
-  let res: Response
+/** 所有请求默认带 cookie（pairing 模式需要）和可能的 Bearer（token 模式兼容） */
+function baseInit(): RequestInit {
+  return { credentials: 'include' }
+}
+
+/** Low-level request helper for endpoints that intentionally return JSON on non-2xx. */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const method = init.method || 'GET'
   try {
-    res = await fetch(`${API_BASE}${path}`, init)
+    return await fetch(`${API_BASE}${path}`, { ...baseInit(), ...init })
   } catch (e) {
-    // 主动取消的请求原样抛出，不包装成 ApiError
     if (e instanceof DOMException && e.name === 'AbortError') throw e
     throw toApiError(e, `${method} ${path}`)
   }
+}
+
+async function doFetch(method: string, path: string, init: RequestInit): Promise<Response> {
+  const res = await apiFetch(path, init)
   if (!res.ok) {
     const text = await res.text()
     if (res.status === 401) authRequired.value = true
@@ -154,8 +169,12 @@ export function wsUrl(path: string): string {
 }
 
 export async function authenticatedWsUrl(path: string): Promise<string> {
+  // When auth mode is not 'none', we need a ticket (works with both cookie
+  // and Bearer auth). Previously this only triggered when a token existed
+  // in sessionStorage; now it also triggers for pairing (cookie) mode.
+  if (authMode.value === 'none') return wsUrl(path)
   const token = getApiToken()
-  if (!token) return wsUrl(path)
+  if (!token && authMode.value === 'unknown') return wsUrl(path)
   const response = await apiPost<{ ticket: string; expires_at: number }>(
     '/api/auth/ws-ticket',
     {},

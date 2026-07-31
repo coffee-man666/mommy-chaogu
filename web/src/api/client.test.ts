@@ -47,6 +47,7 @@ describe('authenticated API state', () => {
     )
     await expect(apiGet<{ ok: boolean }>('/api/health')).resolves.toEqual({ ok: true })
     expect(fetch).toHaveBeenCalledWith('/api/health', {
+      credentials: 'include',
       headers: { Authorization: 'Bearer owner-secret' },
     })
 
@@ -77,6 +78,26 @@ describe('authenticated API state', () => {
     expect(authMode.value).toBe('none')
     expect(authRequired.value).toBe(false)
     expect(getApiToken()).toBe('')
+  })
+
+  it('discovers pairing mode and sets authRequired when unauthenticated', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ mode: 'pairing', authenticated: false }), { status: 200 }),
+    )
+
+    await expect(loadAuthStatus()).resolves.toEqual({ mode: 'pairing', authenticated: false })
+    expect(authMode.value).toBe('pairing')
+    expect(authRequired.value).toBe(true)
+  })
+
+  it('clears authRequired when authenticated in pairing mode', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ mode: 'pairing', authenticated: true }), { status: 200 }),
+    )
+
+    await expect(loadAuthStatus()).resolves.toEqual({ mode: 'pairing', authenticated: true })
+    expect(authMode.value).toBe('pairing')
+    expect(authRequired.value).toBe(false)
   })
 })
 

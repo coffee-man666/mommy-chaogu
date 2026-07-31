@@ -277,3 +277,21 @@ def close_cached_dependencies() -> None:
         cache_clear = getattr(factory, "cache_clear", None)
         if cache_clear is not None:
             cache_clear()
+
+
+def reload_agent_caches() -> None:
+    """Invalidate LLM-dependent caches so new config takes effect live.
+
+    Called by the setup/save endpoint after writing a new provider/key/model.
+    Unlike ``close_cached_dependencies`` (shutdown only), this does NOT close
+    shared market/background/alerter resources — only the agent, memory-service,
+    and the workflow router that holds an agent reference are dropped, so the
+    next request rebuilds them from freshly-loaded env state.
+    """
+    from mommy_chaogu.web.routes.agent import _get_router
+
+    _get_router.cache_clear()
+    for factory in (get_agent_service, get_memory_service):
+        cache_clear = getattr(factory, "cache_clear", None)
+        if cache_clear is not None:
+            cache_clear()

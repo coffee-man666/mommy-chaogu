@@ -4,11 +4,9 @@ import {
   apiGet,
   apiPost,
   apiDelete,
-  authMode,
-  getApiToken,
-  loadAuthStatus,
-  setApiToken,
 } from '@/api/client'
+import { getSetupStatus } from '@/api/setup'
+import type { SetupStatus } from '@/api/setup'
 import { useTheme } from '@/composables/useTheme'
 import { useWatchlistStore } from '@/stores/watchlist'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -41,19 +39,10 @@ const watchlist = ref<WatchlistStock[]>([])
 const groups = ref<WatchlistGroup[]>([])
 const cache = ref<CacheStats | null>(null)
 const healthInfo = ref<Health | null>(null)
+const setupStatus = ref<SetupStatus | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 const lastRefresh = ref(new Date())
-const apiToken = ref(getApiToken())
-const tokenSaved = ref(false)
-
-async function saveApiToken() {
-  setApiToken(apiToken.value)
-  tokenSaved.value = true
-  window.setTimeout(() => (tokenSaved.value = false), 2000)
-  await loadAuthStatus()
-  await load()
-}
 
 // ---------- 添加自选股 ----------
 const showAddStock = ref(false)
@@ -175,21 +164,32 @@ const lastPollTime = computed(() => {
   return healthInfo.value.last_snapshot_at.slice(11, 19)
 })
 
+const freshnessPreview = computed(() => {
+  const entries = cache.value?.freshness ?? []
+  return [...entries].sort((a, b) => a.age_seconds - b.age_seconds).slice(0, 5)
+})
+
+const hiddenFreshnessCount = computed(() => {
+  return Math.max(0, (cache.value?.freshness.length ?? 0) - freshnessPreview.value.length)
+})
+
 // ---------- 生命周期 ----------
 let timer: number | null = null
 
 async function load() {
   try {
-    const [w, g, c, h] = await Promise.all([
+    const [w, g, c, h, s] = await Promise.all([
       apiGet<WatchlistStock[]>('/api/watchlist').catch(() => [] as WatchlistStock[]),
       apiGet<WatchlistGroup[]>('/api/watchlist/groups').catch(() => [] as WatchlistGroup[]),
       apiGet<CacheStats>('/api/cache/stats').catch(() => null),
       apiGet<Health>('/api/health').catch(() => null),
+      getSetupStatus().catch(() => null),
     ])
     watchlist.value = w
     groups.value = g
     cache.value = c
     healthInfo.value = h
+    setupStatus.value = s
     lastRefresh.value = new Date()
   } catch (e) {
     console.error(e)
@@ -228,10 +228,10 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 主题切换 -->
-    <Card v-if="authMode === 'token'">
+    <!-- 主题切换（始终可见） -->
+    <Card>
       <CardHeader>
-        <CardTitle class="text-base">🎨 主题</CardTitle>
+        <CardTitle as="h2" class="text-base">🎨 主题</CardTitle>
         <CardDescription>深色 / 浅色模式切换</CardDescription>
       </CardHeader>
       <Separator />
@@ -247,29 +247,60 @@ onUnmounted(() => {
       </CardContent>
     </Card>
 
-    <!-- 访问令牌 -->
-    <Card>
+    <!-- 配置状态中心 -->
+    <Card v-if="setupStatus">
       <CardHeader>
-        <CardTitle class="text-base">🔐 访问令牌</CardTitle>
-        <CardDescription>
-          仅保存在当前浏览器会话，关闭标签页后自动清除
-        </CardDescription>
+        <CardTitle as="h2" class="text-base">⚙️ 配置状态</CardTitle>
+        <CardDescription>数据、AI 与微信通道状态</CardDescription>
       </CardHeader>
       <Separator />
       <CardContent class="space-y-3 pt-4">
-        <Input
-          v-model="apiToken"
-          type="password"
-          autocomplete="current-password"
-          placeholder="MOMMY_API_TOKEN（本机无认证时可留空）"
-          aria-label="Web 访问令牌"
-          @keyup.enter="saveApiToken"
-        />
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-muted-foreground">
-            {{ tokenSaved ? '已保存并重新连接' : '令牌不会写入项目文件' }}
+        <!-- Data row -->
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-muted-foreground">数据服务</span>
+          <div class="flex items-center gap-2">
+            <Badge :variant="setupStatus.data_ok ? 'secondary' : 'destructive'" class="text-xs">
+              {{ setupStatus.data_ok ? '正常' : '异常' }}
+            </Badge>
+          </div>
+        </div>
+        <!-- AI row -->
+        <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span class="min-w-0 flex-1 text-muted-foreground">
+            AI 助手
+            <span v-if="setupStatus.llm_configured" class="ml-1 font-mono text-xs">
+              {{ setupStatus.provider }} / {{ setupStatus.model }}
+            </span>
           </span>
-          <Button size="sm" @click="saveApiToken">保存令牌</Button>
+          <div class="flex shrink-0 items-center gap-2">
+            <Badge :variant="setupStatus.llm_configured ? 'secondary' : 'destructive'" class="text-xs">
+              {{ setupStatus.llm_configured ? '已配置' : '未配置' }}
+            </Badge>
+            <Button as-child variant="outline" size="sm" class="h-7 text-xs">
+              <RouterLink :to="{ path: '/setup', query: { step: 'ai', returnTo: '/my' } }">
+                重新配置 AI
+              </RouterLink>
+            </Button>
+          </div>
+        </div>
+        <!-- Weixin row -->
+        <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span class="min-w-0 flex-1 text-muted-foreground">微信通道</span>
+          <div class="flex shrink-0 items-center gap-2">
+            <Badge
+              :variant="setupStatus.weixin.connected ? 'secondary' : 'outline'"
+              class="text-xs"
+            >
+              {{ setupStatus.weixin.connected
+                ? setupStatus.weixin.online ? '在线' : '已连接·离线'
+                : '未连接' }}
+            </Badge>
+            <Button as-child variant="outline" size="sm" class="h-7 text-xs">
+              <RouterLink :to="{ path: '/setup', query: { step: 'weixin', returnTo: '/my' } }">
+                {{ setupStatus.weixin.connected ? '重新连接微信' : '连接微信' }}
+              </RouterLink>
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -277,7 +308,7 @@ onUnmounted(() => {
     <!-- 服务状态 -->
     <Card v-if="healthInfo">
       <CardHeader>
-        <CardTitle class="text-base">🩺 服务状态</CardTitle>
+        <CardTitle as="h2" class="text-base">🩺 服务状态</CardTitle>
       </CardHeader>
       <Separator />
       <CardContent class="space-y-2 pt-4">
@@ -299,7 +330,7 @@ onUnmounted(() => {
     <!-- 缓存状态 -->
     <Card v-if="cache">
       <CardHeader>
-        <CardTitle class="text-base">📦 缓存状态</CardTitle>
+        <CardTitle as="h2" class="text-base">📦 缓存状态</CardTitle>
       </CardHeader>
       <Separator />
       <CardContent class="space-y-2 pt-4">
@@ -320,11 +351,11 @@ onUnmounted(() => {
           <span class="text-muted-foreground">拉新成功 / 失败</span>
           <span class="font-mono font-semibold">{{ cache.fetch_ok }} / {{ cache.fetch_fail }}</span>
         </div>
-        <template v-if="cache.freshness && cache.freshness.length">
+        <template v-if="freshnessPreview.length">
           <Separator class="my-2" />
           <p class="text-xs font-semibold text-muted-foreground">数据新鲜度</p>
           <div
-            v-for="f in cache.freshness"
+            v-for="f in freshnessPreview"
             :key="f.code"
             class="flex items-center justify-between text-sm"
           >
@@ -333,6 +364,9 @@ onUnmounted(() => {
               {{ fmtAge(f.age_seconds) }}
             </span>
           </div>
+          <p v-if="hiddenFreshnessCount" class="text-xs text-muted-foreground">
+            仅显示最新 5 条，另有 {{ hiddenFreshnessCount }} 条缓存记录
+          </p>
         </template>
       </CardContent>
     </Card>
@@ -341,7 +375,7 @@ onUnmounted(() => {
     <Card>
       <CardHeader class="flex flex-row items-center justify-between">
         <div class="flex items-center gap-2">
-          <CardTitle class="text-base">📂 分组</CardTitle>
+          <CardTitle as="h2" class="text-base">📂 分组</CardTitle>
           <Badge variant="secondary" class="font-mono">{{ groups.length }}</Badge>
         </div>
         <Button variant="outline" size="sm" @click="showAddGroup = true">
@@ -387,7 +421,7 @@ onUnmounted(() => {
     <Card>
       <CardHeader class="flex flex-row items-center justify-between">
         <div class="flex items-center gap-2">
-          <CardTitle class="text-base">⭐ 自选股</CardTitle>
+          <CardTitle as="h2" class="text-base">⭐ 自选股</CardTitle>
           <Badge variant="secondary" class="font-mono">{{ watchlist.length }}</Badge>
         </div>
         <Button variant="outline" size="sm" @click="showAddStock = true">

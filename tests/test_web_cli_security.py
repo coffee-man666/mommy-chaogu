@@ -36,6 +36,38 @@ def test_remote_binding_requires_token(capsys: object) -> None:
     assert "MOMMY_API_TOKEN" in capsys.readouterr().err  # type: ignore[attr-defined]
 
 
+def test_remote_bind_disables_local_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-loopback bind must never expose setup endpoints without a token."""
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("MOMMY_API_TOKEN", "owner-secret")
+    monkeypatch.setattr(
+        "mommy_chaogu.web.create_app",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    monkeypatch.setattr("uvicorn.run", lambda *_args, **_kwargs: None)
+
+    args = build_web_parser().parse_args(["--host", "0.0.0.0"])
+    assert cmd_web_serve(args) == 0
+    assert captured["local_setup_enabled"] is False
+
+
+def test_allow_unauthenticated_remote_still_disables_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--allow-unauthenticated-remote must NOT make setup reachable over the wire."""
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "mommy_chaogu.web.create_app",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    monkeypatch.setattr("uvicorn.run", lambda *_args, **_kwargs: None)
+
+    args = build_web_parser().parse_args(["--host", "0.0.0.0", "--allow-unauthenticated-remote"])
+    assert cmd_web_serve(args) == 0
+    assert captured["api_token"] == ""
+    assert captured["local_setup_enabled"] is False
+
+
 def test_loopback_ignores_configured_token_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -50,6 +82,8 @@ def test_loopback_ignores_configured_token_by_default(
     args = build_web_parser().parse_args([])
     assert cmd_web_serve(args) == 0
     assert captured["api_token"] == ""
+    # loopback bind enables the local setup wizard without an owner token
+    assert captured["local_setup_enabled"] is True
 
 
 def test_loopback_can_explicitly_require_auth(
@@ -66,3 +100,5 @@ def test_loopback_can_explicitly_require_auth(
     args = build_web_parser().parse_args(["--require-auth"])
     assert cmd_web_serve(args) == 0
     assert captured["api_token"] == "configured-for-remote"
+    # loopback still enables setup even when auth is on
+    assert captured["local_setup_enabled"] is True

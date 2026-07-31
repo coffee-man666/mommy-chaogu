@@ -3,6 +3,8 @@
 > 创建：2026-07-24。状态：Phase 0–2 已完成，Phase 3 发布门禁已完成（待 v1.2.0 tag）。
 > 本文档跟踪「对话即界面」重构的阶段划分、已完成工作与接下来的实施方案。
 > 完成后归档到 `docs/archive/`。
+> 2026-07-31 更新：本文继续记录已完成实现；Web 首页与导航的下一阶段产品方向以
+> [`PRODUCT-UX-EXECUTION-PLAN.md`](PRODUCT-UX-EXECUTION-PLAN.md) 为准。
 
 ## 目标与设计原则
 

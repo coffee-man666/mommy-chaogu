@@ -16,10 +16,25 @@ from mommy_chaogu.web.security import WebSecurity
 from .conftest import make_mock_service
 
 
-def _client(token: str = "owner-secret", **kwargs: object) -> tuple[TestClient, WebSecurity]:
+def _client(
+    token: str = "owner-secret",
+    *,
+    local_setup_enabled: bool = False,
+    client_addr: tuple[str, int] | None = None,
+    **kwargs: object,
+) -> tuple[TestClient, WebSecurity]:
     set_service(make_mock_service())
-    app = create_app(api_token=token, **kwargs)  # type: ignore[arg-type]
-    return TestClient(app, raise_server_exceptions=False), app.state.web_security
+    app = create_app(  # type: ignore[call-arg]
+        api_token=token,
+        local_setup_enabled=local_setup_enabled,
+        **kwargs,  # type: ignore[arg-type]
+    )
+    test_client = TestClient(
+        app,
+        raise_server_exceptions=False,
+        **({"client": client_addr} if client_addr else {}),
+    )
+    return test_client, app.state.web_security
 
 
 class TestRestAuthentication:
@@ -145,3 +160,37 @@ class TestCors:
         assert allowed.status_code == 200
         assert allowed.headers["access-control-allow-origin"] == "https://stocks.example.com"
         assert "access-control-allow-origin" not in denied.headers
+
+
+class TestSetupGate:
+    """/api/setup/* access control: loopback-OR-credential, never public."""
+
+    def test_setup_rejected_when_not_loopback_and_no_token(self) -> None:
+        # TestClient peer is 'testclient' (non-loopback) and no token configured.
+        client, _ = _client(token="owner-secret", local_setup_enabled=True)
+        r = client.get("/api/setup/status")
+        assert r.status_code == 401
+
+    def test_setup_accepted_with_valid_token_when_not_loopback(self) -> None:
+        client, _ = _client(token="owner-secret", local_setup_enabled=False)
+        r = client.get(
+            "/api/setup/status",
+            headers={"Authorization": "Bearer owner-secret"},
+        )
+        assert r.status_code == 200
+
+    def test_setup_rejected_with_auth_disabled_remote(self) -> None:
+        """token='' + non-loopback: general API open but setup closed."""
+        client, _ = _client(token="", local_setup_enabled=False)
+        assert client.get("/api/health").status_code == 200
+        r = client.get("/api/setup/status")
+        assert r.status_code == 401
+
+    def test_setup_accepted_when_loopback_and_enabled(self) -> None:
+        client, _ = _client(
+            token="",
+            local_setup_enabled=True,
+            client_addr=("127.0.0.1", 12345),
+        )
+        r = client.get("/api/setup/status")
+        assert r.status_code == 200

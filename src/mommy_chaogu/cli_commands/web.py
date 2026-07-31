@@ -99,6 +99,18 @@ def cmd_web_serve(args: argparse.Namespace) -> int:
         )
         return 2
 
+    # When an api_token is in effect (remote bind, --require-auth, or explicit
+    # --api-token), generate a one-time 6-digit pairing code so the browser can
+    # obtain a session cookie without copy/pasting MOMMY_API_TOKEN. Only the
+    # HMAC digest is passed to create_app; the plaintext is printed once then
+    # discarded.
+    pairing_digest = ""
+    if api_token:
+        from mommy_chaogu.web.security import generate_pairing_code_and_digest
+
+        code, pairing_digest = generate_pairing_code_and_digest(api_token)
+        print(f"浏览器配对码：{code}（10 分钟内有效，仅可使用一次）")
+
     app = create_app(
         db_path=Path(args.db),
         poll_interval_seconds=args.poll_interval,
@@ -109,6 +121,8 @@ def cmd_web_serve(args: argparse.Namespace) -> int:
         ws_ticket_ttl_seconds=cfg.web.ws_ticket_ttl_seconds,
         agent_max_concurrency=cfg.web.agent_max_concurrency,
         session_retention_days=cfg.web.session_retention_days,
+        local_setup_enabled=is_loopback,
+        pairing_digest=pairing_digest,
     )
     uvicorn.run(
         app,

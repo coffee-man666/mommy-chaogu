@@ -12,7 +12,8 @@
 
 ## 架构与设计
 
-- [CONVERSATION-UI-PLAN.md](CONVERSATION-UI-PLAN.md) — 对话即界面重构实施台账（进行中：Phase 1 已完成待合并）
+- [PRODUCT-UX-EXECUTION-PLAN.md](PRODUCT-UX-EXECUTION-PLAN.md) — 聚焦型投研产品的信息架构与 P0–P4 执行计划
+- [CONVERSATION-UI-PLAN.md](CONVERSATION-UI-PLAN.md) — 对话即界面的已完成实现台账（Web 后续方向见产品执行计划）
 - [BACKEND-CAPABILITIES.md](BACKEND-CAPABILITIES.md) — 后端能力与用法参考（前端 / TUI 设计用：API/WS/服务层契约 + 空态清单 + 已知坑）
 - [DETAILED-ARCHITECTURE.md](DETAILED-ARCHITECTURE.md) — 详细架构（数据库布局 / 记忆系统 / 回测 / CLI 速查）
 - [DESIGN.md](DESIGN.md) — 设计原则与关键决策
