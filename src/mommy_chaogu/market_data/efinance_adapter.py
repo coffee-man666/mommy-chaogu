@@ -65,18 +65,14 @@ def _to_money(v: Any) -> Money:
 
 
 def _detect_market(code: str) -> MarketType:
-    """根据股票代码头推断市场。"""
-    if code.startswith(("60", "68", "9")):  # 60xxx沪A主板, 688科创板, 9xx北交所
-        if code.startswith("9"):
-            return MarketType.BJ
-        return MarketType.SH
-    if code.startswith(("00", "30")):  # 00/30 深A
-        return MarketType.SZ
-    if code.startswith(("51", "15", "16", "18")):  # 场内基金/债券
-        return MarketType.SH
-    if code.startswith(("11", "12", "13", "14")):  # 深A基金/债券
-        return MarketType.SZ
-    return MarketType.UNKNOWN
+    """根据股票代码头推断市场。
+
+    委托给 ``market_data.utils.detect_market``，避免 efinance/tushare 两边各写一份
+    且各有遗漏（之前漏了 83/87/88/92/40-43 北交所/新三板）。
+    """
+    from mommy_chaogu.market_data.utils import detect_market
+
+    return detect_market(code)
 
 
 def _detect_quote_type(code: str) -> QuoteType:

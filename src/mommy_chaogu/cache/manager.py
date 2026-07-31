@@ -20,12 +20,14 @@ class CacheManager:
 
     @classmethod
     def default(cls, db_path: Path, config: CacheConfig | None = None) -> CacheManager:
-        """默认构造：EfinanceAdapter + CacheStore + CachedMarketDataAdapter。"""
-        from mommy_chaogu.cache.adapter import CachedMarketDataAdapter
-        from mommy_chaogu.market_data import EfinanceAdapter
+        """默认构造：CacheStore + CachedMarketDataAdapter(fallback 链 + 缓存)。
+
+        fallback 链顺序：Efinance → Tushare（需 TUSHARE_TOKEN）→ Tencent → AkShare。
+        """
+        from mommy_chaogu.market_data import build_default_adapter
 
         store = CacheStore(db_path)
-        adapter = CachedMarketDataAdapter(EfinanceAdapter(), store, config=config)
+        adapter = build_default_adapter(with_cache=True, cache_store=store, cache_config=config)
         return cls(store, adapter)
 
     # ---------- warmup ----------

@@ -23,6 +23,7 @@ dependencies = [
     "sqlite-vec>=0.1.9",
     "python-dotenv>=1.0",
     "textual>=8.2.8",
+    "tushare>=1.4.29",
 ]
 
 [project.scripts]
@@ -82,6 +83,7 @@ module = [
     "jsonpath", "requests", "requests.*",
     "sqlalchemy", "sqlalchemy.*",
     "akshare", "akshare.*",
+    "tushare", "tushare.*",
 ]
 ignore_missing_imports = true
 
