@@ -30,7 +30,15 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool, ToolAnnotations
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+    ToolAnnotations,
+)
 
 from mommy_chaogu.agent.research_tools import (
     WRITE_TOOL_NAMES,
@@ -162,8 +170,6 @@ def create_mcp_server(
     selected_profile = normalize_mcp_profile(profile)
     registry = ToolRegistry(ctx)
     research = ResearchToolCatalog(ctx, registry, selected_profile)
-    server = Server("mommy-chaogu")
-
     allowed_base = allowed_base_tool_names(selected_profile)
     base_defs = [
         item for item in registry.definitions() if item["function"]["name"] in allowed_base
@@ -180,7 +186,6 @@ def create_mcp_server(
             openWorldHint=name not in {"get_memory_context", "get_prediction_history"},
         )
 
-    @server.list_tools()
     async def list_tools() -> list[Tool]:
         tools: list[Tool] = []
         for td in base_defs:
@@ -204,7 +209,6 @@ def create_mcp_server(
             )
         return tools
 
-    @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
         if name not in allowed_base and name not in allowed_research:
             result = (
@@ -220,7 +224,33 @@ def create_mcp_server(
             result = await asyncio.to_thread(research.call, name, arguments or {})
         return [TextContent(type="text", text=result)]
 
-    return server
+    # MCP Python SDK 2.0 removed the low-level Server decorator API in favour
+    # of constructor callbacks.  Keep both paths because installed uv tools
+    # resolve dependencies independently: existing lockfiles can still use
+    # MCP 1.x while a fresh ``uv tool install`` may resolve MCP 2.x.
+    if hasattr(Server, "list_tools"):
+        server = Server("mommy-chaogu")
+        server.list_tools()(list_tools)  # type: ignore[attr-defined]
+        server.call_tool()(call_tool)  # type: ignore[attr-defined]
+        return server
+
+    async def on_list_tools(
+        _request_context: Any,
+        _params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
+        return ListToolsResult(tools=await list_tools())
+
+    async def on_call_tool(
+        _request_context: Any,
+        params: CallToolRequestParams,
+    ) -> CallToolResult:
+        return CallToolResult(content=await call_tool(params.name, params.arguments))
+
+    return Server(
+        "mommy-chaogu",
+        on_list_tools=on_list_tools,
+        on_call_tool=on_call_tool,
+    )  # type: ignore[call-overload]
 
 
 async def run_stdio(profile: McpProfile | str = "market-only") -> None:
