@@ -9,6 +9,17 @@
 
 ### 新增
 
+- **Tushare 数据源集成** — 阿里云金融数据云，海外 IP 友好；K 线/财务三表/资金流/分红最强。详见 `docs/adr/0003-tushare-integration.md`（待补）。仅在 `TUSHARE_TOKEN` 环境变量配置时启用。
+  - 新增 `TushareAdapter` 实现 `MarketDataAdapter` Protocol：
+    - **代码转换**：`to_tushare_code('600519') → '600519.SH'`、`from_tushare_code('600519.SH') → ('600519', MarketType.SH)`
+    - **K 线**：`tushare.pro_bar(adj='qfq'/'hfq')` 一键复权
+    - **财务**：`fina_indicator / income / balance_sheet / cash_flow / dividend / stock_basic` 6 个直连接口
+    - **复权工具**：独立函数 `apply_adjustment(bars, adj_factors, mode)`，可对任意数据源（efinance/腾讯）的不复权价应用 Tushare 复权因子；`TushareAdapter.fetch_and_adjust()` 一键拉取+复权
+  - **`market_data/utils.py`**：抽出 `detect_market()` 统一代码→市场映射（83/87/88/92/40-43 北交所/新三板 + 沪深新 + 沪深基金债券），`efinance` 和 `tushare` 都改用它
+  - **链顺序**：`efinance → tushare → tencent → akshare`（Tushare 放第二位：海外 IP / K 线场景优先；没 token 自动跳过）
+
+### 新增
+
 - **AKShare 数据源集成** — 开源、无 token 的 A 股数据接口库，作为 fallback 链第三档接入（akshare 已安装时启用，否则自动跳过）。定位为**字段补全源**而非故障兜底（与 efinance 共享东财后端，故障同源）。
   - 新增 `AkShareAdapter` 实现 `MarketDataAdapter` Protocol：
     - **实时报价**：`stock_zh_a_spot_em` 一次性给 PE/PB/总市值/流通市值/换手率/量比（efinance 单股接口这些字段常缺）
