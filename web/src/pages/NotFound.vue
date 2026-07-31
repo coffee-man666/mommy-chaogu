@@ -10,10 +10,10 @@ import { Button } from '@/components/ui/button'
       <Compass class="mx-auto size-10 text-muted-foreground" aria-hidden="true" />
       <div>
         <h1 class="text-2xl font-bold">页面走丢了</h1>
-        <p class="mt-2 text-sm text-muted-foreground">这个地址不存在，回到对话继续问行情吧。</p>
+        <p class="mt-2 text-sm text-muted-foreground">这个地址不存在，回到首页看看今天行情吧。</p>
       </div>
       <Button as-child>
-        <RouterLink to="/">回到对话</RouterLink>
+        <RouterLink to="/">回到首页</RouterLink>
       </Button>
     </div>
   </section>

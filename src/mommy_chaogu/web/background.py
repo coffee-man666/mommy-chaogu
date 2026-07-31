@@ -60,6 +60,7 @@ class BackgroundService:
         self.alerter = alerter
         self.poll_interval = poll_interval_seconds
         self.notifier = notifier
+        self._web_base_url = ""
 
         self.monitor = Monitor(
             store=watchlist,
@@ -141,6 +142,15 @@ class BackgroundService:
                     self._pushed_signals = self._pushed_signals[-100:]
             except Exception:
                 _log.exception("notifier notify failed (signals broadcast will continue)")
+
+        # 微信通道主动推送（与 Server酱 互补）
+        if signals:
+            try:
+                from mommy_chaogu.channels import send_signal_notifications
+
+                send_signal_notifications(signals, web_base_url=self._web_base_url)
+            except Exception:
+                pass  # 微信通道未连接或发送失败，不阻塞主循环
 
         # 广播
         if self._quote_subscribers:

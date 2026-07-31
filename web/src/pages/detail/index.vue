@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan, fmtMoney, fmtAge } from '@/utils/format'
 import type { Quote, Bar, MoneyFlowResponse } from '@/api/types'
+import type { Prediction } from '@/api/types'
+import { getStockPredictions } from '@/api/predictions'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
@@ -12,7 +14,6 @@ import {
   TableRow,
   TableCell,
 } from '@/components/ui/table'
-import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -39,6 +40,13 @@ const flowHistory = ref<MoneyFlowResponse | null>(null)
 const flowTab = ref<string>('today')
 const flowDays = ref(30)
 const flowLoading = ref(false)
+
+// 主 Tab：概览 / 走势 / 资金 / 决策记录
+const mainTab = ref<string>('overview')
+
+// 预测记录（决策记录 Tab）
+const stockPredictions = ref<Prediction[]>([])
+const predictionsLoading = ref(false)
 
 const codeInput = ref('')
 const actionMessage = ref('')
@@ -146,6 +154,29 @@ async function loadFlow() {
   }
 }
 
+async function loadPredictions() {
+  predictionsLoading.value = true
+  try {
+    stockPredictions.value = await getStockPredictions(props.code)
+  } catch {
+    stockPredictions.value = []
+  } finally {
+    predictionsLoading.value = false
+  }
+}
+
+/** 预测状态 → 中文标签 + 颜色 */
+function predictionStatusBadge(status: string): { label: string; class: string } {
+  const map: Record<string, { label: string; class: string }> = {
+    pending: { label: '待验证', class: 'bg-blue-100 text-blue-700' },
+    hit: { label: '已命中', class: 'bg-green-100 text-green-700' },
+    missed: { label: '未命中', class: 'bg-red-100 text-red-700' },
+    expired: { label: '已过期', class: 'bg-gray-100 text-gray-500' },
+    unverifiable: { label: '无法验证', class: 'bg-orange-100 text-orange-700' },
+  }
+  return map[status] || { label: status, class: 'bg-gray-100 text-gray-500' }
+}
+
 async function changeFlowDays(d: number) {
   flowDays.value = d
   try {
@@ -247,7 +278,20 @@ async function addToWatchlist() {
 
 function askAgent() {
   const stockName = quote.value?.name || props.code
-  void router.push({ path: '/', query: { q: `分析一下${stockName}（${props.code}）` } })
+  const currentTab = mainTab.value
+  // 构造带上下文的问题
+  const tabLabels: Record<string, string> = {
+    overview: '概览',
+    chart: '走势',
+    flow: '资金',
+    decisions: '决策记录',
+  }
+  const contextParts = [`当前在「${tabLabels[currentTab] || '概览'}」标签页`]
+  if (quote.value) {
+    contextParts.push(`现价 ${fmtPrice(quote.value.price)}（${fmtPct(quote.value.change_pct)}）`)
+  }
+  const question = `分析一下${stockName}（${props.code}），${contextParts.join('，')}`
+  void router.push({ path: '/chat', query: { q: question } })
 }
 
 // ---------- SVG 资金流图 ----------
@@ -346,10 +390,12 @@ watch(
     bars.value = []
     flowToday.value = null
     flowHistory.value = null
+    stockPredictions.value = []
     codeInput.value = ''
     await loadQuote()
     await loadBars()
     loadFlow()
+    loadPredictions()
   }
 )
 
@@ -358,6 +404,7 @@ onMounted(async () => {
   await loadQuote()
   await loadBars()
   loadFlow()
+  loadPredictions()
   refreshTimer = window.setInterval(loadQuote, 10_000)
   themeObserver = new MutationObserver(() => void drawKLine())
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
@@ -438,46 +485,6 @@ onUnmounted(() => {
               <Button size="sm" @click="askAgent">🤖 问问 AI</Button>
               <span v-if="actionMessage" role="status" class="text-xs text-muted-foreground">{{ actionMessage }}</span>
             </div>
-
-            <Separator />
-
-            <!-- 明细表格 -->
-            <Table>
-              <TableBody>
-                <TableRow>
-                  <TableCell class="w-1/4 py-2 text-xs text-muted-foreground">今开</TableCell>
-                  <TableCell class="w-1/4 py-2 text-right font-mono text-sm">{{ fmtPrice(quote.open) }}</TableCell>
-                  <TableCell class="w-1/4 py-2 text-xs text-muted-foreground">昨收</TableCell>
-                  <TableCell class="w-1/4 py-2 text-right font-mono text-sm">{{ fmtPrice(quote.prev_close) }}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell class="py-2 text-xs text-muted-foreground">最高</TableCell>
-                  <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClassRef(quote.high, quote.prev_close))">{{ fmtPrice(quote.high) }}</TableCell>
-                  <TableCell class="py-2 text-xs text-muted-foreground">最低</TableCell>
-                  <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClassRef(quote.low, quote.prev_close))">{{ fmtPrice(quote.low) }}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell class="py-2 text-xs text-muted-foreground">成交量</TableCell>
-                  <TableCell class="py-2 text-right font-mono text-sm">{{ fmtWan(Number(quote.volume) / 100) }}手</TableCell>
-                  <TableCell class="py-2 text-xs text-muted-foreground">成交额</TableCell>
-                  <TableCell class="py-2 text-right font-mono text-sm">{{ fmtMoney(quote.turnover, 'yi') }}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="一定时期内股票转手买卖的频率" class="cursor-help no-underline">换手 ⓘ</abbr></TableCell>
-                  <TableCell class="py-2 text-right font-mono text-sm">{{ quote.turnover_rate ? `${quote.turnover_rate}%` : '-' }}</TableCell>
-                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="当前成交量相对近期平均成交量的比值" class="cursor-help no-underline">量比 ⓘ</abbr></TableCell>
-                  <TableCell class="py-2 text-right font-mono text-sm">{{ quote.volume_ratio || '-' }}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="市盈率：股价相对每股收益的倍数" class="cursor-help no-underline">PE ⓘ</abbr></TableCell>
-                  <TableCell class="py-2 text-right font-mono text-sm">{{ quote.pe || '-' }}</TableCell>
-                  <TableCell class="py-2 text-xs text-muted-foreground"><abbr title="大单与超大单资金流入减流出的估算值" class="cursor-help no-underline">主力净流入 ⓘ</abbr></TableCell>
-                  <TableCell :class="cn('py-2 text-right font-mono text-sm font-semibold', dirClass(quote.main_net_inflow))">
-                    {{ dirSign(quote.main_net_inflow) }}{{ fmtMoney(quote.main_net_inflow, 'yi') }}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
           </template>
 
           <!-- 加载失败且没有旧报价：错误态 + 重试（不再是一张白卡） -->
@@ -489,36 +496,86 @@ onUnmounted(() => {
         </CardContent>
       </Card>
 
-      <!-- ============ K 线图 ============ -->
-      <Card>
-        <CardHeader class="pb-2">
-          <CardTitle class="text-base">K 线图</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Tabs v-model="interval" class="w-full">
-            <TabsList class="grid w-full grid-cols-7">
-              <TabsTrigger
-                v-for="i in intervals"
-                :key="i.key"
-                :value="i.key"
-                class="text-xs"
-                @click="changeInterval(i.key)"
-              >
-                {{ i.label }}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <div id="kline" class="mt-3 h-[360px] w-full"></div>
-        </CardContent>
-      </Card>
+      <!-- ============ 主 Tab：概览 / 走势 / 资金 / 决策记录 ============ -->
+      <Tabs v-model="mainTab">
+        <TabsList class="grid w-full grid-cols-4">
+          <TabsTrigger value="overview" class="text-sm">概览</TabsTrigger>
+          <TabsTrigger value="chart" class="text-sm">走势</TabsTrigger>
+          <TabsTrigger value="flow" class="text-sm">资金</TabsTrigger>
+          <TabsTrigger value="decisions" class="text-sm">决策记录</TabsTrigger>
+        </TabsList>
 
-      <!-- ============ 资金流向 ============ -->
-      <Card>
-        <CardHeader class="pb-2">
-          <CardTitle class="text-base">资金流向</CardTitle>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <Tabs v-model="flowTab">
+        <!-- ===== 概览 ===== -->
+        <TabsContent value="overview">
+          <Card v-if="quote">
+            <CardContent class="pt-4">
+              <Table>
+                <TableBody>
+                  <TableRow>
+                    <TableCell class="w-1/4 py-2 text-xs text-muted-foreground">今开</TableCell>
+                    <TableCell class="w-1/4 py-2 text-right font-mono text-sm">{{ fmtPrice(quote.open) }}</TableCell>
+                    <TableCell class="w-1/4 py-2 text-xs text-muted-foreground">昨收</TableCell>
+                    <TableCell class="w-1/4 py-2 text-right font-mono text-sm">{{ fmtPrice(quote.prev_close) }}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell class="py-2 text-xs text-muted-foreground">最高</TableCell>
+                    <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClassRef(quote.high, quote.prev_close))">{{ fmtPrice(quote.high) }}</TableCell>
+                    <TableCell class="py-2 text-xs text-muted-foreground">最低</TableCell>
+                    <TableCell :class="cn('py-2 text-right font-mono text-sm', dirClassRef(quote.low, quote.prev_close))">{{ fmtPrice(quote.low) }}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell class="py-2 text-xs text-muted-foreground">成交量</TableCell>
+                    <TableCell class="py-2 text-right font-mono text-sm">{{ fmtWan(Number(quote.volume) / 100) }}手</TableCell>
+                    <TableCell class="py-2 text-xs text-muted-foreground">成交额</TableCell>
+                    <TableCell class="py-2 text-right font-mono text-sm">{{ fmtMoney(quote.turnover, 'yi') }}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell class="py-2 text-xs text-muted-foreground">换手</TableCell>
+                    <TableCell class="py-2 text-right font-mono text-sm">{{ quote.turnover_rate ? `${quote.turnover_rate}%` : '-' }}</TableCell>
+                    <TableCell class="py-2 text-xs text-muted-foreground">量比</TableCell>
+                    <TableCell class="py-2 text-right font-mono text-sm">{{ quote.volume_ratio || '-' }}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell class="py-2 text-xs text-muted-foreground">PE</TableCell>
+                    <TableCell class="py-2 text-right font-mono text-sm">{{ quote.pe || '-' }}</TableCell>
+                    <TableCell class="py-2 text-xs text-muted-foreground">主力净流入</TableCell>
+                    <TableCell :class="cn('py-2 text-right font-mono text-sm font-semibold', dirClass(quote.main_net_inflow))">
+                      {{ dirSign(quote.main_net_inflow) }}{{ fmtMoney(quote.main_net_inflow, 'yi') }}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <!-- ===== 走势 ===== -->
+        <TabsContent value="chart">
+          <Card>
+            <CardContent class="pt-4">
+              <Tabs v-model="interval" class="w-full">
+                <TabsList class="grid w-full grid-cols-7">
+                  <TabsTrigger
+                    v-for="i in intervals"
+                    :key="i.key"
+                    :value="i.key"
+                    class="text-xs"
+                    @click="changeInterval(i.key)"
+                  >
+                    {{ i.label }}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <div id="kline" class="mt-3 h-[360px] w-full"></div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <!-- ===== 资金 ===== -->
+        <TabsContent value="flow">
+          <Card>
+            <CardContent class="space-y-4 pt-4">
+              <Tabs v-model="flowTab">
             <TabsList>
               <TabsTrigger value="today" class="text-sm">日内</TabsTrigger>
               <TabsTrigger value="history" class="text-sm">历史</TabsTrigger>
@@ -666,6 +723,85 @@ onUnmounted(() => {
           </Tabs>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <!-- ===== 决策记录 ===== -->
+        <TabsContent value="decisions">
+          <div class="space-y-3">
+            <!-- 加载中 -->
+            <div v-if="predictionsLoading" class="space-y-2">
+              <div v-for="i in 2" :key="i" class="h-20 animate-pulse rounded-xl bg-muted" />
+            </div>
+
+            <!-- 预测记录列表 -->
+            <template v-else>
+              <Card v-for="p in stockPredictions" :key="p.id">
+                <CardContent class="space-y-2 pt-4">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="rounded px-2 py-0.5 text-xs font-medium"
+                        :class="predictionStatusBadge(p.status).class"
+                      >
+                        {{ predictionStatusBadge(p.status).label }}
+                      </span>
+                      <span class="text-sm font-medium">{{ p.prediction }}</span>
+                    </div>
+                    <span class="text-xs text-muted-foreground">
+                      {{ p.timeframe }}
+                    </span>
+                  </div>
+
+                  <!-- 目标价/入场价/止损 -->
+                  <div v-if="p.target_price || p.entry_price" class="flex gap-4 text-xs text-muted-foreground">
+                    <span v-if="p.entry_price">入场: ¥{{ p.entry_price }}</span>
+                    <span v-if="p.target_price">目标: ¥{{ p.target_price }}</span>
+                    <span v-if="p.stop_loss">止损: ¥{{ p.stop_loss }}</span>
+                  </div>
+
+                  <!-- 依据 -->
+                  <p v-if="p.rationale" class="text-xs text-muted-foreground line-clamp-3">
+                    {{ p.rationale }}
+                  </p>
+
+                  <!-- 验证结果 -->
+                  <div v-if="p.verified_at" class="flex items-center gap-2 border-t pt-2 text-xs">
+                    <span class="text-muted-foreground">验证结果:</span>
+                    <span v-if="p.actual_change_pct !== null" class="font-mono" :class="Number(p.actual_change_pct) >= 0 ? 'text-up' : 'text-down'">
+                      {{ Number(p.actual_change_pct) >= 0 ? '+' : '' }}{{ Number(p.actual_change_pct).toFixed(2) }}%
+                    </span>
+                    <span v-if="p.data_coverage_at_verify" class="text-muted-foreground">
+                      · {{ p.data_coverage_at_verify }}
+                    </span>
+                  </div>
+
+                  <!-- 时间 -->
+                  <div class="text-[10px] text-muted-foreground">
+                    生成于 {{ new Date(p.created_at).toLocaleString('zh-CN') }}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <!-- 空状态 -->
+              <Card v-if="stockPredictions.length === 0">
+                <CardContent class="pt-6 text-center text-sm text-muted-foreground">
+                  <p>该股暂无预测记录</p>
+                  <Button size="sm" variant="outline" class="mt-3" @click="askAgent">
+                    🤖 让 AI 生成预测
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <!-- 查看全部预测的深链 -->
+              <div class="text-center">
+                <RouterLink to="/predictions" class="text-xs text-muted-foreground hover:text-foreground">
+                  查看全部预测记录 →
+                </RouterLink>
+              </div>
+            </template>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   </div>
 </template>

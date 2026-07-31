@@ -36,6 +36,7 @@ from mommy_chaogu.web.routes import (
     cache,
     earnings,
     market,
+    overview,
     portfolio,
     quotes,
     setup,
@@ -177,6 +178,7 @@ def create_app(
             poll_interval_seconds=poll_interval_seconds,
             notifier=notifier,
         )
+        service._web_base_url = web_base_url  # type: ignore[attr-defined]
         set_service(service)
         await service.start()
         try:
@@ -227,6 +229,7 @@ def create_app(
     app.include_router(agent.router)
     app.include_router(earnings.router)
     app.include_router(themes.router)
+    app.include_router(overview.router)
     app.include_router(ws.router)
     app.include_router(setup.router)
 

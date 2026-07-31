@@ -19,10 +19,11 @@ import {
 } from 'lucide-vue-next'
 import { agentRoute, agentStream, getAgentHistory } from '@/api/agent'
 import type { AgentStreamState, ToolCallEvent, ToolResultEvent } from '@/api/agent'
-import { getSnapshot } from '@/api'
+import { getSnapshot } from '@/api/index'
 import { getIndexes } from '@/api/market'
 import { getPredictions } from '@/api/predictions'
 import { recentSignals } from '@/api/signals'
+import { getStyleAgentHint } from '@/lib/stylePresets'
 import { resetChatSessionId } from '@/api/client'
 import type { IndexQuote, Prediction, StockSearchResult } from '@/api/types'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
@@ -218,6 +219,10 @@ async function sendNow(text: string) {
   stream.value = null
   connectionState.value = 'idle'
 
+  // 将交易风格提示以系统指令形式注入到 message（不修改用户可见内容）
+  const styleHint = getStyleAgentHint()
+  const enrichedMessage = `[${styleHint}]\n${text}`
+
   messages.value.push({ role: 'user', content: text })
   loading.value = true
   const assistantIdx = messages.value.length
@@ -228,7 +233,7 @@ async function sendNow(text: string) {
   const routeController = new AbortController()
   routeAbortController = routeController
   try {
-    const response = await agentRoute(text, routeController.signal)
+    const response = await agentRoute(enrichedMessage, routeController.signal)
     if (requestId !== activeRequestId) return
     if (response.matched && response.reply) {
       messages.value[assistantIdx] = {
@@ -320,7 +325,7 @@ async function sendNow(text: string) {
       scrollToBottom()
     },
   )
-  stream.value.send(text, history)
+  stream.value.send(enrichedMessage, history)
 }
 
 function onComposerKeydown(event: KeyboardEvent) {

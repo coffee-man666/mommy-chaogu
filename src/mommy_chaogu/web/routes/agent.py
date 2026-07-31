@@ -190,13 +190,21 @@ async def get_history(
 
 
 @router.get("/predictions")
-async def get_predictions(limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]:
-    """获取预测记录（按 created_at 降序）。"""
+async def get_predictions(
+    limit: int = Query(default=20, ge=1, le=200),
+    code: str | None = Query(default=None, max_length=16),
+) -> dict[str, Any]:
+    """获取预测记录（按 created_at 降序）。
+
+    可选 code 参数：按股票代码过滤。
+    """
     tracker = get_prediction_tracker_safe()
     if tracker is None:
         return {"predictions": [], "total": 0}
     try:
         rows = tracker.all(limit=limit)
+        if code:
+            rows = [r for r in rows if r.get("code") == code]
         return {"predictions": rows, "total": len(rows)}
     except Exception:
         return {"predictions": [], "total": 0}

@@ -371,3 +371,104 @@ class WSErrorMessage(BaseModel):
 
     type: Literal["error"] = "error"
     message: str
+
+
+# ---------- Overview 聚合 ----------
+
+
+class BlockStatus(BaseModel):
+    """每个聚合区块的独立状态标记。"""
+
+    status: Literal["ok", "stale", "unavailable"]
+    as_of: datetime | None = None
+    message: str | None = None
+
+
+class OverviewIndex(BaseModel):
+    """紧凑指数条单项（只展示名称、点位、涨跌幅）。"""
+
+    name: str
+    price: Decimal
+    change_pct: Decimal
+
+
+class OverviewIndexesBlock(BaseModel):
+    indexes: list[OverviewIndex]
+    block: BlockStatus
+
+
+class OverviewWatchlistItem(BaseModel):
+    """自选股摘要条目。"""
+
+    code: str
+    name: str
+    price: Decimal
+    change_pct: Decimal
+    group: str = ""
+    data_age_seconds: int = 0
+
+
+class OverviewWatchlistBlock(BaseModel):
+    total: int
+    n_up: int
+    n_down: int
+    n_flat: int
+    items: list[OverviewWatchlistItem]
+    block: BlockStatus
+
+
+class OverviewPortfolioAlert(BaseModel):
+    """持仓提醒（只包含需要关注的持仓）。"""
+
+    code: str
+    name: str | None = None
+    unrealized_pnl_pct: Decimal | None = None
+    market_value: Decimal | None = None
+    shares: int = 0
+
+
+class OverviewPortfolioBlock(BaseModel):
+    n_positions: int
+    total_unrealized_pnl: Decimal | None = None
+    total_unrealized_pnl_pct: Decimal | None = None
+    alerts: list[OverviewPortfolioAlert]
+    block: BlockStatus
+
+
+class OverviewThemeSummary(BaseModel):
+    """关注主题/篮子摘要。"""
+
+    id: str
+    name: str
+    description: str = ""
+    total_stocks: int = 0
+
+
+class OverviewThemesBlock(BaseModel):
+    items: list[OverviewThemeSummary]
+    block: BlockStatus
+
+
+class OverviewSignalSummary(BaseModel):
+    """近期信号摘要。"""
+
+    n_recent: int
+    n_warning: int
+    n_critical: int
+    latest_title: str | None = None
+    latest_severity: Literal["info", "warning", "critical"] | None = None
+
+
+class OverviewSignalsBlock(BaseModel):
+    summary: OverviewSignalSummary | None
+    block: BlockStatus
+
+
+class OverviewResponse(BaseModel):
+    """聚合总览响应 — 一次请求返回今日所有区块。"""
+
+    indexes: OverviewIndexesBlock
+    watchlist: OverviewWatchlistBlock
+    portfolio: OverviewPortfolioBlock
+    themes: OverviewThemesBlock
+    signals: OverviewSignalsBlock

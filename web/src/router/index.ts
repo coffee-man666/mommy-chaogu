@@ -8,17 +8,23 @@ const router = createRouter({
   routes: [
     {
       path: '/',
+      component: () => import('../pages/today/index.vue'),
+      name: 'today',
+    },
+    {
+      path: '/chat',
       component: () => import('../pages/chat/index.vue'),
       name: 'chat',
     },
-    { path: '/agent', redirect: '/' },
-    { path: '/dashboard', redirect: '/market' },
+    { path: '/agent', redirect: '/chat' },
+    { path: '/dashboard', redirect: '/' },
     {
       path: '/setup',
       component: () => import('../pages/setup/index.vue'),
       name: 'setup',
     },
     { path: '/market', component: () => import('../pages/market/index.vue'), name: 'market' },
+    { path: '/follow', component: () => import('../pages/follow/index.vue'), name: 'follow' },
     { path: '/portfolio', component: () => import('../pages/portfolio/index.vue'), name: 'portfolio' },
     { path: '/detail/:code', component: () => import('../pages/detail/index.vue'), name: 'detail', props: true },
     { path: '/signals', component: () => import('../pages/signals/index.vue'), name: 'signals' },

@@ -1,0 +1,349 @@
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { Send, TrendingUp, Wallet, AlertTriangle, ChevronRight, RefreshCw, Star } from 'lucide-vue-next'
+import {
+  getOverview,
+  type OverviewResponse,
+  type BlockStatus,
+} from '@/api/overview'
+import { fmtPrice, fmtPct, fmtWan, fmtAge, changeColor } from '@/utils/format'
+import { toApiError } from '@/api/client'
+import ErrorState from '@/components/ErrorState.vue'
+
+const router = useRouter()
+
+const data = ref<OverviewResponse | null>(null)
+const loading = ref(true)
+const refreshing = ref(false)
+const error = ref('')
+const aiInput = ref('')
+
+// 关注主题（localStorage）
+const followedIds = ref<Set<string>>(new Set())
+const FOLLOW_KEY = 'mommy-followed-themes'
+
+function loadFollowed() {
+  try {
+    const raw = localStorage.getItem(FOLLOW_KEY)
+    if (raw) followedIds.value = new Set(JSON.parse(raw))
+  } catch {
+    // ignore
+  }
+}
+
+const visibleThemes = computed(() => {
+  if (!data.value) return []
+  const themes = data.value.themes.items
+  if (followedIds.value.size === 0) return themes.slice(0, 4) // 未配置关注时默认显示前4
+  return themes.filter(t => followedIds.value.has(t.id))
+})
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadData(silent = false) {
+  if (silent) {
+    refreshing.value = true
+  } else {
+    loading.value = true
+  }
+  error.value = ''
+  try {
+    data.value = await getOverview()
+  } catch (e) {
+    const apiErr = toApiError(e, '加载今日概览')
+    error.value = apiErr.friendly
+  } finally {
+    loading.value = false
+    refreshing.value = false
+  }
+}
+
+function goStock(code: string) {
+  router.push(`/detail/${code}`)
+}
+
+function goAI() {
+  router.push('/chat')
+}
+
+function sendAI() {
+  const q = aiInput.value.trim()
+  if (!q) return
+  router.push({ path: '/chat', query: { q } })
+}
+
+function blockLabel(block: BlockStatus): string {
+  if (block.status === 'ok') return ''
+  if (block.status === 'stale') return '数据可能过期'
+  return '数据不可用'
+}
+
+onMounted(() => {
+  loadFollowed()
+  loadData()
+  // 30 秒轮询刷新
+  pollTimer = setInterval(() => loadData(true), 30_000)
+})
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
+</script>
+
+<template>
+  <div class="mx-auto max-w-4xl px-4 py-4 pb-24 md:pb-8">
+    <!-- Header -->
+    <div class="mb-4 flex items-center justify-between">
+      <h1 class="text-xl font-bold">今日</h1>
+      <button
+        class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+        :disabled="refreshing"
+        @click="loadData()"
+      >
+        <RefreshCw class="size-4" :class="{ 'animate-spin': refreshing }" />
+        刷新
+      </button>
+    </div>
+
+    <!-- Loading skeleton -->
+    <div v-if="loading" class="space-y-4">
+      <div class="h-20 animate-pulse rounded-xl bg-muted" />
+      <div class="h-40 animate-pulse rounded-xl bg-muted" />
+      <div class="h-32 animate-pulse rounded-xl bg-muted" />
+    </div>
+
+    <!-- Error -->
+    <ErrorState v-else-if="error && !data" :message="error" @retry="loadData()" />
+
+    <!-- Content -->
+    <div v-else-if="data" class="space-y-4">
+      <!-- 1. 紧凑指数条 -->
+      <section class="rounded-xl border bg-card p-4">
+        <div
+          v-if="data.indexes.block.status === 'unavailable'"
+          class="py-4 text-center text-sm text-muted-foreground"
+        >
+          {{ data.indexes.block.message || '指数数据暂时不可用' }}
+        </div>
+        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div
+            v-for="idx in data.indexes.indexes"
+            :key="idx.name"
+            class="flex flex-col gap-0.5"
+          >
+            <span class="text-xs text-muted-foreground">{{ idx.name }}</span>
+            <span class="font-mono text-sm font-semibold" :style="{ color: changeColor(idx.change_pct) }">
+              {{ fmtPrice(idx.price) }}
+            </span>
+            <span class="font-mono text-xs" :style="{ color: changeColor(idx.change_pct) }">
+              {{ fmtPct(idx.change_pct) }}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. 关注主题/篮子 -->
+      <section v-if="visibleThemes.length > 0" class="rounded-xl border bg-card p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-muted-foreground">关注主题</h2>
+          <button
+            class="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            @click="router.push('/follow')"
+          >
+            <Star class="size-3" />
+            管理
+          </button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="theme in visibleThemes"
+            :key="theme.id"
+            class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+            @click="router.push(`/themes/${theme.id}`)"
+          >
+            <span class="font-medium">{{ theme.name }}</span>
+            <span class="text-xs text-muted-foreground">{{ theme.total_stocks }}只</span>
+            <ChevronRight class="size-3 text-muted-foreground" />
+          </button>
+        </div>
+      </section>
+
+      <!-- 3. 自选股 -->
+      <section class="rounded-xl border bg-card p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-semibold">自选股</h2>
+            <span v-if="data.watchlist.total > 0" class="text-xs text-muted-foreground">
+              {{ data.watchlist.n_up }}红 {{ data.watchlist.n_down }}绿
+            </span>
+          </div>
+          <span v-if="blockLabel(data.watchlist.block)" class="text-xs text-orange-500">
+            {{ blockLabel(data.watchlist.block) }}
+          </span>
+        </div>
+
+        <div v-if="data.watchlist.items.length === 0" class="py-4 text-center text-sm text-muted-foreground">
+          暂无自选股
+        </div>
+
+        <!-- 桌面紧凑表格 -->
+        <table v-else class="hidden w-full text-sm md:table">
+          <thead>
+            <tr class="border-b text-xs text-muted-foreground">
+              <th class="py-1.5 text-left font-normal">名称</th>
+              <th class="py-1.5 text-right font-normal">现价</th>
+              <th class="py-1.5 text-right font-normal">涨跌</th>
+              <th class="py-1.5 text-right font-normal">分组</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="item in data.watchlist.items"
+              :key="item.code"
+              class="cursor-pointer border-b last:border-0 transition-colors hover:bg-accent/50"
+              @click="goStock(item.code)"
+            >
+              <td class="py-1.5">
+                <span class="font-medium">{{ item.name || item.code }}</span>
+                <span class="ml-1 text-xs text-muted-foreground">{{ item.code }}</span>
+              </td>
+              <td class="py-1.5 text-right font-mono">{{ fmtPrice(item.price) }}</td>
+              <td
+                class="py-1.5 text-right font-mono font-medium"
+                :style="{ color: changeColor(item.change_pct) }"
+              >
+                {{ fmtPct(item.change_pct) }}
+              </td>
+              <td class="py-1.5 text-right text-xs text-muted-foreground">{{ item.group }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 移动端卡片 -->
+        <div class="grid grid-cols-2 gap-2 md:hidden">
+          <button
+            v-for="item in data.watchlist.items"
+            :key="item.code"
+            class="flex flex-col gap-0.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50"
+            @click="goStock(item.code)"
+          >
+            <span class="truncate text-sm font-medium">{{ item.name || item.code }}</span>
+            <span class="font-mono text-sm" :style="{ color: changeColor(item.change_pct) }">
+              {{ fmtPrice(item.price) }}
+            </span>
+            <span class="font-mono text-xs" :style="{ color: changeColor(item.change_pct) }">
+              {{ fmtPct(item.change_pct) }}
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 4. 持仓提醒 -->
+      <section class="rounded-xl border bg-card p-4">
+        <div class="mb-3 flex items-center gap-2">
+          <Wallet class="size-4 text-muted-foreground" />
+          <h2 class="text-sm font-semibold">持仓</h2>
+          <span v-if="data.portfolio.n_positions > 0" class="text-xs text-muted-foreground">
+            {{ data.portfolio.n_positions }}只
+          </span>
+        </div>
+
+        <div v-if="data.portfolio.n_positions === 0" class="py-2 text-sm text-muted-foreground">
+          暂无持仓
+        </div>
+        <div v-else-if="data.portfolio.alerts.length === 0" class="py-2 text-sm text-muted-foreground">
+          暂无需要处理的变化
+        </div>
+        <div v-else class="space-y-2">
+          <button
+            v-for="alert in data.portfolio.alerts"
+            :key="alert.code"
+            class="flex w-full items-center justify-between rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50"
+            @click="goStock(alert.code)"
+          >
+            <div class="flex items-center gap-2">
+              <AlertTriangle
+                class="size-4"
+                :style="{ color: changeColor(alert.unrealized_pnl_pct ?? '0') }"
+              />
+              <div>
+                <span class="text-sm font-medium">{{ alert.name || alert.code }}</span>
+                <span class="ml-1 text-xs text-muted-foreground">{{ alert.shares }}股</span>
+              </div>
+            </div>
+            <span class="font-mono text-sm font-medium" :style="{ color: changeColor(alert.unrealized_pnl_pct ?? '0') }">
+              {{ fmtPct(alert.unrealized_pnl_pct) }}
+            </span>
+          </button>
+        </div>
+
+        <!-- 持仓总盈亏 -->
+        <div v-if="data.portfolio.n_positions > 0" class="mt-3 border-t pt-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-muted-foreground">总浮盈浮亏</span>
+            <span
+              class="font-mono font-medium"
+              :style="{ color: changeColor(data.portfolio.total_unrealized_pnl_pct ?? '0') }"
+            >
+              {{ fmtWan(data.portfolio.total_unrealized_pnl) }}
+              <span v-if="data.portfolio.total_unrealized_pnl_pct">
+                ({{ fmtPct(data.portfolio.total_unrealized_pnl_pct) }})
+              </span>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. 信号摘要 -->
+      <section v-if="data.signals.summary" class="rounded-xl border bg-card p-4">
+        <button
+          class="flex w-full items-center justify-between"
+          @click="router.push('/signals')"
+        >
+          <div class="flex items-center gap-2">
+            <TrendingUp class="size-4 text-muted-foreground" />
+            <span class="text-sm font-medium">最近信号</span>
+            <span class="text-xs text-muted-foreground">{{ data.signals.summary.n_recent }}条</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span v-if="data.signals.summary.n_critical > 0" class="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
+              {{ data.signals.summary.n_critical }}严重
+            </span>
+            <span v-if="data.signals.summary.n_warning > 0" class="rounded bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-700">
+              {{ data.signals.summary.n_warning }}警告
+            </span>
+            <ChevronRight class="size-4 text-muted-foreground" />
+          </div>
+        </button>
+        <p v-if="data.signals.summary.latest_title" class="mt-2 text-xs text-muted-foreground">
+          最新：{{ data.signals.summary.latest_title }}
+        </p>
+      </section>
+
+      <!-- 6. 问 AI 输入条 -->
+      <section class="sticky bottom-20 z-30 md:bottom-4">
+        <form
+          class="flex items-center gap-2 rounded-xl border bg-card p-2 shadow-lg"
+          @submit.prevent="sendAI"
+        >
+          <input
+            v-model="aiInput"
+            type="text"
+            placeholder="问 AI：解释今天的盘面…"
+            class="flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+            aria-label="问 AI"
+          >
+          <button
+            type="submit"
+            class="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+            :disabled="!aiInput.trim()"
+            aria-label="发送"
+          >
+            <Send class="size-4" />
+          </button>
+        </form>
+      </section>
+    </div>
+  </div>
+</template>

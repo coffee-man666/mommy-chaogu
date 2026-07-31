@@ -244,12 +244,28 @@ def mock_semicon_store() -> MagicMock:
 
 
 @pytest.fixture()
+def mock_portfolio_store() -> MagicMock:
+    store = MagicMock()
+    store.list_positions.return_value = []
+    store.summary.return_value = {
+        "positions": [],
+        "total_cost": Decimal("0"),
+        "total_market_value": None,
+        "total_unrealized_pnl": None,
+        "total_unrealized_pnl_pct": None,
+        "n_positions": 0,
+    }
+    return store
+
+
+@pytest.fixture()
 def client(
     mock_adapter: MagicMock,
     mock_service: MagicMock,
     mock_watchlist_store: MagicMock,
     mock_cache_store: MagicMock,
     mock_semicon_store: MagicMock,
+    mock_portfolio_store: MagicMock,
 ) -> TestClient:
     """带 mock 依赖的 FastAPI TestClient（不走 lifespan）。"""
     from mommy_chaogu.web.app import create_app
@@ -258,6 +274,7 @@ def client(
         get_adapter,
         get_alerter,
         get_cache_store,
+        get_portfolio_store,
         get_semicon_store,
         get_watchlist_store,
     )
@@ -270,6 +287,7 @@ def client(
     app.dependency_overrides[get_watchlist_store] = lambda: mock_watchlist_store
     app.dependency_overrides[get_cache_store] = lambda: mock_cache_store
     app.dependency_overrides[get_semicon_store] = lambda: mock_semicon_store
+    app.dependency_overrides[get_portfolio_store] = lambda: mock_portfolio_store
 
     # 不触发 lifespan（避免真实 polling）
     return TestClient(app, raise_server_exceptions=False)

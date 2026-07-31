@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { MessageSquareText, TrendingUp, UserRound, Wallet, KeyRound } from 'lucide-vue-next'
+import { MessageSquareText, LayoutGrid, Star, UserRound, Wallet, KeyRound } from 'lucide-vue-next'
 import { authRequired, loadAuthStatus, authMode } from '@/api/client'
 import { getSetupStatus } from '@/api/setup'
 import BrandMark from '@/components/BrandMark.vue'
@@ -9,11 +9,12 @@ import BrandMark from '@/components/BrandMark.vue'
 const route = useRoute()
 const router = useRouter()
 
+// 导航：今日 / 关注 / 持仓 / 问AI（移动端 4 tab）
 const navigation = [
-  { to: '/', label: '对话', icon: MessageSquareText },
-  { to: '/market', label: '行情', icon: TrendingUp },
+  { to: '/', label: '今日', icon: LayoutGrid },
+  { to: '/follow', label: '关注', icon: Star },
   { to: '/portfolio', label: '持仓', icon: Wallet },
-  { to: '/my', label: '我的', icon: UserRound },
+  { to: '/chat', label: '问AI', icon: MessageSquareText },
 ]
 
 /** When true, the full app shell is hidden (no flash of protected UI). */
@@ -135,7 +136,7 @@ onMounted(() => {
             <span class="block truncate text-[10px] font-normal text-muted-foreground">AI 投研 Agent</span>
           </span>
         </RouterLink>
-        <div class="space-y-1">
+        <div class="flex-1 space-y-1">
           <RouterLink
             v-for="item in navigation"
             :key="item.to"
@@ -146,6 +147,17 @@ onMounted(() => {
           >
             <component :is="item.icon" class="size-5" aria-hidden="true" />
             <span>{{ item.label }}</span>
+          </RouterLink>
+        </div>
+        <!-- 我的：桌面端侧栏底部 -->
+        <div class="mt-auto border-t pt-3">
+          <RouterLink
+            to="/my"
+            class="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            active-class="!bg-primary/10 !text-primary"
+          >
+            <UserRound class="size-5" aria-hidden="true" />
+            <span>我的</span>
           </RouterLink>
         </div>
       </nav>

@@ -9,6 +9,12 @@ import { getSetupStatus } from '@/api/setup'
 import type { SetupStatus } from '@/api/setup'
 import { useTheme } from '@/composables/useTheme'
 import { useWatchlistStore } from '@/stores/watchlist'
+import {
+  STYLE_PRESETS,
+  getStyle,
+  setStyle,
+  type StylePreset,
+} from '@/lib/stylePresets'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,6 +40,14 @@ import type { WatchlistStock, WatchlistGroup, CacheStats, Health } from '@/api/t
 
 const { currentMode, toggle: toggleTheme } = useTheme()
 const watchlistStore = useWatchlistStore()
+
+// ---------- 交易风格 ----------
+const currentStyle = ref<StylePreset>(getStyle())
+
+function selectStyle(style: StylePreset) {
+  currentStyle.value = style
+  setStyle(style)
+}
 
 const watchlist = ref<WatchlistStock[]>([])
 const groups = ref<WatchlistGroup[]>([])
@@ -244,6 +258,35 @@ onUnmounted(() => {
         <Button variant="outline" size="sm" @click="toggleTheme">
           {{ currentMode === 'dark' ? '☀️ 切换到浅色' : '🌙 切换到深色' }}
         </Button>
+      </CardContent>
+    </Card>
+
+    <!-- 交易风格 -->
+    <Card>
+      <CardHeader>
+        <CardTitle as="h2" class="text-base">🎯 交易风格</CardTitle>
+        <CardDescription>影响 AI 回答的侧重点与首页排序优先级</CardDescription>
+      </CardHeader>
+      <Separator />
+      <CardContent class="space-y-2 pt-4">
+        <button
+          v-for="s in STYLE_PRESETS"
+          :key="s.id"
+          class="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
+          :class="currentStyle === s.id ? 'border-primary bg-primary/5' : ''"
+          @click="selectStyle(s.id)"
+        >
+          <span class="text-2xl">{{ s.emoji }}</span>
+          <div class="min-w-0 flex-1">
+            <span class="block text-sm font-semibold">{{ s.label }}</span>
+            <span class="block text-xs text-muted-foreground">{{ s.description }}</span>
+          </div>
+          <span
+            v-if="currentStyle === s.id"
+            class="size-2 shrink-0 rounded-full bg-primary"
+            aria-hidden="true"
+          />
+        </button>
       </CardContent>
     </Card>
 
