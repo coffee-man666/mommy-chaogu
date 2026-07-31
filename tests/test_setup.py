@@ -11,6 +11,8 @@ from mommy_chaogu.setup import (
     _PROVIDERS,
     _write_env_file,
     build_setup_parser,
+    choose_interface,
+    configured_interface,
     has_env_file,
     preferred_setup_env_path,
     run_setup_wizard,
@@ -26,6 +28,7 @@ def _isolate_setup_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         monkeypatch.setenv(info["env_key"], "")
     monkeypatch.setenv("AGENT_PROVIDER", "")
     monkeypatch.setenv("AGENT_MODEL", "")
+    monkeypatch.setenv("MOMMY_INTERFACE", "")
     monkeypatch.setenv("MOMMY_CONFIG_DIR", str(tmp_path / "user-config"))
     monkeypatch.setenv("MOMMY_CHANNEL_STATE_DIR", str(tmp_path / "channel-state"))
 
@@ -148,6 +151,34 @@ def test_wizard_writes_env_minimax_paygo(tmp_path: Path):
     assert "MINIMAX_API_KEY=minimax-paygo-key" in content
     assert "AGENT_PROVIDER=minimax" in content
     assert "AGENT_MODEL=MiniMax-M3" in content
+
+
+def test_wizard_saves_selected_interface(tmp_path: Path):
+    env = tmp_path / ".env"
+    result = run_setup_wizard(
+        env,
+        input_func=make_input(["1", "", "sk-test", "3"]),
+        verify_llm=False,
+        offer_weixin=False,
+        offer_interface=True,
+    )
+    assert result is True
+    assert "MOMMY_INTERFACE=web" in env.read_text(encoding="utf-8")
+
+
+def test_choose_interface_defaults_to_cli():
+    assert choose_interface(make_input([""])) == "cli"
+
+
+def test_choose_interface_retries_invalid_choice():
+    assert choose_interface(make_input(["9", "2"])) == "tui"
+
+
+def test_configured_interface_keeps_legacy_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MOMMY_INTERFACE", "unknown")
+    assert configured_interface() == "cli"
+    monkeypatch.setenv("MOMMY_INTERFACE", "TUI")
+    assert configured_interface() == "tui"
 
 
 def test_wizard_cancel_at_provider(tmp_path: Path):

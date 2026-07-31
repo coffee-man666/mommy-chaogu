@@ -6,6 +6,7 @@ CLI 用户可随时用 ``mommy setup``（或兼容入口 ``mommy --setup``）手
 2. 选择默认模型并隐藏输入 API key
 3. 验证模型连接并写入用户级私有配置
 4. 可选扫码连接微信
+5. 首次配置时选择默认交互界面
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ WeixinRefresher = Callable[[], bool]
 
 _MANAGED_BEGIN = "# >>> mommy-chaogu managed configuration >>>"
 _MANAGED_END = "# <<< mommy-chaogu managed configuration <<<"
+INTERFACE_ENV_KEY = "MOMMY_INTERFACE"
+VALID_INTERFACES = frozenset({"tui", "web", "cli"})
 
 _PROVIDER_DETAILS: dict[str, dict[str, str]] = {
     "deepseek": {
@@ -114,6 +117,37 @@ def _ask_yes_no(input_func: InputFunc, prompt: str, *, default: bool) -> bool | 
     return normalized in {"y", "yes", "是"}
 
 
+def choose_interface(input_func: InputFunc = input) -> str:
+    """让用户选择无参数运行 ``mommy`` 时进入的界面。
+
+    配置已经完成后即使用户按 Ctrl-C / Ctrl-D，也不应让整个
+    onboarding 失败；此时保守地回退到 CLI。
+    """
+    print("\n请选择以后运行 `mommy` 时打开的界面：")
+    print("  1. 终端助手（推荐）    专业 CLI 对话，适合日常使用")
+    print("  2. 全屏终端界面      TUI 卡片、状态栏和快捷键")
+    print("  3. 浏览器界面        启动本地 Web 应用")
+    while True:
+        answer = _safe_input(input_func, "请输入序号 (1-3，默认 1)：")
+        if answer is None:
+            print("\n已选择终端助手，稍后可运行 `mommy setup` 重新选择。")
+            return "cli"
+        normalized = answer.strip()
+        if normalized in {"", "1"}:
+            return "cli"
+        if normalized == "2":
+            return "tui"
+        if normalized == "3":
+            return "web"
+        print(f"无效序号: {answer}，请输入 1、2 或 3。")
+
+
+def configured_interface() -> str:
+    """返回已配置的默认界面；旧用户继续使用 CLI。"""
+    value = os.environ.get(INTERFACE_ENV_KEY, "").strip().lower()
+    return value if value in VALID_INTERFACES else "cli"
+
+
 def validate_llm_connection(provider: str, model: str, api_key: str) -> tuple[bool, str]:
     """Make one tiny completion so onboarding catches bad keys and model names."""
     from mommy_chaogu.agent import llm
@@ -173,6 +207,7 @@ def run_setup_wizard(
     secret_input_func: InputFunc | None = None,
     verify_llm: bool = True,
     offer_weixin: bool = True,
+    offer_interface: bool = False,
     validator: LLMValidator = validate_llm_connection,
     weixin_connector: WeixinConnector = connect_weixin,
     weixin_refresher: WeixinRefresher = refresh_running_weixin_gateway,
@@ -272,8 +307,21 @@ def run_setup_wizard(
                 print(f"⚠️ 微信连接暂未完成（{type(exc).__name__}），AI 配置已经保存。")
                 print("   稍后运行 `mommy channel weixin connect` 可继续扫码并上线。")
 
+    interface: str | None = None
+    if offer_interface:
+        interface = choose_interface(input_func)
+        # AI 配置在微信连接前已经写入；此处将界面偏好合并回同一个
+        # managed block，不另造第二份配置文件。
+        _write_env_file(env_path, provider, api_key, model=model, interface=interface)
+        os.environ[INTERFACE_ENV_KEY] = interface
+
     print("\n🎉 配置完成！")
-    print("   mommy                         打开交互式助手")
+    if interface == "tui":
+        print("   以后运行 `mommy` 将打开终端对话界面。")
+    elif interface == "web":
+        print("   以后运行 `mommy` 将启动浏览器界面。")
+    else:
+        print("   mommy                         打开专业终端助手")
     print("   mommy channel weixin status   查看微信助手状态")
     print("   mommy channel weixin stop     停止后台微信助手\n")
     return True
@@ -285,6 +333,7 @@ def _write_env_file(
     api_key: str,
     *,
     model: str | None = None,
+    interface: str | None = None,
 ) -> None:
     """Merge managed settings into a private env file without duplicating secrets."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -296,6 +345,7 @@ def _write_env_file(
         *(info["env_key"] for info in _PROVIDERS.values()),
         "AGENT_PROVIDER",
         "AGENT_MODEL",
+        INTERFACE_ENV_KEY,
         "SERVER_CHAN_KEY",
     }
     active_values: dict[str, str] = {}
@@ -347,6 +397,10 @@ def _write_env_file(
     lines.append(f"AGENT_PROVIDER={provider}")
     lines.append(f"AGENT_MODEL={resolved_model}")
 
+    resolved_interface = (interface or active_values.get(INTERFACE_ENV_KEY, "")).strip().lower()
+    if resolved_interface in VALID_INTERFACES:
+        lines.append(f"{INTERFACE_ENV_KEY}={resolved_interface}")
+
     # Server酱不再属于新用户 onboarding；旧配置若已有 key，仅无损保留。
     if active_values.get("SERVER_CHAN_KEY"):
         lines.append("")
@@ -370,7 +424,7 @@ def _write_env_file(
             temp_path.unlink()
 
 
-def check_and_run_setup() -> bool:
+def check_and_run_setup(*, offer_interface: bool = False) -> bool:
     """Start onboarding when neither project-local nor user config is usable."""
     load_runtime_env()
     from mommy_chaogu.config import load_config
@@ -389,7 +443,7 @@ def check_and_run_setup() -> bool:
     print("\n⚠️ 未检测到可用的 AI 配置，将启动首次配置向导。")
     print("   稍后也可运行 `mommy setup` 重新配置。\n")
 
-    completed = run_setup_wizard()
+    completed = run_setup_wizard(offer_interface=offer_interface)
     if completed:
         return True
 
@@ -422,5 +476,6 @@ def main_setup() -> None:
         env_path,
         verify_llm=not args.no_verify,
         offer_weixin=not args.no_weixin,
+        offer_interface=True,
     )
     raise SystemExit(0 if completed else 1)

@@ -64,114 +64,325 @@ def _run_mommy_repl(
     agent: object | None,
     verbose: bool = False,
 ) -> NoReturn:
-    """自然语言交互式 REPL。
+    """专业化自然语言 REPL：富文本回答、单行进度和友好错误。"""
+    import json
+    import logging
+    import time
+    from importlib.metadata import PackageNotFoundError, version
+    from uuid import uuid4
 
-    先尝试匹配工作流（零成本快速路径），
-    未命中则 fallback 到 AgentService（LLM 自主对话）。
-    """
-    print(_WELCOME)
+    from rich.console import Console, Group
+    from rich.live import Live
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.spinner import Spinner
+    from rich.table import Table
+    from rich.text import Text
 
+    from mommy_chaogu.cli_prompt import ReplPrompt
+    from mommy_chaogu.tui.widgets.tool_indicator import tool_display_name
     from mommy_chaogu.workflow.engine import WorkflowResult
+
+    console = Console(highlight=False)
+    provider = getattr(agent, "_provider", "") if agent is not None else ""
+    model = getattr(agent, "_model", "") if agent is not None else ""
+    model_label = str(model or "AI 未配置")
+    session_id = f"session_{uuid4().hex[:12]}"
+    cwd = Path.cwd()
+    cwd_full = str(cwd)
+    cwd_label = f"…/{'/'.join(cwd.parts[-3:])}" if len(cwd_full) > 40 else cwd_full
+    try:
+        app_version = version("mommy-chaogu")
+    except PackageNotFoundError:
+        app_version = "dev"
+    prompt = ReplPrompt(
+        model_label=model_label,
+        cwd_label=cwd_label,
+        status_provider=lambda: "AI 已连接" if agent is not None else "仅行情模式",
+    )
+
+    # 默认界面不应混入 requests/SQLAlchemy 等底层 traceback。-v 模式
+    # 保留原日志，用于开发者诊断。
+    if not verbose:
+        package_logger = logging.getLogger("mommy_chaogu")
+        package_logger.handlers.clear()
+        package_logger.addHandler(logging.NullHandler())
+        package_logger.propagate = False
+
+    def render_welcome() -> None:
+        identity = f"{provider} / {model}" if provider and model else "AI 未配置"
+        metadata = Table.grid(padding=(0, 1))
+        metadata.add_column(style="bold")
+        metadata.add_column()
+        metadata.add_row("Directory:", cwd_full)
+        metadata.add_row("Session:", session_id)
+        metadata.add_row("Model:", identity)
+        metadata.add_row("Version:", app_version)
+        metadata.add_row(
+            "Services:", "AI connected · market data ready" if agent else "market only"
+        )
+        help_text = Text()
+        help_text.append("\n直接输入问题，或使用 ", style="dim")
+        help_text.append("/help", style="bold cyan")
+        help_text.append(" 查看命令。", style="dim")
+        console.print(
+            Panel(
+                metadata,
+                title="[bold #7c5cff]Welcome to mommy-chaogu[/]",
+                subtitle="[dim]你的本地 AI 投研助手[/]",
+                border_style="#168aad",
+                padding=(1, 2),
+            )
+        )
+        console.print(help_text)
+
+    def render_error(exc: Exception) -> None:
+        message = str(exc)
+        lowered = message.lower()
+        if "rate_limit" in lowered or "429" in lowered:
+            friendly = "API 调用频率超限，请稍后重试。"
+        elif "quota" in lowered or "insufficient" in lowered:
+            friendly = "API 额度已用完，请检查账户余额。"
+        elif "authentication" in lowered or "401" in lowered:
+            friendly = "API key 无效，请运行 `mommy setup` 重新配置。"
+        else:
+            friendly = "这次没能完成，请稍后重试。"
+            if verbose:
+                friendly += f"\n\n{type(exc).__name__}: {message}"
+        console.print(Panel(friendly, title="[bold red]执行失败[/]", border_style="red"))
+
+    def render_help() -> None:
+        commands = Table.grid(padding=(0, 2))
+        commands.add_column(style="bold cyan")
+        commands.add_column()
+        commands.add_row("/help", "查看命令")
+        commands.add_row("/status", "查看会话、模型和服务状态")
+        commands.add_row("/model", "查看当前 Provider 和模型")
+        commands.add_row("/clear", "清空屏幕")
+        commands.add_row("/tui", "查看全屏终端界面启动方式")
+        commands.add_row("/web", "查看浏览器界面启动方式")
+        commands.add_row("/quit", "退出")
+        console.print(Panel(commands, title="命令", border_style="#4b5563"))
+
+    render_welcome()
 
     while True:
         try:
-            user_input = input("❯ ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\n再见！")
+            user_input = prompt.read()
+        except KeyboardInterrupt:
+            console.print("\n[dim]已取消当前输入。输入 /quit 退出。[/]")
+            continue
+        except EOFError:
+            console.print("\n[dim]再见。[/]")
             _flush_agent(agent)
             sys.exit(0)
 
         if not user_input:
             continue
-        if user_input.lower() in ("q", "quit", "exit"):
-            print("再见！")
+        console.print(f"[bold #7c5cff]›[/] {user_input}")
+        command = user_input.lower()
+        if command in {"q", "quit", "exit", "/q", "/quit", "/exit"}:
+            console.print("[dim]再见。[/]")
             _flush_agent(agent)
             sys.exit(0)
-
-        # 帮助命令
-        if user_input.lower() in ("help", "帮助", "?"):
-            print(_WELCOME)
+        if command in {"help", "帮助", "?", "/help"}:
+            render_help()
+            continue
+        if command in {"clear", "/clear"}:
+            console.clear()
+            render_welcome()
+            continue
+        if command == "/status":
+            render_welcome()
+            continue
+        if command == "/model":
+            console.print(f"[dim]当前模型：[/][bold]{provider or '?'} / {model_label}[/]")
+            continue
+        if command == "/tui":
+            console.print("退出后运行 [bold]mommy tui[/] 可进入全屏终端界面。")
+            continue
+        if command == "/web":
+            console.print("退出后运行 [bold]mommy web[/] 可启动浏览器界面。")
             continue
 
-        # 尝试路由到工作流
         route = router.route(user_input)  # type: ignore[attr-defined]
+        started = time.monotonic()
+
         if route.matched:
-            # 显示匹配反馈
             wf_desc = route.workflow.description  # type: ignore[attr-defined]
-            if verbose:
-                wf_id = route.workflow.id  # type: ignore[attr-defined]
-                print(f"  [匹配工作流: {wf_desc}] (id={wf_id})")
-            else:
-                print(f"  [匹配: {wf_desc}]")
+            current_step = wf_desc
+            try:
+                with console.status(f"[cyan]{current_step}[/]", spinner="dots") as status:
 
-            # 工作流执行 + 进度显示
-            def on_start(name: str) -> None:
-                print(f"  ⠹ {name}...", end="\r", flush=True)
+                    def on_start(name: str) -> None:
+                        nonlocal current_step
+                        current_step = name
+                        status.update(f"[cyan]{name}[/]")
 
-            def on_done(name: str, ok: bool) -> None:
-                mark = "✓" if ok else "✗"
-                print(f"  {mark} {name}" + " " * 10)
+                    def on_done(name: str, ok: bool) -> None:
+                        mark = "✓" if ok else "✗"
+                        color = "green" if ok else "red"
+                        status.update(f"[{color}]{mark}[/] {name}")
 
-            print()
-            result: WorkflowResult = router.execute_route(  # type: ignore[attr-defined]
-                route,
-                user_input,
-                on_step_start=on_start,
-                on_step_done=on_done,
-            )
-            print()
-
-            if result.summary:
-                print(result.summary)
-                print()
-            elif result.steps:
-                # 没有总结时显示简单结果
-                _print_workflow_result(result)
-                print()
-
-            # 建议
-            print("💡 继续问我，或输入 q 退出\n")
-        else:
-            # 未命中预设工作流
-            if verbose:
-                reason = getattr(route, "fallback_reason", "")
-                print(f"  [未命中预设工作流{f': {reason}' if reason else ''}]")
-            print("  [转交 AI 助手处理]\n")
-
-            # Fallback: 通用 LLM agent
-            if agent is None:
-                print(
-                    "⚠️ AI 助手不可用（未配置 API key）。\n"
-                    "   运行 mommy setup 配置 Provider、模型和 API key。\n"
-                    "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
-                )
+                    result: WorkflowResult = router.execute_route(  # type: ignore[attr-defined]
+                        route,
+                        user_input,
+                        on_step_start=on_start,
+                        on_step_done=on_done,
+                    )
+            except Exception as exc:
+                render_error(exc)
                 continue
 
-            print("🤔 让我想想...\n")
-            try:
+            console.print()
+            if result.summary:
+                console.print(Markdown(result.summary))
+            elif result.steps:
+                _print_workflow_result(result)
+            elapsed = time.monotonic() - started
+            console.print(f"[dim]✓ {wf_desc} · {elapsed:.1f}s[/]")
+            continue
 
-                def _on_tool(name: str, a: dict[str, object]) -> None:
-                    if verbose:
-                        args_str = ", ".join(f"{k}={v}" for k, v in a.items())
-                        print(f"  🔧 {name}({args_str})")
-                    else:
-                        print(f"  🔧 调用: {name}...")
+        if agent is None:
+            console.print(
+                Panel(
+                    "AI 助手尚未配置。运行 [bold]mommy setup[/] 配置 Provider、模型和 API key。",
+                    title="[yellow]需要配置[/]",
+                    border_style="yellow",
+                )
+            )
+            continue
 
-                resp = agent.chat(user_input, on_tool_call=_on_tool)
-                print(f"\n{resp.text}\n")
-                if resp.tool_calls and not verbose:
-                    tool_names = ", ".join(tc.name for tc in resp.tool_calls)
-                    print(f"[调用了 {len(resp.tool_calls)} 个工具: {tool_names}]\n")
-            except Exception as e:
-                err_msg = str(e)
-                if "rate_limit" in err_msg.lower() or "429" in err_msg:
-                    print("⚠️ API 调用频率超限，请稍后重试。\n")
-                elif "quota" in err_msg.lower() or "insufficient" in err_msg.lower():
-                    print("⚠️ API 额度已用完，请检查账户余额。\n")
-                elif "authentication" in err_msg.lower() or "401" in err_msg:
-                    print("⚠️ API key 无效，请运行 mommy setup 重新配置。\n")
+        tool_names: list[str] = []
+        failed_tools = 0
+        verbose_events: list[str] = []
+        tool_events: list[dict[str, object]] = []
+        answer_chunks: list[str] = []
+        activity = ["正在理解问题…"]
+
+        def render_agent_activity(
+            *,
+            running: bool = True,
+            _tool_events: list[dict[str, object]] = tool_events,
+            _answer_chunks: list[str] = answer_chunks,
+            _activity: list[str] = activity,
+        ) -> Group:
+            renderables: list[object] = []
+            for event in _tool_events[-8:]:
+                state = str(event["state"])
+                if state == "running":
+                    marker, style = "⏺", "cyan"
+                elif state == "ok":
+                    marker, style = "✓", "green"
                 else:
-                    print(f"⚠️ 出错了: {e}\n")
+                    marker, style = "✗", "red"
+                row = Text()
+                row.append(f"{marker} ", style=style)
+                row.append(str(event["label"]))
+                elapsed_ms = event.get("elapsed_ms")
+                if elapsed_ms is not None:
+                    row.append(f"  {int(elapsed_ms) / 1000:.1f}s", style="dim")
+                renderables.append(row)
+            if running and not _answer_chunks:
+                renderables.append(Spinner("dots", Text(_activity[0], style="cyan")))
+            if _answer_chunks:
+                renderables.append(Markdown("".join(_answer_chunks)))
+            if not renderables:
+                renderables.append(Text(_activity[0], style="cyan"))
+            return Group(*renderables)
+
+        try:
+            with Live(
+                render_agent_activity(),
+                console=console,
+                refresh_per_second=12,
+                vertical_overflow="visible",
+            ) as live:
+
+                def on_tool(
+                    name: str,
+                    args: dict[str, object],
+                    _tool_names: list[str] = tool_names,
+                    _verbose_events: list[str] = verbose_events,
+                    _tool_events: list[dict[str, object]] = tool_events,
+                    _activity: list[str] = activity,
+                ) -> None:
+                    display = tool_display_name(name)
+                    _tool_names.append(display)
+                    _activity[0] = f"{display}…"
+                    _tool_events.append({"name": name, "label": display, "state": "running"})
+                    live.update(render_agent_activity())
+                    if verbose:
+                        rendered_args = ", ".join(f"{key}={value}" for key, value in args.items())
+                        _verbose_events.append(f"• {name}({rendered_args})")
+
+                def on_tool_result(
+                    name: str,
+                    ok: bool,
+                    elapsed_ms: int,
+                    result: str,
+                    _tool_events: list[dict[str, object]] = tool_events,
+                ) -> None:
+                    nonlocal failed_tools
+                    actual_ok = ok
+                    try:
+                        payload = json.loads(result)
+                        actual_ok = actual_ok and not (
+                            isinstance(payload, dict) and "error" in payload
+                        )
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    if not actual_ok:
+                        failed_tools += 1
+                    for event in reversed(_tool_events):
+                        if event["name"] == name and event["state"] == "running":
+                            event["state"] = "ok" if actual_ok else "error"
+                            event["elapsed_ms"] = elapsed_ms
+                            break
+                    live.update(render_agent_activity())
+
+                def on_status(
+                    kind: str,
+                    data: dict[str, object],
+                    _activity: list[str] = activity,
+                ) -> None:
+                    if kind == "retry":
+                        attempt = data.get("attempt", "?")
+                        _activity[0] = f"连接波动，正在重试（{attempt}）…"
+                        live.update(render_agent_activity())
+
+                def on_chunk(text: str, _answer_chunks: list[str] = answer_chunks) -> None:
+                    _answer_chunks.append(text)
+                    live.update(render_agent_activity())
+
+                resp = agent.chat(
+                    user_input,
+                    on_tool_call=on_tool,
+                    on_tool_result=on_tool_result,
+                    on_chunk=on_chunk,
+                    on_status=on_status,
+                )
+                if not answer_chunks and resp.text:
+                    answer_chunks.append(resp.text)
+                live.update(render_agent_activity(running=False), refresh=True)
+        except KeyboardInterrupt:
+            console.print("[yellow]■ 已中断当前任务。[/]")
+            continue
+        except Exception as exc:
+            render_error(exc)
+            continue
+
+        if verbose and verbose_events:
+            console.print(Panel("\n".join(verbose_events), title="执行详情", border_style="dim"))
+
+        elapsed = time.monotonic() - started
+        unique_tools = list(dict.fromkeys(tool_names))
+        details = f" · {len(tool_names)} 次数据查询" if tool_names else ""
+        if failed_tools:
+            details += f" · [yellow]{failed_tools} 项未取到[/]"
+        if verbose and unique_tools:
+            details += f" · {', '.join(unique_tools)}"
+        console.print(f"[dim]✓ 完成 · {elapsed:.1f}s{details}[/]")
 
 
 def _print_workflow_result(result: object) -> None:
@@ -333,13 +544,28 @@ def main_mommy() -> NoReturn:
     if args.setup:
         from mommy_chaogu.setup import run_setup_wizard
 
-        sys.exit(0 if run_setup_wizard() else 1)
+        sys.exit(0 if run_setup_wizard(offer_interface=True) else 1)
 
     # 安装后第一次直接运行 mommy 时自动进入统一 onboarding；已有项目级
     # 或用户级配置时是一次无交互的快速检查。
-    from mommy_chaogu.setup import check_and_run_setup
+    from mommy_chaogu.setup import check_and_run_setup, configured_interface
 
-    check_and_run_setup()
+    check_and_run_setup(offer_interface=True)
+
+    # 只有无参数的交互式启动才遵循界面偏好。单次问答和结构化
+    # 子命令仍保持可组合的 CLI 语义。
+    if not args.query:
+        interface = configured_interface()
+        if interface == "tui":
+            sys.argv = ["mommy-tui"]
+            from mommy_chaogu.tui.app import main as _tui_main
+
+            _tui_main()
+            return
+        if interface == "web":
+            sys.argv = ["mommy-web"]
+            main_web()
+            return
 
     # 构建工具链
     from mommy_chaogu.agent.tools import ToolContext, ToolRegistry

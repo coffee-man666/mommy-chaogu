@@ -20,8 +20,10 @@ dependencies = [
     "jinja2>=3.1.6",
     "openai>=1.0",
     "mcp>=1.28.1",
+    "prompt-toolkit>=3.0.51",
     "sqlite-vec>=0.1.9",
     "python-dotenv>=1.0",
+    "rich>=13.9",
     "textual>=8.2.8",
     "qrcode>=8.0",
 ]

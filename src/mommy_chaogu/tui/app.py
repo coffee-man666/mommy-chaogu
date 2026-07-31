@@ -623,7 +623,8 @@ def main() -> None:
     # 启动前检查项目级 / 用户级配置，未配置则进入统一 onboarding
     from mommy_chaogu.setup import check_and_run_setup
 
-    check_and_run_setup()
+    # 用户已经显式选择 TUI，首次配置后不再追问界面。
+    check_and_run_setup(offer_interface=False)
     app = MommyTuiApp()
     app.run()
 
