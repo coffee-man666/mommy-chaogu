@@ -10,7 +10,12 @@ Tushare 的特点（与 efinance/腾讯区别）：
 - **EOD 数据为主**（盘后），不是实时行情
 - 代码格式：`600519.SH`（带 . 和后缀），与项目内部 `600519` 不同，需要转换
 - 需要 token（环境变量 `TUSHARE_TOKEN`），未配置时所有方法返回 None
-- 每次调用消耗积分，免费档每日 5000 次，中级档不限次
+- 积分门槛（见 https://tushare.pro/document/1?doc_id=13）：
+  daily 基础积分每分钟 500 次；**moneyflow / adj_factor 需 2000 积分起**；
+  stk_mins 分钟线需单独权限。积分不足时接口报错被静默降级为 None/[]，
+  用 health_check() 可探活，但积分等级需自行在 tushare.pro 后台确认
+- 分钟线**不支持**（stk_mins 日期格式/权限/列名均与日线路径不同，见 get_bars）
+- moneyflow 只覆盖**沪深** A 股（不含北交所）
 - 走 HTTPS JSON API，不依赖任何爬虫
 
 使用：
@@ -24,7 +29,6 @@ from __future__ import annotations
 
 import logging
 import os
-import warnings
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -44,8 +48,6 @@ from mommy_chaogu.market_data.types import (
     QuoteType,
     Tick,
 )
-
-warnings.filterwarnings("ignore")
 
 _log = logging.getLogger(__name__)
 
@@ -75,9 +77,9 @@ def _to_int(v: Any) -> int:
         return 0
 
 
-def _to_money(v: Any) -> Money:
-    """转 Money（默认 CNY）。"""
-    amt = _to_dec(v) or Decimal("0")
+def _to_money_scaled(v: Any, scale: str) -> Money:
+    """转 Money 并乘以倍率（用于 Tushare 的非元单位：daily.amount=千元、moneyflow=万元）。"""
+    amt = (_to_dec(v) or Decimal("0")) * Decimal(scale)
     return Money(amt, "CNY")
 
 
@@ -104,8 +106,11 @@ def _detect_market_from_code(code: str) -> MarketType:
 
 
 def _detect_quote_type(code: str) -> QuoteType:
-    if code.startswith(("51", "15", "16", "18", "11", "12", "13", "14")):
+    # 51/56/15/16/18 为场内基金；10~14 为债券/可转债（11xxxx、12xxxx 是沪深可转债）
+    if code.startswith(("51", "56", "15", "16", "18")):
         return QuoteType.FUND
+    if code.startswith(("10", "11", "12", "13", "14")):
+        return QuoteType.BOND
     return QuoteType.STOCK
 
 
@@ -154,12 +159,15 @@ def apply_adjustment(
         mode: AdjustmentType.FORWARD（前复权）或 BACKWARD（后复权）
 
     算法:
-        前复权 adj_price = raw_price * (latest_factor / current_factor)
-            → 调整后**最新价 = 原始最新价**（价格历史保持连续，历史价更低）
-            → 回测看历史业绩最常用
-        后复权 adj_price = raw_price * (earliest_factor / current_factor)
+        前复权 adj_price = raw_price * (current_factor / latest_factor)
+            → 调整后**最新价 = 原始最新价**（历史价按因子比例压低，价格序列连续）
+            → 回测看历史业绩最常用；与 Tushare pro_bar(adj='qfq') 公式一致
+        后复权 adj_price = raw_price * (current_factor / earliest_factor)
             → 调整后**最早价 = 原始最早价**（最新价更高）
             → 看完整历史涨幅用
+
+        注意 Tushare adj_factor 的方向：上市首日 = 1，之后每次分红送股
+        **累乘增大**（如 000001.SZ 2018 年已 108.031），即越晚越大。
 
     使用场景:
         - **实盘/盘中数据：不需要调用**（实时价就是实际价）
@@ -206,8 +214,6 @@ def apply_adjustment(
         return bars
 
     # 找基准因子：来自 bars 列表中最早/最晚一根 bar 的日期对应的因子
-    # Tushare 的 adj_factor 约定是"越早越大、越晚越小"（除权除息让因子下降），
-    # 所以不能用 max/min，要按日期取。
     sorted_bars = sorted(bars, key=lambda b: b.timestamp)
     latest_bar_date_str = sorted_bars[-1].timestamp.strftime("%Y%m%d")
     earliest_bar_date_str = sorted_bars[0].timestamp.strftime("%Y%m%d")
@@ -233,11 +239,11 @@ def apply_adjustment(
             adjusted.append(bar)
             continue
 
-        # 计算复权系数
+        # 计算复权系数（Tushare 因子越晚越大：cur/latest ≤ 1 压低历史价 = 前复权）
         if mode == AdjustmentType.FORWARD:
-            ratio = latest_factor / cur_factor  # type: ignore[operator]
+            ratio = cur_factor / latest_factor  # type: ignore[operator]
         else:
-            ratio = earliest_factor / cur_factor  # type: ignore[operator]
+            ratio = cur_factor / earliest_factor  # type: ignore[operator]
 
         # 应用到 OHLC（不复权价 * ratio = 复权价）
         new_open = (bar.open * ratio) if bar.open else bar.open
@@ -270,12 +276,10 @@ def apply_adjustment(
 
 
 # K 线周期 → Tushare freq 参数
+# 分钟线（M1~M60）**故意不支持**：stk_mins 需单独积分权限、start/end 要
+# 'YYYY-MM-DD HH:MM:SS' 格式，且 pro_bar 在 adj≠None 时会 drop 掉 trade_date
+# 列只剩 trade_time —— 静默返回空不如直接拒绝。分钟线请走 efinance。
 _FREQ_MAP: dict[BarInterval, str] = {
-    BarInterval.M1: "1min",
-    BarInterval.M5: "5min",
-    BarInterval.M15: "15min",
-    BarInterval.M30: "30min",
-    BarInterval.M60: "60min",
     BarInterval.D1: "D",
     BarInterval.W1: "W",
     BarInterval.M: "M",
@@ -333,20 +337,20 @@ class TushareAdapter:
             today = date.today().strftime("%Y%m%d")
             # 拿最近一个交易日的数据（往前查 30 天保证能命中）
             start = (date.today() - timedelta(days=30)).strftime("%Y%m%d")
-            df = self._pro.daily_basic(
-                ts_code=ts_code, start_date=start, end_date=today, limit=1
-            )
+            df = self._pro.daily_basic(ts_code=ts_code, start_date=start, end_date=today)
             if df is None or df.empty:
                 return None
-            row = df.iloc[0]
+            row = df.iloc[0]  # daily_basic 按日期倒序，第一行是最新交易日
 
             # 顺便拿一天 K 线补 open/high/low/close
-            daily_df = self._pro.daily(
-                ts_code=ts_code, start_date=start, end_date=today
-            )
+            daily_df = self._pro.daily(ts_code=ts_code, start_date=start, end_date=today)
             if daily_df is None or daily_df.empty:
                 return None
             daily_row = daily_df.iloc[0]
+
+            # Tushare 市值单位是万元，需要 ×10000 转元；NaN 时给 None 而不是 Money(0)
+            total_mv = _to_dec(row.get("total_mv"))
+            circ_mv = _to_dec(row.get("circ_mv"))
 
             return Quote(
                 code=code,
@@ -361,21 +365,16 @@ class TushareAdapter:
                 change=_to_dec(daily_row.get("change")) or Decimal("0"),
                 change_pct=_to_dec(daily_row.get("pct_chg")) or Decimal("0"),
                 volume=_to_int(daily_row.get("vol")),
-                turnover=_to_money(daily_row.get("amount")),
+                # daily.amount 单位是**千元**（见 tushare.pro/document/2?doc_id=27）
+                turnover=_to_money_scaled(daily_row.get("amount"), "1000"),
                 turnover_rate=_to_dec(row.get("turnover_rate")),
                 volume_ratio=None,
                 pe_dynamic=_to_dec(row.get("pe")),
-                # Tushare 市值单位是万元，需要 ×10000 转元
-                # 先转 Decimal 再构造 Money（Money 不能直接 * Decimal）
                 total_market_cap=(
-                    Money((_to_dec(row.get("total_mv")) or Decimal("0")) * Decimal("10000"), "CNY")
-                    if row.get("total_mv") is not None
-                    else None
+                    Money(total_mv * Decimal("10000"), "CNY") if total_mv is not None else None
                 ),
                 circulating_market_cap=(
-                    Money((_to_dec(row.get("circ_mv")) or Decimal("0")) * Decimal("10000"), "CNY")
-                    if row.get("circ_mv") is not None
-                    else None
+                    Money(circ_mv * Decimal("10000"), "CNY") if circ_mv is not None else None
                 ),
                 timestamp=datetime.now(),
                 extra={"source": "tushare_eod", "trade_date": str(daily_row.get("trade_date", ""))},
@@ -385,16 +384,12 @@ class TushareAdapter:
             return None
 
     def get_quotes(self, codes: list[str]) -> list[Quote]:
-        """批量：循环单股。失败跳过。"""
+        """批量：循环单股（每股 2 次 API 调用，注意积分消耗）。失败跳过。"""
         out: list[Quote] = []
-        seen: set[str] = set()
         for code in dict.fromkeys(codes):
-            if code in seen:
-                continue
             q = self.get_quote(code)
             if q is not None:
                 out.append(q)
-                seen.add(code)
         return out
 
     def list_market_quotes(self) -> list[Quote]:
@@ -420,12 +415,13 @@ class TushareAdapter:
         end: date | None = None,
         limit: int | None = None,
     ) -> list[Bar]:
-        """拉 K 线，支持前/后/不复权。
+        """拉 K 线，支持前/后/不复权（仅日/周/月线，分钟线不支持直接返回 []）。
 
         实现：
-        - 用 `tushare.pro_bar()` 顶层函数（内部会调 daily/weekly/monthly/stk_mins + adj_factor）
+        - 用 `tushare.pro_bar()` 顶层函数（内部会调 daily/weekly/monthly + adj_factor）
         - `adj='qfq'` 前复权 / `adj='hfq'` 后复权 / `adj=None` 不复权
-        - 分钟线 Tushare 只支持最近 5 个交易日
+        - 分钟线（M1~M60）不支持：stk_mins 需单独积分权限，且 pro_bar 在
+          adj≠None 时会丢弃 trade_date 列，无法可靠解析 —— 请走 efinance
 
         复权说明：
         - Tushare 的 `daily` 接口返回**不复权**原始价
@@ -450,12 +446,9 @@ class TushareAdapter:
             elif interval == BarInterval.W1:
                 weeks = max(52, (limit or 200) + 4)
                 start_d = end_d - timedelta(weeks=weeks)
-            elif interval == BarInterval.M:
+            else:  # 月线
                 months = max(24, (limit or 60) + 2)
                 start_d = end_d - timedelta(days=int(months * 31))
-            else:
-                # 分钟线 Tushare 只支持最近 5 个交易日
-                start_d = end_d - timedelta(days=5)
         else:
             start_d = start
 
@@ -518,9 +511,11 @@ class TushareAdapter:
                     low=_to_dec(row.get("low")) or Decimal("0"),
                     close=_to_dec(row.get("close")) or Decimal("0"),
                     volume=_to_int(row.get("vol")),
-                    turnover=_to_money(row.get("amount")),
+                    # daily.amount 单位是**千元**（见 tushare.pro/document/2?doc_id=27）
+                    turnover=_to_money_scaled(row.get("amount"), "1000"),
                     change_pct=_to_dec(row.get("pct_chg")),
-                    turnover_rate=None,  # daily 接口不返回
+                    # factors=["tor"] 让 pro_bar 从 daily_basic 并入换手率（仅日线有）
+                    turnover_rate=_to_dec(row.get("turnover_rate")),
                     amplitude=None,
                 )
             )
@@ -538,8 +533,23 @@ class TushareAdapter:
     # ---------- 资金流 ----------
 
     def _bill_df_to_flow(self, df: pd.DataFrame, code: str) -> list[MoneyFlow]:
+        """moneyflow 接口 DataFrame → MoneyFlow 列表。
+
+        字段与单位（见 tushare.pro/document/2?doc_id=170）：
+        - 各档位只有 buy/sell 两组字段，净流入需自算：buy_xx_amount - sell_xx_amount
+        - 所有 amount 字段单位是**万元**，统一 ×10000 转元
+        - net_mf_amount 是 Tushare 官方算好的净流入额（基于 L2 主动买卖单，
+          不等于四档简单相加），映射为主力净流入
+        """
         if df is None or df.empty:
             return []
+
+        def _net_wan(row: pd.Series, prefix: str) -> Money:
+            """buy_{prefix}_amount - sell_{prefix}_amount（万元 → 元）。"""
+            buy = _to_dec(row.get(f"buy_{prefix}_amount")) or Decimal("0")
+            sell = _to_dec(row.get(f"sell_{prefix}_amount")) or Decimal("0")
+            return Money((buy - sell) * Decimal("10000"), "CNY")
+
         flows: list[MoneyFlow] = []
         for _, row in df.iterrows():
             trade_date = str(row.get("trade_date", ""))
@@ -554,41 +564,39 @@ class TushareAdapter:
                     code=code,
                     name="",
                     timestamp=ts,
-                    main_net=_to_money(row.get("net_mf_amount")),
-                    small_net=_to_money(row.get("net_xl_amount")),  # 小单
-                    medium_net=_to_money(row.get("net_l_amount")),  # 中单
-                    large_net=_to_money(row.get("net_el_amount")),  # 大单
-                    super_large_net=_to_money(row.get("net_vl_amount")),  # 超大单
+                    main_net=_to_money_scaled(row.get("net_mf_amount"), "10000"),
+                    small_net=_net_wan(row, "sm"),  # 小单
+                    medium_net=_net_wan(row, "md"),  # 中单
+                    large_net=_net_wan(row, "lg"),  # 大单
+                    super_large_net=_net_wan(row, "elg"),  # 特大单
                     main_net_ratio=None,  # moneyflow 接口不直接给占比
                 )
             )
         return flows
 
     def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
-        """当日资金流：Tushare 是 EOD 一次给整天的，返回一个点。"""
+        """当日资金流：Tushare 是 EOD 一次给整天的，返回最近一个交易日一个点。
+
+        注意：moneyflow 接口需 2000 积分，且只覆盖沪深 A 股（北交所返回空）。
+        盘中调用时当天数据通常还没入库，返回的是**上一交易日**的数据。
+        """
         if not self.is_available:
             return []
         try:
             ts_code = to_tushare_code(code)
             today = date.today().strftime("%Y%m%d")
-            # Tushare 不能"只看今天"，要看是否有今天的数据
             start = (date.today() - timedelta(days=7)).strftime("%Y%m%d")
             df = self._pro.moneyflow(ts_code=ts_code, start_date=start, end_date=today)
             if df is None or df.empty:
                 return []
-            # 取最新一条
-            latest = df.iloc[0]
-            trade_date = str(latest.get("trade_date", ""))
-            if trade_date != today:
-                # 当天数据可能还没出（盘后才更新），返回最近一天的
-                pass
+            # 按日期倒序，第一条是最新交易日
             return self._bill_df_to_flow(df.head(1), code)
         except Exception as e:
             _log.debug("Tushare get_today_money_flow(%s) failed: %s", code, e)
             return []
 
     def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
-        """历史资金流：默认 30 天。"""
+        """历史资金流：默认 30 天。需 2000 积分，只覆盖沪深 A 股。"""
         if not self.is_available:
             return []
         try:
@@ -633,9 +641,7 @@ class TushareAdapter:
             return []
 
         # 1. 拉不复权 K 线
-        bars = self.get_bars(
-            code, interval, AdjustmentType.NONE, start=start, end=end, limit=limit
-        )
+        bars = self.get_bars(code, interval, AdjustmentType.NONE, start=start, end=end, limit=limit)
         if not bars:
             return []
 
@@ -719,7 +725,8 @@ class TushareAdapter:
             df = self._pro.fina_indicator(**kwargs)
             if df is None or df.empty:
                 return []
-            return df.to_dict(orient="records")
+            records: list[dict[str, Any]] = df.to_dict(orient="records")
+            return records
         except Exception as e:
             _log.debug("Tushare get_financial_indicator(%s) failed: %s", code, e)
             return []
@@ -747,7 +754,8 @@ class TushareAdapter:
             df = self._pro.dividend(ts_code=ts_code, limit=limit)
             if df is None or df.empty:
                 return []
-            return df.to_dict(orient="records")
+            records: list[dict[str, Any]] = df.to_dict(orient="records")
+            return records
         except Exception as e:
             _log.debug("Tushare get_dividend_history(%s) failed: %s", code, e)
             return []
@@ -779,7 +787,8 @@ class TushareAdapter:
             df = self._pro.income(**kwargs)
             if df is None or df.empty:
                 return []
-            return df.to_dict(orient="records")
+            records: list[dict[str, Any]] = df.to_dict(orient="records")
+            return records
         except Exception as e:
             _log.debug("Tushare get_income_statement(%s) failed: %s", code, e)
             return []
@@ -804,7 +813,8 @@ class TushareAdapter:
             df = self._pro.balancesheet(**kwargs)
             if df is None or df.empty:
                 return []
-            return df.to_dict(orient="records")
+            records: list[dict[str, Any]] = df.to_dict(orient="records")
+            return records
         except Exception as e:
             _log.debug("Tushare get_balance_sheet(%s) failed: %s", code, e)
             return []
@@ -830,7 +840,8 @@ class TushareAdapter:
             df = self._pro.cashflow(**kwargs)
             if df is None or df.empty:
                 return []
-            return df.to_dict(orient="records")
+            records: list[dict[str, Any]] = df.to_dict(orient="records")
+            return records
         except Exception as e:
             _log.debug("Tushare get_cash_flow(%s) failed: %s", code, e)
             return []
@@ -855,7 +866,8 @@ class TushareAdapter:
             df = self._pro.stock_basic(list_status=list_status)
             if df is None or df.empty:
                 return []
-            return df.to_dict(orient="records")
+            records: list[dict[str, Any]] = df.to_dict(orient="records")
+            return records
         except Exception as e:
             _log.debug("Tushare list_all_stocks failed: %s", e)
             return []

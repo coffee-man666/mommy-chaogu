@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -78,19 +79,19 @@ class TestTushareAdapterInit:
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake_token_xxx"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                adp = TushareAdapter()
-                # 初始化过程中会调 tushare.set_token + tushare.pro_api
-                assert adp._token == "fake_token_xxx"
-                # pro_api 被调用过（fake_token 也走通）
-                mock_pro.assert_called_once()
+            adp = TushareAdapter()
+            # 初始化过程中会调 tushare.set_token + tushare.pro_api
+            assert adp._token == "fake_token_xxx"
+            # pro_api 被调用过（fake_token 也走通）
+            mock_pro.assert_called_once()
 
     def test_explicit_token_override(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "env_token"}),
             patch("tushare.pro_api"),
         ):
-                adp = TushareAdapter(token="explicit_token")
-                assert adp._token == "explicit_token"
+            adp = TushareAdapter(token="explicit_token")
+            assert adp._token == "explicit_token"
 
 
 # ---------- 方法在没有 token 时的退化行为 ----------
@@ -146,9 +147,9 @@ class TestTushareAdapterRobustness:
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                # 让 pro_api 返回一个 mock，所有 query 抛异常
-                mock_pro.return_value.query.side_effect = Exception("API down")
-                return TushareAdapter()
+            # 让 pro_api 返回一个 mock，所有 query 抛异常
+            mock_pro.return_value.query.side_effect = Exception("API down")
+            return TushareAdapter()
 
     def test_quote_handles_exception(self, adp: TushareAdapter) -> None:
         assert adp.get_quote("600519") is None
@@ -179,13 +180,14 @@ class TestTushareBarsAdjustment:
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.query.side_effect = Exception("not used")
-                return TushareAdapter()
+            mock_pro.return_value.query.side_effect = Exception("not used")
+            return TushareAdapter()
 
     def test_forward_adjustment_passes_qfq(self, adp_with_token: TushareAdapter) -> None:
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
             # 模拟 pro_bar 返回空 DataFrame
             import pandas as pd
+
             mock_pro_bar.return_value = pd.DataFrame()
 
             adp_with_token.get_bars("600519", BarInterval.D1, AdjustmentType.FORWARD)
@@ -196,6 +198,7 @@ class TestTushareBarsAdjustment:
     def test_backward_adjustment_passes_hfq(self, adp_with_token: TushareAdapter) -> None:
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
             import pandas as pd
+
             mock_pro_bar.return_value = pd.DataFrame()
 
             adp_with_token.get_bars("600519", BarInterval.D1, AdjustmentType.BACKWARD)
@@ -205,6 +208,7 @@ class TestTushareBarsAdjustment:
     def test_no_adjustment_passes_none(self, adp_with_token: TushareAdapter) -> None:
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
             import pandas as pd
+
             mock_pro_bar.return_value = pd.DataFrame()
 
             adp_with_token.get_bars("600519", BarInterval.D1, AdjustmentType.NONE)
@@ -214,20 +218,29 @@ class TestTushareBarsAdjustment:
     def test_d1_interval_passes_d_freq(self, adp_with_token: TushareAdapter) -> None:
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
             import pandas as pd
+
             mock_pro_bar.return_value = pd.DataFrame()
 
             adp_with_token.get_bars("600519", BarInterval.D1)
             call_kwargs = mock_pro_bar.call_args.kwargs
             assert call_kwargs.get("freq") == "D"
 
-    def test_m5_interval_passes_5min_freq(self, adp_with_token: TushareAdapter) -> None:
-        with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
-            import pandas as pd
-            mock_pro_bar.return_value = pd.DataFrame()
+    def test_minute_intervals_not_supported(self, adp_with_token: TushareAdapter) -> None:
+        """分钟线（M1~M60）显式不支持：直接返回 []，且不调用 pro_bar。
 
-            adp_with_token.get_bars("600519", BarInterval.M5)
-            call_kwargs = mock_pro_bar.call_args.kwargs
-            assert call_kwargs.get("freq") == "5min"
+        原因：stk_mins 需单独积分权限，且 pro_bar 在 adj≠None 时会 drop 掉
+        trade_date 列（只剩 trade_time），静默返回空不如直接拒绝。
+        """
+        with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
+            for interval in (
+                BarInterval.M1,
+                BarInterval.M5,
+                BarInterval.M15,
+                BarInterval.M30,
+                BarInterval.M60,
+            ):
+                assert adp_with_token.get_bars("600519", interval) == []
+            assert not mock_pro_bar.called
 
     def test_pro_bar_exception_returns_empty(self, adp_with_token: TushareAdapter) -> None:
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
@@ -265,9 +278,10 @@ def _make_bars(prices: list[tuple[str, str, str, str, str]]) -> list[Bar]:
 class TestApplyAdjustment:
     """验证前/后复权算法。
 
-    复权逻辑:
-        前复权:  adj = raw * (latest / current)  → 最新价不变
-        后复权:  adj = raw * (earliest / current)  → 最早价不变
+    Tushare adj_factor 上市首日=1，随分红送股**递增**（越晚越大，如 000001.SZ
+    2018 年已 108.031）。复权逻辑（与 pro_bar 的 qfq 公式一致）:
+        前复权:  adj = raw * (current / latest)    → 最新价不变，历史价压低
+        后复权:  adj = raw * (current / earliest)  → 最早价不变
     """
 
     def test_no_adjustment_returns_unchanged(self) -> None:
@@ -288,16 +302,20 @@ class TestApplyAdjustment:
     def test_forward_adjustment_keeps_latest_price(self) -> None:
         """前复权：最新一天的收盘价应该等于原始收盘价。"""
         # 3 天 K 线，价格不变
-        bars = _make_bars([
-            ("2024-01-02", "100", "105", "99", "102"),
-            ("2024-01-03", "102", "107", "101", "105"),
-            ("2024-01-04", "105", "110", "104", "108"),
-        ])
+        bars = _make_bars(
+            [
+                ("2024-01-02", "100", "105", "99", "102"),
+                ("2024-01-03", "102", "107", "101", "105"),
+                ("2024-01-04", "105", "110", "104", "108"),
+            ]
+        )
         # 复权因子：1/2 = 1.0, 1/3 = 1.0, 1/4 = 1.0 (未除权)
-        factors = pd.DataFrame({
-            "trade_date": ["20240102", "20240103", "20240104"],
-            "adj_factor": [1.0, 1.0, 1.0],
-        })
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102", "20240103", "20240104"],
+                "adj_factor": [1.0, 1.0, 1.0],
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
         # 因子全 1.0，比例 = 1.0 / 1.0 = 1.0 → 价不变
         assert result[2].close == bars[2].close  # 108
@@ -307,40 +325,48 @@ class TestApplyAdjustment:
     def test_forward_adjustment_handles_dividend(self) -> None:
         """前复权：发生除权后，历史价会下调。"""
         # 2 天 K 线：第一天除权前，第二天除权后
-        bars = _make_bars([
-            ("2024-01-02", "100", "105", "99", "102"),  # 除权前
-            ("2024-01-03", "98", "103", "97", "100"),    # 除权后
-        ])
-        # 复权因子：除权日因子变小（说明除权了）
-        # 2024-01-02: adj_factor = 2.0 (基准)
-        # 2024-01-03: adj_factor = 1.0 (除权后)
-        factors = pd.DataFrame({
-            "trade_date": ["20240102", "20240103"],
-            "adj_factor": [2.0, 1.0],
-        })
+        bars = _make_bars(
+            [
+                ("2024-01-02", "100", "105", "99", "102"),  # 除权前
+                ("2024-01-03", "98", "103", "97", "100"),  # 除权后
+            ]
+        )
+        # Tushare 因子随分红送股递增：除权后因子变大
+        # 2024-01-02: adj_factor = 1.0 (除权前)
+        # 2024-01-03: adj_factor = 2.0 (除权后，最新)
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102", "20240103"],
+                "adj_factor": [1.0, 2.0],
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
-        # 前复权: ratio = latest_factor / current_factor
+        # 前复权: ratio = current_factor / latest_factor
         #   2024-01-02: ratio = 1.0 / 2.0 = 0.5  → 价减半
-        #   2024-01-03: ratio = 1.0 / 1.0 = 1.0  → 价不变
+        #   2024-01-03: ratio = 2.0 / 2.0 = 1.0  → 价不变
         assert result[1].close == 100  # 最新价不变
-        assert result[0].close == 51    # 历史价减半 (102 * 0.5)
+        assert result[0].close == 51  # 历史价减半 (102 * 0.5)
         # OHLC 都要调整
-        assert result[0].open == 50    # 100 * 0.5
+        assert result[0].open == 50  # 100 * 0.5
         assert result[0].high == Decimal("52.5")  # 105 * 0.5
 
     def test_backward_adjustment_keeps_earliest_price(self) -> None:
         """后复权：最早一天的收盘价应该等于原始收盘价。"""
-        bars = _make_bars([
-            ("2024-01-02", "100", "105", "99", "102"),
-            ("2024-01-03", "98", "103", "97", "100"),
-        ])
-        factors = pd.DataFrame({
-            "trade_date": ["20240102", "20240103"],
-            "adj_factor": [2.0, 1.0],
-        })
+        bars = _make_bars(
+            [
+                ("2024-01-02", "100", "105", "99", "102"),
+                ("2024-01-03", "98", "103", "97", "100"),
+            ]
+        )
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102", "20240103"],
+                "adj_factor": [1.0, 2.0],
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.BACKWARD)
-        # 后复权: ratio = earliest_factor / current_factor
-        #   2024-01-02: ratio = 2.0 / 2.0 = 1.0  → 价不变
+        # 后复权: ratio = current_factor / earliest_factor
+        #   2024-01-02: ratio = 1.0 / 1.0 = 1.0  → 价不变
         #   2024-01-03: ratio = 2.0 / 1.0 = 2.0  → 价倍增
         assert result[0].close == 102  # 最早价不变
         assert result[1].close == 200  # 100 * 2.0
@@ -348,10 +374,12 @@ class TestApplyAdjustment:
     def test_ohlc_all_adjusted_consistently(self) -> None:
         """前复权后，OHLC 之间的相对关系（high >= close 等）保持。"""
         bars = _make_bars([("2024-01-02", "100", "105", "99", "102")])
-        factors = pd.DataFrame({
-            "trade_date": ["20240102"],
-            "adj_factor": [0.5],
-        })
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102"],
+                "adj_factor": [0.5],
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
         assert result[0].high >= result[0].low
         assert result[0].high >= result[0].close
@@ -363,51 +391,67 @@ class TestApplyAdjustment:
         """成交量不复权（除权除息不影响量）。"""
         bars = _make_bars([("2024-01-02", "100", "105", "99", "102")])
         bars[0] = Bar(
-            code=bars[0].code, name=bars[0].name, interval=bars[0].interval,
-            adjustment=bars[0].adjustment, timestamp=bars[0].timestamp,
-            open=bars[0].open, high=bars[0].high, low=bars[0].low, close=bars[0].close,
+            code=bars[0].code,
+            name=bars[0].name,
+            interval=bars[0].interval,
+            adjustment=bars[0].adjustment,
+            timestamp=bars[0].timestamp,
+            open=bars[0].open,
+            high=bars[0].high,
+            low=bars[0].low,
+            close=bars[0].close,
             volume=12345,  # 原始成交量
             turnover=Money(Decimal("67890"), "CNY"),
         )
-        factors = pd.DataFrame({
-            "trade_date": ["20240102"],
-            "adj_factor": [0.5],
-        })
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102"],
+                "adj_factor": [0.5],
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
         assert result[0].volume == 12345  # 成交量不变
 
     def test_missing_factor_for_date_keeps_bar_unchanged(self) -> None:
         """中间某个 bar 找不到因子：只跳过那根，其他正常调整。"""
-        bars = _make_bars([
-            ("2024-01-02", "100", "105", "99", "102"),
-            ("2024-01-03", "200", "210", "198", "204"),  # 没因子
-            ("2024-01-04", "98", "103", "97", "100"),
-        ])
+        bars = _make_bars(
+            [
+                ("2024-01-02", "100", "105", "99", "102"),
+                ("2024-01-03", "200", "210", "198", "204"),  # 没因子
+                ("2024-01-04", "98", "103", "97", "100"),
+            ]
+        )
         # 给了 2024-01-02 和 2024-01-04 的因子，2024-01-03 缺失
-        factors = pd.DataFrame({
-            "trade_date": ["20240102", "20240104"],
-            "adj_factor": [2.0, 1.0],  # 最新因子 = 1.0
-        })
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102", "20240104"],
+                "adj_factor": [1.0, 2.0],  # 最新因子 = 2.0
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
-        # 第 1 根：2024-01-02, factor=2.0, ratio = 1.0/2.0 = 0.5 → close 减半
+        # 第 1 根：2024-01-02, factor=1.0, ratio = 1.0/2.0 = 0.5 → close 减半
         assert result[0].close == 51  # 102 * 0.5
         # 第 2 根：2024-01-03 找不到因子 → 跳过调整，保持原值
         assert result[1].close == 204
-        # 第 3 根：2024-01-04, factor=1.0, ratio = 1.0/1.0 = 1.0 → 不变
+        # 第 3 根：2024-01-04, factor=2.0, ratio = 2.0/2.0 = 1.0 → 不变
         assert result[2].close == 100
 
     def test_missing_anchor_factor_returns_unchanged(self) -> None:
         """如果最新/最旧那根 bar 找不到因子（锚点丢失），安全返回原始 bars。"""
         # 缺 2024-01-04 的因子（最新 bar 锚点）
-        bars = _make_bars([
-            ("2024-01-02", "100", "105", "99", "102"),
-            ("2024-01-03", "98", "103", "97", "100"),
-            ("2024-01-04", "200", "210", "198", "204"),
-        ])
-        factors = pd.DataFrame({
-            "trade_date": ["20240102", "20240103"],  # 缺 2024-01-04
-            "adj_factor": [2.0, 1.0],
-        })
+        bars = _make_bars(
+            [
+                ("2024-01-02", "100", "105", "99", "102"),
+                ("2024-01-03", "98", "103", "97", "100"),
+                ("2024-01-04", "200", "210", "198", "204"),
+            ]
+        )
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102", "20240103"],  # 缺 2024-01-04
+                "adj_factor": [2.0, 1.0],
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
         # 锚点丢失 → 全部保持原值
         assert result[0].close == 102
@@ -417,10 +461,12 @@ class TestApplyAdjustment:
     def test_accepts_timestamp_dates(self) -> None:
         """trade_date 可以是 Timestamp / date，不一定必须是字符串。"""
         bars = _make_bars([("2024-01-02", "100", "105", "99", "102")])
-        factors = pd.DataFrame({
-            "trade_date": [pd.Timestamp("2024-01-02")],
-            "adj_factor": [1.0],
-        })
+        factors = pd.DataFrame(
+            {
+                "trade_date": [pd.Timestamp("2024-01-02")],
+                "adj_factor": [1.0],
+            }
+        )
         result = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
         assert result[0].close == 102  # factor=1.0 不变
 
@@ -428,10 +474,12 @@ class TestApplyAdjustment:
         """重要：原 bars 列表不能被修改（Bar 是 frozen dataclass，自然满足）。"""
         bars = _make_bars([("2024-01-02", "100", "105", "99", "102")])
         original_close = bars[0].close
-        factors = pd.DataFrame({
-            "trade_date": ["20240102"],
-            "adj_factor": [0.5],
-        })
+        factors = pd.DataFrame(
+            {
+                "trade_date": ["20240102"],
+                "adj_factor": [0.5],
+            }
+        )
         _ = apply_adjustment(bars, factors, AdjustmentType.FORWARD)
         # 原 bar 不变
         assert bars[0].close == original_close
@@ -447,8 +495,8 @@ class TestFetchAndAdjust:
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.query.side_effect = Exception("not used")
-                return TushareAdapter()
+            mock_pro.return_value.query.side_effect = Exception("not used")
+            return TushareAdapter()
 
     def test_returns_empty_when_no_token(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -460,6 +508,7 @@ class TestFetchAndAdjust:
     def test_returns_empty_when_get_bars_empty(self, adp_with_token: TushareAdapter) -> None:
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
             import pandas as pd
+
             mock_pro_bar.return_value = pd.DataFrame()
             result = adp_with_token.fetch_and_adjust("600519")
             assert result == []
@@ -468,24 +517,29 @@ class TestFetchAndAdjust:
         """完整流程：拉 K 线 + 拉因子 + 应用复权。"""
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
             import pandas as pd
+
             # 模拟 pro_bar 返回 2 根 K 线
-            mock_pro_bar.return_value = pd.DataFrame({
-                "trade_date": ["20240102", "20240103"],
-                "open": [100.0, 98.0],
-                "high": [105.0, 103.0],
-                "low": [99.0, 97.0],
-                "close": [102.0, 100.0],
-                "vol": [1000, 1100],
-                "amount": [100000.0, 105000.0],
-            })
-            # mock adj_factor
-            adp_with_token._pro.adj_factor = MagicMock(return_value=pd.DataFrame({
-                "trade_date": ["20240102", "20240103"],
-                "adj_factor": [2.0, 1.0],
-            }))
-            result = adp_with_token.fetch_and_adjust(
-                "600519", mode=AdjustmentType.FORWARD
+            mock_pro_bar.return_value = pd.DataFrame(
+                {
+                    "trade_date": ["20240102", "20240103"],
+                    "open": [100.0, 98.0],
+                    "high": [105.0, 103.0],
+                    "low": [99.0, 97.0],
+                    "close": [102.0, 100.0],
+                    "vol": [1000, 1100],
+                    "amount": [100000.0, 105000.0],
+                }
             )
+            # mock adj_factor（Tushare 真实语义：因子随分红送股递增）
+            adp_with_token._pro.adj_factor = MagicMock(
+                return_value=pd.DataFrame(
+                    {
+                        "trade_date": ["20240102", "20240103"],
+                        "adj_factor": [1.0, 2.0],
+                    }
+                )
+            )
+            result = adp_with_token.fetch_and_adjust("600519", mode=AdjustmentType.FORWARD)
             assert len(result) == 2
             # 前复权：最新价（result[1]）= 100 不变；历史价（result[0]）减半
             assert result[1].close == 100
@@ -495,11 +549,18 @@ class TestFetchAndAdjust:
         """adj_factor 失败时降级返回原始 K 线（不抛异常）。"""
         with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
             import pandas as pd
-            mock_pro_bar.return_value = pd.DataFrame({
-                "trade_date": ["20240102"],
-                "open": [100.0], "high": [105.0], "low": [99.0], "close": [102.0],
-                "vol": [1000], "amount": [100000.0],
-            })
+
+            mock_pro_bar.return_value = pd.DataFrame(
+                {
+                    "trade_date": ["20240102"],
+                    "open": [100.0],
+                    "high": [105.0],
+                    "low": [99.0],
+                    "close": [102.0],
+                    "vol": [1000],
+                    "amount": [100000.0],
+                }
+            )
             adp_with_token._pro.adj_factor = MagicMock(side_effect=Exception("API down"))
             result = adp_with_token.fetch_and_adjust("600519")
             assert len(result) == 1
@@ -522,7 +583,7 @@ class TestTushareFinancials:
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                return TushareAdapter(), mock_pro
+            return TushareAdapter(), mock_pro
 
     def test_financial_indicator_no_token(self, adp_no_token: TushareAdapter) -> None:
         assert adp_no_token.get_financial_indicator("600519") == []
@@ -532,130 +593,142 @@ class TestTushareFinancials:
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.fina_indicator.return_value = pd.DataFrame({
+            mock_pro.return_value.fina_indicator.return_value = pd.DataFrame(
+                {
                     "ts_code": ["600519.SH"],
                     "end_date": ["20240930"],
                     "roe": [25.5],
                     "gross_profit_margin": [91.2],
-                })
-                adp = TushareAdapter()
-                result = adp.get_financial_indicator("600519", period="20240930")
-                assert len(result) == 1
-                assert result[0]["roe"] == 25.5
-                # 参数传递验证
-                call_kwargs = mock_pro.return_value.fina_indicator.call_args.kwargs
-                assert call_kwargs["ts_code"] == "600519.SH"
-                assert call_kwargs["period"] == "20240930"
+                }
+            )
+            adp = TushareAdapter()
+            result = adp.get_financial_indicator("600519", period="20240930")
+            assert len(result) == 1
+            assert result[0]["roe"] == 25.5
+            # 参数传递验证
+            call_kwargs = mock_pro.return_value.fina_indicator.call_args.kwargs
+            assert call_kwargs["ts_code"] == "600519.SH"
+            assert call_kwargs["period"] == "20240930"
 
     def test_financial_indicator_handles_exception(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.fina_indicator.side_effect = Exception("API down")
-                adp = TushareAdapter()
-                result = adp.get_financial_indicator("600519")
-                assert result == []
+            mock_pro.return_value.fina_indicator.side_effect = Exception("API down")
+            adp = TushareAdapter()
+            result = adp.get_financial_indicator("600519")
+            assert result == []
 
     def test_dividend_history(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.dividend.return_value = pd.DataFrame({
+            mock_pro.return_value.dividend.return_value = pd.DataFrame(
+                {
                     "ts_code": ["600519.SH"] * 3,
                     "end_date": ["20231231", "20221231", "20211231"],
                     "cash_div": [30.88, 21.91, 19.29],
-                })
-                adp = TushareAdapter()
-                result = adp.get_dividend_history("600519", limit=3)
-                assert len(result) == 3
-                assert result[0]["cash_div"] == 30.88
-                call_kwargs = mock_pro.return_value.dividend.call_args.kwargs
-                assert call_kwargs["ts_code"] == "600519.SH"
-                assert call_kwargs["limit"] == 3
+                }
+            )
+            adp = TushareAdapter()
+            result = adp.get_dividend_history("600519", limit=3)
+            assert len(result) == 3
+            assert result[0]["cash_div"] == 30.88
+            call_kwargs = mock_pro.return_value.dividend.call_args.kwargs
+            assert call_kwargs["ts_code"] == "600519.SH"
+            assert call_kwargs["limit"] == 3
 
     def test_dividend_history_empty(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.dividend.return_value = pd.DataFrame()
-                adp = TushareAdapter()
-                result = adp.get_dividend_history("600519")
-                assert result == []
+            mock_pro.return_value.dividend.return_value = pd.DataFrame()
+            adp = TushareAdapter()
+            result = adp.get_dividend_history("600519")
+            assert result == []
 
     def test_income_statement(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.income.return_value = pd.DataFrame({
+            mock_pro.return_value.income.return_value = pd.DataFrame(
+                {
                     "ts_code": ["600519.SH"],
                     "end_date": ["20240930"],
                     "total_revenue": [120000000000.0],
                     "n_income": [50000000000.0],
-                })
-                adp = TushareAdapter()
-                result = adp.get_income_statement("600519")
-                assert len(result) == 1
-                assert result[0]["n_income"] == 50000000000.0
+                }
+            )
+            adp = TushareAdapter()
+            result = adp.get_income_statement("600519")
+            assert len(result) == 1
+            assert result[0]["n_income"] == 50000000000.0
 
     def test_balance_sheet(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.balancesheet.return_value = pd.DataFrame({
+            mock_pro.return_value.balancesheet.return_value = pd.DataFrame(
+                {
                     "ts_code": ["600519.SH"],
                     "end_date": ["20240930"],
                     "total_assets": [200000000000.0],
-                })
-                adp = TushareAdapter()
-                result = adp.get_balance_sheet("600519")
-                assert len(result) == 1
-                assert result[0]["total_assets"] == 200000000000.0
+                }
+            )
+            adp = TushareAdapter()
+            result = adp.get_balance_sheet("600519")
+            assert len(result) == 1
+            assert result[0]["total_assets"] == 200000000000.0
 
     def test_cash_flow(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.cashflow.return_value = pd.DataFrame({
+            mock_pro.return_value.cashflow.return_value = pd.DataFrame(
+                {
                     "ts_code": ["600519.SH"],
                     "end_date": ["20240930"],
                     "n_cashflow_act": [30000000000.0],
-                })
-                adp = TushareAdapter()
-                result = adp.get_cash_flow("600519")
-                assert len(result) == 1
-                assert result[0]["n_cashflow_act"] == 30000000000.0
+                }
+            )
+            adp = TushareAdapter()
+            result = adp.get_cash_flow("600519")
+            assert len(result) == 1
+            assert result[0]["n_cashflow_act"] == 30000000000.0
 
     def test_list_all_stocks(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.stock_basic.return_value = pd.DataFrame({
+            mock_pro.return_value.stock_basic.return_value = pd.DataFrame(
+                {
                     "ts_code": ["600519.SH", "000001.SZ"],
                     "name": ["贵州茅台", "平安银行"],
                     "industry": ["白酒", "银行"],
-                })
-                adp = TushareAdapter()
-                result = adp.list_all_stocks()
-                assert len(result) == 2
-                assert result[0]["name"] == "贵州茅台"
+                }
+            )
+            adp = TushareAdapter()
+            result = adp.list_all_stocks()
+            assert len(result) == 2
+            assert result[0]["name"] == "贵州茅台"
 
     def test_list_all_stocks_with_status(self) -> None:
         with (
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.stock_basic.return_value = pd.DataFrame()
-                adp = TushareAdapter()
-                adp.list_all_stocks(list_status="D")
-                call_kwargs = mock_pro.return_value.stock_basic.call_args.kwargs
-                assert call_kwargs["list_status"] == "D"
+            mock_pro.return_value.stock_basic.return_value = pd.DataFrame()
+            adp = TushareAdapter()
+            adp.list_all_stocks(list_status="D")
+            call_kwargs = mock_pro.return_value.stock_basic.call_args.kwargs
+            assert call_kwargs["list_status"] == "D"
 
     def test_period_param_optional(self) -> None:
         """period 不传时不应出现在 kwargs（让 Tushare 走默认=最新期）。"""
@@ -663,8 +736,140 @@ class TestTushareFinancials:
             patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
             patch("tushare.pro_api") as mock_pro,
         ):
-                mock_pro.return_value.fina_indicator.return_value = pd.DataFrame()
-                adp = TushareAdapter()
-                adp.get_financial_indicator("600519")  # 不传 period
-                call_kwargs = mock_pro.return_value.fina_indicator.call_args.kwargs
-                assert "period" not in call_kwargs
+            mock_pro.return_value.fina_indicator.return_value = pd.DataFrame()
+            adp = TushareAdapter()
+            adp.get_financial_indicator("600519")  # 不传 period
+            call_kwargs = mock_pro.return_value.fina_indicator.call_args.kwargs
+            assert "period" not in call_kwargs
+
+
+# ---------- Golden fixture：基于 Tushare 官方文档样例数据 ----------
+# 这些 fixture 的字段名/单位直接来自 tushare.pro 文档的"数据样例"，
+# 防止 adapter 按自己的假设构造字段（历史上 moneyflow 字段名曾被捏造）
+
+
+class TestGoldenMoneyFlow:
+    """moneyflow 接口（tushare.pro/document/2?doc_id=170）。
+
+    文档约定：
+    - 四档只有 buy_xx_amount / sell_xx_amount，净流入 = buy - sell 自算
+    - 所有 amount 字段单位是**万元**
+    - net_mf_amount 是官方净流入额（万元），映射为主力净流入
+    """
+
+    @pytest.fixture
+    def adp(self) -> TushareAdapter:
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("TUSHARE_TOKEN", None)
+            return TushareAdapter()  # _bill_df_to_flow 不需要 token
+
+    def test_field_names_and_units(self, adp: TushareAdapter) -> None:
+        # 字段名与文档输出参数表逐一对应
+        df = pd.DataFrame(
+            {
+                "trade_date": ["20190315"],
+                "buy_sm_amount": [1150.17],
+                "sell_sm_amount": [1122.97],  # 小单（万元）
+                "buy_md_amount": [100.0],
+                "sell_md_amount": [50.0],  # 中单
+                "buy_lg_amount": [200.0],
+                "sell_lg_amount": [300.0],  # 大单
+                "buy_elg_amount": [1000.0],
+                "sell_elg_amount": [400.0],  # 特大单
+                "net_mf_amount": [5000.0],  # 净流入额（万元）
+            }
+        )
+        flows = adp._bill_df_to_flow(df, "000779")
+        assert len(flows) == 1
+        f = flows[0]
+        # 万元 → 元（×10000）
+        assert f.small_net.amount == 272000  # (1150.17 - 1122.97) * 10000
+        assert f.medium_net.amount == 500000  # (100 - 50) * 10000
+        assert f.large_net.amount == -1000000  # (200 - 300) * 10000
+        assert f.super_large_net.amount == 6000000  # (1000 - 400) * 10000
+        assert f.main_net.amount == 50000000  # 5000 * 10000
+        assert f.timestamp == datetime(2019, 3, 15)
+
+    def test_missing_buy_sell_fields_fall_back_to_zero(self, adp: TushareAdapter) -> None:
+        """缺字段时按 0 处理（与 efinance 的 _to_money 行为一致），不抛异常。"""
+        df = pd.DataFrame({"trade_date": ["20190315"], "net_mf_amount": [100.0]})
+        flows = adp._bill_df_to_flow(df, "000779")
+        assert flows[0].main_net.amount == 1000000
+        assert flows[0].small_net.amount == 0
+
+
+class TestGoldenDaily:
+    """daily 接口（tushare.pro/document/2?doc_id=27）。
+
+    文档约定：vol 单位是手，**amount 单位是千元**。
+    """
+
+    @pytest.fixture
+    def adp_with_token(self) -> TushareAdapter:
+        with (
+            patch.dict(os.environ, {"TUSHARE_TOKEN": "fake"}),
+            patch("tushare.pro_api") as mock_pro,
+        ):
+            mock_pro.return_value.query.side_effect = Exception("not used")
+            return TushareAdapter()
+
+    def test_amount_is_thousand_yuan(self, adp_with_token: TushareAdapter) -> None:
+        """get_bars 的 turnover 必须从千元转成元。"""
+        with patch("tushare.pro.data_pro.pro_bar") as mock_pro_bar:
+            # 文档样例行：000001.SZ 20180718
+            mock_pro_bar.return_value = pd.DataFrame(
+                {
+                    "trade_date": ["20180718"],
+                    "open": [8.75],
+                    "high": [8.85],
+                    "low": [8.69],
+                    "close": [8.70],
+                    "vol": [525152.77],
+                    "amount": [460697.377],  # 千元
+                    "pct_chg": [-0.23],
+                    "turnover_rate": [0.52],
+                }
+            )
+            bars = adp_with_token.get_bars("000001", BarInterval.D1, AdjustmentType.NONE)
+            assert len(bars) == 1
+            bar = bars[0]
+            assert bar.turnover.amount == 460697377  # 460697.377 千元 × 1000
+            assert bar.turnover_rate == Decimal("0.52")  # factors=["tor"] 并入的换手率
+            assert bar.change_pct == Decimal("-0.23")
+
+    def test_quote_amount_and_nan_market_cap(self, adp_with_token: TushareAdapter) -> None:
+        """get_quote：amount 千元→元；市值 NaN 时给 None 而不是 Money(0)。"""
+        adp = adp_with_token
+        adp._pro.daily_basic = MagicMock(
+            return_value=pd.DataFrame(
+                {
+                    "trade_date": ["20180718"],
+                    "turnover_rate": [0.52],
+                    "pe": [11.5],
+                    "total_mv": [float("nan")],  # NaN → None
+                    "circ_mv": [25000.0],  # 万元 → ×10000
+                }
+            )
+        )
+        adp._pro.daily = MagicMock(
+            return_value=pd.DataFrame(
+                {
+                    "trade_date": ["20180718"],
+                    "open": [8.75],
+                    "high": [8.85],
+                    "low": [8.69],
+                    "close": [8.70],
+                    "pre_close": [8.72],
+                    "change": [-0.02],
+                    "pct_chg": [-0.23],
+                    "vol": [525152.77],
+                    "amount": [460697.377],
+                }
+            )
+        )
+        q = adp.get_quote("000001")
+        assert q is not None
+        assert q.turnover.amount == 460697377
+        assert q.total_market_cap is None
+        assert q.circulating_market_cap is not None
+        assert q.circulating_market_cap.amount == 250000000  # 25000 万元 × 10000
