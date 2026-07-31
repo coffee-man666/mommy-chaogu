@@ -154,7 +154,6 @@ def test_probe_lists_profile_scoped_tools(tmp_path: Path) -> None:
             "OPENAI_API_KEY": "",
             "MOONSHOT_API_KEY": "",
             "ZAI_API_KEY": "",
-            "NOVA_API_KEY": "",
             "MINIMAX_API_KEY": "",
         },
         cwd=str(Path.cwd()),

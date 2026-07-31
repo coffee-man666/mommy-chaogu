@@ -25,7 +25,7 @@ def build_agent_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--provider",
         default=None,
-        help="LLM provider（deepseek / openai / kimi / zai / nova / minimax，默认读 .env）",
+        help="LLM provider（deepseek / openai / kimi / zai / minimax，默认读 .env）",
     )
     p.add_argument(
         "--model",

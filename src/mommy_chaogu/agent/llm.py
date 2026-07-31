@@ -11,7 +11,7 @@ base_url 与模型名已经不一致）。
   （``max_retries=0``）——重试统一由应用层（``AgentService._create_with_retry``
   / extractor 的本地重试）负责，避免双层重试叠加（单请求最坏 12 次尝试）。
 - ``embedding_model`` 为 ``None`` 表示该 provider 没有可用的 OpenAI 兼容
-  embedding 接口（deepseek / kimi / zai / nova / minimax 的聊天端点均不提供），
+  embedding 接口（deepseek / kimi / zai / minimax 的聊天端点均不提供），
   向量检索路径应据此显式降级，而不是把聊天模型名当 embedding 模型传。
 """
 
@@ -48,13 +48,6 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "default_model": "glm-4.7",
         "env_key": "ZAI_API_KEY",
         "temperature": 0.2,
-        "embedding_model": None,
-    },
-    "nova": {
-        "base_url": "http://127.0.0.1:9999/v1",
-        "default_model": "nova-bridge",
-        "env_key": "NOVA_API_KEY",
-        "temperature": None,
         "embedding_model": None,
     },
     "minimax": {

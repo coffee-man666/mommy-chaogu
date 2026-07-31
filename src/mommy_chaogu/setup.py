@@ -51,10 +51,6 @@ _PROVIDER_DETAILS: dict[str, dict[str, str]] = {
         "label": "z.ai / GLM",
         "hint": "去 open.bigmodel.cn 注册获取",
     },
-    "nova": {
-        "label": "Nova Bridge (本地)",
-        "hint": "先启动 localhost:9999 的 Nova Bridge，key 可为任意非空值",
-    },
     "minimax": {
         "label": "MiniMax 开放平台（按量 API）",
         "hint": (

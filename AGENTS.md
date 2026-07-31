@@ -31,7 +31,6 @@ cp .env.example .env       # 复制模板
 | openai | `OPENAI_API_KEY` | OpenAI / 兼容接口（有 embedding 接口，向量检索可用） |
 | kimi | `MOONSHOT_API_KEY` | Moonshot / Kimi |
 | zai | `ZAI_API_KEY` | z.ai / GLM-4.7 |
-| nova | `NOVA_API_KEY` | Nova Bridge（本地桥接） |
 | minimax | `MINIMAX_API_KEY` | MiniMax 开放平台按量 API（M3，非 Coding Plan） |
 | — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |

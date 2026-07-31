@@ -67,7 +67,7 @@ class ToolContext:
     # LLM / embedding client（OpenAI 兼容），记忆查询工具需要。
     # 为 None 时记忆工具降级为无 LLM 模式。
     # embedding_model 与聊天 model 分开：多数 provider（deepseek/kimi/zai/
-    # nova/minimax）的端点没有 embedding 接口，把聊天模型名当 embedding
+    # minimax）的端点没有 embedding 接口，把聊天模型名当 embedding
     # 模型传必然失败——为 None 时向量检索显式降级为关键词搜索。
     client: Any | None = None
     model: str | None = None

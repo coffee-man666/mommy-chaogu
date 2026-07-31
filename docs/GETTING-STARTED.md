@@ -79,7 +79,6 @@ uv run mommy setup --no-verify   # 暂时无法联网时跳过验证
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | 支持向量检索 |
 | Kimi | `MOONSHOT_API_KEY` | `kimi-k2.6` | Kimi Coding API |
 | z.ai | `ZAI_API_KEY` | `glm-4.7` | GLM Coding API |
-| Nova Bridge | `NOVA_API_KEY` | `nova-bridge` | 本机 `127.0.0.1:9999/v1` 桥接 |
 | MiniMax | `MINIMAX_API_KEY` | `MiniMax-M3` | 开放平台按量 API，非 Coding Plan |
 
 也可以复制 `.env.example` 手动配置：

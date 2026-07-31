@@ -124,25 +124,11 @@ def test_wizard_writes_env_zai(tmp_path: Path):
     assert "AGENT_MODEL=glm-5" in content
 
 
-def test_wizard_writes_env_nova(tmp_path: Path):
-    env = tmp_path / ".env"
-    result = run_setup_wizard(
-        env,
-        input_func=make_input(["5", "", "dummy"]),
-        verify_llm=False,
-        offer_weixin=False,
-    )
-    assert result is True
-    content = env.read_text(encoding="utf-8")
-    assert "NOVA_API_KEY=dummy" in content
-    assert "AGENT_PROVIDER=nova" in content
-
-
 def test_wizard_writes_env_minimax_paygo(tmp_path: Path):
     env = tmp_path / ".env"
     result = run_setup_wizard(
         env,
-        input_func=make_input(["6", "", "minimax-paygo-key"]),
+        input_func=make_input(["5", "", "minimax-paygo-key"]),
         verify_llm=False,
         offer_weixin=False,
     )

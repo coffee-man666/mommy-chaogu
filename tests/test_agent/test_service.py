@@ -39,15 +39,6 @@ class TestProviderConfig:
         assert SUPPORTED_PROVIDERS["kimi"]["base_url"] == "https://api.kimi.com/coding/v1"
         assert SUPPORTED_PROVIDERS["kimi"]["default_model"] == "kimi-k2.6"
 
-    def test_nova_bridge_configuration(self) -> None:
-        assert SUPPORTED_PROVIDERS["nova"] == {
-            "base_url": "http://127.0.0.1:9999/v1",
-            "default_model": "nova-bridge",
-            "env_key": "NOVA_API_KEY",
-            "temperature": None,
-            "embedding_model": None,
-        }
-
     def test_minimax_configuration(self) -> None:
         assert SUPPORTED_PROVIDERS["minimax"] == {
             "base_url": "https://api.minimaxi.com/v1",
