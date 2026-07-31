@@ -14,6 +14,7 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import (
     BufferControl,
     Dimension,
@@ -38,6 +39,12 @@ _COMMANDS = [
     "/web",
     "/quit",
 ]
+
+
+def _delete_before_cursor(buffer: Buffer) -> None:
+    """取消补全并删除一个真实字符，避免退格被 completion state 吞掉。"""
+    buffer.cancel_completion()
+    buffer.delete_before_cursor(count=1)
 
 
 class ReplPrompt:
@@ -104,6 +111,13 @@ class ReplPrompt:
         @key_bindings.add("c-j")
         def _newline(event) -> None:  # type: ignore[no-untyped-def]
             event.current_buffer.insert_text("\n")
+
+        @key_bindings.add(Keys.Backspace, eager=True)
+        def _backspace(event) -> None:  # type: ignore[no-untyped-def]
+            # prompt_toolkit 的默认绑定在补全菜单打开时会先消费一次退格来
+            # 关闭 completion state，导致删到最后残留第一个字符。这里保证
+            # 每次物理退格都对应删除一个真实 Buffer 字符。
+            _delete_before_cursor(event.current_buffer)
 
         @key_bindings.add("c-c")
         def _cancel(_event) -> None:  # type: ignore[no-untyped-def]
