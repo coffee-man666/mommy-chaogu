@@ -53,9 +53,13 @@ def test_connection_spec_keeps_virtualenv_python_fallback() -> None:
 
 
 def test_probe_timeout_matches_mcp_sdk_major_version() -> None:
-    with patch("mommy_chaogu.cli_commands.connect.importlib.metadata.version", return_value="1.28.1"):
+    with patch(
+        "mommy_chaogu.cli_commands.connect.importlib.metadata.version", return_value="1.28.1"
+    ):
         assert _mcp_read_timeout() == timedelta(seconds=15)
-    with patch("mommy_chaogu.cli_commands.connect.importlib.metadata.version", return_value="2.0.0"):
+    with patch(
+        "mommy_chaogu.cli_commands.connect.importlib.metadata.version", return_value="2.0.0"
+    ):
         assert _mcp_read_timeout() == 15.0
 
 
