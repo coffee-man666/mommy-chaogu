@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mommy_chaogu.cli import _run_mommy_repl
+from mommy_chaogu.cli import _REPL_GRANDMA_LOGO, _run_mommy_repl
 from mommy_chaogu.cli_prompt import ReplPrompt
 
 
@@ -48,6 +48,13 @@ def test_repl_renders_rich_answer_and_quits(
     assert exc.value.code == 0
     output = capsys.readouterr().out
     assert "mommy-chaogu" in output
+    assert "◉" in output
     assert "结论" in output
     assert "完成" in output
     assert "再见" in output
+
+
+def test_repl_header_logo_keeps_grandma_and_market_motifs() -> None:
+    assert "◡" in _REPL_GRANDMA_LOGO
+    assert "◉" in _REPL_GRANDMA_LOGO
+    assert "↗" in _REPL_GRANDMA_LOGO

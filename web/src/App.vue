@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { MessageSquareText, TrendingUp, UserRound, Wallet, KeyRound } from 'lucide-vue-next'
 import { authRequired, loadAuthStatus } from '@/api/client'
+import BrandMark from '@/components/BrandMark.vue'
 
 const navigation = [
   { to: '/', label: '对话', icon: MessageSquareText },
@@ -47,9 +48,16 @@ onMounted(() => {
         aria-label="主导航"
         class="sticky top-0 hidden h-screen w-40 shrink-0 flex-col border-r bg-card px-3 py-5 md:flex"
       >
-        <RouterLink to="/" class="mb-6 flex items-center gap-2 px-3 text-sm font-semibold">
-          <span class="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground">妈</span>
-          <span>妈妈炒股</span>
+        <RouterLink
+          to="/"
+          aria-label="返回妈妈炒股首页"
+          class="mb-6 flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm font-semibold transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <BrandMark alt="" size="md" />
+          <span class="min-w-0">
+            <span class="block truncate">妈妈炒股</span>
+            <span class="block truncate text-[10px] font-normal text-muted-foreground">AI 投研 Agent</span>
+          </span>
         </RouterLink>
         <div class="space-y-1">
           <RouterLink

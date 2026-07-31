@@ -28,6 +28,7 @@ import type { IndexQuote, Prediction, StockSearchResult } from '@/api/types'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import { fmtPct, fmtPrice } from '@/utils/format'
 import ContextPanel from '@/components/ContextPanel.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import StockSearch from '@/components/StockSearch.vue'
 import ToolRow from '@/components/chat/ToolRow.vue'
 import { Badge } from '@/components/ui/badge'
@@ -474,9 +475,7 @@ onUnmounted(() => {
   <div class="flex h-[calc(100dvh-var(--mobile-nav-height))] bg-muted/30 md:h-dvh">
     <section class="flex min-w-0 flex-1 flex-col" aria-label="AI 对话">
       <header class="flex shrink-0 items-center gap-2 border-b bg-card px-3 py-2.5 sm:px-4">
-        <div class="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Bot class="size-5" aria-hidden="true" />
-        </div>
+        <BrandMark alt="妈妈炒股老奶奶 Logo" size="sm" />
         <div class="min-w-0">
           <h1 class="truncate text-sm font-semibold sm:text-base">投研对话</h1>
           <span class="flex items-center gap-1 text-[11px] text-muted-foreground" role="status" aria-live="polite">

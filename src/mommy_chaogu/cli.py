@@ -48,6 +48,16 @@ _WELCOME = """\
 输入问题开始，输入 q 退出。
 """
 
+_REPL_GRANDMA_LOGO = """\
+   ▄████████▄
+ ▄███▀▀██▀▀███▄
+███  ▄████▄  ███
+██  ◜◡─╮─◉◝  ██
+██   ╰─┴─╯   ██
+▀██▄  ╰▽╯  ▄██▀
+  ▀████████▀  ╱
+    ▀████▀   ╱↗"""
+
 
 def _flush_agent(agent: object | None) -> None:
     """退出前等后台提取线程完成（P6：daemon 线程随进程退出会被丢弃）。"""
@@ -121,13 +131,22 @@ def _run_mommy_repl(
         metadata.add_row(
             "Services:", "AI connected · market data ready" if agent else "market only"
         )
+        welcome_content = metadata
+        if console.size.width >= 72:
+            logo = Text(_REPL_GRANDMA_LOGO, style="bold #7c5cff", no_wrap=True)
+            logo.highlight_regex(r"[◡◉▽↗]", style="bold #5bc0be")
+            header = Table.grid(expand=True, padding=(0, 2))
+            header.add_column(width=18, no_wrap=True)
+            header.add_column(ratio=1)
+            header.add_row(logo, metadata)
+            welcome_content = header
         help_text = Text()
         help_text.append("\n直接输入问题，或使用 ", style="dim")
         help_text.append("/help", style="bold cyan")
         help_text.append(" 查看命令。", style="dim")
         console.print(
             Panel(
-                metadata,
+                welcome_content,
                 title="[bold #7c5cff]Welcome to mommy-chaogu[/]",
                 subtitle="[dim]你的本地 AI 投研助手[/]",
                 border_style="#168aad",
