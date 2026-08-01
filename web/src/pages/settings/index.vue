@@ -265,7 +265,7 @@ onUnmounted(() => {
     <Card>
       <CardHeader>
         <CardTitle as="h2" class="text-base">🎯 交易风格</CardTitle>
-        <CardDescription>影响 AI 回答的侧重点与首页排序优先级</CardDescription>
+        <CardDescription>影响 AI 回答的侧重点</CardDescription>
       </CardHeader>
       <Separator />
       <CardContent class="space-y-2 pt-4">

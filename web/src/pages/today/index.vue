@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Send, TrendingUp, Wallet, AlertTriangle, ChevronRight, RefreshCw, Star } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
+import { Send, TrendingUp, Wallet, AlertTriangle, ChevronRight, RefreshCw, Star, UserRound } from 'lucide-vue-next'
 import {
   getOverview,
   type OverviewResponse,
@@ -96,14 +97,24 @@ onUnmounted(() => {
     <!-- Header -->
     <div class="mb-4 flex items-center justify-between">
       <h1 class="text-xl font-bold">今日</h1>
-      <button
-        class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-        :disabled="refreshing"
-        @click="loadData()"
-      >
-        <RefreshCw class="size-4" :class="{ 'animate-spin': refreshing }" />
-        刷新
-      </button>
+      <div class="flex items-center gap-2">
+        <!-- Mobile: My entry via avatar -->
+        <RouterLink
+          to="/my"
+          class="flex size-8 items-center justify-center rounded-full bg-accent text-muted-foreground transition-colors hover:text-foreground md:hidden"
+          aria-label="我的设置"
+        >
+          <UserRound class="size-4" />
+        </RouterLink>
+        <button
+          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+          :disabled="refreshing"
+          @click="loadData()"
+        >
+          <RefreshCw class="size-4" :class="{ 'animate-spin': refreshing }" />
+          刷新
+        </button>
+      </div>
     </div>
 
     <!-- Loading skeleton -->
@@ -147,25 +158,25 @@ onUnmounted(() => {
       <section v-if="visibleThemes.length > 0" class="rounded-xl border bg-card p-4">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-sm font-semibold text-muted-foreground">关注主题</h2>
-          <button
+          <RouterLink
             class="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            @click="router.push('/follow')"
+            to="/follow"
           >
             <Star class="size-3" />
             管理
-          </button>
+          </RouterLink>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button
+          <RouterLink
             v-for="theme in visibleThemes"
             :key="theme.id"
+            :to="`/themes/${theme.id}`"
             class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
-            @click="router.push(`/themes/${theme.id}`)"
           >
             <span class="font-medium">{{ theme.name }}</span>
             <span class="text-xs text-muted-foreground">{{ theme.total_stocks }}只</span>
             <ChevronRight class="size-3 text-muted-foreground" />
-          </button>
+          </RouterLink>
         </div>
       </section>
 
@@ -201,11 +212,15 @@ onUnmounted(() => {
             <tr
               v-for="item in data.watchlist.items"
               :key="item.code"
-              class="cursor-pointer border-b last:border-0 transition-colors hover:bg-accent/50"
-              @click="goStock(item.code)"
+              class="border-b last:border-0 transition-colors hover:bg-accent/50"
             >
               <td class="py-1.5">
-                <span class="font-medium">{{ item.name || item.code }}</span>
+                <RouterLink
+                  :to="`/detail/${item.code}`"
+                  class="font-medium hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {{ item.name || item.code }}
+                </RouterLink>
                 <span class="ml-1 text-xs text-muted-foreground">{{ item.code }}</span>
               </td>
               <td class="py-1.5 text-right font-mono">{{ fmtPrice(item.price) }}</td>
@@ -222,11 +237,11 @@ onUnmounted(() => {
 
         <!-- 移动端卡片 -->
         <div class="grid grid-cols-2 gap-2 md:hidden">
-          <button
+          <RouterLink
             v-for="item in data.watchlist.items"
             :key="item.code"
-            class="flex flex-col gap-0.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50"
-            @click="goStock(item.code)"
+            :to="`/detail/${item.code}`"
+            class="flex flex-col gap-0.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <span class="truncate text-sm font-medium">{{ item.name || item.code }}</span>
             <span class="font-mono text-sm" :style="{ color: changeColor(item.change_pct) }">
@@ -235,7 +250,7 @@ onUnmounted(() => {
             <span class="font-mono text-xs" :style="{ color: changeColor(item.change_pct) }">
               {{ fmtPct(item.change_pct) }}
             </span>
-          </button>
+          </RouterLink>
         </div>
       </section>
 
@@ -256,11 +271,11 @@ onUnmounted(() => {
           暂无需要处理的变化
         </div>
         <div v-else class="space-y-2">
-          <button
+          <RouterLink
             v-for="alert in data.portfolio.alerts"
             :key="alert.code"
-            class="flex w-full items-center justify-between rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50"
-            @click="goStock(alert.code)"
+            :to="`/detail/${alert.code}`"
+            class="flex w-full items-center justify-between rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <div class="flex items-center gap-2">
               <AlertTriangle
@@ -275,7 +290,7 @@ onUnmounted(() => {
             <span class="font-mono text-sm font-medium" :style="{ color: changeColor(alert.unrealized_pnl_pct ?? '0') }">
               {{ fmtPct(alert.unrealized_pnl_pct) }}
             </span>
-          </button>
+          </RouterLink>
         </div>
 
         <!-- 持仓总盈亏 -->
@@ -297,9 +312,9 @@ onUnmounted(() => {
 
       <!-- 5. 信号摘要 -->
       <section v-if="data.signals.summary" class="rounded-xl border bg-card p-4">
-        <button
-          class="flex w-full items-center justify-between"
-          @click="router.push('/signals')"
+        <RouterLink
+          to="/signals"
+          class="flex w-full items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <div class="flex items-center gap-2">
             <TrendingUp class="size-4 text-muted-foreground" />
@@ -315,7 +330,7 @@ onUnmounted(() => {
             </span>
             <ChevronRight class="size-4 text-muted-foreground" />
           </div>
-        </button>
+        </RouterLink>
         <p v-if="data.signals.summary.latest_title" class="mt-2 text-xs text-muted-foreground">
           最新：{{ data.signals.summary.latest_title }}
         </p>

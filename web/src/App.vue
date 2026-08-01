@@ -35,7 +35,6 @@ async function bootstrap() {
     const auth = await loadAuthStatus()
 
     // If not authenticated and auth is required, redirect to /setup.
-    // Do NOT call any /api/setup/* endpoint — they would 401.
     if (!auth.authenticated && auth.mode !== 'none') {
       if (!isSetupRoute.value) {
         await router.replace({ path: '/setup', query: { returnTo: route.fullPath } })
@@ -44,8 +43,16 @@ async function bootstrap() {
       return
     }
 
-    // Authenticated or no-auth mode — safe to check LLM config.
-    if (auth.authenticated || auth.mode === 'none') {
+    // Auth response now includes llm_configured — skip separate setup call.
+    // Only fall back to getSetupStatus() if the field is missing (older backend).
+    if (auth.llm_configured === false && !isSetupRoute.value) {
+      await router.replace({ path: '/setup', query: { returnTo: route.fullPath } })
+      bootstrapping.value = false
+      return
+    }
+
+    // If llm_configured is absent (very old backend), do the legacy check.
+    if (auth.llm_configured === undefined && (auth.authenticated || auth.mode === 'none')) {
       try {
         const status = await getSetupStatus()
         if (!status.llm_configured && !isSetupRoute.value) {

@@ -380,6 +380,26 @@ const activeCumulative = computed(() =>
   flowTab.value === 'today' ? flowToday.value?.cumulative : flowHistory.value?.cumulative
 )
 
+// ---------- 懒加载 Tab 数据 ----------
+
+const loadedTabs = ref<Set<string>>(new Set())
+
+function ensureTabLoaded(tab: string) {
+  if (loadedTabs.value.has(tab)) return
+  loadedTabs.value.add(tab)
+  if (tab === 'chart') {
+    void loadBars()
+  } else if (tab === 'flow') {
+    loadFlow()
+  } else if (tab === 'decisions') {
+    loadPredictions()
+  }
+}
+
+watch(mainTab, (tab) => {
+  ensureTabLoaded(tab)
+})
+
 // ---------- 生命周期 ----------
 
 watch(
@@ -392,19 +412,16 @@ watch(
     flowHistory.value = null
     stockPredictions.value = []
     codeInput.value = ''
+    loadedTabs.value = new Set() // reset lazy state
     await loadQuote()
-    await loadBars()
-    loadFlow()
-    loadPredictions()
+    // 不再预加载所有 Tab — 按需加载
   }
 )
 
 onMounted(async () => {
   await watchlistStore.fetchAll()
   await loadQuote()
-  await loadBars()
-  loadFlow()
-  loadPredictions()
+  // 不再预加载 bars/flow/predictions — 按需懒加载
   refreshTimer = window.setInterval(loadQuote, 10_000)
   themeObserver = new MutationObserver(() => void drawKLine())
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })

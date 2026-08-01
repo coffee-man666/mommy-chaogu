@@ -326,13 +326,20 @@ def create_app(
 
     @app.get("/api/auth/status")
     def auth_status(request: Request) -> AuthStatusOut:
+        from mommy_chaogu.config import load_config
+
         if not security.enabled:
-            return AuthStatusOut(mode="none", authenticated=True)
+            return AuthStatusOut(
+                mode="none",
+                authenticated=True,
+                llm_configured=bool(load_config().agent.api_key),
+            )
         bearer_ok = security.authorize_header(request.headers.get("authorization"))
         cookie_ok = security.authorize_cookie(request.headers.get("cookie"))
         return AuthStatusOut(
             mode=security.auth_mode,
             authenticated=bearer_ok or cookie_ok,
+            llm_configured=bool(load_config().agent.api_key),
         )
 
     # 健康检查

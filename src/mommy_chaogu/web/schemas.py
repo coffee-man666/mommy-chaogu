@@ -135,6 +135,7 @@ class AuthStatusOut(BaseModel):
 
     mode: Literal["none", "token", "pairing"]
     authenticated: bool
+    llm_configured: bool = True
 
 
 # ---------- Setup wizard ----------

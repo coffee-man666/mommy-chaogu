@@ -38,19 +38,26 @@ export interface ToolResultEvent {
 export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
+  styleHint?: string,
 ): Promise<ChatResponse> {
   return apiPost<ChatResponse>('/api/agent/chat', {
     message,
     history,
     session_id: getChatSessionId(),
+    style_hint: styleHint || '',
   })
 }
 
 export async function agentRoute(
   message: string,
   signal?: AbortSignal,
+  styleHint?: string,
 ): Promise<RouteResponse> {
-  return apiPost<RouteResponse>('/api/agent/route', { message }, signal)
+  return apiPost<RouteResponse>(
+    '/api/agent/route',
+    { message, style_hint: styleHint || '' },
+    signal,
+  )
 }
 
 export function getAgentHistory(limit = 50): Promise<AgentHistoryMessage[]> {
@@ -70,7 +77,7 @@ export function agentStream(
   onToolCall: (e: ToolCallEvent) => void = () => {},
   onToolResult: (e: ToolResultEvent) => void = () => {},
 ): {
-  send: (message: string, history?: Array<{ role: string; content: string }>) => void
+  send: (message: string, history?: Array<{ role: string; content: string }>, styleHint?: string) => void
   close: () => void
 } {
   // 连接建立前的待发消息缓冲
@@ -179,18 +186,20 @@ export function agentStream(
   void openSocket()
 
   return {
-    send(message: string, history?: Array<{ role: string; content: string }>) {
+    send(message: string, history?: Array<{ role: string; content: string }>, styleHint?: string) {
       if (closedByClient) {
         onError('WebSocket 连接已关闭，请重新发送消息')
         return
       }
+      const payload: Record<string, unknown> = { message, history, session_id: getChatSessionId() }
+      if (styleHint) payload.style_hint = styleHint
       if (ws?.readyState === WebSocket.OPEN) {
         turnInFlight = true
-        ws.send(JSON.stringify({ message, history, session_id: getChatSessionId() }))
+        ws.send(JSON.stringify(payload))
       } else if (ws == null || ws.readyState === WebSocket.CONNECTING) {
         // 连接还没建立，缓冲等 onopen
         turnInFlight = true
-        pendingMessage = { message, history, session_id: getChatSessionId() }
+        pendingMessage = { message, history, session_id: getChatSessionId(), style_hint: styleHint || '' } as any
       } else {
         // CLOSING / CLOSED
         onStateChange('disconnected')

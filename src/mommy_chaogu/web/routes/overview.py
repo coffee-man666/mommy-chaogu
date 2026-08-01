@@ -245,7 +245,7 @@ def _build_themes() -> OverviewThemesBlock:
             description=t.get("description", ""),
             total_stocks=t.get("total_stocks", 0),
         )
-        for t in items_raw[:4]
+        for t in items_raw
     ]
     return OverviewThemesBlock(
         items=items,
@@ -299,27 +299,51 @@ def get_overview(
     except RuntimeError:
         service = None
 
-    # 指数（网络请求）
+    # 指数（网络请求）— 已有内部隔离
     indexes_block = _fetch_indexes()
 
     # 自选股（内存缓存）
-    watchlist_block = _build_watchlist(service, watchlist_store)
+    try:
+        watchlist_block = _build_watchlist(service, watchlist_store)
+    except Exception:
+        _log.exception("overview watchlist block failed")
+        watchlist_block = OverviewWatchlistBlock(
+            total=0, n_up=0, n_down=0, n_flat=0, items=[],
+            block=BlockStatus(status="unavailable", message="自选股数据加载失败"),
+        )
 
     # 从快照中提取价格给持仓复用（减少网络调用）
     snap_prices: dict[str, Decimal] | None = None
-    if service and service.latest_snapshot is not None:
-        snap_prices = {
-            row.entry.code: row.quote.price for row in service.latest_snapshot.rows
-        }
+    try:
+        if service and service.latest_snapshot is not None:
+            snap_prices = {
+                row.entry.code: row.quote.price for row in service.latest_snapshot.rows
+            }
+    except Exception:
+        snap_prices = None
 
     # 持仓（可能需要额外拉价）
-    portfolio_block = _build_portfolio(store, adapter, snap_prices)
+    try:
+        portfolio_block = _build_portfolio(store, adapter, snap_prices)
+    except Exception:
+        _log.exception("overview portfolio block failed")
+        portfolio_block = OverviewPortfolioBlock(
+            n_positions=0, alerts=[],
+            block=BlockStatus(status="unavailable", message="持仓数据加载失败"),
+        )
 
-    # 主题（静态 JSON）
+    # 主题（静态 JSON）— 已有内部隔离
     themes_block = _build_themes()
 
     # 信号（内存缓存）
-    signals_block = _build_signals(service)
+    try:
+        signals_block = _build_signals(service)
+    except Exception:
+        _log.exception("overview signals block failed")
+        signals_block = OverviewSignalsBlock(
+            summary=None,
+            block=BlockStatus(status="unavailable", message="信号数据加载失败"),
+        )
 
     return OverviewResponse(
         indexes=indexes_block,

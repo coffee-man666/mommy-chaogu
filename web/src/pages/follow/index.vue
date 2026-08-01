@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -112,18 +113,22 @@ onMounted(() => {
           <Card
             v-for="t in followedThemes"
             :key="t.id"
-            class="cursor-pointer transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-md"
-            @click="router.push(`/themes/${t.id}`)"
+            class="transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-md"
           >
             <CardContent class="p-4">
               <div class="flex items-start gap-3">
                 <span class="text-2xl leading-none">{{ themeIcons[t.id] || '📈' }}</span>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-bold truncate">{{ t.name }}</h3>
+                    <RouterLink
+                      :to="`/themes/${t.id}`"
+                      class="text-sm font-bold truncate hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      {{ t.name }}
+                    </RouterLink>
                     <button
                       class="ml-2 shrink-0 rounded px-2 py-0.5 text-xs text-orange-500 transition-colors hover:bg-orange-50"
-                      @click.stop="toggleFollow(t.id)"
+                      @click="toggleFollow(t.id)"
                     >
                       取消关注
                     </button>
@@ -141,15 +146,15 @@ onMounted(() => {
       <section v-if="groups.length > 0">
         <h2 class="mb-3 text-sm font-semibold text-muted-foreground">自选分组</h2>
         <div class="flex flex-wrap gap-2">
-          <button
+          <RouterLink
             v-for="g in groups"
             :key="g.name"
+            to="/"
             class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
-            @click="router.push('/')"
           >
             <span class="font-medium">{{ g.name }}</span>
             <span class="text-xs text-muted-foreground">{{ g.n_stocks }}只</span>
-          </button>
+          </RouterLink>
         </div>
       </section>
 
@@ -160,18 +165,22 @@ onMounted(() => {
           <Card
             v-for="t in availableThemes"
             :key="t.id"
-            class="cursor-pointer opacity-75 transition-all hover:opacity-100 hover:border-primary/50"
-            @click="router.push(`/themes/${t.id}`)"
+            class="opacity-75 transition-[opacity,border-color] hover:opacity-100 hover:border-primary/50"
           >
             <CardContent class="p-4">
               <div class="flex items-start gap-3">
                 <span class="text-2xl leading-none">{{ themeIcons[t.id] || '📈' }}</span>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-bold truncate">{{ t.name }}</h3>
+                    <RouterLink
+                      :to="`/themes/${t.id}`"
+                      class="text-sm font-bold truncate hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      {{ t.name }}
+                    </RouterLink>
                     <button
                       class="ml-2 shrink-0 rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-                      @click.stop="toggleFollow(t.id)"
+                      @click="toggleFollow(t.id)"
                     >
                       + 关注
                     </button>

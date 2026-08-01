@@ -219,9 +219,8 @@ async function sendNow(text: string) {
   stream.value = null
   connectionState.value = 'idle'
 
-  // 将交易风格提示以系统指令形式注入到 message（不修改用户可见内容）
+  // 交易风格提示作为独立系统上下文传递，不修改用户消息内容
   const styleHint = getStyleAgentHint()
-  const enrichedMessage = `[${styleHint}]\n${text}`
 
   messages.value.push({ role: 'user', content: text })
   loading.value = true
@@ -233,7 +232,7 @@ async function sendNow(text: string) {
   const routeController = new AbortController()
   routeAbortController = routeController
   try {
-    const response = await agentRoute(enrichedMessage, routeController.signal)
+    const response = await agentRoute(text, routeController.signal, styleHint)
     if (requestId !== activeRequestId) return
     if (response.matched && response.reply) {
       messages.value[assistantIdx] = {
@@ -325,7 +324,7 @@ async function sendNow(text: string) {
       scrollToBottom()
     },
   )
-  stream.value.send(enrichedMessage, history)
+  stream.value.send(text, history, styleHint)
 }
 
 function onComposerKeydown(event: KeyboardEvent) {

@@ -75,14 +75,20 @@ class TestRestAuthentication:
         )
 
         assert missing.status_code == 200
-        assert missing.json() == {"mode": "token", "authenticated": False}
-        assert authenticated.json() == {"mode": "token", "authenticated": True}
+        body = missing.json()
+        assert body["mode"] == "token"
+        assert body["authenticated"] is False
+        assert "llm_configured" in body
+        auth_body = authenticated.json()
+        assert auth_body["mode"] == "token"
+        assert auth_body["authenticated"] is True
+        assert "llm_configured" in auth_body
 
         local, _ = _client("")
-        assert local.get("/api/auth/status").json() == {
-            "mode": "none",
-            "authenticated": True,
-        }
+        local_body = local.get("/api/auth/status").json()
+        assert local_body["mode"] == "none"
+        assert local_body["authenticated"] is True
+        assert "llm_configured" in local_body
 
 
 class TestWebSocketTickets:

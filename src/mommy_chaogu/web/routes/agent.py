@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] | None = None
     session_id: str = Field(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    style_hint: str = Field(default="", max_length=256)
 
 
 class ChatResponse(BaseModel):
@@ -57,6 +58,7 @@ class ChatResponse(BaseModel):
 
 class RouteRequest(BaseModel):
     message: str
+    style_hint: str = Field(default="", max_length=256)
 
 
 class RouteResponse(BaseModel):
@@ -161,7 +163,7 @@ async def chat(
         agent.chat,
         req.message,
         None,  # history 不单独传，由 memory 提供上下文
-        None,  # system_override
+        req.style_hint or None,  # system_override — 交易风格提示
         memory.for_session(req.session_id),
     )
 
@@ -202,9 +204,7 @@ async def get_predictions(
     if tracker is None:
         return {"predictions": [], "total": 0}
     try:
-        rows = tracker.all(limit=limit)
-        if code:
-            rows = [r for r in rows if r.get("code") == code]
+        rows = tracker.by_code(code, limit=limit) if code else tracker.all(limit=limit)
         return {"predictions": rows, "total": len(rows)}
     except Exception:
         return {"predictions": [], "total": 0}

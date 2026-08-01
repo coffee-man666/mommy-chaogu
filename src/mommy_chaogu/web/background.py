@@ -144,11 +144,14 @@ class BackgroundService:
                 _log.exception("notifier notify failed (signals broadcast will continue)")
 
         # 微信通道主动推送（与 Server酱 互补）
+        # 使用 to_thread 避免阻塞事件循环（send_text 是同步 HTTP 请求）
         if signals:
             try:
                 from mommy_chaogu.channels import send_signal_notifications
 
-                send_signal_notifications(signals, web_base_url=self._web_base_url)
+                await asyncio.to_thread(
+                    send_signal_notifications, signals, web_base_url=self._web_base_url
+                )
             except Exception:
                 pass  # 微信通道未连接或发送失败，不阻塞主循环
 

@@ -41,6 +41,7 @@ export const authMode = ref<'unknown' | 'none' | 'token' | 'pairing'>('unknown')
 export interface AuthStatus {
   mode: 'none' | 'token' | 'pairing'
   authenticated: boolean
+  llm_configured?: boolean
 }
 
 function friendlyForStatus(status: number): string {

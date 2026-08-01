@@ -135,6 +135,7 @@ async def ws_agent(websocket: WebSocket) -> None:
                 continue
 
             session_id = msg.get("session_id", "web-default")
+            style_hint = msg.get("style_hint", "")
             try:
                 session_memory = memory.for_session(session_id)
             except (TypeError, ValueError):
@@ -205,7 +206,7 @@ async def ws_agent(websocket: WebSocket) -> None:
                     agent.chat,
                     user_message,
                     None,
-                    None,
+                    style_hint or None,
                     session_memory,
                     on_tool_call,
                     on_tool_result,

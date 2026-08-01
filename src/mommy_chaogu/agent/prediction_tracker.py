@@ -352,6 +352,23 @@ class PredictionTracker(EngineOwner):
                 ).all()
             return [_row_to_dict(r) for r in rows]
 
+    def by_code(self, code: str, limit: int = 20) -> list[dict[str, Any]]:
+        """返回指定股票代码的预测，按 created_at 降序。
+
+        在 SQL 层面 WHERE code = :code，避免全表扫描后再内存过滤。
+        """
+        with self.session() as s:
+            rows = s.execute(
+                text("""
+                    SELECT * FROM predictions
+                    WHERE code = :code
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """),
+                {"code": code, "limit": limit},
+            ).all()
+            return [_row_to_dict(r) for r in rows]
+
     def cleanup_old(self, days: int = 90) -> int:
         """删除 *days* 天前已验证/过期的预测，返回删除条数。
 

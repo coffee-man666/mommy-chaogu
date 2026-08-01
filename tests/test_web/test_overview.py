@@ -223,3 +223,54 @@ class TestOverviewSignals:
         data = client.get("/api/overview").json()
         sig = data["signals"]
         assert sig["summary"] is None
+
+
+class TestOverviewBlockFailureIsolation:
+    """每个区块独立失败不拖垮整页。"""
+
+    def test_watchlist_store_failure(
+        self,
+        client: pytest.fixture,
+        mock_service: MagicMock,
+        mock_watchlist_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """自选股 store 抛异常 → unavailable，但其他区块正常。"""
+        mock_service.latest_snapshot = None
+        mock_watchlist_store.list_entries.side_effect = RuntimeError("DB error")
+        _patch_indexes(monkeypatch)
+        data = client.get("/api/overview").json()
+        assert data["watchlist"]["block"]["status"] == "unavailable"
+        assert data["indexes"]["block"]["status"] == "ok"
+        assert data["portfolio"]["block"]["status"] == "ok"
+
+    def test_portfolio_store_failure(
+        self,
+        client: pytest.fixture,
+        mock_portfolio_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """持仓 store 抛异常 → unavailable，但其他区块正常。"""
+        mock_portfolio_store.list_positions.side_effect = RuntimeError("DB error")
+        _patch_indexes(monkeypatch)
+        data = client.get("/api/overview").json()
+        assert data["portfolio"]["block"]["status"] == "unavailable"
+        assert data["indexes"]["block"]["status"] == "ok"
+        assert data["watchlist"]["block"]["status"] == "ok"
+
+    def test_signals_failure(
+        self,
+        client: pytest.fixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """信号构建抛异常 → unavailable，但其他区块正常。"""
+        def _boom(service: object | None = None) -> object:
+            raise RuntimeError("signal read error")
+
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.overview._build_signals", _boom
+        )
+        _patch_indexes(monkeypatch)
+        data = client.get("/api/overview").json()
+        assert data["signals"]["block"]["status"] == "unavailable"
+        assert data["indexes"]["block"]["status"] == "ok"

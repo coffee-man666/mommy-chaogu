@@ -2,18 +2,24 @@
 
 验证：
 - 未连接微信通道时返回 0
-- 有信号时按 code+rule_id 去重
+- 持久化去重：同一信号在多次调用（模拟多个轮询周期）中不重复推送
 - 消息格式包含结论、证据、时间
 - web_base_url 传入时附加深链
+- 发送失败不抛异常
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from mommy_chaogu.channels.notify import _format_notification, send_signal_notifications
+from mommy_chaogu.channels.notify import (
+    WeixinNotifyDeduper,
+    _format_notification,
+    send_signal_notifications,
+)
 from mommy_chaogu.signals.types import Signal, SignalSeverity
 
 
@@ -36,6 +42,14 @@ def _make_signal(
     )
 
 
+def _mock_creds() -> MagicMock:
+    creds = MagicMock()
+    creds.base_url = "https://example.com"
+    creds.token = "tok"
+    creds.owner_user_id = "user1"
+    return creds
+
+
 class TestSendSignalNotifications:
     """send_signal_notifications 行为测试。"""
 
@@ -50,18 +64,44 @@ class TestSendSignalNotifications:
             mock_store_cls.return_value = mock_store
             assert send_signal_notifications([_make_signal()]) == 0
 
-    def test_dedup_same_code_rule(self) -> None:
-        """相同 code+rule_id 的信号只发一条。"""
+    def test_persistent_dedup_across_calls(self, tmp_path: Path) -> None:
+        """同一信号在多次调用（模拟连续轮询）中只推送一次。"""
+        deduper = WeixinNotifyDeduper(db_path=tmp_path / "weixin_pushed.json")
+
         with (
             patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls,
             patch("mommy_chaogu.channels.notify.WeixinClient") as mock_client_cls,
         ):
             mock_store = MagicMock()
-            creds = MagicMock()
-            creds.base_url = "https://example.com"
-            creds.token = "tok"
-            creds.owner_user_id = "user1"
-            mock_store.load_credentials.return_value = creds
+            mock_store.load_credentials.return_value = _mock_creds()
+            mock_store_cls.return_value = mock_store
+
+            mock_client = MagicMock()
+            mock_client_cls.return_value = mock_client
+
+            signal = _make_signal()
+
+            # 第一次调用：应推送 1 条
+            result1 = send_signal_notifications([signal], deduper=deduper, client=mock_client)
+            assert result1 == 1
+
+            # 第二次调用（模拟下个轮询周期）：同一信号不应重复推送
+            result2 = send_signal_notifications([signal], deduper=deduper, client=mock_client)
+            assert result2 == 0
+
+            # send_text 只应被调用 1 次
+            assert mock_client.send_text.call_count == 1
+
+    def test_different_signals_both_pushed(self, tmp_path: Path) -> None:
+        """不同 code 或 rule_id 的信号都应推送。"""
+        deduper = WeixinNotifyDeduper(db_path=tmp_path / "weixin_pushed.json")
+
+        with (
+            patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls,
+            patch("mommy_chaogu.channels.notify.WeixinClient") as mock_client_cls,
+        ):
+            mock_store = MagicMock()
+            mock_store.load_credentials.return_value = _mock_creds()
             mock_store_cls.return_value = mock_store
 
             mock_client = MagicMock()
@@ -69,11 +109,10 @@ class TestSendSignalNotifications:
 
             signals = [
                 _make_signal(rule_id="rule_a"),
-                _make_signal(rule_id="rule_a"),  # 重复
-                _make_signal(rule_id="rule_b"),  # 不同规则
+                _make_signal(code="000858", rule_id="rule_b"),
             ]
-            result = send_signal_notifications(signals)
-            assert result == 2  # 去重后只有 2 条唯一信号
+            result = send_signal_notifications(signals, deduper=deduper, client=mock_client)
+            assert result == 2
 
     def test_send_failure_does_not_raise(self) -> None:
         """单条发送失败不影响整体流程。"""
@@ -82,11 +121,7 @@ class TestSendSignalNotifications:
             patch("mommy_chaogu.channels.notify.WeixinClient") as mock_client_cls,
         ):
             mock_store = MagicMock()
-            creds = MagicMock()
-            creds.base_url = "https://example.com"
-            creds.token = "tok"
-            creds.owner_user_id = "user1"
-            mock_store.load_credentials.return_value = creds
+            mock_store.load_credentials.return_value = _mock_creds()
             mock_store_cls.return_value = mock_store
 
             mock_client = MagicMock()
@@ -95,6 +130,30 @@ class TestSendSignalNotifications:
 
             result = send_signal_notifications([_make_signal()])
             assert result == 0  # 发送失败 → 0 条成功
+
+
+class TestWeixinNotifyDeduper:
+    """持久化去重器测试。"""
+
+    def test_should_push_first_time(self, tmp_path: Path) -> None:
+        dedup = WeixinNotifyDeduper(db_path=tmp_path / "d.json")
+        assert dedup.should_push(_make_signal()) is True
+
+    def test_should_not_push_after_marked(self, tmp_path: Path) -> None:
+        dedup = WeixinNotifyDeduper(db_path=tmp_path / "d.json")
+        signal = _make_signal()
+        dedup.mark_pushed(signal)
+        assert dedup.should_push(signal) is False
+
+    def test_persists_across_instances(self, tmp_path: Path) -> None:
+        """文件持久化：新实例能读到已推送记录。"""
+        db = tmp_path / "d.json"
+        dedup1 = WeixinNotifyDeduper(db_path=db)
+        signal = _make_signal()
+        dedup1.mark_pushed(signal)
+
+        dedup2 = WeixinNotifyDeduper(db_path=db)
+        assert dedup2.should_push(signal) is False
 
 
 class TestFormatNotification:
