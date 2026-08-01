@@ -662,3 +662,37 @@ The 2026-08-01 working tree completes the next bounded work package from the exe
 - Trading style is still browser-selected and only Agent-aware. A shared server preference schema must drive Today explanations, Agent emphasis, backtest defaults, and Weixin selection together.
 - Stock detail still needs holding profit/loss context and automatic page context for Agent questions.
 - Prediction evidence/freshness, Agent attachments, and one-click stock backtest entry remain P2 work.
+
+## 13. Work package 4 review — stock decision and Agent page context
+
+The next implementation after commit `66f467e` closes the stock-context portion of P2.
+
+### Implemented
+
+- `/api/stocks/{code}/decision-context` returns server-owned holding aggregation and unified basket membership without fetching market data.
+- Multiple open lots of the same stock are combined into total shares, total cost, and weighted average cost; closed lots are excluded.
+- Stock detail places shares, average cost, and live unrealized profit/loss directly below the quote, while the existing quote-age label remains visible.
+- Basket member links preserve their canonical source ID. Stock detail shows the source basket and can navigate back to it.
+- “Ask AI” now sends a structured `page_context` separately from the visible user message. The allow-list accepts only stock surface, six-digit code, known tabs, canonical basket IDs, and a timestamp; extra prompt-like fields are rejected.
+- REST and WebSocket compose the same server-enriched page context after the existing trading-style addendum. Holdings and basket names are reread from server storage, and the addendum instructs the Agent to verify live price and P/L with tools.
+- Chat displays the active stock/Tab context and provides a semantic, keyboard-focusable exit action. Context-rich follow-ups bypass generic natural-language workflow routing so the structured context reaches the Agent loop.
+
+### Self-review
+
+- No market request is added to the context endpoint; P/L is calculated in the stock page from the already displayed quote and server-owned cost basis.
+- Browser-supplied basket IDs are used only when the stock is actually a member of that server-owned basket.
+- The new API validates stock codes, and Agent page context rejects unknown fields rather than silently accepting instructions.
+- Desktop and 390×844 review found the holding summary readable in one compact row. The mobile chat context bar remains one line and does not displace the composer.
+
+### Verification
+
+- Full offline Python suite: 1,771 passed, 13 deselected; 74.82% coverage.
+- Strict mypy over 179 source files: passed.
+- Vue typecheck and 57 Vitest tests: passed.
+- Production build and packaged-static drift check: passed.
+- Playwright: 12 passed, 1 opt-in screenshot test skipped.
+- Visual review: stock detail desktop, stock detail 390×844, and stock-aware chat 390×844 passed.
+
+### Next action
+
+Create a server-owned preference schema and migrate the current browser-only trading preset. The same preference service should drive Today explanations, Agent emphasis, default backtest parameters, and Weixin reminder selection before adding more preference fields to individual screens.

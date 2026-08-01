@@ -76,6 +76,33 @@ describe('agent websocket lifecycle', () => {
     client.close()
   })
 
+  it('sends structured stock context separately from the user message', async () => {
+    const client = agentStream(vi.fn(), vi.fn(), vi.fn(), vi.fn())
+    client.send('接着分析', undefined, 'balanced', {
+      surface: 'stock',
+      stock_code: '600519',
+      tab: 'flow',
+      basket_id: 'theme:liquor',
+      quote_as_of: '2026-08-01T15:00:00+08:00',
+    })
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+
+    expect(JSON.parse(socket.send.mock.calls[0][0])).toMatchObject({
+      message: '接着分析',
+      page_context: {
+        surface: 'stock',
+        stock_code: '600519',
+        tab: 'flow',
+        basket_id: 'theme:liquor',
+      },
+    })
+    client.close()
+  })
+
   it('retries once before showing a useful disconnected state', async () => {
     const onError = vi.fn()
     const onStateChange = vi.fn()

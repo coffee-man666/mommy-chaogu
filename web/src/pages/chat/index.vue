@@ -18,7 +18,7 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import { agentRoute, agentStream, getAgentHistory } from '@/api/agent'
-import type { AgentStreamState, ToolCallEvent, ToolResultEvent } from '@/api/agent'
+import type { AgentPageContext, AgentStreamState, ToolCallEvent, ToolResultEvent } from '@/api/agent'
 import { getSnapshot } from '@/api/index'
 import { getIndexes } from '@/api/market'
 import { getPredictions } from '@/api/predictions'
@@ -90,6 +90,44 @@ let routeAbortController: AbortController | null = null
 
 const CHAT_STORAGE_KEY = 'mommy_chat_messages_v1'
 const CHAT_DRAFT_KEY = 'mommy_chat_draft_v1'
+
+const activePageContext = computed<AgentPageContext | undefined>(() => {
+  const stockCode = typeof route.query.stock === 'string' ? route.query.stock : ''
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : 'overview'
+  if (!/^\d{6}$/.test(stockCode) || !['overview', 'chart', 'flow', 'decisions'].includes(tab)) {
+    return undefined
+  }
+  const basketId = typeof route.query.basket === 'string'
+    && /^(theme|group):[A-Za-z0-9_-]+$/.test(route.query.basket)
+    ? route.query.basket
+    : undefined
+  const quoteAsOf = typeof route.query.as_of === 'string'
+    && !Number.isNaN(Date.parse(route.query.as_of))
+    ? route.query.as_of
+    : undefined
+  return {
+    surface: 'stock',
+    stock_code: stockCode,
+    tab: tab as AgentPageContext['tab'],
+    basket_id: basketId,
+    quote_as_of: quoteAsOf,
+  }
+})
+
+const pageContextLabel = computed(() => {
+  const context = activePageContext.value
+  if (!context) return ''
+  const tabLabels: Record<AgentPageContext['tab'], string> = {
+    overview: '概览',
+    chart: '走势',
+    flow: '资金',
+    decisions: '决策记录',
+  }
+  const name = typeof route.query.stock_name === 'string'
+    ? route.query.stock_name
+    : context.stock_code
+  return `${name} · ${tabLabels[context.tab]}`
+})
 
 const quickQuestions = [
   '今天怎么样？',
@@ -232,7 +270,9 @@ async function sendNow(text: string) {
   const routeController = new AbortController()
   routeAbortController = routeController
   try {
-    const response = await agentRoute(text, routeController.signal)
+    const response = activePageContext.value
+      ? { matched: false }
+      : await agentRoute(text, routeController.signal)
     if (requestId !== activeRequestId) return
     if (response.matched && response.reply) {
       messages.value[assistantIdx] = {
@@ -324,7 +364,20 @@ async function sendNow(text: string) {
       scrollToBottom()
     },
   )
-  stream.value.send(text, history, stylePreset)
+  stream.value.send(text, history, stylePreset, activePageContext.value)
+}
+
+async function clearPageContext() {
+  const {
+    stock: _stock,
+    stock_name: _name,
+    tab: _tab,
+    basket: _basket,
+    as_of: _asOf,
+    ...remainingQuery
+  } = route.query
+  await router.replace({ query: remainingQuery })
+  composerRef.value?.focus()
 }
 
 function onComposerKeydown(event: KeyboardEvent) {
@@ -514,6 +567,20 @@ onUnmounted(() => {
         class="border-b bg-muted px-4 py-2 text-center text-xs text-muted-foreground"
       >
         AI 未配置：对话回答不可用，行情与持仓数据仍可正常浏览。
+      </div>
+
+      <div
+        v-if="activePageContext"
+        role="status"
+        class="flex shrink-0 items-center gap-2 border-b bg-primary/5 px-4 py-2 text-xs"
+      >
+        <span class="truncate">正在结合：{{ pageContextLabel }}</span>
+        <button
+          type="button"
+          class="ml-auto min-h-8 shrink-0 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="退出当前个股上下文"
+          @click="clearPageContext"
+        >退出上下文</button>
       </div>
 
       <div class="relative min-h-0 flex-1">

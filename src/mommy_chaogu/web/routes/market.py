@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 
 from mommy_chaogu.cache import CacheStore
 from mommy_chaogu.market_data import MarketDataAdapter
@@ -13,15 +13,23 @@ from mommy_chaogu.market_data.rankings import (
     fetch_indexes,
     fetch_sector_ranking,
 )
+from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.semicon import SemiconStore
+from mommy_chaogu.services.stock_context_service import StockContextService
 from mommy_chaogu.watchlist import WatchlistStore
 from mommy_chaogu.web.deps import (
     get_adapter,
     get_cache_store,
+    get_portfolio_store,
     get_semicon_store,
     get_watchlist_store,
 )
-from mommy_chaogu.web.schemas import IndexOut, SectorOut, StockSearchOut
+from mommy_chaogu.web.schemas import (
+    IndexOut,
+    SectorOut,
+    StockDecisionContextOut,
+    StockSearchOut,
+)
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 stocks_router = APIRouter(prefix="/api/stocks", tags=["market"])
@@ -85,6 +93,18 @@ def search_stocks(
         if item.code.casefold().startswith(needle) or needle in item.name.casefold()
     ]
     return sorted(matched, key=score)[:limit]
+
+
+@stocks_router.get("/{code}/decision-context", response_model=StockDecisionContextOut)
+def get_stock_decision_context(
+    code: Annotated[str, Path(pattern=r"^\d{6}$")],
+    portfolio: Annotated[PortfolioStore, Depends(get_portfolio_store)],
+    watchlist: Annotated[WatchlistStore, Depends(get_watchlist_store)],
+) -> StockDecisionContextOut:
+    """Return holdings and basket membership without triggering market requests."""
+    return StockDecisionContextOut.model_validate(
+        StockContextService(portfolio, watchlist).get(code)
+    )
 
 
 @router.get("/indexes", response_model=list[IndexOut])

@@ -110,6 +110,26 @@ export interface StockSearchResult {
   source: 'watchlist' | 'semicon' | 'cache'
 }
 
+export interface StockHoldingContext {
+  position_count: number
+  shares: number
+  avg_cost: string
+  total_cost: string
+}
+
+export interface StockBasketContext {
+  id: string
+  name: string
+  kind: 'theme' | 'custom'
+  reason: string
+}
+
+export interface StockDecisionContext {
+  code: string
+  holding: StockHoldingContext | null
+  baskets: StockBasketContext[]
+}
+
 export interface AgentHistoryMessage {
   role: 'user' | 'assistant'
   content: string

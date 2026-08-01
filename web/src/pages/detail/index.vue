@@ -4,8 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan, fmtMoney, fmtAge } from '@/utils/format'
 import type { Quote, Bar, MoneyFlowResponse } from '@/api/types'
-import type { Prediction } from '@/api/types'
+import type { Prediction, StockDecisionContext } from '@/api/types'
 import { getStockPredictions } from '@/api/predictions'
+import { getStockDecisionContext } from '@/api/market'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
@@ -56,11 +57,24 @@ const predictionsLoading = ref(false)
 
 const codeInput = ref('')
 const actionMessage = ref('')
+const decisionContext = ref<StockDecisionContext | null>(null)
 
 let refreshTimer: number | null = null
 let themeObserver: MutationObserver | null = null
 
 const isWatched = computed(() => watchlistStore.allCodes.includes(props.code))
+const sourceBasket = computed(() => {
+  const requested = typeof route.query.basket === 'string' ? route.query.basket : ''
+  return decisionContext.value?.baskets.find((basket) => basket.id === requested) ?? null
+})
+const holdingPnl = computed(() => {
+  const holding = decisionContext.value?.holding
+  if (!holding || !quote.value) return null
+  const marketValue = Number(quote.value.price) * holding.shares
+  const pnl = marketValue - Number(holding.total_cost)
+  const pct = Number(holding.total_cost) > 0 ? (pnl / Number(holding.total_cost)) * 100 : 0
+  return { pnl, pct }
+})
 
 const intervals = [
   { key: '5m', label: '5分' },
@@ -120,6 +134,14 @@ async function loadQuote() {
     console.error(err.raw)
   } finally {
     quoteLoading.value = false
+  }
+}
+
+async function loadDecisionContext() {
+  try {
+    decisionContext.value = await getStockDecisionContext(props.code)
+  } catch {
+    decisionContext.value = null
   }
 }
 
@@ -284,20 +306,17 @@ async function addToWatchlist() {
 
 function askAgent() {
   const stockName = quote.value?.name || props.code
-  const currentTab = mainTab.value
-  // 构造带上下文的问题
-  const tabLabels: Record<string, string> = {
-    overview: '概览',
-    chart: '走势',
-    flow: '资金',
-    decisions: '决策记录',
-  }
-  const contextParts = [`当前在「${tabLabels[currentTab] || '概览'}」标签页`]
-  if (quote.value) {
-    contextParts.push(`现价 ${fmtPrice(quote.value.price)}（${fmtPct(quote.value.change_pct)}）`)
-  }
-  const question = `分析一下${stockName}（${props.code}），${contextParts.join('，')}`
-  void router.push({ path: '/chat', query: { q: question } })
+  void router.push({
+    path: '/chat',
+    query: {
+      q: '结合我当前看的信息，这只股票现在最需要关注什么？',
+      stock: props.code,
+      stock_name: stockName,
+      tab: mainTab.value,
+      basket: sourceBasket.value?.id,
+      as_of: quote.value?.timestamp,
+    },
+  })
 }
 
 // ---------- SVG 资金流图 ----------
@@ -431,16 +450,17 @@ watch(
     flowToday.value = null
     flowHistory.value = null
     stockPredictions.value = []
+    decisionContext.value = null
     codeInput.value = ''
     loadedTabs.value = new Set() // reset lazy state
-    await loadQuote()
+    await Promise.all([loadQuote(), loadDecisionContext()])
     ensureTabLoaded(mainTab.value)
   }
 )
 
 onMounted(async () => {
   await watchlistStore.fetchAll()
-  await loadQuote()
+  await Promise.all([loadQuote(), loadDecisionContext()])
   ensureTabLoaded(mainTab.value)
   refreshTimer = window.setInterval(loadQuote, 10_000)
   themeObserver = new MutationObserver(() => void drawKLine())
@@ -524,6 +544,44 @@ onUnmounted(() => {
               </Button>
               <Button size="sm" @click="askAgent">🤖 问问 AI</Button>
               <span v-if="actionMessage" role="status" class="text-xs text-muted-foreground">{{ actionMessage }}</span>
+            </div>
+
+            <div
+              v-if="decisionContext?.holding"
+              class="grid grid-cols-3 gap-2 rounded-lg bg-muted/60 p-3 text-sm"
+            >
+              <div>
+                <p class="text-xs text-muted-foreground">当前持仓</p>
+                <p class="mt-1 font-mono font-semibold">{{ decisionContext.holding.shares }} 股</p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">平均成本</p>
+                <p class="mt-1 font-mono font-semibold">{{ fmtPrice(decisionContext.holding.avg_cost) }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">浮动盈亏</p>
+                <p
+                  v-if="holdingPnl"
+                  class="mt-1 font-mono font-semibold"
+                  :class="dirClass(holdingPnl.pnl)"
+                >
+                  {{ dirSign(holdingPnl.pnl) }}{{ fmtMoney(holdingPnl.pnl) }} · {{ fmtPct(holdingPnl.pct) }}
+                </p>
+                <p v-else class="mt-1 text-muted-foreground">待行情</p>
+              </div>
+            </div>
+            <div
+              v-if="sourceBasket || decisionContext?.baskets.length"
+              class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+            >
+              <RouterLink
+                v-if="sourceBasket"
+                :to="{ name: 'basket-detail', params: { id: sourceBasket.id } }"
+                class="rounded-full bg-primary/10 px-2.5 py-1 text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >来自 {{ sourceBasket.name }}</RouterLink>
+              <span v-if="decisionContext && decisionContext.baskets.length > (sourceBasket ? 1 : 0)">
+                还属于 {{ decisionContext.baskets.length - (sourceBasket ? 1 : 0) }} 个篮子
+              </span>
             </div>
           </template>
 

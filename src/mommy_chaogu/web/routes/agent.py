@@ -16,6 +16,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from mommy_chaogu.web.agent_context import AgentPageContext, page_context_addendum
 from mommy_chaogu.web.deps import (
     get_adapter,
     get_agent_memory,
@@ -53,6 +54,7 @@ class ChatRequest(BaseModel):
     history: list[dict[str, str]] | None = None
     session_id: str = Field(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
     style_preset: TradingStylePreset = DEFAULT_TRADING_STYLE
+    page_context: AgentPageContext | None = None
 
 
 class ChatResponse(BaseModel):
@@ -150,6 +152,8 @@ async def chat(
     req: ChatRequest,
     agent: Annotated[Any, Depends(get_agent_service)],
     memory: Annotated[Any, Depends(get_agent_memory)],
+    portfolio: Annotated[Any, Depends(get_portfolio_store)],
+    watchlist: Annotated[Any, Depends(get_watchlist_store)],
 ) -> ChatResponse:
     """单轮问答。
 
@@ -163,13 +167,16 @@ async def chat(
         )
 
     # AgentService.chat 是同步的（内部调 OpenAI SDK），用 to_thread 包装
+    addenda = [trading_style_context(req.style_preset)]
+    if page_addendum := page_context_addendum(req.page_context, portfolio, watchlist):
+        addenda.append(page_addendum)
     resp = await asyncio.to_thread(
         agent.chat,
         req.message,
         None,  # history 不单独传，由 memory 提供上下文
         None,  # system_override
         memory.for_session(req.session_id),
-        system_addendum=trading_style_context(req.style_preset),
+        system_addendum="\n\n".join(addenda),
     )
 
     return ChatResponse(

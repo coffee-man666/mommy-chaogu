@@ -9,6 +9,14 @@ export interface ChatResponse {
   rounds: number
 }
 
+export interface AgentPageContext {
+  surface: 'stock'
+  stock_code: string
+  tab: 'overview' | 'chart' | 'flow' | 'decisions'
+  basket_id?: string
+  quote_as_of?: string
+}
+
 export interface RouteStep {
   name: string
   tool: string
@@ -40,12 +48,14 @@ export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
   stylePreset?: StylePreset,
+  pageContext?: AgentPageContext,
 ): Promise<ChatResponse> {
   return apiPost<ChatResponse>('/api/agent/chat', {
     message,
     history,
     session_id: getChatSessionId(),
     style_preset: stylePreset || 'balanced',
+    page_context: pageContext,
   })
 }
 
@@ -73,7 +83,12 @@ export function agentStream(
   onToolCall: (e: ToolCallEvent) => void = () => {},
   onToolResult: (e: ToolResultEvent) => void = () => {},
 ): {
-  send: (message: string, history?: Array<{ role: string; content: string }>, stylePreset?: StylePreset) => void
+  send: (
+    message: string,
+    history?: Array<{ role: string; content: string }>,
+    stylePreset?: StylePreset,
+    pageContext?: AgentPageContext,
+  ) => void
   close: () => void
 } {
   // 连接建立前的待发消息缓冲
@@ -82,6 +97,7 @@ export function agentStream(
     history?: Array<{ role: string; content: string }>
     session_id: string
     style_preset: StylePreset
+    page_context?: AgentPageContext
   } | null = null
   // 初始连接失败时，最多重试一次
   let retried = false
@@ -183,12 +199,23 @@ export function agentStream(
   void openSocket()
 
   return {
-    send(message: string, history?: Array<{ role: string; content: string }>, stylePreset: StylePreset = 'balanced') {
+    send(
+      message: string,
+      history?: Array<{ role: string; content: string }>,
+      stylePreset: StylePreset = 'balanced',
+      pageContext?: AgentPageContext,
+    ) {
       if (closedByClient) {
         onError('WebSocket 连接已关闭，请重新发送消息')
         return
       }
-      const payload = { message, history, session_id: getChatSessionId(), style_preset: stylePreset }
+      const payload = {
+        message,
+        history,
+        session_id: getChatSessionId(),
+        style_preset: stylePreset,
+        page_context: pageContext,
+      }
       if (ws?.readyState === WebSocket.OPEN) {
         turnInFlight = true
         ws.send(JSON.stringify(payload))

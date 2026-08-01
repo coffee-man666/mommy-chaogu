@@ -148,6 +148,14 @@ class TestAgentWebSocket:
                 "message": "无效的交易风格设置",
             }
 
+            ws.send_json(
+                {
+                    "message": "hello",
+                    "page_context": {"surface": "stock", "stock_code": "prompt"},
+                }
+            )
+            assert ws.receive_json() == {"type": "error", "message": "无效的页面上下文"}
+
             ws.send_json({"message": "hello"})
             assert ws.receive_json() == {
                 "type": "done",
@@ -181,9 +189,26 @@ class TestAgentWebSocket:
         memory.for_session.return_value = session_memory
         monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
         monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            "mommy_chaogu.web.routes.ws.page_context_addendum",
+            lambda context, _portfolio, _watchlist: (
+                f"<page_context>{context.stock_code}:{context.tab}</page_context>"
+                if context is not None
+                else ""
+            ),
+        )
 
         with client.websocket_connect("/ws/agent") as ws:
-            ws.send_json({"message": "hello"})
+            ws.send_json(
+                {
+                    "message": "hello",
+                    "page_context": {
+                        "surface": "stock",
+                        "stock_code": "600519",
+                        "tab": "flow",
+                    },
+                }
+            )
             assert ws.receive_json() == {"type": "thinking"}
             # 真流式：on_chunk 推送的 delta 原样转发（不再是 12 字符切片）
             assert ws.receive_json() == {"type": "chunk", "text": "abcdefghijkl"}
@@ -200,6 +225,7 @@ class TestAgentWebSocket:
         assert call.args[0] == "hello"
         assert call.args[2] is None
         assert "用户偏好均衡分析" in call.kwargs["system_addendum"]
+        assert "<page_context>600519:flow</page_context>" in call.kwargs["system_addendum"]
 
     def test_streams_tool_call_events(self, client: TestClient, monkeypatch: object) -> None:
         """验证 on_tool_call/on_tool_result 回调被桥接成 tool_call_started/finished WS 帧。"""

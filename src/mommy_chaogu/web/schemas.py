@@ -280,6 +280,26 @@ class StockSearchOut(BaseModel):
     source: Literal["watchlist", "semicon", "cache"]
 
 
+class StockHoldingContextOut(BaseModel):
+    position_count: int
+    shares: int
+    avg_cost: Decimal
+    total_cost: Decimal
+
+
+class StockBasketContextOut(BaseModel):
+    id: str
+    name: str
+    kind: Literal["theme", "custom"]
+    reason: str = ""
+
+
+class StockDecisionContextOut(BaseModel):
+    code: str
+    holding: StockHoldingContextOut | None = None
+    baskets: list[StockBasketContextOut] = Field(default_factory=list)
+
+
 # ---------- Portfolio ----------
 
 

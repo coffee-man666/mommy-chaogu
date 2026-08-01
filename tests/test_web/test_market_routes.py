@@ -219,6 +219,35 @@ class TestStockSearch:
         assert client.get("/api/stocks/search?q=%20%20").json() == []
 
 
+class TestStockDecisionContext:
+    def test_returns_server_assembled_context(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.market.StockContextService.get",
+            lambda _self, code: {
+                "code": code,
+                "holding": {
+                    "position_count": 1,
+                    "shares": 100,
+                    "avg_cost": Decimal("1500"),
+                    "total_cost": Decimal("150000"),
+                },
+                "baskets": [{"id": "theme:liquor", "name": "白酒", "kind": "theme", "reason": ""}],
+            },
+        )
+
+        response = client.get("/api/stocks/600519/decision-context")
+
+        assert response.status_code == 200
+        assert response.json()["holding"]["shares"] == 100
+        assert response.json()["baskets"][0]["id"] == "theme:liquor"
+
+        assert client.get("/api/stocks/not-a-code/decision-context").status_code == 422
+
+
 # ---------- GET /api/market/gainers + losers ----------
 
 

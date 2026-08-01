@@ -11,9 +11,16 @@ import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 
+from mommy_chaogu.web.agent_context import AgentPageContext, page_context_addendum
 from mommy_chaogu.web.background import BackgroundService, get_service
 from mommy_chaogu.web.mappers import signal_to_out, snapshot_to_out
+from mommy_chaogu.web.trading_style import (
+    DEFAULT_TRADING_STYLE,
+    parse_trading_style,
+    trading_style_context,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -115,7 +122,12 @@ async def ws_agent(websocket: WebSocket) -> None:
         return
     await websocket.accept()
 
-    from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
+    from mommy_chaogu.web.deps import (
+        get_agent_memory,
+        get_agent_service,
+        get_portfolio_store,
+        get_watchlist_store,
+    )
 
     agent = get_agent_service()
     memory = get_agent_memory()
@@ -144,16 +156,20 @@ async def ws_agent(websocket: WebSocket) -> None:
                 continue
 
             session_id = msg.get("session_id", "web-default")
-            from mommy_chaogu.web.trading_style import (
-                DEFAULT_TRADING_STYLE,
-                parse_trading_style,
-                trading_style_context,
-            )
-
             try:
                 style_preset = parse_trading_style(msg.get("style_preset", DEFAULT_TRADING_STYLE))
             except ValueError:
                 await websocket.send_json({"type": "error", "message": "无效的交易风格设置"})
+                continue
+            try:
+                raw_page_context = msg.get("page_context")
+                page_context = (
+                    AgentPageContext.model_validate(raw_page_context)
+                    if raw_page_context is not None
+                    else None
+                )
+            except ValidationError:
+                await websocket.send_json({"type": "error", "message": "无效的页面上下文"})
                 continue
             try:
                 session_memory = memory.for_session(session_id)
@@ -221,6 +237,13 @@ async def ws_agent(websocket: WebSocket) -> None:
             drain_task = asyncio.create_task(_drain_stream())
             try:
                 # agent.chat 在 worker 线程跑，三个回调实时推事件
+                addenda = [trading_style_context(style_preset)]
+                if page_addendum := page_context_addendum(
+                    page_context,
+                    get_portfolio_store(),
+                    get_watchlist_store(),
+                ):
+                    addenda.append(page_addendum)
                 resp = await asyncio.to_thread(
                     agent.chat,
                     user_message,
@@ -230,7 +253,7 @@ async def ws_agent(websocket: WebSocket) -> None:
                     on_tool_call,
                     on_tool_result,
                     on_chunk,
-                    system_addendum=trading_style_context(style_preset),
+                    system_addendum="\n\n".join(addenda),
                 )
             finally:
                 # 通知 drain 结束 + 等 drain 把剩余事件发完

@@ -16,6 +16,10 @@ const savingCode = ref('')
 const weightDrafts = reactive<Record<string, string>>({})
 const basketId = computed(() => String(route.params.id || ''))
 
+function stockLink(code: string) {
+  return { name: 'detail', params: { code }, query: { basket: basketId.value } }
+}
+
 function formatTime(value: string | null): string {
   if (!value) return '暂无行情时间'
   return new Intl.DateTimeFormat('zh-CN', {
@@ -108,7 +112,7 @@ watch(basketId, load, { immediate: true })
             <p class="text-xs text-muted-foreground">领涨</p>
             <RouterLink
               v-if="basket.leader"
-              :to="`/detail/${basket.leader.code}`"
+              :to="stockLink(basket.leader.code)"
               class="mt-1 flex items-center justify-between rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <span class="truncate">{{ basket.leader.name }}</span>
@@ -119,7 +123,7 @@ watch(basketId, load, { immediate: true })
             <p class="text-xs text-muted-foreground">领跌</p>
             <RouterLink
               v-if="basket.laggard"
-              :to="`/detail/${basket.laggard.code}`"
+              :to="stockLink(basket.laggard.code)"
               class="mt-1 flex items-center justify-between rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <span class="truncate">{{ basket.laggard.name }}</span>
@@ -144,7 +148,7 @@ watch(basketId, load, { immediate: true })
           <li v-for="member in basket.members" :key="member.code" class="flex items-center justify-between gap-3 py-2.5">
             <div class="min-w-0">
               <RouterLink
-                :to="`/detail/${member.code}`"
+                :to="stockLink(member.code)"
                 class="font-medium hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >{{ member.name || member.code }}</RouterLink>
               <span class="ml-1 text-xs text-muted-foreground">{{ member.code }}</span>

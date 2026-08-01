@@ -151,6 +151,16 @@ async function mockApi(page: Page) {
     }
     if (path === '/api/quotes/600519') return json(quote)
     if (path === '/api/quotes/000858') return json(secondQuote)
+    if (path === '/api/stocks/600519/decision-context') return json({
+      code: '600519',
+      holding: {
+        position_count: 1, shares: 100, avg_cost: '1500.0000', total_cost: '150000',
+      },
+      baskets: [
+        { id: 'theme:semiconductor', name: '半导体', kind: 'theme', reason: '观察国产替代' },
+      ],
+    })
+    if (path === '/api/stocks/000858/decision-context') return json({ code: '000858', holding: null, baskets: [] })
     if (path === '/api/quotes/600519/bars') return json([])
     if (path === '/api/quotes/000858/bars') return json([])
     if (path.includes('/money_flow/')) return json({ items: [], cumulative: { main_net: '0', super_net: '0', big_net: '0', medium_net: '0', small_net: '0' } })
@@ -227,8 +237,8 @@ test('mobile Today leads to detail, add-watchlist, and ask-AI loop', async ({ pa
   await page.getByRole('button', { name: '🤖 问问 AI' }).click()
 
   await expect(page).toHaveURL(/#\/chat/)
-  await expect(page.getByText('分析一下贵州茅台（600519）')).toBeVisible()
-  await expect(page.getByText('茅台基本面稳健，注意估值与仓位。')).toBeVisible()
+  await expect(page.getByText('正在结合：贵州茅台 · 概览')).toBeVisible()
+  await expect(page.getByText('结合我当前看的信息，这只股票现在最需要关注什么？')).toBeVisible()
 })
 
 test('normal Today bootstrap uses auth plus overview without setup status', async ({ page }) => {
@@ -265,6 +275,20 @@ test('server-owned basket preferences drive Follow and unified detail', async ({
   await page.getByRole('spinbutton', { name: '贵州茅台权重' }).fill('25')
   await page.getByRole('listitem').filter({ hasText: '贵州茅台' }).getByRole('button', { name: '保存' }).click()
   await expect(page.getByRole('spinbutton', { name: '贵州茅台权重' })).toHaveValue('25')
+})
+
+test('basket to stock preserves source, holding context, and structured AI context', async ({ page }) => {
+  await page.goto('/#/baskets/theme%3Asemiconductor')
+  await page.getByRole('link', { name: '贵州茅台' }).last().click()
+
+  await expect(page).toHaveURL(/detail\/600519\?basket=theme:semiconductor/)
+  await expect(page.getByText('当前持仓')).toBeVisible()
+  await expect(page.getByText('100 股')).toBeVisible()
+  await expect(page.getByRole('link', { name: '来自 半导体' })).toBeVisible()
+
+  await page.getByRole('tab', { name: '资金' }).click()
+  await page.getByRole('button', { name: '🤖 问问 AI' }).click()
+  await expect(page.getByText('正在结合：贵州茅台 · 资金')).toBeVisible()
 })
 
 test('detail tabs lazy-load, deep-link, and reload for a new stock', async ({ page }) => {

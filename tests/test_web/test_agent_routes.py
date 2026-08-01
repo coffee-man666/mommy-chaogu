@@ -185,6 +185,45 @@ class TestChatEndpoint:
         )
         assert invalid.status_code == 422
 
+    def test_validated_page_context_is_added_to_system_context(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        agent = _FakeAgent(_FakeChatResp(text="ok", tool_names=[], rounds=1))
+        client.app.dependency_overrides[get_agent_service] = lambda: agent
+        client.app.dependency_overrides[get_agent_memory] = lambda: _FakeChatMemory()
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.agent.page_context_addendum",
+            lambda context, _portfolio, _watchlist: (
+                f"<page_context>{context.stock_code}:{context.tab}</page_context>"
+            ),
+        )
+
+        response = client.post(
+            "/api/agent/chat",
+            json={
+                "message": "接着分析",
+                "page_context": {
+                    "surface": "stock",
+                    "stock_code": "600519",
+                    "tab": "flow",
+                },
+            },
+        )
+
+        assert response.status_code == 200
+        assert "<page_context>600519:flow</page_context>" in agent.last_kwargs["system_addendum"]
+
+        invalid = client.post(
+            "/api/agent/chat",
+            json={
+                "message": "test",
+                "page_context": {"surface": "stock", "stock_code": "prompt", "tab": "flow"},
+            },
+        )
+        assert invalid.status_code == 422
+
 
 # ---------------------------------------------------------------------------
 # GET /api/agent/history
