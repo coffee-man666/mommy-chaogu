@@ -656,16 +656,18 @@ The 2026-08-01 working tree completes the next bounded work package from the exe
 - Playwright: **11 passed, 1 opt-in screenshot test skipped**.
 - Manual semantic snapshots and visual review: **Today desktop, Today 390×844, and Follow desktop passed**.
 
-### Deliberately still open
+### Open after work package 3
+
+This list records the boundary at the time of commit `66f467e`. The stock-context item was subsequently resolved by `30d9bc8` and is reviewed in section 13.
 
 - The old `/themes` routes and detailed industry-chain page remain for compatibility; consolidation can happen after the unified basket page reaches feature parity for specialist metadata.
 - Trading style is still browser-selected and only Agent-aware. A shared server preference schema must drive Today explanations, Agent emphasis, backtest defaults, and Weixin selection together.
-- Stock detail still needs holding profit/loss context and automatic page context for Agent questions.
+- Stock holding profit/loss and automatic Agent page context: **resolved by `30d9bc8`; see section 13**.
 - Prediction evidence/freshness, Agent attachments, and one-click stock backtest entry remain P2 work.
 
 ## 13. Work package 4 review — stock decision and Agent page context
 
-The next implementation after commit `66f467e` closes the stock-context portion of P2.
+Commit `30d9bc8` closes the stock-context portion of P2 after the unified-basket work in `66f467e`.
 
 ### Implemented
 
@@ -686,6 +688,7 @@ The next implementation after commit `66f467e` closes the stock-context portion 
 
 ### Verification
 
+- Ruff format and lint over 329 files: passed.
 - Full offline Python suite: 1,771 passed, 13 deselected; 74.82% coverage.
 - Strict mypy over 179 source files: passed.
 - Vue typecheck and 57 Vitest tests: passed.
