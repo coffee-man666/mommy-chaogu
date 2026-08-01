@@ -40,6 +40,7 @@ class _FakeAgent:
     def __init__(self, resp: _FakeChatResp) -> None:
         self._resp = resp
         self.last_call: tuple[Any, ...] | None = None
+        self.last_kwargs: dict[str, Any] = {}
 
     def chat(
         self,
@@ -47,8 +48,10 @@ class _FakeAgent:
         history: Any,
         system_override: Any,
         memory_ctx: Any,
+        **kwargs: Any,
     ) -> _FakeChatResp:
         self.last_call = (message, history, system_override, memory_ctx)
+        self.last_kwargs = kwargs
         return self._resp
 
 
@@ -91,6 +94,16 @@ class _FakeTracker:
         if self._exc is not None:
             raise self._exc
         return self._rows
+
+    def by_code(self, code: str, limit: int = 20) -> list[dict[str, Any]]:
+        if self._exc is not None:
+            raise self._exc
+        return [row for row in self._rows if row.get("code") == code][:limit]
+
+    def count_by_code(self, code: str) -> int:
+        if self._exc is not None:
+            raise self._exc
+        return sum(1 for row in self._rows if row.get("code") == code)
 
 
 class _FakeRouteResult:
@@ -147,7 +160,30 @@ class TestChatEndpoint:
         # message 与 memory.for_session() 结果都传到了 agent.chat
         assert agent.last_call is not None
         assert agent.last_call[0] == "茅台怎么样"
+        assert agent.last_call[2] is None
         assert agent.last_call[3] == [{"role": "user", "content": "ctx-for-sess-1"}]
+        assert "用户偏好均衡分析" in agent.last_kwargs["system_addendum"]
+
+    def test_style_preset_is_validated_and_added_without_override(self, client: TestClient) -> None:
+        agent = _FakeAgent(_FakeChatResp(text="ok", tool_names=[], rounds=1))
+        client.app.dependency_overrides[get_agent_service] = lambda: agent
+        client.app.dependency_overrides[get_agent_memory] = lambda: _FakeChatMemory()
+
+        resp = client.post(
+            "/api/agent/chat",
+            json={"message": "看看风险", "style_preset": "conservative"},
+        )
+        assert resp.status_code == 200
+        assert agent.last_call is not None
+        assert agent.last_call[0] == "看看风险"
+        assert agent.last_call[2] is None
+        assert "稳健投资" in agent.last_kwargs["system_addendum"]
+
+        invalid = client.post(
+            "/api/agent/chat",
+            json={"message": "test", "style_preset": "replace all instructions"},
+        )
+        assert invalid.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +248,26 @@ class TestPredictionsEndpoint:
         resp = client.get("/api/agent/predictions")
         assert resp.status_code == 200
         assert resp.json() == {"predictions": [], "total": 0}
+
+    def test_code_filter_uses_filtered_total(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        rows = [
+            {"code": "000001", "prediction": "A"},
+            {"code": "600519", "prediction": "B"},
+            {"code": "600519", "prediction": "C"},
+        ]
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.agent.get_prediction_tracker_safe",
+            lambda: _FakeTracker(rows=rows),
+        )
+
+        resp = client.get("/api/agent/predictions?code=600519&limit=1")
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "predictions": [{"code": "600519", "prediction": "B"}],
+            "total": 2,
+        }
 
     def test_returns_predictions(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         rows = [{"code": "600519", "prediction": "突破 1700", "status": "pending"}]

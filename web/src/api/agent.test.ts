@@ -53,8 +53,26 @@ describe('agent websocket lifecycle', () => {
     expect(JSON.parse(socket.send.mock.calls[0][0])).toMatchObject({
       message: '分析 600519',
       session_id: 'web-test-session',
+      style_preset: 'balanced',
     })
     expect(onError).not.toHaveBeenCalled()
+    client.close()
+  })
+
+  it('sends only the validated style preset identifier', async () => {
+    const client = agentStream(vi.fn(), vi.fn(), vi.fn(), vi.fn())
+    client.send('分析风险', undefined, 'conservative')
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+
+    expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
+      message: '分析风险',
+      session_id: 'web-test-session',
+      style_preset: 'conservative',
+    })
     client.close()
   })
 

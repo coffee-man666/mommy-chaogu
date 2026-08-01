@@ -14,6 +14,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -171,14 +172,26 @@ def create_app(
         else:
             _log.info("未配置 Server酱 SendKey，跳过推送（仅 Web UI）")
 
+        from mommy_chaogu.channels.notify import (
+            WeixinNotifyDeduper,
+            send_signal_notifications,
+        )
+
+        weixin_dedup_path = (db_path or PORTFOLIO_DB).parent / "weixin_notifications.json"
+        weixin_sender = partial(
+            send_signal_notifications,
+            web_base_url=web_base_url,
+            deduper=WeixinNotifyDeduper(weixin_dedup_path),
+        )
+
         service = BackgroundService(
             adapter=adapter,
             watchlist=watchlist_store,
             alerter=alerter,
             poll_interval_seconds=poll_interval_seconds,
             notifier=notifier,
+            weixin_sender=weixin_sender,
         )
-        service._web_base_url = web_base_url  # type: ignore[attr-defined]
         set_service(service)
         await service.start()
         try:

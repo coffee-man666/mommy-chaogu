@@ -80,6 +80,48 @@ class TestBackgroundBroadcast:
         live.send_json.assert_awaited_once()
         assert service._signal_subscribers == {live}
 
+    def test_weixin_queue_is_bounded_and_keeps_latest_state(self) -> None:
+        async def scenario() -> None:
+            service = BackgroundService(
+                adapter=MagicMock(),
+                watchlist=MagicMock(),
+                alerter=MagicMock(),
+                weixin_sender=MagicMock(),
+            )
+            service._weixin_queue = asyncio.Queue(maxsize=1)
+            first = [make_signal()]
+            second: list[object] = []
+            service._enqueue_weixin(first)
+            service._enqueue_weixin(second)
+            assert await service._weixin_queue.get() == second
+
+        asyncio.run(scenario())
+
+    def test_tick_broadcasts_before_notification_enqueue(self) -> None:
+        async def scenario() -> None:
+            service = _service()
+            snapshot = make_snapshot()
+            signals = [make_signal()]
+            service.watchlist.get_all_codes.return_value = ["600519"]
+            service.monitor.snapshot_now = MagicMock(return_value=snapshot)
+            service.alerter.evaluate.return_value = signals
+            service._quote_subscribers = {MagicMock()}
+            service._signal_subscribers = {MagicMock()}
+            order: list[str] = []
+            service._broadcast_quotes = AsyncMock(
+                side_effect=lambda _snapshot: order.append("quotes")
+            )
+            service._broadcast_signals = AsyncMock(
+                side_effect=lambda _signals: order.append("signals")
+            )
+            service._enqueue_weixin = MagicMock(side_effect=lambda _signals: order.append("weixin"))
+
+            await service._tick()
+
+            assert order == ["quotes", "signals", "weixin"]
+
+        asyncio.run(scenario())
+
 
 class TestAgentWebSocket:
     def test_invalid_json_and_unconfigured_agent(
@@ -93,6 +135,18 @@ class TestAgentWebSocket:
         with client.websocket_connect("/ws/agent") as ws:
             ws.send_text("not-json")
             assert ws.receive_json() == {"type": "error", "message": "无效的 JSON"}
+
+            ws.send_json(["not", "an", "object"])
+            assert ws.receive_json() == {"type": "error", "message": "无效的消息格式"}
+
+            ws.send_json({"message": {"unexpected": "object"}})
+            assert ws.receive_json() == {"type": "error", "message": "无效的消息格式"}
+
+            ws.send_json({"message": "hello", "style_preset": "arbitrary prompt"})
+            assert ws.receive_json() == {
+                "type": "error",
+                "message": "无效的交易风格设置",
+            }
 
             ws.send_json({"message": "hello"})
             assert ws.receive_json() == {
@@ -142,6 +196,10 @@ class TestAgentWebSocket:
 
         memory.for_session.assert_called_once_with("web-default")
         agent.chat.assert_called_once()
+        call = agent.chat.call_args
+        assert call.args[0] == "hello"
+        assert call.args[2] is None
+        assert "用户偏好均衡分析" in call.kwargs["system_addendum"]
 
     def test_streams_tool_call_events(self, client: TestClient, monkeypatch: object) -> None:
         """验证 on_tool_call/on_tool_result 回调被桥接成 tool_call_started/finished WS 帧。"""

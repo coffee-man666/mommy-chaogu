@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
 from mommy_chaogu.agent.service import SUPPORTED_PROVIDERS, AgentService
 from mommy_chaogu.agent.tools import ToolContext
 
@@ -102,6 +103,24 @@ class TestAgentServiceInit:
 
 class TestAgentLoop:
     """测试 agent 的 tool-calling 循环逻辑。"""
+
+    @patch("openai.OpenAI")
+    def test_system_addendum_preserves_base_prompt(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.choices[0].message.content = "完成"
+
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.return_value = mock_response
+        svc.chat("原始问题", system_addendum="<trading_preference>稳健</trading_preference>")
+
+        messages = svc._client.chat.completions.create.call_args.kwargs["messages"]
+        assert messages[0]["content"].startswith(SYSTEM_PROMPT[:80])
+        assert "<trading_preference>稳健</trading_preference>" in messages[0]["content"]
+        assert messages[-1] == {"role": "user", "content": "原始问题"}
 
     @patch("openai.OpenAI")
     def test_no_tool_calls_returns_text(

@@ -97,9 +97,7 @@ def _build_watchlist(
                 price=row.quote.price,
                 change_pct=row.quote.change_pct,
                 group=row.group_name,
-                data_age_seconds=int(
-                    (_utcnow() - row.quote.timestamp).total_seconds()
-                )
+                data_age_seconds=int((_utcnow() - row.quote.timestamp).total_seconds())
                 if row.quote.timestamp
                 else 0,
             )
@@ -169,9 +167,7 @@ def _build_portfolio(
     codes = list({p.code for p in positions})
     prices: dict[str, Decimal] = {}
     if snapshot_prices:
-        prices.update(
-            {c: p for c, p in snapshot_prices.items() if c in codes}
-        )
+        prices.update({c: p for c, p in snapshot_prices.items() if c in codes})
     missing = [c for c in codes if c not in prices]
     if missing:
         try:
@@ -299,8 +295,15 @@ def get_overview(
     except RuntimeError:
         service = None
 
-    # 指数（网络请求）— 已有内部隔离
-    indexes_block = _fetch_indexes()
+    # 指数（网络请求 + 映射）
+    try:
+        indexes_block = _fetch_indexes()
+    except Exception:
+        _log.exception("overview indexes block failed")
+        indexes_block = OverviewIndexesBlock(
+            indexes=[],
+            block=BlockStatus(status="unavailable", message="指数数据获取失败"),
+        )
 
     # 自选股（内存缓存）
     try:
@@ -308,7 +311,11 @@ def get_overview(
     except Exception:
         _log.exception("overview watchlist block failed")
         watchlist_block = OverviewWatchlistBlock(
-            total=0, n_up=0, n_down=0, n_flat=0, items=[],
+            total=0,
+            n_up=0,
+            n_down=0,
+            n_flat=0,
+            items=[],
             block=BlockStatus(status="unavailable", message="自选股数据加载失败"),
         )
 
@@ -316,9 +323,7 @@ def get_overview(
     snap_prices: dict[str, Decimal] | None = None
     try:
         if service and service.latest_snapshot is not None:
-            snap_prices = {
-                row.entry.code: row.quote.price for row in service.latest_snapshot.rows
-            }
+            snap_prices = {row.entry.code: row.quote.price for row in service.latest_snapshot.rows}
     except Exception:
         snap_prices = None
 
@@ -328,12 +333,20 @@ def get_overview(
     except Exception:
         _log.exception("overview portfolio block failed")
         portfolio_block = OverviewPortfolioBlock(
-            n_positions=0, alerts=[],
+            n_positions=0,
+            alerts=[],
             block=BlockStatus(status="unavailable", message="持仓数据加载失败"),
         )
 
-    # 主题（静态 JSON）— 已有内部隔离
-    themes_block = _build_themes()
+    # 主题（静态 JSON + 映射）
+    try:
+        themes_block = _build_themes()
+    except Exception:
+        _log.exception("overview themes block failed")
+        themes_block = OverviewThemesBlock(
+            items=[],
+            block=BlockStatus(status="unavailable", message="主题数据加载失败"),
+        )
 
     # 信号（内存缓存）
     try:

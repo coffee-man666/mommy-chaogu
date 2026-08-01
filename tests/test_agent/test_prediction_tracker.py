@@ -226,6 +226,32 @@ class TestPredictionUpdateStatus:
         assert (verified_at - before).total_seconds() >= -1
 
 
+class TestPredictionByCode:
+    def test_filter_precedes_limit_and_total_is_untruncated(
+        self, tracker: PredictionTracker
+    ) -> None:
+        tracker.create(
+            code="600519",
+            name="贵州茅台",
+            prediction="较早的目标记录",
+            direction="up",
+            timeframe="5d",
+        )
+        for index in range(3):
+            tracker.create(
+                code=f"00000{index}",
+                name=f"样本 {index}",
+                prediction="更新的其他股票记录",
+                direction="flat",
+                timeframe="5d",
+            )
+
+        assert tracker.all(limit=2)[0]["code"] != "600519"
+        rows = tracker.by_code("600519", limit=1)
+        assert [row["prediction"] for row in rows] == ["较早的目标记录"]
+        assert tracker.count_by_code("600519") == 1
+
+
 class TestPredictionIncrementAttempts:
     def test_increment_attempts(self, tracker: PredictionTracker) -> None:
         """increment_attempts 递增 verify_attempts。"""

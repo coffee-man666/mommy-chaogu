@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { RouterLink } from 'vue-router'
 import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -23,7 +22,6 @@ interface WatchlistGroup {
   n_stocks: number
 }
 
-const router = useRouter()
 const themes = ref<Theme[]>([])
 const groups = ref<WatchlistGroup[]>([])
 const loading = ref(true)
@@ -113,7 +111,7 @@ onMounted(() => {
           <Card
             v-for="t in followedThemes"
             :key="t.id"
-            class="transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-md"
+            class="relative transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-md focus-within:border-primary/50 focus-within:shadow-md"
           >
             <CardContent class="p-4">
               <div class="flex items-start gap-3">
@@ -122,12 +120,12 @@ onMounted(() => {
                   <div class="flex items-center justify-between">
                     <RouterLink
                       :to="`/themes/${t.id}`"
-                      class="text-sm font-bold truncate hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      class="after:absolute after:inset-0 text-sm font-bold truncate hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       {{ t.name }}
                     </RouterLink>
                     <button
-                      class="ml-2 shrink-0 rounded px-2 py-0.5 text-xs text-orange-500 transition-colors hover:bg-orange-50"
+                      class="relative z-10 ml-2 shrink-0 rounded px-2 py-0.5 text-xs text-orange-500 transition-colors hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       @click="toggleFollow(t.id)"
                     >
                       取消关注
@@ -150,7 +148,7 @@ onMounted(() => {
             v-for="g in groups"
             :key="g.name"
             to="/"
-            class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+          class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <span class="font-medium">{{ g.name }}</span>
             <span class="text-xs text-muted-foreground">{{ g.n_stocks }}只</span>
@@ -165,7 +163,7 @@ onMounted(() => {
           <Card
             v-for="t in availableThemes"
             :key="t.id"
-            class="opacity-75 transition-[opacity,border-color] hover:opacity-100 hover:border-primary/50"
+            class="relative opacity-75 transition-[opacity,border-color] hover:opacity-100 hover:border-primary/50 focus-within:opacity-100 focus-within:border-primary/50"
           >
             <CardContent class="p-4">
               <div class="flex items-start gap-3">
@@ -174,12 +172,12 @@ onMounted(() => {
                   <div class="flex items-center justify-between">
                     <RouterLink
                       :to="`/themes/${t.id}`"
-                      class="text-sm font-bold truncate hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      class="after:absolute after:inset-0 text-sm font-bold truncate hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       {{ t.name }}
                     </RouterLink>
                     <button
-                      class="ml-2 shrink-0 rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                      class="relative z-10 ml-2 shrink-0 rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       @click="toggleFollow(t.id)"
                     >
                       + 关注

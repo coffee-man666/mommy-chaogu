@@ -369,6 +369,15 @@ class PredictionTracker(EngineOwner):
             ).all()
             return [_row_to_dict(r) for r in rows]
 
+    def count_by_code(self, code: str) -> int:
+        """Return the untruncated number of predictions for one stock code."""
+        with self.session() as s:
+            value = s.execute(
+                text("SELECT COUNT(*) FROM predictions WHERE code = :code"),
+                {"code": code},
+            ).scalar_one()
+            return int(value)
+
     def cleanup_old(self, days: int = 90) -> int:
         """删除 *days* 天前已验证/过期的预测，返回删除条数。
 

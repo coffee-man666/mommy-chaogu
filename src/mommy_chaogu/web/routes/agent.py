@@ -23,6 +23,11 @@ from mommy_chaogu.web.deps import (
     get_portfolio_store,
     get_watchlist_store,
 )
+from mommy_chaogu.web.trading_style import (
+    DEFAULT_TRADING_STYLE,
+    TradingStylePreset,
+    trading_style_context,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -47,7 +52,7 @@ class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] | None = None
     session_id: str = Field(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
-    style_hint: str = Field(default="", max_length=256)
+    style_preset: TradingStylePreset = DEFAULT_TRADING_STYLE
 
 
 class ChatResponse(BaseModel):
@@ -58,7 +63,6 @@ class ChatResponse(BaseModel):
 
 class RouteRequest(BaseModel):
     message: str
-    style_hint: str = Field(default="", max_length=256)
 
 
 class RouteResponse(BaseModel):
@@ -163,8 +167,9 @@ async def chat(
         agent.chat,
         req.message,
         None,  # history 不单独传，由 memory 提供上下文
-        req.style_hint or None,  # system_override — 交易风格提示
+        None,  # system_override
         memory.for_session(req.session_id),
+        system_addendum=trading_style_context(req.style_preset),
     )
 
     return ChatResponse(
@@ -204,8 +209,13 @@ async def get_predictions(
     if tracker is None:
         return {"predictions": [], "total": 0}
     try:
-        rows = tracker.by_code(code, limit=limit) if code else tracker.all(limit=limit)
-        return {"predictions": rows, "total": len(rows)}
+        if code:
+            rows = tracker.by_code(code, limit=limit)
+            total = tracker.count_by_code(code)
+        else:
+            rows = tracker.all(limit=limit)
+            total = len(rows)
+        return {"predictions": rows, "total": total}
     except Exception:
         return {"predictions": [], "total": 0}
 

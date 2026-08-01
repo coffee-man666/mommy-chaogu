@@ -37,7 +37,7 @@ const visibleThemes = computed(() => {
   if (!data.value) return []
   const themes = data.value.themes.items
   if (followedIds.value.size === 0) return themes.slice(0, 4) // 未配置关注时默认显示前4
-  return themes.filter(t => followedIds.value.has(t.id))
+  return themes.filter(t => followedIds.value.has(t.id)).slice(0, 4)
 })
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -58,14 +58,6 @@ async function loadData(silent = false) {
     loading.value = false
     refreshing.value = false
   }
-}
-
-function goStock(code: string) {
-  router.push(`/detail/${code}`)
-}
-
-function goAI() {
-  router.push('/chat')
 }
 
 function sendAI() {
@@ -101,17 +93,17 @@ onUnmounted(() => {
         <!-- Mobile: My entry via avatar -->
         <RouterLink
           to="/my"
-          class="flex size-8 items-center justify-center rounded-full bg-accent text-muted-foreground transition-colors hover:text-foreground md:hidden"
+          class="flex size-8 items-center justify-center rounded-full bg-accent text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:hidden"
           aria-label="我的设置"
         >
-          <UserRound class="size-4" />
+          <UserRound class="size-4" aria-hidden="true" />
         </RouterLink>
         <button
-          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
           :disabled="refreshing"
           @click="loadData()"
         >
-          <RefreshCw class="size-4" :class="{ 'animate-spin': refreshing }" />
+          <RefreshCw class="size-4" :class="{ 'animate-spin': refreshing }" aria-hidden="true" />
           刷新
         </button>
       </div>
@@ -159,10 +151,10 @@ onUnmounted(() => {
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-sm font-semibold text-muted-foreground">关注主题</h2>
           <RouterLink
-            class="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            class="flex items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             to="/follow"
           >
-            <Star class="size-3" />
+            <Star class="size-3" aria-hidden="true" />
             管理
           </RouterLink>
         </div>
@@ -171,11 +163,11 @@ onUnmounted(() => {
             v-for="theme in visibleThemes"
             :key="theme.id"
             :to="`/themes/${theme.id}`"
-            class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+            class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <span class="font-medium">{{ theme.name }}</span>
             <span class="text-xs text-muted-foreground">{{ theme.total_stocks }}只</span>
-            <ChevronRight class="size-3 text-muted-foreground" />
+            <ChevronRight class="size-3 text-muted-foreground" aria-hidden="true" />
           </RouterLink>
         </div>
       </section>
@@ -257,7 +249,7 @@ onUnmounted(() => {
       <!-- 4. 持仓提醒 -->
       <section class="rounded-xl border bg-card p-4">
         <div class="mb-3 flex items-center gap-2">
-          <Wallet class="size-4 text-muted-foreground" />
+          <Wallet class="size-4 text-muted-foreground" aria-hidden="true" />
           <h2 class="text-sm font-semibold">持仓</h2>
           <span v-if="data.portfolio.n_positions > 0" class="text-xs text-muted-foreground">
             {{ data.portfolio.n_positions }}只
@@ -281,6 +273,7 @@ onUnmounted(() => {
               <AlertTriangle
                 class="size-4"
                 :style="{ color: changeColor(alert.unrealized_pnl_pct ?? '0') }"
+                aria-hidden="true"
               />
               <div>
                 <span class="text-sm font-medium">{{ alert.name || alert.code }}</span>
@@ -317,7 +310,7 @@ onUnmounted(() => {
           class="flex w-full items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <div class="flex items-center gap-2">
-            <TrendingUp class="size-4 text-muted-foreground" />
+            <TrendingUp class="size-4 text-muted-foreground" aria-hidden="true" />
             <span class="text-sm font-medium">最近信号</span>
             <span class="text-xs text-muted-foreground">{{ data.signals.summary.n_recent }}条</span>
           </div>
@@ -328,7 +321,7 @@ onUnmounted(() => {
             <span v-if="data.signals.summary.n_warning > 0" class="rounded bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-700">
               {{ data.signals.summary.n_warning }}警告
             </span>
-            <ChevronRight class="size-4 text-muted-foreground" />
+            <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
           </div>
         </RouterLink>
         <p v-if="data.signals.summary.latest_title" class="mt-2 text-xs text-muted-foreground">
@@ -339,7 +332,7 @@ onUnmounted(() => {
       <!-- 6. 问 AI 输入条 -->
       <section class="sticky bottom-20 z-30 md:bottom-4">
         <form
-          class="flex items-center gap-2 rounded-xl border bg-card p-2 shadow-lg"
+          class="flex items-center gap-2 rounded-xl border bg-card p-2 shadow-lg focus-within:ring-2 focus-within:ring-primary/40"
           @submit.prevent="sendAI"
         >
           <input
@@ -355,7 +348,7 @@ onUnmounted(() => {
             :disabled="!aiInput.trim()"
             aria-label="发送"
           >
-            <Send class="size-4" />
+            <Send class="size-4" aria-hidden="true" />
           </button>
         </form>
       </section>

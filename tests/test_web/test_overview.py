@@ -167,9 +167,7 @@ class TestOverviewPartialFailure:
         def _boom() -> list[object]:
             raise RuntimeError("network error")
 
-        monkeypatch.setattr(
-            "mommy_chaogu.web.routes.overview.fetch_indexes", _boom
-        )
+        monkeypatch.setattr("mommy_chaogu.web.routes.overview.fetch_indexes", _boom)
         data = client.get("/api/overview").json()
         assert data["indexes"]["block"]["status"] == "unavailable"
         assert data["watchlist"]["block"]["status"] == "ok"
@@ -189,9 +187,7 @@ class TestOverviewPartialFailure:
 class TestOverviewThemes:
     """主题区块测试。"""
 
-    def test_themes_loaded(
-        self, client: pytest.fixture, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_themes_loaded(self, client: pytest.fixture, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_indexes(monkeypatch)
         data = client.get("/api/overview").json()
         themes = data["themes"]
@@ -202,9 +198,7 @@ class TestOverviewThemes:
 class TestOverviewSignals:
     """信号区块测试。"""
 
-    def test_signals_present(
-        self, client: pytest.fixture, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_signals_present(self, client: pytest.fixture, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_indexes(monkeypatch)
         data = client.get("/api/overview").json()
         sig = data["signals"]
@@ -264,13 +258,37 @@ class TestOverviewBlockFailureIsolation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """信号构建抛异常 → unavailable，但其他区块正常。"""
+
         def _boom(service: object | None = None) -> object:
             raise RuntimeError("signal read error")
 
-        monkeypatch.setattr(
-            "mommy_chaogu.web.routes.overview._build_signals", _boom
-        )
+        monkeypatch.setattr("mommy_chaogu.web.routes.overview._build_signals", _boom)
         _patch_indexes(monkeypatch)
         data = client.get("/api/overview").json()
         assert data["signals"]["block"]["status"] == "unavailable"
         assert data["indexes"]["block"]["status"] == "ok"
+
+    def test_malformed_index_row_isolated(
+        self, client: pytest.fixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.overview.fetch_indexes",
+            lambda: [object()],
+        )
+
+        response = client.get("/api/overview")
+        assert response.status_code == 200
+        assert response.json()["indexes"]["block"]["status"] == "unavailable"
+
+    def test_malformed_theme_row_isolated(
+        self, client: pytest.fixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_indexes(monkeypatch)
+        monkeypatch.setattr(
+            "mommy_chaogu.services.theme_service.ThemeService.list_themes",
+            lambda _self: [{"id": "missing-name"}],
+        )
+
+        response = client.get("/api/overview")
+        assert response.status_code == 200
+        assert response.json()["themes"]["block"]["status"] == "unavailable"

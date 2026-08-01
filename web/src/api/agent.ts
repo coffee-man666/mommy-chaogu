@@ -1,6 +1,7 @@
 // Agent API client
 import { apiGet, apiPost, authenticatedWsUrl, getChatSessionId } from './client'
 import type { AgentHistoryMessage } from './types'
+import type { StylePreset } from '@/lib/stylePresets'
 
 export interface ChatResponse {
   reply: string
@@ -38,26 +39,21 @@ export interface ToolResultEvent {
 export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
-  styleHint?: string,
+  stylePreset?: StylePreset,
 ): Promise<ChatResponse> {
   return apiPost<ChatResponse>('/api/agent/chat', {
     message,
     history,
     session_id: getChatSessionId(),
-    style_hint: styleHint || '',
+    style_preset: stylePreset || 'balanced',
   })
 }
 
 export async function agentRoute(
   message: string,
   signal?: AbortSignal,
-  styleHint?: string,
 ): Promise<RouteResponse> {
-  return apiPost<RouteResponse>(
-    '/api/agent/route',
-    { message, style_hint: styleHint || '' },
-    signal,
-  )
+  return apiPost<RouteResponse>('/api/agent/route', { message }, signal)
 }
 
 export function getAgentHistory(limit = 50): Promise<AgentHistoryMessage[]> {
@@ -77,7 +73,7 @@ export function agentStream(
   onToolCall: (e: ToolCallEvent) => void = () => {},
   onToolResult: (e: ToolResultEvent) => void = () => {},
 ): {
-  send: (message: string, history?: Array<{ role: string; content: string }>, styleHint?: string) => void
+  send: (message: string, history?: Array<{ role: string; content: string }>, stylePreset?: StylePreset) => void
   close: () => void
 } {
   // 连接建立前的待发消息缓冲
@@ -85,6 +81,7 @@ export function agentStream(
     message: string
     history?: Array<{ role: string; content: string }>
     session_id: string
+    style_preset: StylePreset
   } | null = null
   // 初始连接失败时，最多重试一次
   let retried = false
@@ -186,20 +183,19 @@ export function agentStream(
   void openSocket()
 
   return {
-    send(message: string, history?: Array<{ role: string; content: string }>, styleHint?: string) {
+    send(message: string, history?: Array<{ role: string; content: string }>, stylePreset: StylePreset = 'balanced') {
       if (closedByClient) {
         onError('WebSocket 连接已关闭，请重新发送消息')
         return
       }
-      const payload: Record<string, unknown> = { message, history, session_id: getChatSessionId() }
-      if (styleHint) payload.style_hint = styleHint
+      const payload = { message, history, session_id: getChatSessionId(), style_preset: stylePreset }
       if (ws?.readyState === WebSocket.OPEN) {
         turnInFlight = true
         ws.send(JSON.stringify(payload))
       } else if (ws == null || ws.readyState === WebSocket.CONNECTING) {
         // 连接还没建立，缓冲等 onopen
         turnInFlight = true
-        pendingMessage = { message, history, session_id: getChatSessionId(), style_hint: styleHint || '' } as any
+        pendingMessage = payload
       } else {
         // CLOSING / CLOSED
         onStateChange('disconnected')

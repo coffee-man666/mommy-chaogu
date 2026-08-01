@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -54,13 +55,14 @@ class BackgroundService:
         alerter: Alerter,
         poll_interval_seconds: float = 5.0,
         notifier: SignalNotifier | None = None,
+        weixin_sender: Callable[[list[Any]], int] | None = None,
     ) -> None:
         self.adapter = adapter
         self.watchlist = watchlist
         self.alerter = alerter
         self.poll_interval = poll_interval_seconds
         self.notifier = notifier
-        self._web_base_url = ""
+        self.weixin_sender = weixin_sender
 
         self.monitor = Monitor(
             store=watchlist,
@@ -68,6 +70,8 @@ class BackgroundService:
             alerter=alerter,
         )
         self._task: asyncio.Task[None] | None = None
+        self._weixin_task: asyncio.Task[None] | None = None
+        self._weixin_queue: asyncio.Queue[list[Any] | None] | None = None
         self._stop_event = asyncio.Event()
 
         # 最新数据（API 直接返回，不再走 adapter）
@@ -88,6 +92,11 @@ class BackgroundService:
         if self._task is not None:
             return
         self._stop_event.clear()
+        if self.weixin_sender is not None:
+            self._weixin_queue = asyncio.Queue(maxsize=1)
+            self._weixin_task = asyncio.create_task(
+                self._run_weixin_worker(), name="weixin-notification-worker"
+            )
         self._task = asyncio.create_task(self._run_loop(), name="poller-loop")
         _log.info("background poller started (interval=%.1fs)", self.poll_interval)
 
@@ -101,6 +110,17 @@ class BackgroundService:
         except TimeoutError:
             self._task.cancel()
         self._task = None
+        if self._weixin_queue is not None and self._weixin_task is not None:
+            if self._weixin_queue.full():
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    self._weixin_queue.get_nowait()
+            self._weixin_queue.put_nowait(None)
+            try:
+                await asyncio.wait_for(self._weixin_task, timeout=5.0)
+            except TimeoutError:
+                self._weixin_task.cancel()
+            self._weixin_task = None
+            self._weixin_queue = None
         _log.info("background poller stopped")
 
     # ---------- 主循环 ----------
@@ -143,23 +163,37 @@ class BackgroundService:
             except Exception:
                 _log.exception("notifier notify failed (signals broadcast will continue)")
 
-        # 微信通道主动推送（与 Server酱 互补）
-        # 使用 to_thread 避免阻塞事件循环（send_text 是同步 HTTP 请求）
-        if signals:
-            try:
-                from mommy_chaogu.channels import send_signal_notifications
-
-                await asyncio.to_thread(
-                    send_signal_notifications, signals, web_base_url=self._web_base_url
-                )
-            except Exception:
-                pass  # 微信通道未连接或发送失败，不阻塞主循环
-
         # 广播
         if self._quote_subscribers:
             await self._broadcast_quotes(snapshot)
         if signals and self._signal_subscribers:
             await self._broadcast_signals(signals)
+
+        # 微信通道走独立有界队列；即使无信号也入队，以清除已解除的活跃状态。
+        self._enqueue_weixin(signals)
+
+    def _enqueue_weixin(self, signals: list[Any]) -> None:
+        queue = self._weixin_queue
+        if queue is None:
+            return
+        if queue.full():
+            with contextlib.suppress(asyncio.QueueEmpty):
+                queue.get_nowait()
+        queue.put_nowait(list(signals))
+
+    async def _run_weixin_worker(self) -> None:
+        queue = self._weixin_queue
+        sender = self.weixin_sender
+        if queue is None or sender is None:
+            return
+        while True:
+            signals = await queue.get()
+            if signals is None:
+                return
+            try:
+                await asyncio.to_thread(sender, signals)
+            except Exception:
+                _log.exception("Weixin notification delivery failed")
 
     # ---------- WebSocket 订阅 ----------
 

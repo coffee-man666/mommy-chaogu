@@ -23,6 +23,46 @@ const quote = {
   data_age_seconds: 1,
 }
 
+const secondQuote = {
+  ...quote,
+  code: '000858',
+  name: '五粮液',
+  market: 'SZ',
+  price: '122.00',
+}
+
+const overview = {
+  indexes: {
+    indexes: [
+      { name: '上证指数', price: '3388.80', change_pct: '0.65' },
+      { name: '深证成指', price: '10600.10', change_pct: '-0.20' },
+      { name: '创业板指', price: '2200.30', change_pct: '0.42' },
+      { name: '沪深300', price: '3980.00', change_pct: '0.31' },
+    ],
+    block: { status: 'ok', as_of: '2026-07-25T15:00:00Z', message: null },
+  },
+  themes: {
+    items: [
+      { id: 'semiconductor', name: '半导体', description: '国产产业链', total_stocks: 12 },
+      { id: 'innovative_drug', name: '创新药', description: '创新药产业链', total_stocks: 8 },
+    ],
+    block: { status: 'ok', as_of: '2026-07-25T15:00:00Z', message: null },
+  },
+  watchlist: {
+    total: 1, n_up: 1, n_down: 0, n_flat: 0,
+    items: [{ code: '600519', name: '贵州茅台', price: '1680.50', change_pct: '1.85', group: '默认', data_age_seconds: 1 }],
+    block: { status: 'ok', as_of: '2026-07-25T15:00:00Z', message: null },
+  },
+  portfolio: {
+    n_positions: 0, total_unrealized_pnl: null, total_unrealized_pnl_pct: null, alerts: [],
+    block: { status: 'ok', as_of: '2026-07-25T15:00:00Z', message: '无持仓' },
+  },
+  signals: {
+    summary: null,
+    block: { status: 'ok', as_of: '2026-07-25T15:00:00Z', message: '暂无信号' },
+  },
+}
+
 async function mockApi(page: Page) {
   let watchlistAdded = false
   await page.route('**/api/**', async (route) => {
@@ -32,7 +72,7 @@ async function mockApi(page: Page) {
     const json = (body: unknown, status = 200) =>
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 
-    if (path === '/api/auth/status') return json({ mode: 'none', authenticated: true })
+    if (path === '/api/auth/status') return json({ mode: 'none', authenticated: true, llm_configured: true })
     if (path === '/api/setup/status') return json({
       auth_mode: 'none', llm_configured: true, provider: 'deepseek', model: 'deepseek-chat',
       weixin: { connected: false, online: false }, data_ok: true,
@@ -54,6 +94,15 @@ async function mockApi(page: Page) {
     if (path === '/api/agent/route' && request.method() === 'POST') {
       return json({ matched: true, workflow_id: 'stock_analysis', reply: '茅台基本面稳健，注意估值与仓位。', steps: [] })
     }
+    if (path === '/api/overview') return json(overview)
+    if (path === '/api/themes') return json({ items: overview.themes.items, total: 2 })
+    if (path === '/api/themes/semiconductor') return json({
+      ...overview.themes.items[0], subcategories: ['设备'], stocks: [{ code: '600519', name: '贵州茅台' }],
+    })
+    if (path === '/api/themes/semiconductor/quotes') return json({
+      items: [{ ...quote, subcategory: '设备', level: '设备', role: '', growth_text: '', growth_low: null, growth_high: null, core_driver: '', highlight: '' }],
+      total: 1,
+    })
     if (path === '/api/market/indexes') {
       return json([{ code: 'sh000001', name: '上证指数', price: '3388.80', change_pct: '0.65', prev_close: '3366.90' }])
     }
@@ -62,7 +111,9 @@ async function mockApi(page: Page) {
       return json({ timestamp: '2026-07-25T15:00:00Z', quotes: [quote], total_main_net: '120000000', n_codes: 1, n_up: 1, n_down: 0, n_flat: 0 })
     }
     if (path === '/api/quotes/600519') return json(quote)
+    if (path === '/api/quotes/000858') return json(secondQuote)
     if (path === '/api/quotes/600519/bars') return json([])
+    if (path === '/api/quotes/000858/bars') return json([])
     if (path.includes('/money_flow/')) return json({ items: [], cumulative: { main_net: '0', super_net: '0', big_net: '0', medium_net: '0', small_net: '0' } })
     if (path === '/api/signals/recent') return json([])
     if (path === '/api/watchlist/groups') return json([{ name: '默认', description: '', n_stocks: watchlistAdded ? 1 : 0 }])
@@ -83,7 +134,7 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page)
 })
 
-test('desktop starts with conversation and exposes four clear destinations', async ({ page }) => {
+test('desktop starts with Today and exposes the focused navigation', async ({ page }) => {
   await page.goto('/#/')
   await expect(page).toHaveTitle('妈妈炒股')
   await page.keyboard.press('Tab')
@@ -92,9 +143,14 @@ test('desktop starts with conversation and exposes four clear destinations', asy
   await expect(page.locator('#main-content')).toBeFocused()
 
   const navigation = page.getByRole('navigation', { name: '主导航' })
-  await expect(navigation.getByRole('link')).toHaveCount(5)
-  await expect(page.getByRole('heading', { name: '投研对话' })).toBeVisible()
-  await expect(page.getByRole('complementary', { name: '投研上下文' })).toBeVisible()
+  await expect(navigation.getByRole('link')).toHaveCount(6)
+  await expect(navigation.getByRole('link', { name: '今日' })).toBeVisible()
+  await expect(navigation.getByRole('link', { name: '关注' })).toBeVisible()
+  await expect(navigation.getByRole('link', { name: '持仓' })).toBeVisible()
+  await expect(navigation.getByRole('link', { name: '问AI' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今日' })).toBeVisible()
+  await expect(page.getByText('上证指数')).toBeVisible()
+  await expect(page.getByRole('link', { name: /贵州茅台/ }).first()).toBeVisible()
 
   await navigation.getByRole('link', { name: '我的' }).click()
   await expect(page).toHaveURL(/#\/my$/)
@@ -112,29 +168,69 @@ test('mobile four-tab navigation preserves a multiline chat draft', async ({ pag
 
   const mobileNav = page.getByRole('navigation', { name: '移动端主导航' })
   await expect(mobileNav.getByRole('link')).toHaveCount(4)
+  await mobileNav.getByRole('link', { name: '问AI' }).click()
   const prompt = page.getByRole('textbox', { name: '输入投研问题' })
   await prompt.fill('稍后继续分析\n比亚迪')
-  await mobileNav.getByRole('link', { name: '行情' }).click()
-  await mobileNav.getByRole('link', { name: '对话' }).click()
+  await mobileNav.getByRole('link', { name: '关注' }).click()
+  await mobileNav.getByRole('link', { name: '问AI' }).click()
   await expect(prompt).toHaveValue('稍后继续分析\n比亚迪')
 })
 
-test('mobile context leads to detail, add-watchlist, and ask-AI loop', async ({ page }) => {
+test('mobile Today leads to detail, add-watchlist, and ask-AI loop', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('/#/')
 
-  await page.getByRole('button', { name: '打开投研上下文' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page.getByRole('dialog').getByRole('link', { name: /贵州茅台/ }).click()
+  await page.getByRole('link', { name: /贵州茅台/ }).click()
   await expect(page).toHaveURL(/#\/detail\/600519$/)
 
   await page.getByRole('button', { name: '☆ 加自选' }).click()
   await expect(page.getByRole('button', { name: '★ 已在自选' })).toBeVisible()
   await page.getByRole('button', { name: '🤖 问问 AI' }).click()
 
-  await expect(page).toHaveURL(/#\/$/)
+  await expect(page).toHaveURL(/#\/chat/)
   await expect(page.getByText('分析一下贵州茅台（600519）')).toBeVisible()
   await expect(page.getByText('茅台基本面稳健，注意估值与仓位。')).toBeVisible()
+})
+
+test('normal Today bootstrap uses auth plus overview without setup status', async ({ page }) => {
+  const bootstrapPaths: string[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path === '/api/auth/status' || path === '/api/setup/status' || path === '/api/overview') {
+      bootstrapPaths.push(path)
+    }
+  })
+
+  await page.goto('/#/')
+  await expect(page.getByRole('heading', { name: '今日' })).toBeVisible()
+  expect(bootstrapPaths.filter((path) => path === '/api/auth/status')).toHaveLength(1)
+  expect(bootstrapPaths.filter((path) => path === '/api/overview')).toHaveLength(1)
+  expect(bootstrapPaths).not.toContain('/api/setup/status')
+})
+
+test('detail tabs lazy-load, deep-link, and reload for a new stock', async ({ page }) => {
+  const barsRequests: string[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.endsWith('/bars')) barsRequests.push(path)
+  })
+
+  await page.goto('/#/detail/600519')
+  await expect(page.getByRole('heading', { name: '贵州茅台' })).toBeVisible()
+  expect(barsRequests).toEqual([])
+
+  await page.getByRole('tab', { name: '走势' }).click()
+  await expect(page).toHaveURL(/detail\/600519\?tab=chart$/)
+  await expect.poll(() => barsRequests).toEqual(['/api/quotes/600519/bars'])
+
+  await page.getByRole('textbox', { name: '股票代码' }).fill('000858')
+  await page.getByRole('textbox', { name: '股票代码' }).press('Enter')
+  await expect(page).toHaveURL(/detail\/000858\?tab=chart$/)
+  await expect(page.getByRole('heading', { name: '五粮液' })).toBeVisible()
+  await expect.poll(() => barsRequests).toEqual([
+    '/api/quotes/600519/bars',
+    '/api/quotes/000858/bars',
+  ])
 })
 
 test('capture release screenshots', async ({ page }) => {
@@ -142,15 +238,14 @@ test('capture release screenshots', async ({ page }) => {
 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/#/')
-  await expect(page.getByRole('heading', { name: '投研对话' })).toBeVisible()
-  await page.screenshot({ path: '../docs/images/web-conversation.png', fullPage: true })
+  await expect(page.getByRole('heading', { name: '今日' })).toBeVisible()
+  await page.screenshot({ path: '../docs/images/web-today.png', fullPage: true })
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/#/')
-  await page.getByRole('button', { name: '打开投研上下文' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今日' })).toBeVisible()
   await page.waitForTimeout(300)
-  await page.screenshot({ path: '../docs/images/web-context-drawer.png', fullPage: true })
+  await page.screenshot({ path: '../docs/images/web-today-mobile.png', fullPage: true })
 })
 
 // ---------- Phase 3B: onboarding / pairing tests ----------

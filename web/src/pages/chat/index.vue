@@ -23,7 +23,7 @@ import { getSnapshot } from '@/api/index'
 import { getIndexes } from '@/api/market'
 import { getPredictions } from '@/api/predictions'
 import { recentSignals } from '@/api/signals'
-import { getStyleAgentHint } from '@/lib/stylePresets'
+import { getStyle } from '@/lib/stylePresets'
 import { resetChatSessionId } from '@/api/client'
 import type { IndexQuote, Prediction, StockSearchResult } from '@/api/types'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
@@ -220,7 +220,7 @@ async function sendNow(text: string) {
   connectionState.value = 'idle'
 
   // 交易风格提示作为独立系统上下文传递，不修改用户消息内容
-  const styleHint = getStyleAgentHint()
+  const stylePreset = getStyle()
 
   messages.value.push({ role: 'user', content: text })
   loading.value = true
@@ -232,7 +232,7 @@ async function sendNow(text: string) {
   const routeController = new AbortController()
   routeAbortController = routeController
   try {
-    const response = await agentRoute(text, routeController.signal, styleHint)
+    const response = await agentRoute(text, routeController.signal)
     if (requestId !== activeRequestId) return
     if (response.matched && response.reply) {
       messages.value[assistantIdx] = {
@@ -324,7 +324,7 @@ async function sendNow(text: string) {
       scrollToBottom()
     },
   )
-  stream.value.send(text, history, styleHint)
+  stream.value.send(text, history, stylePreset)
 }
 
 function onComposerKeydown(event: KeyboardEvent) {

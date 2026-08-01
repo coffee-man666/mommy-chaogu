@@ -232,6 +232,7 @@ class AgentService:
         cancel_event: threading.Event | None = None,
         usage_out: dict[str, int] | None = None,
         on_status: Callable[[str, dict[str, Any]], None] | None = None,
+        system_addendum: str | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
@@ -273,6 +274,9 @@ class AgentService:
             system_prompt = ms.get_context(query=user_message)
         else:
             system_prompt = SYSTEM_PROMPT
+
+        if system_addendum:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{system_addendum.strip()}"
 
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 

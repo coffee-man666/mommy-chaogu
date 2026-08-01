@@ -53,16 +53,22 @@ def _mock_creds() -> MagicMock:
 class TestSendSignalNotifications:
     """send_signal_notifications 行为测试。"""
 
-    def test_no_signals_returns_zero(self) -> None:
-        assert send_signal_notifications([]) == 0
+    def test_no_signals_returns_zero(self, tmp_path: Path) -> None:
+        deduper = WeixinNotifyDeduper(tmp_path / "state.json")
+        assert send_signal_notifications([], deduper=deduper) == 0
 
-    def test_not_connected_returns_zero(self) -> None:
+    def test_not_connected_returns_zero(self, tmp_path: Path) -> None:
         """未连接微信通道时返回 0，不报错。"""
         with patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls:
             mock_store = MagicMock()
             mock_store.load_credentials.return_value = None
             mock_store_cls.return_value = mock_store
-            assert send_signal_notifications([_make_signal()]) == 0
+            assert (
+                send_signal_notifications(
+                    [_make_signal()], deduper=WeixinNotifyDeduper(tmp_path / "state.json")
+                )
+                == 0
+            )
 
     def test_persistent_dedup_across_calls(self, tmp_path: Path) -> None:
         """同一信号在多次调用（模拟连续轮询）中只推送一次。"""
@@ -114,7 +120,7 @@ class TestSendSignalNotifications:
             result = send_signal_notifications(signals, deduper=deduper, client=mock_client)
             assert result == 2
 
-    def test_send_failure_does_not_raise(self) -> None:
+    def test_send_failure_does_not_raise(self, tmp_path: Path) -> None:
         """单条发送失败不影响整体流程。"""
         with (
             patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls,
@@ -128,8 +134,61 @@ class TestSendSignalNotifications:
             mock_client.send_text.side_effect = RuntimeError("network error")
             mock_client_cls.return_value = mock_client
 
-            result = send_signal_notifications([_make_signal()])
+            deduper = WeixinNotifyDeduper(tmp_path / "state.json")
+            result = send_signal_notifications(
+                [_make_signal()], deduper=deduper, client=mock_client
+            )
             assert result == 0  # 发送失败 → 0 条成功
+            assert deduper.should_push(_make_signal()) is True
+
+    def test_clear_then_retrigger_sends_again(self, tmp_path: Path) -> None:
+        deduper = WeixinNotifyDeduper(tmp_path / "state.json")
+        mock_client = MagicMock()
+        with patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls:
+            mock_store_cls.return_value.load_credentials.return_value = _mock_creds()
+            signal = _make_signal()
+
+            assert send_signal_notifications([signal], deduper=deduper, client=mock_client) == 1
+            assert send_signal_notifications([], deduper=deduper, client=mock_client) == 0
+            assert send_signal_notifications([signal], deduper=deduper, client=mock_client) == 1
+            assert mock_client.send_text.call_count == 2
+
+    def test_severity_escalation_sends_again(self, tmp_path: Path) -> None:
+        deduper = WeixinNotifyDeduper(tmp_path / "state.json")
+        mock_client = MagicMock()
+        with patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls:
+            mock_store_cls.return_value.load_credentials.return_value = _mock_creds()
+
+            assert (
+                send_signal_notifications(
+                    [_make_signal(severity=SignalSeverity.WARNING)],
+                    deduper=deduper,
+                    client=mock_client,
+                )
+                == 1
+            )
+            assert (
+                send_signal_notifications(
+                    [_make_signal(severity=SignalSeverity.CRITICAL)],
+                    deduper=deduper,
+                    client=mock_client,
+                )
+                == 1
+            )
+
+    def test_persistence_failure_prevents_network_send(self, tmp_path: Path) -> None:
+        deduper = WeixinNotifyDeduper(tmp_path / "state.json")
+        mock_client = MagicMock()
+        with (
+            patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls,
+            patch.object(deduper, "_save", side_effect=OSError("read only")),
+        ):
+            mock_store_cls.return_value.load_credentials.return_value = _mock_creds()
+            assert (
+                send_signal_notifications([_make_signal()], deduper=deduper, client=mock_client)
+                == 0
+            )
+            mock_client.send_text.assert_not_called()
 
 
 class TestWeixinNotifyDeduper:

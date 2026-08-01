@@ -130,12 +130,31 @@ async def ws_agent(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "error", "message": "无效的 JSON"})
                 continue
 
-            user_message = msg.get("message", "").strip()
+            if not isinstance(msg, dict):
+                await websocket.send_json({"type": "error", "message": "无效的消息格式"})
+                continue
+
+            raw_message = msg.get("message", "")
+            if not isinstance(raw_message, str):
+                await websocket.send_json({"type": "error", "message": "无效的消息格式"})
+                continue
+
+            user_message = raw_message.strip()
             if not user_message:
                 continue
 
             session_id = msg.get("session_id", "web-default")
-            style_hint = msg.get("style_hint", "")
+            from mommy_chaogu.web.trading_style import (
+                DEFAULT_TRADING_STYLE,
+                parse_trading_style,
+                trading_style_context,
+            )
+
+            try:
+                style_preset = parse_trading_style(msg.get("style_preset", DEFAULT_TRADING_STYLE))
+            except ValueError:
+                await websocket.send_json({"type": "error", "message": "无效的交易风格设置"})
+                continue
             try:
                 session_memory = memory.for_session(session_id)
             except (TypeError, ValueError):
@@ -206,11 +225,12 @@ async def ws_agent(websocket: WebSocket) -> None:
                     agent.chat,
                     user_message,
                     None,
-                    style_hint or None,
+                    None,
                     session_memory,
                     on_tool_call,
                     on_tool_result,
                     on_chunk,
+                    system_addendum=trading_style_context(style_preset),
                 )
             finally:
                 # 通知 drain 结束 + 等 drain 把剩余事件发完

@@ -33,7 +33,10 @@ def test_chat_uses_requested_session() -> None:
 
     assert response.status_code == 200
     memory.for_session.assert_called_once_with("browser-one")
-    agent.chat.assert_called_once_with("hello", None, None, session_memory)
+    agent.chat.assert_called_once()
+    call = agent.chat.call_args
+    assert call.args == ("hello", None, None, session_memory)
+    assert "用户偏好均衡分析" in call.kwargs["system_addendum"]
 
 
 def test_chat_rejects_invalid_session() -> None:

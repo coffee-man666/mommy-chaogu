@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { apiGet, toApiError, type ApiError } from '@/api/client'
 import { fmtPrice, fmtPct, fmtWan, fmtMoney, fmtAge } from '@/utils/format'
 import type { Quote, Bar, MoneyFlowResponse } from '@/api/types'
@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { useWatchlistStore } from '@/stores/watchlist'
 
 const props = defineProps<{ code: string }>()
+const route = useRoute()
 const router = useRouter()
 const watchlistStore = useWatchlistStore()
 
@@ -42,7 +43,12 @@ const flowDays = ref(30)
 const flowLoading = ref(false)
 
 // 主 Tab：概览 / 走势 / 资金 / 决策记录
-const mainTab = ref<string>('overview')
+const MAIN_TABS = ['overview', 'chart', 'flow', 'decisions'] as const
+type MainTab = (typeof MAIN_TABS)[number]
+const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : 'overview'
+const mainTab = ref<MainTab>(
+  MAIN_TABS.includes(requestedTab as MainTab) ? (requestedTab as MainTab) : 'overview'
+)
 
 // 预测记录（决策记录 Tab）
 const stockPredictions = ref<Prediction[]>([])
@@ -254,7 +260,7 @@ function changeInterval(key: string) {
 function onCodeEnter() {
   const c = codeInput.value.trim()
   if (!c) return
-  router.push({ name: 'detail', params: { code: c } })
+  router.push({ name: 'detail', params: { code: c }, query: { tab: mainTab.value } })
 }
 
 function goBack() {
@@ -384,7 +390,7 @@ const activeCumulative = computed(() =>
 
 const loadedTabs = ref<Set<string>>(new Set())
 
-function ensureTabLoaded(tab: string) {
+function ensureTabLoaded(tab: MainTab) {
   if (loadedTabs.value.has(tab)) return
   loadedTabs.value.add(tab)
   if (tab === 'chart') {
@@ -398,7 +404,21 @@ function ensureTabLoaded(tab: string) {
 
 watch(mainTab, (tab) => {
   ensureTabLoaded(tab)
+  if (route.query.tab !== tab) {
+    void router.replace({ query: { ...route.query, tab } })
+  }
 })
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (typeof tab === 'string' && MAIN_TABS.includes(tab as MainTab)) {
+      mainTab.value = tab as MainTab
+    } else {
+      mainTab.value = 'overview'
+    }
+  }
+)
 
 // ---------- 生命周期 ----------
 
@@ -414,14 +434,14 @@ watch(
     codeInput.value = ''
     loadedTabs.value = new Set() // reset lazy state
     await loadQuote()
-    // 不再预加载所有 Tab — 按需加载
+    ensureTabLoaded(mainTab.value)
   }
 )
 
 onMounted(async () => {
   await watchlistStore.fetchAll()
   await loadQuote()
-  // 不再预加载 bars/flow/predictions — 按需懒加载
+  ensureTabLoaded(mainTab.value)
   refreshTimer = window.setInterval(loadQuote, 10_000)
   themeObserver = new MutationObserver(() => void drawKLine())
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
@@ -451,7 +471,10 @@ onUnmounted(() => {
       </Button>
       <Input
         v-model="codeInput"
-        placeholder="输入代码回车跳转"
+        name="stock-code"
+        autocomplete="off"
+        aria-label="股票代码"
+        placeholder="输入代码后回车…"
         inputmode="numeric"
         maxlength="6"
         class="h-8 w-40 border-primary-foreground/30 bg-primary-foreground/15 text-primary-foreground placeholder:text-primary-foreground/60"
