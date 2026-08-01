@@ -31,6 +31,7 @@ const router = createRouter({
     { path: '/predictions', component: () => import('../pages/predictions/index.vue'), name: 'predictions' },
     { path: '/themes', component: () => import('../pages/themes/index.vue'), name: 'themes' },
     { path: '/themes/:id', component: () => import('../pages/themes/detail.vue'), name: 'theme-detail' },
+    { path: '/baskets/:id', component: () => import('../pages/baskets/detail.vue'), name: 'basket-detail' },
     { path: '/my', component: () => import('../pages/settings/index.vue'), name: 'my' },
     { path: '/settings', redirect: '/my' },
     { path: '/:pathMatch(.*)*', component: () => import('../pages/NotFound.vue'), name: 'not-found' },

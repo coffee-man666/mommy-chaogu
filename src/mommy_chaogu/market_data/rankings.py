@@ -45,40 +45,46 @@ class IndexQuote:
 
 
 def fetch_indexes() -> list[IndexQuote]:
-    """拉取大盘核心指数。"""
+    """一次批量拉取大盘核心指数，避免逐指数串行等待。"""
     out: list[IndexQuote] = []
-    url = "http://push2.eastmoney.com/api/qt/stock/get"
-    for secid, name, code in INDEX_LIST:
-        try:
-            r = requests.get(
-                url,
-                params={
-                    "secid": secid,
-                    "fields": "f43,f60,f170",
-                    "invt": "2",
-                    "fltt": "2",
-                },
-                timeout=5,
-            ).json()
-            data = r.get("data") or {}
-            price = _to_dec(data.get("f43"))
-            prev = _to_dec(data.get("f60"))
-            pct = _to_dec(data.get("f170"))
-            if price is None or pct is None:
-                continue
-            out.append(
-                IndexQuote(
-                    code=code,
-                    name=name,
-                    secid=secid,
-                    price=price,
-                    change_pct=pct,
-                    prev_close=prev or Decimal("0"),
-                )
-            )
-        except Exception as e:
-            _log.warning("fetch index %s failed: %s", secid, e)
+    url = "http://push2.eastmoney.com/api/qt/ulist.np/get"
+    by_secid = {secid: (name, code) for secid, name, code in INDEX_LIST}
+    try:
+        response = requests.get(
+            url,
+            params={
+                "secids": ",".join(by_secid),
+                "fields": "f12,f13,f14,f2,f3,f18",
+                "invt": "2",
+                "fltt": "2",
+            },
+            timeout=2,
+        ).json()
+    except Exception as exc:
+        _log.warning("fetch indexes failed: %s", exc)
+        return []
+
+    rows = (response.get("data") or {}).get("diff") or []
+    for row in rows:
+        secid = f"{row.get('f13')}.{row.get('f12')}"
+        configured = by_secid.get(secid)
+        if configured is None:
             continue
+        price = _to_dec(row.get("f2"))
+        pct = _to_dec(row.get("f3"))
+        if price is None or pct is None:
+            continue
+        name, code = configured
+        out.append(
+            IndexQuote(
+                code=code,
+                name=name,
+                secid=secid,
+                price=price,
+                change_pct=pct,
+                prev_close=_to_dec(row.get("f18")) or Decimal("0"),
+            )
+        )
     return out
 
 

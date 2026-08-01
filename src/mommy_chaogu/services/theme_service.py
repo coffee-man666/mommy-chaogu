@@ -133,6 +133,10 @@ class ThemeService:
             for t in themes.values()
         ]
 
+    def list_theme_details(self) -> list[dict[str, Any]]:
+        """List complete definitions for services that need their members."""
+        return list(self._load_all_themes().values())
+
     def get_theme(self, theme_id: str) -> dict[str, Any] | None:
         """获取主题详情（含成分股）。
 

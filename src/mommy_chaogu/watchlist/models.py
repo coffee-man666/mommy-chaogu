@@ -11,11 +11,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -82,3 +86,36 @@ class StockEntry(WatchlistBase):
 
     def __repr__(self) -> str:
         return f"<StockEntry {self.code} ({self.name or '?'}) group_id={self.group_id}>"
+
+
+class BasketPreference(WatchlistBase):
+    """用户对统一主题/篮子的展示偏好。
+
+    ``basket_id`` 使用稳定命名空间：内置主题为 ``theme:<id>``，自选分组为
+    ``group:<database id>``。定义数据仍由主题文件和自选分组持有，本表只保存
+    用户偏好，避免复制成分股。
+    """
+
+    __tablename__ = "basket_preferences"
+
+    basket_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    followed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class BasketMemberPreference(WatchlistBase):
+    """Optional user-defined member weight for a canonical basket."""
+
+    __tablename__ = "basket_member_preferences"
+
+    basket_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    weight: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )

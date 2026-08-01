@@ -34,6 +34,7 @@ from mommy_chaogu.web.deps import (
 )
 from mommy_chaogu.web.routes import (
     agent,
+    baskets,
     cache,
     earnings,
     market,
@@ -242,6 +243,7 @@ def create_app(
     app.include_router(agent.router)
     app.include_router(earnings.router)
     app.include_router(themes.router)
+    app.include_router(baskets.router)
     app.include_router(overview.router)
     app.include_router(ws.router)
     app.include_router(setup.router)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -141,6 +142,56 @@ def test_get_all_codes_dedup(store: WatchlistStore) -> None:
     store.add_entry("600519", "长线")
     codes = store.get_all_codes()
     assert codes == ["600519"]
+
+
+def test_basket_preferences_are_persistent_and_partially_updated(
+    store: WatchlistStore,
+) -> None:
+    created = store.set_basket_preference(
+        "theme:semiconductor",
+        followed=False,
+        sort_order=3,
+        reason="等待库存周期确认",
+        update_reason=True,
+    )
+    assert created.followed is False
+    assert created.sort_order == 3
+
+    updated = store.set_basket_preference("theme:semiconductor", hidden=True)
+    assert updated.followed is False
+    assert updated.hidden is True
+    assert updated.reason == "等待库存周期确认"
+
+    preferences = store.list_basket_preferences()
+    assert list(preferences) == ["theme:semiconductor"]
+
+
+def test_basket_member_weight_can_be_set_and_cleared(store: WatchlistStore) -> None:
+    store.set_basket_member_weight("theme:semiconductor", "600519", Decimal("25.50"))
+    assert store.list_basket_member_weights() == {
+        ("theme:semiconductor", "600519"): Decimal("25.5000")
+    }
+
+    store.set_basket_member_weight("theme:semiconductor", "600519", None)
+    assert store.list_basket_member_weights() == {}
+
+
+def test_removing_custom_basket_or_member_cleans_preferences(
+    store: WatchlistStore,
+) -> None:
+    group = store.add_group("观察")
+    store.add_entry("600519", group.name)
+    basket_id = f"group:{group.id}"
+    store.set_basket_preference(basket_id, followed=False)
+    store.set_basket_member_weight(basket_id, "600519", Decimal("50"))
+
+    store.remove_entry("600519", group.name)
+    assert store.list_basket_member_weights() == {}
+
+    store.set_basket_member_weight(basket_id, "600001", Decimal("25"))
+    store.remove_group(group.name)
+    assert store.list_basket_preferences() == {}
+    assert store.list_basket_member_weights() == {}
 
 
 def test_backfill_name_updates_all_entries_of_code(store: WatchlistStore) -> None:

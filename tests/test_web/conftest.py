@@ -226,6 +226,7 @@ def mock_service() -> MagicMock:
 def mock_cache_store() -> MagicMock:
     store = MagicMock()
     store.get_all_quote_entries.return_value = []
+    store.get_quote.return_value = None
     return store
 
 
@@ -233,6 +234,10 @@ def mock_cache_store() -> MagicMock:
 def mock_watchlist_store() -> MagicMock:
     store = MagicMock()
     store.list_entries.return_value = []
+    store.list_entries_by_group.return_value = {}
+    store.list_groups.return_value = []
+    store.list_basket_preferences.return_value = {}
+    store.list_basket_member_weights.return_value = {}
     return store
 
 

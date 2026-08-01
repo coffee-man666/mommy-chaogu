@@ -58,9 +58,19 @@ export interface OverviewPortfolioBlock {
 
 export interface OverviewThemeSummary {
   id: string
+  source_id: string
+  kind: 'theme' | 'custom'
   name: string
   description: string
   total_stocks: number
+  reason: string
+  change_pct: string | null
+  leader: { code: string; name: string; change_pct: string } | null
+  laggard: { code: string; name: string; change_pct: string } | null
+  anomaly: string | null
+  as_of: string | null
+  status: BlockStatusType
+  message: string | null
 }
 
 export interface OverviewThemesBlock {

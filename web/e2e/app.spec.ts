@@ -43,8 +43,18 @@ const overview = {
   },
   themes: {
     items: [
-      { id: 'semiconductor', name: '半导体', description: '国产产业链', total_stocks: 12 },
-      { id: 'innovative_drug', name: '创新药', description: '创新药产业链', total_stocks: 8 },
+      {
+        id: 'theme:semiconductor', source_id: 'semiconductor', kind: 'theme', name: '半导体',
+        description: '国产产业链', total_stocks: 12, reason: '观察国产替代', change_pct: '1.25',
+        leader: { code: '600519', name: '贵州茅台', change_pct: '2.10' },
+        laggard: { code: '000858', name: '五粮液', change_pct: '-0.60' },
+        anomaly: null, as_of: '2026-07-25T15:00:00Z', status: 'ok', message: null,
+      },
+      {
+        id: 'theme:innovative_drug', source_id: 'innovative_drug', kind: 'theme', name: '创新药',
+        description: '创新药产业链', total_stocks: 8, reason: '', change_pct: '-0.30',
+        leader: null, laggard: null, anomaly: null, as_of: '2026-07-25T15:00:00Z', status: 'ok', message: null,
+      },
     ],
     block: { status: 'ok', as_of: '2026-07-25T15:00:00Z', message: null },
   },
@@ -65,6 +75,11 @@ const overview = {
 
 async function mockApi(page: Page) {
   let watchlistAdded = false
+  let basketItems = overview.themes.items.map((item, index) => ({
+    id: item.id, source_id: item.source_id, kind: item.kind, name: item.name,
+    description: item.description, total_stocks: item.total_stocks,
+    followed: true, hidden: false, sort_order: index, reason: item.reason,
+  }))
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -95,6 +110,30 @@ async function mockApi(page: Page) {
       return json({ matched: true, workflow_id: 'stock_analysis', reply: '茅台基本面稳健，注意估值与仓位。', steps: [] })
     }
     if (path === '/api/overview') return json(overview)
+    if (path === '/api/baskets' && request.method() === 'GET') return json(basketItems)
+    if (path.startsWith('/api/baskets/')) {
+      const parts = path.split('/')
+      const id = decodeURIComponent(parts[3] || '')
+      const item = basketItems.find(candidate => candidate.id === id)
+      if (!item) return json({ detail: '篮子不存在' }, 404)
+      if (parts[4] === 'preference' && request.method() === 'POST') {
+        const update = request.postDataJSON()
+        basketItems = basketItems.map(candidate => candidate.id === id ? { ...candidate, ...update } : candidate)
+        return json(basketItems.find(candidate => candidate.id === id))
+      }
+      if (parts[4] === 'members' && parts[6] === 'weight' && request.method() === 'POST') {
+        const update = request.postDataJSON()
+        return json({ code: parts[5], name: '贵州茅台', weight: update.weight, note: '核心观察' })
+      }
+      return json({
+        ...item,
+        change_pct: id === 'theme:semiconductor' ? '1.25' : '-0.30',
+        leader: id === 'theme:semiconductor' ? { code: '600519', name: '贵州茅台', change_pct: '2.10' } : null,
+        laggard: id === 'theme:semiconductor' ? { code: '000858', name: '五粮液', change_pct: '-0.60' } : null,
+        anomaly: null, as_of: '2026-07-25T15:00:00Z', status: 'ok', message: null,
+        members: [{ code: '600519', name: '贵州茅台', weight: null, note: '核心观察' }],
+      })
+    }
     if (path === '/api/themes') return json({ items: overview.themes.items, total: 2 })
     if (path === '/api/themes/semiconductor') return json({
       ...overview.themes.items[0], subcategories: ['设备'], stocks: [{ code: '600519', name: '贵州茅台' }],
@@ -180,7 +219,7 @@ test('mobile Today leads to detail, add-watchlist, and ask-AI loop', async ({ pa
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('/#/')
 
-  await page.getByRole('link', { name: /贵州茅台/ }).click()
+  await page.getByRole('link', { name: '贵州茅台 1680.50 +1.85%', exact: true }).click()
   await expect(page).toHaveURL(/#\/detail\/600519$/)
 
   await page.getByRole('button', { name: '☆ 加自选' }).click()
@@ -206,6 +245,26 @@ test('normal Today bootstrap uses auth plus overview without setup status', asyn
   expect(bootstrapPaths.filter((path) => path === '/api/auth/status')).toHaveLength(1)
   expect(bootstrapPaths.filter((path) => path === '/api/overview')).toHaveLength(1)
   expect(bootstrapPaths).not.toContain('/api/setup/status')
+})
+
+test('server-owned basket preferences drive Follow and unified detail', async ({ page }) => {
+  await page.goto('/#/follow')
+  await expect(page.getByRole('heading', { name: '关注', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今日关注' })).toBeVisible()
+
+  const chipsCard = page.getByRole('listitem').filter({ hasText: '半导体' })
+  await chipsCard.getByPlaceholder('写一句关注理由（可选）').fill('等待景气拐点')
+  await chipsCard.getByRole('button', { name: '保存' }).click()
+  await expect(chipsCard.getByPlaceholder('写一句关注理由（可选）')).toHaveValue('等待景气拐点')
+
+  await chipsCard.getByRole('link', { name: '半导体' }).click()
+  await expect(page).toHaveURL(/#\/baskets\/theme%3Asemiconductor$/)
+  await expect(page.getByRole('heading', { name: '半导体' })).toBeVisible()
+  await expect(page.getByText('领涨')).toBeVisible()
+  await expect(page.getByRole('link', { name: /贵州茅台/ }).first()).toBeVisible()
+  await page.getByRole('spinbutton', { name: '贵州茅台权重' }).fill('25')
+  await page.getByRole('listitem').filter({ hasText: '贵州茅台' }).getByRole('button', { name: '保存' }).click()
+  await expect(page.getByRole('spinbutton', { name: '贵州茅台权重' })).toHaveValue('25')
 })
 
 test('detail tabs lazy-load, deep-link, and reload for a new stock', async ({ page }) => {

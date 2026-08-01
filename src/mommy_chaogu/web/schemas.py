@@ -436,13 +436,71 @@ class OverviewPortfolioBlock(BaseModel):
     block: BlockStatus
 
 
-class OverviewThemeSummary(BaseModel):
-    """关注主题/篮子摘要。"""
+class BasketMoverOut(BaseModel):
+    code: str
+    name: str
+    change_pct: Decimal
 
+
+class BasketMemberOut(BaseModel):
+    code: str
+    name: str
+    weight: Decimal | None = None
+    note: str = ""
+
+
+class BasketOut(BaseModel):
     id: str
+    source_id: str
+    kind: Literal["theme", "custom"]
     name: str
     description: str = ""
     total_stocks: int = 0
+    followed: bool = True
+    hidden: bool = False
+    sort_order: int = 0
+    reason: str = ""
+
+
+class BasketPreferenceIn(BaseModel):
+    followed: bool | None = None
+    hidden: bool | None = None
+    sort_order: int | None = Field(None, ge=0, le=10_000)
+    reason: str | None = Field(None, max_length=200)
+
+
+class BasketMemberWeightIn(BaseModel):
+    weight: Decimal | None = Field(..., ge=0, le=100)
+
+
+class BasketDetailOut(BasketOut):
+    members: list[BasketMemberOut]
+    change_pct: Decimal | None = None
+    leader: BasketMoverOut | None = None
+    laggard: BasketMoverOut | None = None
+    anomaly: str | None = None
+    as_of: datetime | None = None
+    status: Literal["ok", "stale", "unavailable"]
+    message: str | None = None
+
+
+class OverviewThemeSummary(BaseModel):
+    """统一主题/自定义篮子决策摘要。"""
+
+    id: str
+    source_id: str = ""
+    kind: Literal["theme", "custom"] = "theme"
+    name: str
+    description: str = ""
+    total_stocks: int = 0
+    reason: str = ""
+    change_pct: Decimal | None = None
+    leader: BasketMoverOut | None = None
+    laggard: BasketMoverOut | None = None
+    anomaly: str | None = None
+    as_of: datetime | None = None
+    status: Literal["ok", "stale", "unavailable"] = "unavailable"
+    message: str | None = None
 
 
 class OverviewThemesBlock(BaseModel):

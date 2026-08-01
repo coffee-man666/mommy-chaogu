@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { RouterLink } from 'vue-router'
 import { Send, TrendingUp, Wallet, AlertTriangle, ChevronRight, RefreshCw, Star, UserRound } from 'lucide-vue-next'
@@ -8,7 +8,7 @@ import {
   type OverviewResponse,
   type BlockStatus,
 } from '@/api/overview'
-import { fmtPrice, fmtPct, fmtWan, fmtAge, changeColor } from '@/utils/format'
+import { fmtPrice, fmtPct, fmtWan, changeColor } from '@/utils/format'
 import { toApiError } from '@/api/client'
 import ErrorState from '@/components/ErrorState.vue'
 
@@ -19,26 +19,6 @@ const loading = ref(true)
 const refreshing = ref(false)
 const error = ref('')
 const aiInput = ref('')
-
-// 关注主题（localStorage）
-const followedIds = ref<Set<string>>(new Set())
-const FOLLOW_KEY = 'mommy-followed-themes'
-
-function loadFollowed() {
-  try {
-    const raw = localStorage.getItem(FOLLOW_KEY)
-    if (raw) followedIds.value = new Set(JSON.parse(raw))
-  } catch {
-    // ignore
-  }
-}
-
-const visibleThemes = computed(() => {
-  if (!data.value) return []
-  const themes = data.value.themes.items
-  if (followedIds.value.size === 0) return themes.slice(0, 4) // 未配置关注时默认显示前4
-  return themes.filter(t => followedIds.value.has(t.id)).slice(0, 4)
-})
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -72,8 +52,12 @@ function blockLabel(block: BlockStatus): string {
   return '数据不可用'
 }
 
+function basketAsOf(value: string | null): string {
+  if (!value) return '暂无时间'
+  return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+}
+
 onMounted(() => {
-  loadFollowed()
   loadData()
   // 30 秒轮询刷新
   pollTimer = setInterval(() => loadData(true), 30_000)
@@ -147,9 +131,9 @@ onUnmounted(() => {
       </section>
 
       <!-- 2. 关注主题/篮子 -->
-      <section v-if="visibleThemes.length > 0" class="rounded-xl border bg-card p-4">
+      <section class="rounded-xl border bg-card p-4">
         <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-muted-foreground">关注主题</h2>
+          <h2 class="text-sm font-semibold text-muted-foreground">关注篮子</h2>
           <RouterLink
             class="flex items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             to="/follow"
@@ -158,16 +142,43 @@ onUnmounted(() => {
             管理
           </RouterLink>
         </div>
-        <div class="flex flex-wrap gap-2">
+        <div
+          v-if="data.themes.items.length === 0"
+          class="py-3 text-center text-sm text-muted-foreground"
+        >
+          {{ data.themes.block.message || '还没有关注篮子' }}
+        </div>
+        <div v-else class="grid grid-cols-2 gap-2">
           <RouterLink
-            v-for="theme in visibleThemes"
-            :key="theme.id"
-            :to="`/themes/${theme.id}`"
-            class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            v-for="basket in data.themes.items"
+            :key="basket.id"
+            :to="`/baskets/${encodeURIComponent(basket.id)}`"
+            class="min-w-0 rounded-lg border p-2.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            <span class="font-medium">{{ theme.name }}</span>
-            <span class="text-xs text-muted-foreground">{{ theme.total_stocks }}只</span>
-            <ChevronRight class="size-3 text-muted-foreground" aria-hidden="true" />
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate text-sm font-medium">{{ basket.name }}</span>
+              <span class="shrink-0 font-mono text-sm font-semibold" :style="{ color: changeColor(basket.change_pct) }">
+                {{ fmtPct(basket.change_pct) }}
+              </span>
+            </div>
+            <p v-if="basket.leader" class="mt-1 truncate text-xs text-muted-foreground">
+              领涨 {{ basket.leader.name }}
+              <span :style="{ color: changeColor(basket.leader.change_pct) }">{{ fmtPct(basket.leader.change_pct) }}</span>
+            </p>
+            <p v-if="basket.laggard" class="truncate text-xs text-muted-foreground">
+              领跌 {{ basket.laggard.name }}
+              <span :style="{ color: changeColor(basket.laggard.change_pct) }">{{ fmtPct(basket.laggard.change_pct) }}</span>
+            </p>
+            <p v-if="basket.anomaly" class="mt-1 truncate text-xs text-orange-600 dark:text-orange-300">
+              {{ basket.anomaly }}
+            </p>
+            <p v-else-if="basket.reason" class="mt-1 truncate text-xs text-muted-foreground">{{ basket.reason }}</p>
+            <p class="mt-1 text-[11px] text-muted-foreground">
+              {{ basket.total_stocks }}只 ·
+              <span v-if="basket.status === 'stale'">旧数据 · </span>
+              <span v-else-if="basket.status === 'unavailable'">行情不可用 · </span>
+              {{ basketAsOf(basket.as_of) }}
+            </p>
           </RouterLink>
         </div>
       </section>

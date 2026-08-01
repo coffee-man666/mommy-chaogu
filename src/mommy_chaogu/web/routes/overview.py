@@ -14,12 +14,18 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 
+from mommy_chaogu.cache import CacheStore
 from mommy_chaogu.market_data import MarketDataAdapter
 from mommy_chaogu.market_data.rankings import fetch_indexes
 from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.watchlist import WatchlistStore
 from mommy_chaogu.web.background import BackgroundService, get_service
-from mommy_chaogu.web.deps import get_adapter, get_portfolio_store, get_watchlist_store
+from mommy_chaogu.web.deps import (
+    get_adapter,
+    get_cache_store,
+    get_portfolio_store,
+    get_watchlist_store,
+)
 from mommy_chaogu.web.schemas import (
     BlockStatus,
     OverviewIndex,
@@ -221,12 +227,43 @@ def _build_portfolio(
 # ---------- 主题 ----------
 
 
-def _build_themes() -> OverviewThemesBlock:
+def _build_themes(
+    store: WatchlistStore,
+    cache_store: CacheStore,
+    service: BackgroundService | None,
+) -> OverviewThemesBlock:
     try:
-        from mommy_chaogu.services.theme_service import ThemeService
+        from mommy_chaogu.services.basket_service import BasketService
 
-        svc = ThemeService()
-        items_raw = svc.list_themes()
+        quote_overrides = {}
+        if service and service.latest_snapshot is not None:
+            quote_overrides = {row.entry.code: row.quote for row in service.latest_snapshot.rows}
+        basket_service = BasketService(store)
+        baskets = [
+            item for item in basket_service.list_baskets(include_hidden=False) if item["followed"]
+        ][:4]
+        for code in {member["code"] for basket in baskets for member in basket["members"]}:
+            if code in quote_overrides:
+                continue
+            cached = cache_store.get_quote(code)
+            if cached is not None:
+                quote_overrides[code] = cached.quote
+        summaries = BasketService(store, quote_overrides=quote_overrides).summarize_many(baskets)
+        items = []
+        for basket in baskets:
+            summary = summaries[basket["id"]]
+            items.append(
+                OverviewThemeSummary(
+                    id=basket["id"],
+                    source_id=basket["source_id"],
+                    kind=basket["kind"],
+                    name=basket["name"],
+                    description=basket["description"],
+                    total_stocks=basket["total_stocks"],
+                    reason=basket["reason"],
+                    **summary,
+                )
+            )
     except Exception as exc:
         _log.warning("overview themes load failed: %s", exc)
         return OverviewThemesBlock(
@@ -234,18 +271,22 @@ def _build_themes() -> OverviewThemesBlock:
             block=BlockStatus(status="unavailable", message="主题数据加载失败"),
         )
 
-    items = [
-        OverviewThemeSummary(
-            id=t["id"],
-            name=t["name"],
-            description=t.get("description", ""),
-            total_stocks=t.get("total_stocks", 0),
-        )
-        for t in items_raw
-    ]
+    item_times = [item.as_of for item in items if item.as_of is not None]
+    status = "ok"
+    message = None
+    if items and all(item.status == "unavailable" for item in items):
+        status = "unavailable"
+        message = "关注篮子行情暂不可用"
+    elif any(item.status != "ok" for item in items):
+        status = "stale"
+        message = "部分篮子行情不完整"
     return OverviewThemesBlock(
         items=items,
-        block=BlockStatus(status="ok", as_of=_utcnow()),
+        block=BlockStatus(
+            status=status,
+            as_of=min(item_times) if item_times else _utcnow(),
+            message=message,
+        ),
     )
 
 
@@ -284,6 +325,7 @@ def get_overview(
     store: Annotated[PortfolioStore, Depends(get_portfolio_store)],
     watchlist_store: Annotated[WatchlistStore, Depends(get_watchlist_store)],
     adapter: Annotated[MarketDataAdapter, Depends(get_adapter)],
+    cache_store: Annotated[CacheStore, Depends(get_cache_store)],
 ) -> OverviewResponse:
     """一次请求返回今日总览：指数 + 自选 + 持仓 + 主题 + 信号。
 
@@ -340,7 +382,7 @@ def get_overview(
 
     # 主题（静态 JSON + 映射）
     try:
-        themes_block = _build_themes()
+        themes_block = _build_themes(watchlist_store, cache_store, service)
     except Exception:
         _log.exception("overview themes block failed")
         themes_block = OverviewThemesBlock(

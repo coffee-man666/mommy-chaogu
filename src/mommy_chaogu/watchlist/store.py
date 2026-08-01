@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -21,7 +23,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, joinedload, sessionmaker
 
 from mommy_chaogu.db import EngineOwner, create_sqlite_engine
-from mommy_chaogu.watchlist.models import Group, StockEntry, WatchlistBase
+from mommy_chaogu.watchlist.models import (
+    BasketMemberPreference,
+    BasketPreference,
+    Group,
+    StockEntry,
+    WatchlistBase,
+)
 
 #: JSON 导出 schema 版本。破坏性变更时 +1。
 EXPORT_SCHEMA_VERSION = "1.0"
@@ -30,6 +38,10 @@ EXPORT_SCHEMA_VERSION = "1.0"
 # Multiple store instances pointed at a brand-new SQLite file can race between
 # those two operations, so schema initialization must be serialized per process.
 _SCHEMA_INIT_LOCK = Lock()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class WatchlistError(Exception):
@@ -136,6 +148,15 @@ class WatchlistStore(EngineOwner):
             g = s.execute(select(Group).where(Group.name == name)).scalar_one_or_none()
             if g is None:
                 raise GroupNotFoundError(f"分组不存在: {name!r}")
+            basket_id = f"group:{g.id}"
+            preference = s.get(BasketPreference, basket_id)
+            if preference is not None:
+                s.delete(preference)
+            member_preferences = s.execute(
+                select(BasketMemberPreference).where(BasketMemberPreference.basket_id == basket_id)
+            ).scalars()
+            for member_preference in member_preferences:
+                s.delete(member_preference)
             s.delete(g)
 
     # ---------- StockEntry CRUD ----------
@@ -182,6 +203,12 @@ class WatchlistStore(EngineOwner):
             ).scalar_one_or_none()
             if entry is None:
                 raise StockEntryNotFoundError(f"自选股 {code} 不在分组 {group_name!r}")
+            member_preference = s.get(
+                BasketMemberPreference,
+                (f"group:{g.id}", code),
+            )
+            if member_preference is not None:
+                s.delete(member_preference)
             s.delete(entry)
 
     def list_entries(self, group_name: str | None = None) -> list[StockEntry]:
@@ -224,6 +251,69 @@ class WatchlistStore(EngineOwner):
         with self.session() as s:
             rows = s.execute(select(StockEntry.code).distinct()).scalars().all()
             return list(rows)
+
+    # ---------- Unified basket preferences ----------
+
+    def list_basket_preferences(self) -> dict[str, BasketPreference]:
+        """Return user basket preferences keyed by canonical basket id."""
+        with self.session() as s:
+            rows = s.execute(select(BasketPreference)).scalars().all()
+            return {row.basket_id: row for row in rows}
+
+    def set_basket_preference(
+        self,
+        basket_id: str,
+        *,
+        followed: bool | None = None,
+        hidden: bool | None = None,
+        sort_order: int | None = None,
+        reason: str | None = None,
+        update_reason: bool = False,
+    ) -> BasketPreference:
+        """Create or partially update one basket preference."""
+        with self.session() as s:
+            row = s.get(BasketPreference, basket_id)
+            if row is None:
+                row = BasketPreference(basket_id=basket_id)
+                s.add(row)
+            if followed is not None:
+                row.followed = followed
+            if hidden is not None:
+                row.hidden = hidden
+            if sort_order is not None:
+                row.sort_order = sort_order
+            if update_reason:
+                row.reason = reason
+            row.updated_at = _utcnow()
+            s.flush()
+            s.refresh(row)
+            return row
+
+    def list_basket_member_weights(self) -> dict[tuple[str, str], Decimal]:
+        """Return optional member weights keyed by ``(basket_id, code)``."""
+        with self.session() as s:
+            rows = s.execute(select(BasketMemberPreference)).scalars().all()
+            return {(row.basket_id, row.code): row.weight for row in rows}
+
+    def set_basket_member_weight(
+        self,
+        basket_id: str,
+        code: str,
+        weight: Decimal | None,
+    ) -> None:
+        """Set a member weight, or remove its override when weight is None."""
+        with self.session() as s:
+            row = s.get(BasketMemberPreference, (basket_id, code))
+            if weight is None:
+                if row is not None:
+                    s.delete(row)
+                return
+            if row is None:
+                row = BasketMemberPreference(basket_id=basket_id, code=code, weight=weight)
+                s.add(row)
+            else:
+                row.weight = weight
+                row.updated_at = _utcnow()
 
     # ---------- Backfill name ----------
 

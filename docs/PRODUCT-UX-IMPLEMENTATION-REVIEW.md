@@ -622,3 +622,43 @@ These are not regressions from the remediation work and should remain visible in
 - Mobile/desktop screenshot acceptance for the final P1–P4 experience
 
 The current working tree is suitable for a corrective commit, but the plan should continue to describe P1–P4 as incomplete until the product-scope items above are implemented and accepted.
+
+## 12. Next-stage implementation review — unified baskets and Today summaries
+
+The 2026-08-01 working tree completes the next bounded work package from the execution plan.
+
+### Implemented
+
+- Built-in themes use `theme:<id>` and existing watchlist groups use `group:<database-id>` under one basket contract; stock membership remains owned by the original theme definition or watchlist group.
+- `basket_preferences` persists follow state, hiding, stable ordering, and a user reason. `basket_member_preferences` persists optional `Decimal` weights. Removing a custom group or member removes its orphaned preference state.
+- `/api/baskets` exposes the ordered catalog, `/api/baskets/{id}` exposes members plus the decision summary, and explicit mutation endpoints update preferences and member weights.
+- Partial weights never silently exclude unweighted members: weighted performance is used only when every available member has a weight and the total is positive; otherwise the summary is equal-weighted.
+- Follow no longer treats browser localStorage as the source of truth. A one-time migration preserves the legacy theme selection and then removes the old key.
+- Today renders at most four followed baskets with performance, leader, laggard, anomaly, reason, status, and timestamp. It uses snapshot/cache data only, so basket summaries cannot turn the first screen into a blocking market-data fan-out.
+- Index retrieval was reduced from six sequential HTTP calls to one two-second batch request, bounding the offline first-screen delay.
+- The unified detail page starts with “what happened,” then lists members and optional weights; theme and custom baskets use the same interaction path.
+
+### Self-review result
+
+- The server-owned preference model is the only authoritative state after migration.
+- Generated SQL tables are additive and created through the existing `WatchlistBase.metadata.create_all()` path, so existing installations do not require a destructive migration.
+- Decimal values remain Decimal from persistence through the API; the browser sends weight strings instead of converting them through floating point.
+- Desktop and 390×844 visual review confirmed that the four decision summaries, watchlist status, portfolio status, and AI continuation remain visible in one screen.
+
+### Verification
+
+- Ruff format and lint: **passed (325 files)**.
+- Strict mypy: **passed (177 source files)**.
+- Full offline Python suite: **1,765 passed, 13 deselected; 74.69% coverage**.
+- Vue typecheck: **passed**.
+- Vitest: **55 passed**.
+- Production build and packaged-static drift check: **passed**.
+- Playwright: **11 passed, 1 opt-in screenshot test skipped**.
+- Manual semantic snapshots and visual review: **Today desktop, Today 390×844, and Follow desktop passed**.
+
+### Deliberately still open
+
+- The old `/themes` routes and detailed industry-chain page remain for compatibility; consolidation can happen after the unified basket page reaches feature parity for specialist metadata.
+- Trading style is still browser-selected and only Agent-aware. A shared server preference schema must drive Today explanations, Agent emphasis, backtest defaults, and Weixin selection together.
+- Stock detail still needs holding profit/loss context and automatic page context for Agent questions.
+- Prediction evidence/freshness, Agent attachments, and one-click stock backtest entry remain P2 work.

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -194,6 +195,47 @@ class TestOverviewThemes:
         assert themes["block"]["status"] in ("ok", "unavailable")
         assert isinstance(themes["items"], list)
 
+    def test_followed_basket_has_decision_summary_and_uses_one_batch_fetch(
+        self,
+        client: pytest.fixture,
+        mock_adapter: MagicMock,
+        mock_cache_store: MagicMock,
+        mock_service: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from tests.test_web.conftest import make_quote
+
+        _patch_indexes(monkeypatch)
+        mock_service.latest_snapshot = None
+        monkeypatch.setattr(
+            "mommy_chaogu.services.theme_service.ThemeService.list_theme_details",
+            lambda _self: [
+                {
+                    "id": "chips",
+                    "name": "芯片",
+                    "description": "半导体产业链",
+                    "stocks": [
+                        {"code": "600001", "name": "甲公司"},
+                        {"code": "600002", "name": "乙公司"},
+                    ],
+                }
+            ],
+        )
+        quotes = {
+            "600001": make_quote("600001", "甲公司", change_pct="3.00"),
+            "600002": make_quote("600002", "乙公司", change_pct="-1.00"),
+        }
+        mock_cache_store.get_quote.side_effect = lambda code: SimpleNamespace(quote=quotes[code])
+
+        themes = client.get("/api/overview").json()["themes"]
+
+        assert themes["block"]["status"] == "ok"
+        assert themes["items"][0]["id"] == "theme:chips"
+        assert themes["items"][0]["change_pct"] == "1.00"
+        assert themes["items"][0]["leader"]["name"] == "甲公司"
+        assert themes["items"][0]["laggard"]["name"] == "乙公司"
+        mock_adapter.get_quotes.assert_not_called()
+
 
 class TestOverviewSignals:
     """信号区块测试。"""
@@ -285,8 +327,8 @@ class TestOverviewBlockFailureIsolation:
     ) -> None:
         _patch_indexes(monkeypatch)
         monkeypatch.setattr(
-            "mommy_chaogu.services.theme_service.ThemeService.list_themes",
-            lambda _self: [{"id": "missing-name"}],
+            "mommy_chaogu.services.theme_service.ThemeService.list_theme_details",
+            lambda _self: [{"id": "missing-name", "stocks": []}],
         )
 
         response = client.get("/api/overview")
