@@ -5,7 +5,22 @@
 > Review date: 2026-07-31
 > Related plan: [`PRODUCT-UX-EXECUTION-PLAN.md`](PRODUCT-UX-EXECUTION-PLAN.md)
 > Follow-up result: **Request changes** — several concrete fixes landed, but CI is red and two release-blocking behavior regressions remain.
-> Current working tree: **release blockers remediated locally** — full local gates pass; remaining P1–P4 product deliverables are still open.
+> Current implementation: **work packages 0–4 accepted through `30d9bc8`** — full local gates pass; prediction/backtest evidence, shared preferences, and the preference-aware Weixin loop remain open.
+
+## Commit-to-work index
+
+Use this index to move from an implementation commit to its detailed review and evidence. Documentation-only commits are included for traceability but do not change product status.
+
+| Commit | Work represented | Review result | Detailed review |
+|---|---|---|---|
+| `a3f58ea` | Initial focused P1–P4 UI and service implementation | Changes requested | [Initial summary and findings](#review-initial) |
+| `9c0fd0b` | First remediation pass for P0/P1/P2 findings | Changes requested; release gate still red | [Follow-up review](#review-follow-up) |
+| `94d1b2e` | Release-blocker, CI, WebSocket, notification, Overview, and interaction remediation | Accepted; full local gates passed | [Remediation result](#review-remediation) |
+| `66f467e` | Unified built-in/custom baskets and Today decision summaries | Accepted | [Work package 3 review](#review-work-package-3) |
+| `30d9bc8` | Stock holding context, basket provenance, and structured Agent page context | Accepted | [Work package 4 review](#review-work-package-4) |
+| `7038465` | Documentation synchronization for work package 4 | Documentation only | [Work package 4 review](#review-work-package-4) |
+
+<a id="review-initial"></a>
 
 ## 1. Executive summary
 
@@ -301,6 +316,8 @@ Until the release blockers and acceptance gaps are resolved, recommended status 
 - Inspected backend aggregation, notification flow, Agent prediction filtering, frontend navigation, Today, Follow, stock detail, trading-style handling, and packaged static assets.
 - No implementation files were changed as part of this review.
 
+<a id="review-follow-up"></a>
+
 ## 7. Follow-up review of `9c0fd0b`
 
 ### 7.1 Executive verdict
@@ -571,6 +588,8 @@ Continue with the still-open product deliverables: unified custom baskets, serve
 
 Do not change the execution-plan status to “P1–P4 complete” after merely making CI green. The next status gate should require all P1 acceptance criteria and the shared preference/notification integration to be demonstrably complete.
 
+<a id="review-remediation"></a>
+
 ## 11. Remediation result in the current working tree
 
 The issues in work packages A–D above have now been implemented locally. This section records the result without rewriting the historical assessment of commits `a3f58ea` and `9c0fd0b`.
@@ -623,6 +642,8 @@ These are not regressions from the remediation work and should remain visible in
 
 The current working tree is suitable for a corrective commit, but the plan should continue to describe P1–P4 as incomplete until the product-scope items above are implemented and accepted.
 
+<a id="review-work-package-3"></a>
+
 ## 12. Next-stage implementation review — unified baskets and Today summaries
 
 The 2026-08-01 working tree completes the next bounded work package from the execution plan.
@@ -664,6 +685,8 @@ This list records the boundary at the time of commit `66f467e`. The stock-contex
 - Trading style is still browser-selected and only Agent-aware. A shared server preference schema must drive Today explanations, Agent emphasis, backtest defaults, and Weixin selection together.
 - Stock holding profit/loss and automatic Agent page context: **resolved by `30d9bc8`; see section 13**.
 - Prediction evidence/freshness, Agent attachments, and one-click stock backtest entry remain P2 work.
+
+<a id="review-work-package-4"></a>
 
 ## 13. Work package 4 review — stock decision and Agent page context
 
