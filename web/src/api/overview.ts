@@ -64,6 +64,7 @@ export interface OverviewThemeSummary {
   description: string
   total_stocks: number
   reason: string
+  priority_reason: string | null
   change_pct: string | null
   leader: { code: string; name: string; change_pct: string } | null
   laggard: { code: string; name: string; change_pct: string } | null
@@ -75,6 +76,7 @@ export interface OverviewThemeSummary {
 
 export interface OverviewThemesBlock {
   items: OverviewThemeSummary[]
+  ordering_note: string | null
   block: BlockStatus
 }
 

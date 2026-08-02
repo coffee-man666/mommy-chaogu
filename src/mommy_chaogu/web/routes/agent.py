@@ -16,6 +16,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from mommy_chaogu.preferences import default_preferences
 from mommy_chaogu.web.agent_context import AgentPageContext, page_context_addendum
 from mommy_chaogu.web.deps import (
     get_adapter,
@@ -24,11 +25,7 @@ from mommy_chaogu.web.deps import (
     get_portfolio_store,
     get_watchlist_store,
 )
-from mommy_chaogu.web.trading_style import (
-    DEFAULT_TRADING_STYLE,
-    TradingStylePreset,
-    trading_style_context,
-)
+from mommy_chaogu.web.trading_style import preference_context
 
 _log = logging.getLogger(__name__)
 
@@ -53,7 +50,6 @@ class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] | None = None
     session_id: str = Field(default="web-default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
-    style_preset: TradingStylePreset = DEFAULT_TRADING_STYLE
     page_context: AgentPageContext | None = None
 
 
@@ -167,7 +163,14 @@ async def chat(
         )
 
     # AgentService.chat 是同步的（内部调 OpenAI SDK），用 to_thread 包装
-    addenda = [trading_style_context(req.style_preset)]
+    # 交易风格等偏好由服务端持有（/api/preferences），不再从客户端读取；
+    # 读取失败回落默认值，保证对话可用。
+    try:
+        prefs = watchlist.get_user_preferences()
+    except Exception as exc:
+        _log.warning("读取用户偏好失败，Agent 使用默认偏好: %s", exc)
+        prefs = default_preferences()
+    addenda = [preference_context(prefs)]
     if page_addendum := page_context_addendum(req.page_context, portfolio, watchlist):
         addenda.append(page_addendum)
     resp = await asyncio.to_thread(

@@ -142,6 +142,12 @@ onUnmounted(() => {
             管理
           </RouterLink>
         </div>
+        <p
+          v-if="data.themes.ordering_note"
+          class="mb-2 text-xs text-muted-foreground"
+        >
+          {{ data.themes.ordering_note }}
+        </p>
         <div
           v-if="data.themes.items.length === 0"
           class="py-3 text-center text-sm text-muted-foreground"
@@ -173,6 +179,9 @@ onUnmounted(() => {
               {{ basket.anomaly }}
             </p>
             <p v-else-if="basket.reason" class="mt-1 truncate text-xs text-muted-foreground">{{ basket.reason }}</p>
+            <p v-if="basket.priority_reason" class="truncate text-xs text-muted-foreground">
+              {{ basket.priority_reason }}
+            </p>
             <p class="mt-1 text-[11px] text-muted-foreground">
               {{ basket.total_stocks }}只 ·
               <span v-if="basket.status === 'stale'">旧数据 · </span>

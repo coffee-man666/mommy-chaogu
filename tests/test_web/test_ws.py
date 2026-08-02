@@ -8,9 +8,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
+from mommy_chaogu.preferences import default_preferences
 from mommy_chaogu.web.background import BackgroundService, set_service
 
 from .conftest import make_signal, make_snapshot
+
+
+def _fake_watchlist_store() -> MagicMock:
+    """确定性的偏好来源（不读真实 data/portfolio.db）。"""
+    store = MagicMock()
+    store.get_user_preferences.return_value = default_preferences()
+    return store
 
 
 def _service() -> BackgroundService:
@@ -131,6 +139,7 @@ class TestAgentWebSocket:
 
         monkeypatch.setattr(deps, "get_agent_service", lambda: None)  # type: ignore[attr-defined]
         monkeypatch.setattr(deps, "get_agent_memory", MagicMock())  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_watchlist_store", _fake_watchlist_store)  # type: ignore[attr-defined]
 
         with client.websocket_connect("/ws/agent") as ws:
             ws.send_text("not-json")
@@ -141,12 +150,6 @@ class TestAgentWebSocket:
 
             ws.send_json({"message": {"unexpected": "object"}})
             assert ws.receive_json() == {"type": "error", "message": "无效的消息格式"}
-
-            ws.send_json({"message": "hello", "style_preset": "arbitrary prompt"})
-            assert ws.receive_json() == {
-                "type": "error",
-                "message": "无效的交易风格设置",
-            }
 
             ws.send_json(
                 {
@@ -189,6 +192,7 @@ class TestAgentWebSocket:
         memory.for_session.return_value = session_memory
         monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
         monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_watchlist_store", _fake_watchlist_store)  # type: ignore[attr-defined]
         monkeypatch.setattr(  # type: ignore[attr-defined]
             "mommy_chaogu.web.routes.ws.page_context_addendum",
             lambda context, _portfolio, _watchlist: (
@@ -227,6 +231,36 @@ class TestAgentWebSocket:
         assert "用户偏好均衡分析" in call.kwargs["system_addendum"]
         assert "<page_context>600519:flow</page_context>" in call.kwargs["system_addendum"]
 
+    def test_style_comes_from_server_preferences(
+        self, client: TestClient, monkeypatch: object
+    ) -> None:
+        """WS 与 REST 一致：风格从服务端偏好读取，客户端 style_preset 被忽略。"""
+        from mommy_chaogu.web import deps
+
+        agent = MagicMock()
+        agent.chat.return_value = SimpleNamespace(text="ok", tool_calls=[], rounds=1)
+        memory = MagicMock()
+        memory.for_session.return_value = MagicMock()
+        store = _fake_watchlist_store()
+        prefs = default_preferences()
+        prefs["style"] = "conservative"
+        store.get_user_preferences.return_value = prefs
+        monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_watchlist_store", lambda: store)  # type: ignore[attr-defined]
+
+        with client.websocket_connect("/ws/agent") as ws:
+            ws.send_json({"message": "看看风险", "style_preset": "aggressive"})
+            assert ws.receive_json() == {"type": "thinking"}
+            assert ws.receive_json() == {"type": "chunk", "text": "ok"}
+            assert ws.receive_json() == {"type": "done", "tools_used": [], "rounds": 1}
+
+        call = agent.chat.call_args
+        assert call.args[0] == "看看风险"
+        assert call.args[2] is None
+        assert "稳健投资" in call.kwargs["system_addendum"]
+        assert "积极策略" not in call.kwargs["system_addendum"]
+
     def test_streams_tool_call_events(self, client: TestClient, monkeypatch: object) -> None:
         """验证 on_tool_call/on_tool_result 回调被桥接成 tool_call_started/finished WS 帧。"""
         from mommy_chaogu.web import deps
@@ -257,6 +291,7 @@ class TestAgentWebSocket:
         memory.for_session.return_value = session_memory
         monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
         monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_watchlist_store", _fake_watchlist_store)  # type: ignore[attr-defined]
 
         with client.websocket_connect("/ws/agent") as ws:
             ws.send_json({"message": "茅台"})
@@ -302,6 +337,7 @@ class TestAgentWebSocket:
         memory.for_session.return_value = session_memory
         monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
         monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_watchlist_store", _fake_watchlist_store)  # type: ignore[attr-defined]
 
         with client.websocket_connect("/ws/agent") as ws:
             ws.send_json({"message": "hello"})

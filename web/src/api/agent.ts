@@ -1,7 +1,6 @@
 // Agent API client
 import { apiGet, apiPost, authenticatedWsUrl, getChatSessionId } from './client'
 import type { AgentHistoryMessage } from './types'
-import type { StylePreset } from '@/lib/stylePresets'
 
 export interface ChatResponse {
   reply: string
@@ -47,14 +46,12 @@ export interface ToolResultEvent {
 export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
-  stylePreset?: StylePreset,
   pageContext?: AgentPageContext,
 ): Promise<ChatResponse> {
   return apiPost<ChatResponse>('/api/agent/chat', {
     message,
     history,
     session_id: getChatSessionId(),
-    style_preset: stylePreset || 'balanced',
     page_context: pageContext,
   })
 }
@@ -86,7 +83,6 @@ export function agentStream(
   send: (
     message: string,
     history?: Array<{ role: string; content: string }>,
-    stylePreset?: StylePreset,
     pageContext?: AgentPageContext,
   ) => void
   close: () => void
@@ -96,7 +92,6 @@ export function agentStream(
     message: string
     history?: Array<{ role: string; content: string }>
     session_id: string
-    style_preset: StylePreset
     page_context?: AgentPageContext
   } | null = null
   // 初始连接失败时，最多重试一次
@@ -202,7 +197,6 @@ export function agentStream(
     send(
       message: string,
       history?: Array<{ role: string; content: string }>,
-      stylePreset: StylePreset = 'balanced',
       pageContext?: AgentPageContext,
     ) {
       if (closedByClient) {
@@ -213,7 +207,6 @@ export function agentStream(
         message,
         history,
         session_id: getChatSessionId(),
-        style_preset: stylePreset,
         page_context: pageContext,
       }
       if (ws?.readyState === WebSocket.OPEN) {

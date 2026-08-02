@@ -10,11 +10,20 @@ import type { SetupStatus } from '@/api/setup'
 import { useTheme } from '@/composables/useTheme'
 import { useWatchlistStore } from '@/stores/watchlist'
 import {
+  getPreferences,
+  updatePreferences,
+  resetPreferences,
   STYLE_PRESETS,
-  getStyle,
-  setStyle,
-  type StylePreset,
-} from '@/lib/stylePresets'
+  HOLDING_PERIOD_OPTIONS,
+  DRAWDOWN_OPTIONS,
+  NOTIFY_SEVERITY_OPTIONS,
+  type Preferences,
+  type PreferencesUpdate,
+  type TradingStyle,
+  type HoldingPeriod,
+  type DrawdownSensitivity,
+  type NotifySeverity,
+} from '@/api/preferences'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,12 +50,72 @@ import type { WatchlistStock, WatchlistGroup, CacheStats, Health } from '@/api/t
 const { currentMode, toggle: toggleTheme } = useTheme()
 const watchlistStore = useWatchlistStore()
 
-// ---------- 交易风格 ----------
-const currentStyle = ref<StylePreset>(getStyle())
+// ---------- 交易偏好（服务端持有） ----------
+const prefs = ref<Preferences | null>(null)
+const prefsSaving = ref(false)
+const confirmResetPrefs = ref(false)
+const newWindowStart = ref('09:30')
+const newWindowEnd = ref('15:00')
 
-function selectStyle(style: StylePreset) {
-  currentStyle.value = style
-  setStyle(style)
+async function applyPrefsPatch(patch: PreferencesUpdate) {
+  prefsSaving.value = true
+  try {
+    prefs.value = await updatePreferences(patch)
+  } catch (e: any) {
+    alert('保存偏好失败: ' + (e?.message || e))
+  } finally {
+    prefsSaving.value = false
+  }
+}
+
+function selectStyle(style: TradingStyle) {
+  if (prefs.value?.style === style) return
+  applyPrefsPatch({ style })
+}
+
+function setHoldingPeriod(v: unknown) {
+  applyPrefsPatch({ holding_period: v as HoldingPeriod })
+}
+
+function setDrawdownSensitivity(v: unknown) {
+  applyPrefsPatch({ drawdown_sensitivity: v as DrawdownSensitivity })
+}
+
+function setNotifyMinSeverity(v: unknown) {
+  applyPrefsPatch({ notify_min_severity: v as NotifySeverity })
+}
+
+function addReminderWindow() {
+  if (!prefs.value || !newWindowStart.value || !newWindowEnd.value) return
+  applyPrefsPatch({
+    reminder_windows: [
+      ...prefs.value.reminder_windows,
+      { start: newWindowStart.value, end: newWindowEnd.value },
+    ],
+  })
+}
+
+function removeReminderWindow(index: number) {
+  if (!prefs.value) return
+  applyPrefsPatch({
+    reminder_windows: prefs.value.reminder_windows.filter((_, i) => i !== index),
+  })
+}
+
+async function resetPrefs() {
+  if (!confirmResetPrefs.value) {
+    confirmResetPrefs.value = true
+    return
+  }
+  prefsSaving.value = true
+  try {
+    prefs.value = await resetPreferences()
+  } catch (e: any) {
+    alert('恢复默认失败: ' + (e?.message || e))
+  } finally {
+    prefsSaving.value = false
+    confirmResetPrefs.value = false
+  }
 }
 
 const watchlist = ref<WatchlistStock[]>([])
@@ -192,18 +261,20 @@ let timer: number | null = null
 
 async function load() {
   try {
-    const [w, g, c, h, s] = await Promise.all([
+    const [w, g, c, h, s, p] = await Promise.all([
       apiGet<WatchlistStock[]>('/api/watchlist').catch(() => [] as WatchlistStock[]),
       apiGet<WatchlistGroup[]>('/api/watchlist/groups').catch(() => [] as WatchlistGroup[]),
       apiGet<CacheStats>('/api/cache/stats').catch(() => null),
       apiGet<Health>('/api/health').catch(() => null),
       getSetupStatus().catch(() => null),
+      getPreferences().catch(() => null),
     ])
     watchlist.value = w
     groups.value = g
     cache.value = c
     healthInfo.value = h
     setupStatus.value = s
+    prefs.value = p
     lastRefresh.value = new Date()
   } catch (e) {
     console.error(e)
@@ -261,32 +332,193 @@ onUnmounted(() => {
       </CardContent>
     </Card>
 
-    <!-- 交易风格 -->
+    <!-- 交易偏好（服务端持有） -->
     <Card>
       <CardHeader>
-        <CardTitle as="h2" class="text-base">🎯 交易风格</CardTitle>
-        <CardDescription>影响 AI 回答的侧重点</CardDescription>
+        <CardTitle as="h2" class="text-base">🎯 交易偏好</CardTitle>
+        <CardDescription>
+          影响今日排序、AI 回答侧重点、默认回测参数与微信提醒；行情数值不随风格改变
+        </CardDescription>
       </CardHeader>
       <Separator />
-      <CardContent class="space-y-2 pt-4">
-        <button
-          v-for="s in STYLE_PRESETS"
-          :key="s.id"
-          class="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
-          :class="currentStyle === s.id ? 'border-primary bg-primary/5' : ''"
-          @click="selectStyle(s.id)"
-        >
-          <span class="text-2xl">{{ s.emoji }}</span>
-          <div class="min-w-0 flex-1">
-            <span class="block text-sm font-semibold">{{ s.label }}</span>
-            <span class="block text-xs text-muted-foreground">{{ s.description }}</span>
+      <CardContent v-if="prefs" class="space-y-4 pt-4">
+        <!-- 交易风格 -->
+        <div class="space-y-2">
+          <button
+            v-for="s in STYLE_PRESETS"
+            :key="s.id"
+            class="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
+            :class="prefs.style === s.id ? 'border-primary bg-primary/5' : ''"
+            :disabled="prefsSaving"
+            @click="selectStyle(s.id)"
+          >
+            <span class="text-2xl">{{ s.emoji }}</span>
+            <div class="min-w-0 flex-1">
+              <span class="block text-sm font-semibold">{{ s.label }}</span>
+              <span class="block text-xs text-muted-foreground">{{ s.description }}</span>
+            </div>
+            <span
+              v-if="prefs.style === s.id"
+              class="size-2 shrink-0 rounded-full bg-primary"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+
+        <Separator />
+
+        <!-- 持有周期 / 回撤敏感度 / 提醒级别 -->
+        <div class="space-y-3 text-sm">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">持有周期</span>
+            <Select
+              :model-value="prefs.holding_period"
+              :disabled="prefsSaving"
+              @update:model-value="setHoldingPeriod"
+            >
+              <SelectTrigger class="h-8 w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in HOLDING_PERIOD_OPTIONS" :key="o.id" :value="o.id">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <span
-            v-if="currentStyle === s.id"
-            class="size-2 shrink-0 rounded-full bg-primary"
-            aria-hidden="true"
-          />
-        </button>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">回撤敏感度</span>
+            <Select
+              :model-value="prefs.drawdown_sensitivity"
+              :disabled="prefsSaving"
+              @update:model-value="setDrawdownSensitivity"
+            >
+              <SelectTrigger class="h-8 w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in DRAWDOWN_OPTIONS" :key="o.id" :value="o.id">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">微信提醒最低级别</span>
+            <Select
+              :model-value="prefs.notify_min_severity"
+              :disabled="prefsSaving"
+              @update:model-value="setNotifyMinSeverity"
+            >
+              <SelectTrigger class="h-8 w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in NOTIFY_SEVERITY_OPTIONS" :key="o.id" :value="o.id">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            按当前偏好，默认持有约 {{ prefs.default_hold_days }} 天（用于默认回测参数）
+          </p>
+        </div>
+
+        <Separator />
+
+        <!-- 提醒时段 -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-muted-foreground">提醒时段</span>
+            <span v-if="!prefs.reminder_windows.length" class="text-xs text-muted-foreground">
+              全天可提醒
+            </span>
+          </div>
+          <div
+            v-for="(w, i) in prefs.reminder_windows"
+            :key="`${w.start}-${w.end}-${i}`"
+            class="flex items-center gap-2"
+          >
+            <input
+              type="time"
+              :value="w.start"
+              :disabled="prefsSaving"
+              class="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-sm"
+              @change="applyPrefsPatch({
+                reminder_windows: prefs!.reminder_windows.map((item, j) =>
+                  j === i ? { ...item, start: ($event.target as HTMLInputElement).value } : item,
+                ),
+              })"
+            />
+            <span class="text-xs text-muted-foreground">至</span>
+            <input
+              type="time"
+              :value="w.end"
+              :disabled="prefsSaving"
+              class="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-sm"
+              @change="applyPrefsPatch({
+                reminder_windows: prefs!.reminder_windows.map((item, j) =>
+                  j === i ? { ...item, end: ($event.target as HTMLInputElement).value } : item,
+                ),
+              })"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-8 px-2 text-xs hover:text-destructive"
+              :disabled="prefsSaving"
+              @click="removeReminderWindow(i)"
+            >
+              删除
+            </Button>
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              v-model="newWindowStart"
+              type="time"
+              :disabled="prefsSaving"
+              class="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-sm"
+            />
+            <span class="text-xs text-muted-foreground">至</span>
+            <input
+              v-model="newWindowEnd"
+              type="time"
+              :disabled="prefsSaving"
+              class="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-sm"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-8 px-2 text-xs"
+              :disabled="prefsSaving || !newWindowStart || !newWindowEnd"
+              @click="addReminderWindow"
+            >
+              添加
+            </Button>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-muted-foreground">
+            <template v-if="prefs.updated_at">
+              更新于 {{ new Date(prefs.updated_at).toLocaleString('zh-CN') }}
+            </template>
+          </span>
+          <Button
+            :variant="confirmResetPrefs ? 'destructive' : 'outline'"
+            size="sm"
+            :disabled="prefsSaving"
+            @click="resetPrefs"
+          >
+            {{ confirmResetPrefs ? '确认恢复默认？' : '恢复默认' }}
+          </Button>
+        </div>
+      </CardContent>
+      <CardContent v-else class="pt-4">
+        <p class="py-3 text-center text-sm text-muted-foreground">偏好设置暂不可用</p>
       </CardContent>
     </Card>
 

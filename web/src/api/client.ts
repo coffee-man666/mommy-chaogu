@@ -152,6 +152,20 @@ export async function apiPost<T>(
   return res.json()
 }
 
+export async function apiPut<T>(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  const res = await doFetch('PUT', path, {
+    method: 'PUT',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+    signal,
+  })
+  return res.json()
+}
+
 export async function apiDelete(path: string): Promise<void> {
   await doFetch('DELETE', path, {
     method: 'DELETE',

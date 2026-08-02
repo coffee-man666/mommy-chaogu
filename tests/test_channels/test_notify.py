@@ -215,6 +215,106 @@ class TestWeixinNotifyDeduper:
         assert dedup2.should_push(signal) is False
 
 
+class TestPreferenceFiltering:
+    """preference_provider 接入后的筛选行为（/api/preferences 同一份配置）。"""
+
+    # 固定 UTC 时间 → Asia/Shanghai（UTC+8）
+    _SHANGHAI_10AM = datetime(2026, 8, 3, 2, 0, tzinfo=UTC)  # 上海 10:00
+    _SHANGHAI_8PM = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)  # 上海 20:00
+    _SHANGHAI_2AM = datetime(2026, 8, 3, 18, 0, tzinfo=UTC)  # 上海 次日 02:00
+
+    def _send(
+        self,
+        tmp_path: Path,
+        signal: Signal,
+        prefs: dict,
+        now: datetime,
+    ) -> tuple[int, MagicMock]:
+        mock_client = MagicMock()
+        with patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls:
+            mock_store_cls.return_value.load_credentials.return_value = _mock_creds()
+            result = send_signal_notifications(
+                [signal],
+                deduper=WeixinNotifyDeduper(tmp_path / "state.json"),
+                client=mock_client,
+                preference_provider=lambda: prefs,
+                now=now,
+            )
+        return result, mock_client
+
+    @staticmethod
+    def _prefs(**overrides: object) -> dict:
+        from mommy_chaogu.preferences import default_preferences
+
+        prefs = default_preferences()
+        prefs.update(overrides)
+        return prefs
+
+    def test_severity_floor_blocks_warning(self, tmp_path: Path) -> None:
+        prefs = self._prefs(notify_min_severity="critical")
+        result, mock_client = self._send(tmp_path, _make_signal(), prefs, self._SHANGHAI_10AM)
+        assert result == 0
+        mock_client.send_text.assert_not_called()
+
+    def test_severity_floor_passes_critical(self, tmp_path: Path) -> None:
+        prefs = self._prefs(notify_min_severity="critical")
+        result, mock_client = self._send(
+            tmp_path, _make_signal(severity=SignalSeverity.CRITICAL), prefs, self._SHANGHAI_10AM
+        )
+        assert result == 1
+        assert mock_client.send_text.call_count == 1
+
+    def test_watched_rules_allowlist(self, tmp_path: Path) -> None:
+        prefs = self._prefs(watched_rules=["other_rule"])
+        result, mock_client = self._send(tmp_path, _make_signal(), prefs, self._SHANGHAI_10AM)
+        assert result == 0
+        mock_client.send_text.assert_not_called()
+
+        prefs = self._prefs(watched_rules=["price_change_threshold"])
+        result, mock_client = self._send(
+            tmp_path / "sub", _make_signal(), prefs, self._SHANGHAI_10AM
+        )
+        assert result == 1
+
+    def test_reminder_window_inside_and_outside(self, tmp_path: Path) -> None:
+        prefs = self._prefs(reminder_windows=[{"start": "09:30", "end": "15:00"}])
+        result, mock_client = self._send(
+            tmp_path / "in", _make_signal(), prefs, self._SHANGHAI_10AM
+        )
+        assert result == 1
+        assert mock_client.send_text.call_count == 1
+
+        result, mock_client = self._send(
+            tmp_path / "out", _make_signal(), prefs, self._SHANGHAI_8PM
+        )
+        assert result == 0
+        mock_client.send_text.assert_not_called()
+
+    def test_midnight_wrapping_window(self, tmp_path: Path) -> None:
+        prefs = self._prefs(reminder_windows=[{"start": "22:00", "end": "07:00"}])
+        result, mock_client = self._send(tmp_path, _make_signal(), prefs, self._SHANGHAI_2AM)
+        assert result == 1
+        assert mock_client.send_text.call_count == 1
+
+    def test_provider_exception_still_delivers(self, tmp_path: Path) -> None:
+        """provider 抛异常：记日志并跳过过滤（宁可多推也不静默丢告警）。"""
+
+        def _boom() -> dict:
+            raise RuntimeError("db locked")
+
+        mock_client = MagicMock()
+        with patch("mommy_chaogu.channels.notify.WeixinStore") as mock_store_cls:
+            mock_store_cls.return_value.load_credentials.return_value = _mock_creds()
+            result = send_signal_notifications(
+                [_make_signal()],
+                deduper=WeixinNotifyDeduper(tmp_path / "state.json"),
+                client=mock_client,
+                preference_provider=_boom,
+            )
+        assert result == 1
+        assert mock_client.send_text.call_count == 1
+
+
 class TestFormatNotification:
     """消息格式测试。"""
 

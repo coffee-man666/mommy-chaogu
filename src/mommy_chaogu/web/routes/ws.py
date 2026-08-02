@@ -13,14 +13,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from mommy_chaogu.preferences import default_preferences
 from mommy_chaogu.web.agent_context import AgentPageContext, page_context_addendum
 from mommy_chaogu.web.background import BackgroundService, get_service
 from mommy_chaogu.web.mappers import signal_to_out, snapshot_to_out
-from mommy_chaogu.web.trading_style import (
-    DEFAULT_TRADING_STYLE,
-    parse_trading_style,
-    trading_style_context,
-)
+from mommy_chaogu.web.trading_style import preference_context
 
 _log = logging.getLogger(__name__)
 
@@ -156,11 +153,13 @@ async def ws_agent(websocket: WebSocket) -> None:
                 continue
 
             session_id = msg.get("session_id", "web-default")
+            # 交易风格等偏好由服务端持有（/api/preferences），不再从客户端读取；
+            # 每条消息读取一次，偏好修改即时生效；读取失败回落默认值。
             try:
-                style_preset = parse_trading_style(msg.get("style_preset", DEFAULT_TRADING_STYLE))
-            except ValueError:
-                await websocket.send_json({"type": "error", "message": "无效的交易风格设置"})
-                continue
+                prefs = get_watchlist_store().get_user_preferences()
+            except Exception as exc:
+                _log.warning("读取用户偏好失败，Agent 使用默认偏好: %s", exc)
+                prefs = default_preferences()
             try:
                 raw_page_context = msg.get("page_context")
                 page_context = (
@@ -237,7 +236,7 @@ async def ws_agent(websocket: WebSocket) -> None:
             drain_task = asyncio.create_task(_drain_stream())
             try:
                 # agent.chat 在 worker 线程跑，三个回调实时推事件
-                addenda = [trading_style_context(style_preset)]
+                addenda = [preference_context(prefs)]
                 if page_addendum := page_context_addendum(
                     page_context,
                     get_portfolio_store(),

@@ -11,13 +11,16 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from mommy_chaogu.channels.store import WeixinStore
 from mommy_chaogu.channels.weixin import WeixinClient
 from mommy_chaogu.db_paths import DEFAULT_DATA_DIR
+from mommy_chaogu.preferences import passes_notification_preferences
 
 if TYPE_CHECKING:
     from mommy_chaogu.signals.types import Signal
@@ -139,10 +142,19 @@ def send_signal_notifications(
     web_base_url: str = "",
     client: WeixinClient | None = None,
     deduper: WeixinNotifyDeduper | None = None,
+    preference_provider: Callable[[], Mapping[str, Any]] | None = None,
+    now: datetime | None = None,
 ) -> int:
     """通过微信通道主动推送信号通知。
 
     使用持久化状态确保连续轮询不重复，并在网络发送前持久化 reservation。
+
+    ``preference_provider`` 提供时，每次调用读取一次用户偏好
+    （/api/preferences 的同一份配置），在 dedup reservation 之前按
+    严重度下限 / 关注规则 / 提醒时段过滤信号。
+    注意：provider 抛异常时记日志并**跳过过滤**（按全部通过处理）——
+    宁可多推也不过滤失败时静默丢弃关键告警。
+    ``now`` 仅用于测试注入当前时间（默认取系统 UTC 时间）。
 
     Returns: 成功发送的条数（0 = 未连接/无信号/发送失败/全部已推送）。
     """
@@ -155,6 +167,14 @@ def send_signal_notifications(
     if not signals:
         return 0
 
+    prefs: Mapping[str, Any] | None = None
+    if preference_provider is not None:
+        try:
+            prefs = preference_provider()
+        except Exception as exc:
+            _log.warning("读取用户偏好失败，本轮微信通知不按偏好过滤: %s", exc)
+            prefs = None
+
     store = WeixinStore()
     creds = store.load_credentials()
     if creds is None:
@@ -164,6 +184,13 @@ def send_signal_notifications(
     sent = 0
 
     for signal in signals:
+        if prefs is not None and not passes_notification_preferences(
+            severity=str(getattr(signal.severity, "value", signal.severity)),
+            rule_id=signal.rule_id,
+            prefs=prefs,
+            now=now if now is not None else datetime.now(UTC),
+        ):
+            continue
         try:
             reserved, previous = dedup.reserve(signal)
         except OSError as exc:

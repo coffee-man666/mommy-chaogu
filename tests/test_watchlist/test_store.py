@@ -213,3 +213,65 @@ def test_stats(store: WatchlistStore) -> None:
     store.add_entry("000001", "银行")
     st = store.stats()
     assert st == {"groups": 2, "entries": 3, "codes": 3}
+
+
+# ---------- User preferences (singleton) ----------
+
+
+def test_get_user_preferences_defaults_without_row(store: WatchlistStore) -> None:
+    prefs = store.get_user_preferences()
+    assert prefs["style"] == "balanced"
+    assert prefs["holding_period"] == "swing"
+    assert prefs["drawdown_sensitivity"] == "medium"
+    assert prefs["notify_min_severity"] == "warning"
+    assert prefs["watched_rules"] == []
+    assert prefs["reminder_windows"] == []
+    assert prefs["updated_at"] is None
+
+
+def test_update_user_preferences_upserts_singleton(store: WatchlistStore) -> None:
+    updated = store.update_user_preferences({"style": "conservative"})
+    assert updated["style"] == "conservative"
+    assert updated["holding_period"] == "swing"  # 未更新字段回落默认
+    assert updated["updated_at"] is not None
+
+    again = store.update_user_preferences({"holding_period": "long"})
+    assert again["style"] == "conservative"  # 上次写入保留（单例行 upsert）
+    assert again["holding_period"] == "long"
+
+
+def test_update_user_preferences_whitelists_columns(store: WatchlistStore) -> None:
+    prefs = store.update_user_preferences({"style": "aggressive", "unknown_field": "x", "id": 99})
+    assert prefs["style"] == "aggressive"
+    assert "unknown_field" not in prefs
+
+
+def test_update_user_preferences_json_columns(store: WatchlistStore) -> None:
+    prefs = store.update_user_preferences(
+        {
+            "watched_rules": ["rule_a", "rule_b"],
+            "reminder_windows": [{"start": "09:30", "end": "15:00"}],
+        }
+    )
+    assert prefs["watched_rules"] == ["rule_a", "rule_b"]
+    assert prefs["reminder_windows"] == [{"start": "09:30", "end": "15:00"}]
+    # 重新读取（新 session）仍是持久化值
+    reread = store.get_user_preferences()
+    assert reread["watched_rules"] == ["rule_a", "rule_b"]
+    assert reread["reminder_windows"] == [{"start": "09:30", "end": "15:00"}]
+
+
+def test_reset_user_preferences_restores_defaults(store: WatchlistStore) -> None:
+    store.update_user_preferences({"style": "aggressive", "watched_rules": ["rule_a"]})
+    prefs = store.reset_user_preferences()
+    assert prefs["style"] == "balanced"
+    assert prefs["watched_rules"] == []
+    assert prefs["updated_at"] is None
+    # reset 后再读也是默认值
+    assert store.get_user_preferences()["style"] == "balanced"
+
+
+def test_reset_user_preferences_idempotent(store: WatchlistStore) -> None:
+    prefs = store.reset_user_preferences()
+    assert prefs["style"] == "balanced"
+    assert prefs["updated_at"] is None

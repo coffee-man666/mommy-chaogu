@@ -23,11 +23,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, joinedload, sessionmaker
 
 from mommy_chaogu.db import EngineOwner, create_sqlite_engine
+from mommy_chaogu.preferences import default_preferences
 from mommy_chaogu.watchlist.models import (
     BasketMemberPreference,
     BasketPreference,
     Group,
     StockEntry,
+    UserPreference,
     WatchlistBase,
 )
 
@@ -314,6 +316,62 @@ class WatchlistStore(EngineOwner):
             else:
                 row.weight = weight
                 row.updated_at = _utcnow()
+
+    # ---------- User preferences (singleton) ----------
+
+    #: 允许通过 update_user_preferences 写入的列（白名单）
+    _USER_PREF_COLUMNS = (
+        "style",
+        "holding_period",
+        "drawdown_sensitivity",
+        "notify_min_severity",
+        "watched_rules",
+        "reminder_windows",
+    )
+
+    def get_user_preferences(self) -> dict[str, Any]:
+        """读取服务端统一用户偏好；未设置的字段回落到 DEFAULT_PREFERENCES。
+
+        返回的是持久化值 + 默认值的合并结果（不含派生字段，派生字段如
+        default_hold_days 由 schema 层补充）。从未定制时 updated_at 为 None。
+        """
+        prefs = default_preferences()
+        with self.session() as s:
+            row = s.get(UserPreference, 1)
+            if row is None:
+                return prefs
+            for col in self._USER_PREF_COLUMNS:
+                value = getattr(row, col)
+                if value is not None:
+                    prefs[col] = value
+            prefs["updated_at"] = row.updated_at
+            return prefs
+
+    def update_user_preferences(self, updates: dict[str, Any]) -> dict[str, Any]:
+        """部分更新用户偏好（白名单列），upsert 单例行并刷新 updated_at。
+
+        白名单过滤后没有可写字段时不落库（updated_at 保持不变）。
+        """
+        allowed = {k: v for k, v in updates.items() if k in self._USER_PREF_COLUMNS}
+        if not allowed:
+            return self.get_user_preferences()
+        with self.session() as s:
+            row = s.get(UserPreference, 1)
+            if row is None:
+                row = UserPreference(id=1)
+                s.add(row)
+            for key, value in allowed.items():
+                setattr(row, key, value)
+            row.updated_at = _utcnow()
+        return self.get_user_preferences()
+
+    def reset_user_preferences(self) -> dict[str, Any]:
+        """删除单例行，恢复全部默认值。"""
+        with self.session() as s:
+            row = s.get(UserPreference, 1)
+            if row is not None:
+                s.delete(row)
+        return self.get_user_preferences()
 
     # ---------- Backfill name ----------
 

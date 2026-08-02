@@ -40,6 +40,7 @@ from mommy_chaogu.web.routes import (
     market,
     overview,
     portfolio,
+    preferences,
     quotes,
     setup,
     signals,
@@ -183,6 +184,9 @@ def create_app(
             send_signal_notifications,
             web_base_url=web_base_url,
             deduper=WeixinNotifyDeduper(weixin_dedup_path),
+            # 微信通知按服务端用户偏好（/api/preferences）筛选；
+            # 读取失败时 notify 层记日志并跳过过滤，不静默丢告警
+            preference_provider=lambda: get_watchlist_store().get_user_preferences(),
         )
 
         service = BackgroundService(
@@ -245,6 +249,7 @@ def create_app(
     app.include_router(themes.router)
     app.include_router(baskets.router)
     app.include_router(overview.router)
+    app.include_router(preferences.router)
     app.include_router(ws.router)
     app.include_router(setup.router)
 

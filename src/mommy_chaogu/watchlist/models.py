@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -116,6 +117,27 @@ class BasketMemberPreference(WatchlistBase):
     basket_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
     weight: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class UserPreference(WatchlistBase):
+    """服务端统一用户偏好（单例行，id 恒为 1）。
+
+    只保存用户显式设置过的字段；为 None 的字段由应用层回落到
+    ``preferences.DEFAULT_PREFERENCES``。字段定义见 ``mommy_chaogu.preferences``。
+    """
+
+    __tablename__ = "user_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # 恒为 1（单例）
+    style: Mapped[str | None] = mapped_column(String(32))
+    holding_period: Mapped[str | None] = mapped_column(String(32))
+    drawdown_sensitivity: Mapped[str | None] = mapped_column(String(32))
+    notify_min_severity: Mapped[str | None] = mapped_column(String(32))
+    watched_rules: Mapped[list[str] | None] = mapped_column(JSON)
+    reminder_windows: Mapped[list[dict[str, str]] | None] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )

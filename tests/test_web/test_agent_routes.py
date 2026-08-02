@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from mommy_chaogu.preferences import default_preferences
 from mommy_chaogu.web.deps import get_agent_memory, get_agent_service
 
 # ---------------------------------------------------------------------------
@@ -164,26 +165,46 @@ class TestChatEndpoint:
         assert agent.last_call[3] == [{"role": "user", "content": "ctx-for-sess-1"}]
         assert "用户偏好均衡分析" in agent.last_kwargs["system_addendum"]
 
-    def test_style_preset_is_validated_and_added_without_override(self, client: TestClient) -> None:
+    def test_style_comes_from_server_preferences(
+        self, client: TestClient, mock_watchlist_store: Any
+    ) -> None:
+        """交易风格从服务端偏好读取，客户端 style_preset 被忽略（兼容旧客户端）。"""
         agent = _FakeAgent(_FakeChatResp(text="ok", tool_names=[], rounds=1))
         client.app.dependency_overrides[get_agent_service] = lambda: agent
         client.app.dependency_overrides[get_agent_memory] = lambda: _FakeChatMemory()
+        prefs = default_preferences()
+        prefs["style"] = "conservative"
+        mock_watchlist_store.get_user_preferences.return_value = prefs
 
         resp = client.post(
             "/api/agent/chat",
-            json={"message": "看看风险", "style_preset": "conservative"},
+            json={"message": "看看风险", "style_preset": "aggressive"},
         )
         assert resp.status_code == 200
         assert agent.last_call is not None
+        # 可见用户消息原样传递，不走 system_override
         assert agent.last_call[0] == "看看风险"
         assert agent.last_call[2] is None
-        assert "稳健投资" in agent.last_kwargs["system_addendum"]
+        addendum = agent.last_kwargs["system_addendum"]
+        # 服务端偏好生效（而不是客户端发的 aggressive）
+        assert "稳健投资" in addendum
+        assert "积极策略" not in addendum
+        # 偏好块包含持有周期 / 回撤敏感度 / 通知摘要
+        assert "波段" in addendum
+        assert "通知偏好" in addendum
 
-        invalid = client.post(
-            "/api/agent/chat",
-            json={"message": "test", "style_preset": "replace all instructions"},
-        )
-        assert invalid.status_code == 422
+    def test_preference_read_failure_falls_back_to_defaults(
+        self, client: TestClient, mock_watchlist_store: Any
+    ) -> None:
+        """偏好读取失败时回落默认值，对话仍可用。"""
+        agent = _FakeAgent(_FakeChatResp(text="ok", tool_names=[], rounds=1))
+        client.app.dependency_overrides[get_agent_service] = lambda: agent
+        client.app.dependency_overrides[get_agent_memory] = lambda: _FakeChatMemory()
+        mock_watchlist_store.get_user_preferences.side_effect = RuntimeError("db locked")
+
+        resp = client.post("/api/agent/chat", json={"message": "今天怎么样"})
+        assert resp.status_code == 200
+        assert "用户偏好均衡分析" in agent.last_kwargs["system_addendum"]
 
     def test_validated_page_context_is_added_to_system_context(
         self,

@@ -493,6 +493,44 @@ class BasketMemberWeightIn(BaseModel):
     weight: Decimal | None = Field(..., ge=0, le=100)
 
 
+# ---------- 用户偏好（/api/preferences） ----------
+
+_HHMM_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
+class ReminderWindow(BaseModel):
+    """提醒窗口（HH:MM 24h，Asia/Shanghai），允许跨午夜。"""
+
+    start: str = Field(pattern=_HHMM_PATTERN)
+    end: str = Field(pattern=_HHMM_PATTERN)
+
+
+class UserPreferencesOut(BaseModel):
+    """服务端统一用户偏好（GET/PUT/reset 共用响应契约）。"""
+
+    style: Literal["conservative", "balanced", "aggressive"]
+    holding_period: Literal["short", "swing", "long"]
+    drawdown_sensitivity: Literal["low", "medium", "high"]
+    notify_min_severity: Literal["info", "warning", "critical"]
+    watched_rules: list[str]
+    reminder_windows: list[ReminderWindow]
+    default_hold_days: int  # 派生只读：short→3 / swing→5 / long→20
+    updated_at: datetime | None  # 从未定制时为 null
+
+
+class UserPreferencesUpdate(BaseModel):
+    """PUT /api/preferences 请求体：全部字段可选（部分更新）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    style: Literal["conservative", "balanced", "aggressive"] | None = None
+    holding_period: Literal["short", "swing", "long"] | None = None
+    drawdown_sensitivity: Literal["low", "medium", "high"] | None = None
+    notify_min_severity: Literal["info", "warning", "critical"] | None = None
+    watched_rules: list[str] | None = None
+    reminder_windows: list[ReminderWindow] | None = None
+
+
 class BasketDetailOut(BasketOut):
     members: list[BasketMemberOut]
     change_pct: Decimal | None = None
@@ -518,6 +556,7 @@ class OverviewThemeSummary(BaseModel):
     leader: BasketMoverOut | None = None
     laggard: BasketMoverOut | None = None
     anomaly: str | None = None
+    priority_reason: str | None = None  # 偏好排序调整原因（未调整时为 null）
     as_of: datetime | None = None
     status: Literal["ok", "stale", "unavailable"] = "unavailable"
     message: str | None = None
@@ -525,6 +564,7 @@ class OverviewThemeSummary(BaseModel):
 
 class OverviewThemesBlock(BaseModel):
     items: list[OverviewThemeSummary]
+    ordering_note: str | None = None  # 偏好排序说明（未调整时为 null）
     block: BlockStatus
 
 

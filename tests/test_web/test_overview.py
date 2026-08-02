@@ -237,6 +237,145 @@ class TestOverviewThemes:
         mock_adapter.get_quotes.assert_not_called()
 
 
+class TestOverviewThemePreferenceOrdering:
+    """主题区块的偏好感知排序（风格 / 回撤敏感度），数值字段不变。"""
+
+    def _setup_themes(
+        self,
+        mock_cache_store: MagicMock,
+        mock_service: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        change_pcts: list[str],
+    ) -> None:
+        """造 N 个单成分主题，篮子 change_pct 即成分股涨幅（|x|<5 时无异动）。"""
+        from tests.test_web.conftest import make_quote
+
+        mock_service.latest_snapshot = None
+        details = []
+        quotes = {}
+        for i, pct in enumerate(change_pcts):
+            code = f"60000{i}"
+            details.append(
+                {
+                    "id": f"t{i}",
+                    "name": f"主题{i}",
+                    "description": "",
+                    "stocks": [{"code": code, "name": f"股{i}"}],
+                }
+            )
+            quotes[code] = make_quote(code, f"股{i}", change_pct=pct)
+        monkeypatch.setattr(
+            "mommy_chaogu.services.theme_service.ThemeService.list_theme_details",
+            lambda _self: details,
+        )
+        mock_cache_store.get_quote.side_effect = lambda code: SimpleNamespace(quote=quotes[code])
+
+    def _set_prefs(self, mock_watchlist_store: MagicMock, **overrides: object) -> None:
+        from mommy_chaogu.preferences import default_preferences
+
+        prefs = default_preferences()
+        prefs.update(overrides)
+        mock_watchlist_store.get_user_preferences.return_value = prefs
+
+    def test_default_prefs_keep_original_order(
+        self,
+        client: pytest.fixture,
+        mock_cache_store: MagicMock,
+        mock_service: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """默认偏好（均衡/中等敏感度）且无异动：不重排、无说明。"""
+        _patch_indexes(monkeypatch)
+        self._setup_themes(mock_cache_store, mock_service, monkeypatch, ["2.00", "-1.00"])
+        themes = client.get("/api/overview").json()["themes"]
+        assert [item["id"] for item in themes["items"]] == ["theme:t0", "theme:t1"]
+        assert themes["ordering_note"] is None
+        assert all(item["priority_reason"] is None for item in themes["items"])
+
+    def test_conservative_prioritizes_falling_basket(
+        self,
+        client: pytest.fixture,
+        mock_cache_store: MagicMock,
+        mock_service: MagicMock,
+        mock_watchlist_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _patch_indexes(monkeypatch)
+        self._setup_themes(mock_cache_store, mock_service, monkeypatch, ["2.00", "-1.00"])
+        self._set_prefs(mock_watchlist_store, style="conservative")
+        themes = client.get("/api/overview").json()["themes"]
+        assert [item["id"] for item in themes["items"]] == ["theme:t1", "theme:t0"]
+        assert themes["ordering_note"] == "已按你的稳健风格调整关注顺序"
+        assert themes["items"][0]["priority_reason"] == "今日下跌，稳健风格下优先关注风险"
+        assert themes["items"][1]["priority_reason"] is None
+
+    def test_aggressive_prioritizes_rising_basket(
+        self,
+        client: pytest.fixture,
+        mock_cache_store: MagicMock,
+        mock_service: MagicMock,
+        mock_watchlist_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _patch_indexes(monkeypatch)
+        self._setup_themes(mock_cache_store, mock_service, monkeypatch, ["-1.00", "2.00"])
+        self._set_prefs(mock_watchlist_store, style="aggressive")
+        themes = client.get("/api/overview").json()["themes"]
+        assert [item["id"] for item in themes["items"]] == ["theme:t1", "theme:t0"]
+        assert themes["ordering_note"] == "已按你的积极风格调整关注顺序"
+        assert themes["items"][0]["priority_reason"] == "今日上涨，积极风格下优先展示"
+
+    def test_high_sensitivity_prioritizes_anomaly(
+        self,
+        client: pytest.fixture,
+        mock_cache_store: MagicMock,
+        mock_service: MagicMock,
+        mock_watchlist_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """|涨幅|>=5 触发异动；高回撤敏感度 +2 提前展示。"""
+        _patch_indexes(monkeypatch)
+        self._setup_themes(mock_cache_store, mock_service, monkeypatch, ["1.00", "6.00"])
+        self._set_prefs(mock_watchlist_store, drawdown_sensitivity="high")
+        themes = client.get("/api/overview").json()["themes"]
+        assert [item["id"] for item in themes["items"]] == ["theme:t1", "theme:t0"]
+        assert themes["ordering_note"] == "已按你的高回撤敏感度调整关注顺序"
+        assert themes["items"][0]["priority_reason"] == "出现异动，按你的高回撤敏感度提前"
+        # 数值字段不受排序影响
+        assert themes["items"][0]["change_pct"] == "6.00"
+        assert themes["items"][1]["change_pct"] == "1.00"
+
+    def test_numeric_values_identical_across_styles(
+        self,
+        client: pytest.fixture,
+        mock_cache_store: MagicMock,
+        mock_service: MagicMock,
+        mock_watchlist_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """排序只改顺序和解释，任何风格下数值字段完全一致。"""
+        _patch_indexes(monkeypatch)
+        self._setup_themes(mock_cache_store, mock_service, monkeypatch, ["2.00", "-1.00"])
+
+        self._set_prefs(mock_watchlist_store)
+        baseline = {
+            item["id"]: (item["change_pct"], item["leader"], item["laggard"], item["anomaly"])
+            for item in client.get("/api/overview").json()["themes"]["items"]
+        }
+
+        for prefs in (
+            {"style": "conservative"},
+            {"style": "aggressive"},
+            {"drawdown_sensitivity": "high"},
+        ):
+            self._set_prefs(mock_watchlist_store, **prefs)
+            items = client.get("/api/overview").json()["themes"]["items"]
+            assert {
+                item["id"]: (item["change_pct"], item["leader"], item["laggard"], item["anomaly"])
+                for item in items
+            } == baseline
+
+
 class TestOverviewSignals:
     """信号区块测试。"""
 

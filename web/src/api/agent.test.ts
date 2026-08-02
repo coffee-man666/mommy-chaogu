@@ -53,15 +53,14 @@ describe('agent websocket lifecycle', () => {
     expect(JSON.parse(socket.send.mock.calls[0][0])).toMatchObject({
       message: '分析 600519',
       session_id: 'web-test-session',
-      style_preset: 'balanced',
     })
     expect(onError).not.toHaveBeenCalled()
     client.close()
   })
 
-  it('sends only the validated style preset identifier', async () => {
+  it('does not send a client-side style preset (server reads preferences)', async () => {
     const client = agentStream(vi.fn(), vi.fn(), vi.fn(), vi.fn())
-    client.send('分析风险', undefined, 'conservative')
+    client.send('分析风险')
     await vi.runAllTicks()
 
     const socket = MockWebSocket.instances[0]
@@ -71,14 +70,13 @@ describe('agent websocket lifecycle', () => {
     expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
       message: '分析风险',
       session_id: 'web-test-session',
-      style_preset: 'conservative',
     })
     client.close()
   })
 
   it('sends structured stock context separately from the user message', async () => {
     const client = agentStream(vi.fn(), vi.fn(), vi.fn(), vi.fn())
-    client.send('接着分析', undefined, 'balanced', {
+    client.send('接着分析', undefined, {
       surface: 'stock',
       stock_code: '600519',
       tab: 'flow',

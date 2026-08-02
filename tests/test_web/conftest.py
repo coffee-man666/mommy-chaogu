@@ -29,6 +29,7 @@ from mommy_chaogu.market_data.types import (
     QuoteType,
 )
 from mommy_chaogu.monitor import Snapshot, SnapshotRow
+from mommy_chaogu.preferences import default_preferences
 from mommy_chaogu.signals.types import Signal, SignalSeverity
 from mommy_chaogu.watchlist.models import StockEntry
 
@@ -238,6 +239,7 @@ def mock_watchlist_store() -> MagicMock:
     store.list_groups.return_value = []
     store.list_basket_preferences.return_value = {}
     store.list_basket_member_weights.return_value = {}
+    store.get_user_preferences.return_value = default_preferences()
     return store
 
 

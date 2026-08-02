@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
@@ -227,6 +228,78 @@ def _build_portfolio(
 # ---------- 主题 ----------
 
 
+def _theme_priority_adjustment(
+    item: OverviewThemeSummary,
+    prefs: Mapping[str, Any],
+) -> tuple[int, str | None, set[str]]:
+    """按用户偏好计算单个主题的关注顺序调整分、原因与触发的偏好因子。
+
+    只产出排序依据，不改动任何数值字段。
+    """
+    style = prefs.get("style", "balanced")
+    sensitivity = prefs.get("drawdown_sensitivity", "medium")
+    adjustment = 0
+    reason: str | None = None
+    factors: set[str] = set()
+    if item.anomaly:
+        if sensitivity == "high":
+            adjustment += 2
+            reason = "出现异动，按你的高回撤敏感度提前"
+            factors.add("高回撤敏感度")
+        elif sensitivity == "medium":
+            adjustment += 1
+            reason = "出现异动，按你的回撤敏感度提前"
+            factors.add("中等回撤敏感度")
+    if item.change_pct is not None:
+        if item.change_pct < 0 and (style == "conservative" or sensitivity == "high"):
+            adjustment += 1
+            if style == "conservative":
+                reason = reason or "今日下跌，稳健风格下优先关注风险"
+                factors.add("稳健风格")
+            if sensitivity == "high":
+                reason = reason or "今日下跌，高回撤敏感度下优先关注风险"
+                factors.add("高回撤敏感度")
+        elif item.change_pct > 0 and style == "aggressive":
+            adjustment += 1
+            reason = reason or "今日上涨，积极风格下优先展示"
+            factors.add("积极风格")
+    return adjustment, reason, factors
+
+
+def _ordering_note(factors: set[str]) -> str:
+    """块级排序说明：按实际触发的偏好因子拼一句可解释的中文文案。"""
+    ordered = [
+        label
+        for label in ("稳健风格", "积极风格", "中等回撤敏感度", "高回撤敏感度")
+        if label in factors
+    ]
+    return f"已按你的{'和'.join(ordered)}调整关注顺序"
+
+
+def _order_themes_by_preferences(
+    items: list[OverviewThemeSummary],
+    prefs: Mapping[str, Any],
+) -> tuple[list[OverviewThemeSummary], str | None]:
+    """偏好感知排序：全部调整分为 0 时保持原序、不写说明。
+
+    稳定排序：调整分相同保持原有相对顺序；仅对位置发生变化的条目
+    写入 priority_reason。数值字段一律不动。
+    """
+    adjustments = [_theme_priority_adjustment(item, prefs) for item in items]
+    if all(adj == 0 for adj, _, _ in adjustments):
+        return items, None
+    indexed = sorted(enumerate(items), key=lambda pair: (-adjustments[pair[0]][0], pair[0]))
+    ordered: list[OverviewThemeSummary] = []
+    for new_pos, (orig_pos, item) in enumerate(indexed):
+        if new_pos != orig_pos and adjustments[orig_pos][1] is not None:
+            item.priority_reason = adjustments[orig_pos][1]
+        ordered.append(item)
+    factors: set[str] = set()
+    for _, _, fired in adjustments:
+        factors |= fired
+    return ordered, _ordering_note(factors)
+
+
 def _build_themes(
     store: WatchlistStore,
     cache_store: CacheStore,
@@ -239,9 +312,10 @@ def _build_themes(
         if service and service.latest_snapshot is not None:
             quote_overrides = {row.entry.code: row.quote for row in service.latest_snapshot.rows}
         basket_service = BasketService(store)
+        # 先按关注过滤，再做偏好排序，最后才取前 4 个
         baskets = [
             item for item in basket_service.list_baskets(include_hidden=False) if item["followed"]
-        ][:4]
+        ]
         for code in {member["code"] for basket in baskets for member in basket["members"]}:
             if code in quote_overrides:
                 continue
@@ -264,6 +338,8 @@ def _build_themes(
                     **summary,
                 )
             )
+        items, ordering_note = _order_themes_by_preferences(items, store.get_user_preferences())
+        items = items[:4]
     except Exception as exc:
         _log.warning("overview themes load failed: %s", exc)
         return OverviewThemesBlock(
@@ -282,6 +358,7 @@ def _build_themes(
         message = "部分篮子行情不完整"
     return OverviewThemesBlock(
         items=items,
+        ordering_note=ordering_note,
         block=BlockStatus(
             status=status,
             as_of=min(item_times) if item_times else _utcnow(),

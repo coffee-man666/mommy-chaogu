@@ -1,1 +1,0 @@
-import{a as e}from"./index-MP3KlzlJ.js";function r(t=20){return e(`/api/agent/predictions?limit=${t}`).then(i=>i.predictions)}function a(t,i=20){return e(`/api/agent/predictions?limit=${i}&code=${encodeURIComponent(t)}`).then(n=>n.predictions)}function c(){return e("/api/agent/predictions/stats")}export{a,c as b,r as g};
