@@ -5,7 +5,7 @@
 > Review date: 2026-07-31
 > Related plan: [`PRODUCT-UX-EXECUTION-PLAN.md`](PRODUCT-UX-EXECUTION-PLAN.md)
 > Follow-up result: **Request changes** — several concrete fixes landed, but CI is red and two release-blocking behavior regressions remain.
-> Current implementation: **work packages 0–4 accepted through `30d9bc8`** — full local gates pass; prediction/backtest evidence, shared preferences, and the preference-aware Weixin loop remain open.
+> Current implementation: **work packages 0–4 accepted through `30d9bc8`; work package 6 (shared preferences) implemented in `b1e6ba2`** — full local gates pass; prediction/backtest evidence and the remaining Weixin-loop UX stay open.
 
 ## Commit-to-work index
 
@@ -722,3 +722,42 @@ Commit `30d9bc8` closes the stock-context portion of P2 after the unified-basket
 ### Next action
 
 Create a server-owned preference schema and migrate the current browser-only trading preset. The same preference service should drive Today explanations, Agent emphasis, default backtest parameters, and Weixin reminder selection before adding more preference fields to individual screens.
+
+<a id="review-work-package-6"></a>
+
+## 14. Work package 6 review — shared server-owned preferences
+
+Commit `b1e6ba2` implements the shared-preference package named as the next action above and in execution-plan §10.
+
+### Implemented
+
+- `user_preferences` singleton table in portfolio.db (via `WatchlistBase`, additive `create_all`): style, holding period, drawdown sensitivity, notify minimum severity, watched rules, reminder windows, updated_at.
+- `GET/PUT /api/preferences` + `POST /api/preferences/reset`. Strict enum and HH:MM validation (422 on invalid values; unknown fields forbidden); partial updates via `model_fields_set`; derived `default_hold_days` (short 3 / swing 5 / long 20) is the single source of truth for the future backtest entry.
+- One-time browser migration: a legacy `mommy-trading-style` localStorage value is pushed to the server on the first `getPreferences()` and the key is removed whether or not the push succeeds. The server model is the only authority afterwards.
+- Today basket ordering applies preference-driven priority after follow filtering and before the 4-item slice: anomaly × drawdown sensitivity, negative performance × (conservative | high sensitivity), positive performance × aggressive. Moved items carry `priority_reason`; the block carries `ordering_note` built from the factors that actually fired. Default preferences keep the previous order and render nothing extra, and a dedicated test proves numeric market values are identical across styles.
+- Agent REST and WebSocket no longer accept browser-supplied style. Both read the server preference and compose one `<trading_preference>` addendum (style + holding period with derived days + drawdown sensitivity + notification summary) appended after the base prompt and memory context; `system_override` is not used, and visible user messages / stored history are unchanged. Store-read failure falls back to defaults.
+- Weixin delivery filters by severity floor, watched-rule allowlist, and Asia/Shanghai reminder windows (midnight wrap supported) before dedup reservation. A failing preference provider fails open — logged, delivery unfiltered — so critical alerts are never silently dropped (documented in the code).
+- Settings is now a server-backed 交易偏好 card: three presets, holding-period/drawdown/severity selects with derived `default_hold_days`, a reminder-window editor, and a two-step restore-default. Chat no longer sends style; `stylePresets.ts` is deleted.
+
+### Self-review
+
+- Fail-open on preference-provider failure is a deliberate availability choice; the alternative (fail-closed) can silently suppress critical alerts.
+- The backtest consumer intentionally ships as the derived `default_hold_days` field only — no web/agent backtest surface exists yet, and the one-click stock backtest entry (P2) will consume it.
+- `watched_rules` is validated and honored by the Weixin filter but has no settings-UI editor yet; adding one needs a signal-rule catalog endpoint and is deferred to the Weixin-loop package.
+- Old clients sending `style_preset` are silently ignored (no 422), which keeps the field removal backward compatible.
+
+### Verification
+
+- Ruff format and lint: **passed (333 files)**.
+- Strict mypy: **passed (181 source files)**.
+- Full offline Python suite: **1,832 passed, 13 deselected**.
+- Vue typecheck: **passed**. Vitest: **63 passed**.
+- Production build and packaged-static drift check: **passed**.
+- Playwright: **12 passed, 1 opt-in screenshot test skipped**.
+
+### Open after work package 6
+
+- P2 prediction evidence freshness/coverage, conditional Agent prediction attachments, and the one-click stock backtest entry (consumes `default_hold_days`).
+- Settings-UI editor for `watched_rules` (requires a signal-rule catalog).
+- P4 remainder: preference-driven merged/deduplicated summaries, deep links back into Web context, and channel-health presentation in “我的”.
+- Mobile/desktop screenshot acceptance for the final P3/P4 experience.
