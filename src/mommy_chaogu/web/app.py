@@ -34,6 +34,7 @@ from mommy_chaogu.web.deps import (
 )
 from mommy_chaogu.web.routes import (
     agent,
+    backtest,
     baskets,
     cache,
     earnings,
@@ -240,6 +241,7 @@ def create_app(
     app.include_router(quotes.router)
     app.include_router(market.router)
     app.include_router(market.stocks_router)
+    app.include_router(backtest.router)
     app.include_router(watchlist.router)
     app.include_router(portfolio.router)
     app.include_router(signals.router)

@@ -640,3 +640,110 @@ class TestDeduplication:
 
         assert len(episodic.query()) == 1
         assert len(tracker.all()) == 2  # prediction 不去重
+
+
+class TestPredictionCreationCoverage:
+    """对话提取的预测必须带依据覆盖（data_coverage_at_creation）。"""
+
+    def test_prediction_gets_corrected_coverage(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """同 code 的 observation 修正后 coverage 写入 prediction 的
+        data_coverage_at_creation（不再是 NULL）。"""
+        import json
+
+        extraction = {
+            "observations": [
+                {
+                    "event_type": "analysis_record",
+                    "scope": "stock:603662",
+                    "code": "603662",
+                    "name": "柯力传感",
+                    "summary": "底部反转",
+                    "data": {"price": 80.0},
+                    "data_coverage": {"quote": True, "flow_today": True},  # flow_today 虚报
+                    "confidence": 0.8,
+                }
+            ],
+            "predictions": [
+                {
+                    "code": "603662",
+                    "name": "柯力传感",
+                    "prediction": "5日内看涨",
+                    "direction": "bullish",
+                    "timeframe": "5d",
+                }
+            ],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+
+        preds = tracker.all()
+        assert len(preds) == 1
+        raw = preds[0]["data_coverage_at_creation"]
+        assert raw is not None
+        coverage = json.loads(raw)
+        assert coverage["quote"] is True  # data 有 price → 保留 true
+        assert coverage["flow_today"] is False  # 修正：LLM 虚报 → false
+
+    def test_prediction_without_observation_keeps_null_coverage(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """没有同 code observation 时，coverage 如实记 NULL（不编造）。"""
+        extraction = {
+            "observations": [],
+            "predictions": [
+                {
+                    "code": "603662",
+                    "prediction": "看涨",
+                    "direction": "bullish",
+                    "timeframe": "5d",
+                }
+            ],
+        }
+
+        store_extraction(extraction, episodic, tracker)
+
+        preds = tracker.all()
+        assert len(preds) == 1
+        assert preds[0]["data_coverage_at_creation"] is None
+
+    def test_store_extraction_returns_created_predictions(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """返回值是本轮创建的预测列表（id/code/name），供 WS 附件推送。"""
+        extraction = {
+            "observations": [],
+            "predictions": [
+                {
+                    "code": "600519",
+                    "name": "贵州茅台",
+                    "prediction": "看涨",
+                    "direction": "bullish",
+                    "timeframe": "5d",
+                },
+                {
+                    "code": "000858",
+                    "name": "五粮液",
+                    "prediction": "看跌",
+                    "direction": "bearish",
+                    "timeframe": "5d",
+                },
+            ],
+        }
+
+        created = store_extraction(extraction, episodic, tracker)
+
+        assert len(created) == 2
+        assert [p["code"] for p in created] == ["600519", "000858"]
+        assert created[0]["name"] == "贵州茅台"
+        assert all(p["id"] > 0 for p in created)
+        ids = [p["id"] for p in tracker.all()]
+        assert {p["id"] for p in created} == set(ids)
+
+    def test_store_extraction_empty_returns_empty_list(
+        self, episodic: EpisodicMemory, tracker: PredictionTracker
+    ) -> None:
+        """无 predictions 时返回空列表。"""
+        created = store_extraction({"observations": [], "predictions": []}, episodic, tracker)
+        assert created == []

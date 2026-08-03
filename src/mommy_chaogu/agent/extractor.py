@@ -317,7 +317,7 @@ def store_extraction(
     episodic: EpisodicMemory,
     tracker: PredictionTracker,
     adapter: MarketDataAdapter | None = None,
-) -> None:
+) -> list[dict[str, Any]]:
     """将提取结果写入 episodic_events 和 predictions。
 
     写入 observation 前会计算 summary 的 md5 hash，并检查同 scope +
@@ -328,9 +328,14 @@ def store_extraction(
         episodic: EpisodicMemory
         tracker: PredictionTracker
         adapter: MarketDataAdapter（可选，用于自动填 entry_price）
+
+    Returns:
+        本次创建的预测列表，每条 {"id", "code", "name"}（无预测时为空列表）。
     """
-    # 写 observations（按 code 记录 event_id，供 predictions 做 traceability 关联）
+    # 写 observations（按 code 记录 event_id，供 predictions 做 traceability 关联；
+    # 按 code 记录修正后的 coverage，供同 code 的 prediction 写入依据覆盖）
     event_ids_by_code: dict[str, int] = {}
+    coverage_by_code: dict[str, dict[str, bool]] = {}
     for obs in extraction.get("observations", []):
         try:
             code = obs.get("code")
@@ -344,6 +349,8 @@ def store_extraction(
                 adapter,
                 code,
             )
+            if code:
+                coverage_by_code[code] = coverage
             # 去重：同 scope + content_hash 已存在则跳过
             content_hash = _summary_hash(summary)
             if episodic.exists_by_hash(scope, content_hash):
@@ -369,7 +376,8 @@ def store_extraction(
         except Exception as e:
             _log.warning("extract: failed to write observation: %s", e)
 
-    # 写 predictions（关联同 code 的源 observation 事件）
+    # 写 predictions（关联同 code 的源 observation 事件 + 依据覆盖）
+    created: list[dict[str, Any]] = []
     for pred in extraction.get("predictions", []):
         try:
             code = pred.get("code", "")
@@ -390,7 +398,7 @@ def store_extraction(
                 except Exception:
                     pass  # 拿不到报价不影响预测创建
 
-            tracker.create(
+            pred_id = tracker.create(
                 code=code,
                 name=pred.get("name"),
                 prediction=pred.get("prediction", ""),
@@ -400,8 +408,11 @@ def store_extraction(
                 target_price=pred.get("target_price"),
                 entry_price=entry_price,
                 change_pct_at_creation=change_pct,
+                data_coverage=coverage_by_code.get(code),
                 source_event_id=event_ids_by_code.get(code),
             )
-            _log.debug("extract: wrote prediction for %s", code)
+            created.append({"id": pred_id, "code": code, "name": pred.get("name")})
+            _log.debug("extract: wrote prediction #%d for %s", pred_id, code)
         except Exception as e:
             _log.warning("extract: failed to write prediction: %s", e)
+    return created

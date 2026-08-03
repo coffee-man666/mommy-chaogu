@@ -93,7 +93,7 @@ class MemoryPipeline:
         *,
         usage_out: dict[str, int] | None = None,
         usage_lock: threading.Lock | None = None,
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """对话结束后从 (user, assistant) 中抽取 observations / predictions 并落库。
 
         - ``client`` 为 ``None`` → 跳过（不调 LLM）；
@@ -104,13 +104,17 @@ class MemoryPipeline:
 
         *usage_out* / *usage_lock* 把提取 LLM 调用消耗的 token 计入调用方
         的共享统计容器（异步提取线程与主线程靠锁互斥）。
+
+        Returns:
+            本次创建的预测列表，每条 {"id", "code", "name"}；
+            跳过 / 失败 / 无预测时返回空列表。
         """
         if self._client is None or self._model is None:
             _log.debug("record_analysis: no LLM client/model, skipping extraction")
-            return
+            return []
         if self._episodic is None or self._tracker is None:
             _log.debug("record_analysis: episodic/tracker missing, skipping")
-            return
+            return []
 
         try:
             extraction = extract_from_conversation(
@@ -123,17 +127,19 @@ class MemoryPipeline:
             )
         except Exception as e:
             _log.warning("record_analysis: extract_from_conversation failed: %s", e)
-            return
+            return []
 
         if extraction is None:
-            return
+            return []
 
+        created: list[dict[str, Any]] = []
         try:
-            store_extraction(extraction, self._episodic, self._tracker, adapter)
+            created = store_extraction(extraction, self._episodic, self._tracker, adapter)
         except Exception as e:
             _log.warning("record_analysis: store_extraction failed: %s", e)
 
         self.embed_pending_events()
+        return created
 
     def embed_pending_events(self, batch_size: int = 20) -> None:
         """为还没有 embedding 的事件补向量（生产触发点）。

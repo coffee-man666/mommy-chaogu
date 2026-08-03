@@ -104,7 +104,7 @@ class MemoryService:
         write_messages: bool = True,
         usage_out: dict[str, int] | None = None,
         usage_lock: threading.Lock | None = None,
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """对话结束后记录 + 提取。
 
         1. 把 user/assistant 消息写入对话记忆（ConversationMemory），
@@ -116,6 +116,10 @@ class MemoryService:
         token 计入调用方的共享统计容器（锁保证与主线程累加互斥）。
 
         两步独立，任一失败不影响另一步。
+
+        Returns:
+            本轮创建的预测列表，每条 {"id", "code", "name"}；
+            pipeline 缺失 / 提取失败 / 无预测时返回空列表。
         """
         # 1. 写入对话记忆
         if write_messages and self._memory is not None:
@@ -128,7 +132,7 @@ class MemoryService:
         # 2. 事实提取（observations + predictions）
         if self._pipeline is not None:
             try:
-                self._pipeline.record_analysis(
+                return self._pipeline.record_analysis(
                     user_msg,
                     assistant_response,
                     adapter=adapter,
@@ -140,6 +144,7 @@ class MemoryService:
                     "MemoryService.record_conversation: pipeline.record_analysis failed: %s",
                     e,
                 )
+        return []
 
     def stats(self) -> dict[str, Any]:
         """记忆系统状态快照（可观测性）。

@@ -7,6 +7,9 @@ import type { Quote, Bar, MoneyFlowResponse } from '@/api/types'
 import type { Prediction, StockDecisionContext } from '@/api/types'
 import { getStockPredictions } from '@/api/predictions'
 import { getStockDecisionContext } from '@/api/market'
+import { getStockBacktest, type BacktestResult } from '@/api/backtest'
+import { getPreferences } from '@/api/preferences'
+import { coverageBadgeLabels, fmtCountdown, verifyFreshnessText } from '@/lib/predictionEvidence'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
@@ -54,6 +57,12 @@ const mainTab = ref<MainTab>(
 // 预测记录（决策记录 Tab）
 const stockPredictions = ref<Prediction[]>([])
 const predictionsLoading = ref(false)
+
+// 回测面板（决策记录 Tab 顶部）
+const defaultHoldDays = ref<number | null>(null)
+const backtest = ref<BacktestResult | null>(null)
+const backtestLoading = ref(false)
+const backtestError = ref<string | null>(null)
 
 const codeInput = ref('')
 const actionMessage = ref('')
@@ -191,6 +200,60 @@ async function loadPredictions() {
   } finally {
     predictionsLoading.value = false
   }
+}
+
+/** 用户偏好只用于展示默认持有天数，失败静默（不影响预测列表） */
+async function loadPreferences() {
+  try {
+    const prefs = await getPreferences()
+    defaultHoldDays.value = prefs.default_hold_days
+  } catch {
+    defaultHoldDays.value = null
+  }
+}
+
+const backtestSubtitle = computed(() =>
+  defaultHoldDays.value != null
+    ? `默认持有 ${defaultHoldDays.value} 天（可在「我的」修改）`
+    : '持有天数使用服务端默认值（可在「我的」修改）'
+)
+
+async function runBacktest() {
+  backtestLoading.value = true
+  backtestError.value = null
+  try {
+    backtest.value = await getStockBacktest(props.code)
+  } catch (e) {
+    backtestError.value = toApiError(e, '回测').friendly
+  } finally {
+    backtestLoading.value = false
+  }
+}
+
+// ---------- 回测指标格式化（null → 破折号） ----------
+
+function fmtWinRate(v: number | null): string {
+  return v == null ? '—' : `${(v * 100).toFixed(1)}%`
+}
+
+function fmtReturnPct(v: number | null): string {
+  return v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+}
+
+function fmtDrawdownPct(v: number | null): string {
+  return v == null ? '—' : `${v.toFixed(2)}%`
+}
+
+function fmtSharpe(v: number | null): string {
+  return v == null ? '—' : v.toFixed(2)
+}
+
+/** pending 预测的验证截止文案：倒计时，已到期/无效则展示原始时间 */
+function pendingVerifyText(p: Prediction): string {
+  const countdown = fmtCountdown(p.verify_after)
+  return countdown === '已到期' || countdown === '-'
+    ? `验证截止 ${p.verify_after}`
+    : `⏳ ${countdown} 验证`
 }
 
 /** 预测状态 → 中文标签 + 颜色 */
@@ -418,6 +481,7 @@ function ensureTabLoaded(tab: MainTab) {
     loadFlow()
   } else if (tab === 'decisions') {
     loadPredictions()
+    void loadPreferences()
   }
 }
 
@@ -451,6 +515,9 @@ watch(
     flowHistory.value = null
     stockPredictions.value = []
     decisionContext.value = null
+    defaultHoldDays.value = null
+    backtest.value = null
+    backtestError.value = null
     codeInput.value = ''
     loadedTabs.value = new Set() // reset lazy state
     await Promise.all([loadQuote(), loadDecisionContext()])
@@ -826,6 +893,62 @@ onUnmounted(() => {
         <!-- ===== 决策记录 ===== -->
         <TabsContent value="decisions">
           <div class="space-y-3">
+            <!-- 回测面板 -->
+            <Card>
+              <CardContent class="space-y-3 pt-4">
+                <div class="flex items-center justify-between gap-2">
+                  <div>
+                    <p class="text-sm font-medium">回测</p>
+                    <p class="text-xs text-muted-foreground">{{ backtestSubtitle }}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="backtestLoading"
+                    @click="runBacktest"
+                  >
+                    {{ backtestLoading ? '回测中…' : '运行回测' }}
+                  </Button>
+                </div>
+                <p v-if="backtestError" class="text-xs text-destructive">{{ backtestError }}</p>
+                <template v-if="backtest">
+                  <p v-if="backtest.message" class="text-xs text-muted-foreground">
+                    {{ backtest.message }}
+                  </p>
+                  <template v-else>
+                    <p class="text-[10px] text-muted-foreground">
+                      {{ backtest.start_date }} ~ {{ backtest.end_date }} · 持有 {{ backtest.hold_days }} 天
+                    </p>
+                    <div class="grid grid-cols-5 gap-1 text-center">
+                      <div class="rounded-md bg-muted/60 p-2">
+                        <div class="mb-1 text-[10px] text-muted-foreground">信号数</div>
+                        <div class="font-mono text-xs font-bold">{{ backtest.total_signals }}</div>
+                      </div>
+                      <div class="rounded-md bg-muted/40 p-2">
+                        <div class="mb-1 text-[10px] text-muted-foreground">胜率</div>
+                        <div class="font-mono text-xs font-bold">{{ fmtWinRate(backtest.win_rate) }}</div>
+                      </div>
+                      <div class="rounded-md bg-muted/40 p-2">
+                        <div class="mb-1 text-[10px] text-muted-foreground">平均收益</div>
+                        <div
+                          class="font-mono text-xs font-bold"
+                          :class="backtest.avg_return_pct != null ? dirClass(backtest.avg_return_pct) : ''"
+                        >{{ fmtReturnPct(backtest.avg_return_pct) }}</div>
+                      </div>
+                      <div class="rounded-md bg-muted/40 p-2">
+                        <div class="mb-1 text-[10px] text-muted-foreground">最大回撤</div>
+                        <div class="font-mono text-xs font-bold">{{ fmtDrawdownPct(backtest.max_drawdown_pct) }}</div>
+                      </div>
+                      <div class="rounded-md bg-muted/40 p-2">
+                        <div class="mb-1 text-[10px] text-muted-foreground">夏普</div>
+                        <div class="font-mono text-xs font-bold">{{ fmtSharpe(backtest.sharpe_ratio) }}</div>
+                      </div>
+                    </div>
+                  </template>
+                </template>
+              </CardContent>
+            </Card>
+
             <!-- 加载中 -->
             <div v-if="predictionsLoading" class="space-y-2">
               <div v-for="i in 2" :key="i" class="h-20 animate-pulse rounded-xl bg-muted" />
@@ -862,20 +985,35 @@ onUnmounted(() => {
                     {{ p.rationale }}
                   </p>
 
-                  <!-- 验证结果 -->
-                  <div v-if="p.verified_at" class="flex items-center gap-2 border-t pt-2 text-xs">
+                  <!-- 验证结果 + 数据新鲜度 -->
+                  <div v-if="p.verified_at" class="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2 text-xs">
                     <span class="text-muted-foreground">验证结果:</span>
                     <span v-if="p.actual_change_pct !== null" class="font-mono" :class="Number(p.actual_change_pct) >= 0 ? 'text-up' : 'text-down'">
                       {{ Number(p.actual_change_pct) >= 0 ? '+' : '' }}{{ Number(p.actual_change_pct).toFixed(2) }}%
                     </span>
-                    <span v-if="p.data_coverage_at_verify" class="text-muted-foreground">
-                      · {{ p.data_coverage_at_verify }}
+                    <span class="text-muted-foreground">
+                      · {{ verifyFreshnessText(p.data_coverage_at_verify) }}
                     </span>
                   </div>
 
+                  <!-- 依据覆盖 -->
+                  <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span class="text-muted-foreground">依据覆盖:</span>
+                    <template v-if="coverageBadgeLabels(p.data_coverage_at_creation)?.length">
+                      <span
+                        v-for="label in coverageBadgeLabels(p.data_coverage_at_creation)"
+                        :key="label"
+                        class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                      >{{ label }}</span>
+                    </template>
+                    <span v-else class="text-muted-foreground">未记录</span>
+                  </div>
+
                   <!-- 时间 -->
-                  <div class="text-[10px] text-muted-foreground">
-                    生成于 {{ new Date(p.created_at).toLocaleString('zh-CN') }}
+                  <div class="flex flex-wrap items-center gap-x-3 text-[10px] text-muted-foreground">
+                    <span>生成于 {{ new Date(p.created_at).toLocaleString('zh-CN') }}</span>
+                    <span v-if="p.verified_at">验证于 {{ new Date(p.verified_at).toLocaleString('zh-CN') }}</span>
+                    <span v-if="p.status === 'pending'">{{ pendingVerifyText(p) }}</span>
                   </div>
                 </CardContent>
               </Card>

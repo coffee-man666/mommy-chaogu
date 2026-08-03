@@ -316,6 +316,147 @@ test('detail tabs lazy-load, deep-link, and reload for a new stock', async ({ pa
   ])
 })
 
+// ---------- WP5: 预测/回测证据动线 ----------
+
+const verifiedPredictionRow = {
+  id: 12,
+  created_at: '2026-07-20T02:00:00Z',
+  code: '600519',
+  name: '贵州茅台',
+  prediction: '看涨',
+  direction: 'up',
+  rationale: '资金面转好',
+  target_price: 1800,
+  entry_price: 1680,
+  stop_loss: 1620,
+  change_pct_at_creation: 1.2,
+  timeframe: '5d',
+  verify_after: '2026-07-25T00:00:00Z',
+  status: 'hit',
+  verified_at: '2026-07-25T08:00:00Z',
+  actual_price: 1700,
+  actual_change_pct: 1.19,
+  accuracy_score: 0.9,
+  verify_attempts: 1,
+  verify_log: null,
+  data_coverage_at_creation: JSON.stringify({ quote: true, kline: true, flow: true }),
+  data_coverage_at_verify: JSON.stringify({ quote: true, quote_age_seconds: 12, source: 'live' }),
+  source_event_id: null,
+  insight_event_id: null,
+}
+
+const pendingPredictionRow = {
+  ...verifiedPredictionRow,
+  id: 13,
+  status: 'pending',
+  verified_at: null,
+  actual_price: null,
+  actual_change_pct: null,
+  accuracy_score: null,
+  verify_after: '2099-01-01T00:00:00Z',
+  data_coverage_at_creation: null,
+  data_coverage_at_verify: null,
+}
+
+async function mockPredictionEvidence(page: Page, backtestBody: unknown) {
+  await page.route('**/api/agent/predictions**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/stats')) {
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ total: 2, pending: 1, hit: 1, missed: 0, expired: 0, unverifiable: 0, hit_rate: 1 }),
+      })
+    }
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ predictions: [verifiedPredictionRow, pendingPredictionRow], total: 2 }),
+    })
+  })
+  await page.route('**/api/stocks/600519/backtest**', async (route) => {
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(backtestBody),
+    })
+  })
+  await page.route('**/api/preferences', async (route) => {
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        style: 'balanced', holding_period: 'swing', drawdown_sensitivity: 'medium',
+        notify_min_severity: 'warning', watched_rules: [], reminder_windows: [],
+        default_hold_days: 5, updated_at: null,
+      }),
+    })
+  })
+}
+
+test('decisions tab renders prediction evidence and runs the backtest panel', async ({ page }) => {
+  await mockPredictionEvidence(page, {
+    code: '600519', hold_days: 5, start_date: '2025-08-02', end_date: '2026-08-01',
+    total_signals: 12, win_rate: 0.583, avg_return_pct: 1.24,
+    max_drawdown_pct: -3.5, sharpe_ratio: 0.42, message: null,
+  })
+
+  await page.goto('/#/detail/600519?tab=decisions')
+
+  // 证据：验证时间 / 依据覆盖徽章 / 数据新鲜度 / 未记录兜底
+  await expect(page.getByText(/验证于/).first()).toBeVisible()
+  await expect(page.getByText('行情', { exact: true })).toBeVisible()
+  await expect(page.getByText('K线', { exact: true })).toBeVisible()
+  await expect(page.getByText('资金流', { exact: true })).toBeVisible()
+  await expect(page.getByText('验证数据：实时报价 · 报价年龄 12s')).toBeVisible()
+  await expect(page.getByText('未记录').first()).toBeVisible()
+
+  // 回测面板：默认持有天数 + 运行后展示指标
+  await expect(page.getByText('默认持有 5 天（可在「我的」修改）')).toBeVisible()
+  await page.getByRole('button', { name: '运行回测' }).click()
+  await expect(page.getByText('信号数')).toBeVisible()
+  await expect(page.getByText('12', { exact: true })).toBeVisible()
+  await expect(page.getByText('58.3%')).toBeVisible()
+  await expect(page.getByText('+1.24%')).toBeVisible()
+  await expect(page.getByText('-3.50%')).toBeVisible()
+  await expect(page.getByText('0.42', { exact: true })).toBeVisible()
+})
+
+test('decisions tab backtest shows the server hint when there are no signals', async ({ page }) => {
+  await mockPredictionEvidence(page, {
+    code: '600519', hold_days: 5, start_date: '2025-08-02', end_date: '2026-08-01',
+    total_signals: 0, win_rate: null, avg_return_pct: null,
+    max_drawdown_pct: null, sharpe_ratio: null, message: '历史预测信号不足，暂无法回测',
+  })
+
+  await page.goto('/#/detail/600519?tab=decisions')
+  await page.getByRole('button', { name: '运行回测' }).click()
+  await expect(page.getByText('历史预测信号不足，暂无法回测')).toBeVisible()
+})
+
+test('predictions page supports the ?code= deep link with a clearable filter chip', async ({ page }) => {
+  const requestedUrls: string[] = []
+  await page.route('**/api/agent/predictions**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/stats')) {
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ total: 1, pending: 0, hit: 1, missed: 0, expired: 0, unverifiable: 0, hit_rate: 1 }),
+      })
+    }
+    requestedUrls.push(route.request().url())
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ predictions: [verifiedPredictionRow], total: 1 }),
+    })
+  })
+
+  await page.goto('/#/predictions?code=600519')
+  await expect(page.getByText('当前：600519')).toBeVisible()
+  await expect(page.getByText(/验证于/).first()).toBeVisible()
+  expect(requestedUrls.some((u) => u.includes('code=600519'))).toBe(true)
+
+  await page.getByRole('link', { name: '清除筛选' }).click()
+  await expect(page.getByText('当前：600519')).not.toBeVisible()
+  await expect.poll(() => requestedUrls.some((u) => !u.includes('code='))).toBe(true)
+})
+
 test('capture release screenshots', async ({ page }) => {
   test.skip(!process.env.UPDATE_SCREENSHOTS, 'Only runs when refreshing README assets')
 

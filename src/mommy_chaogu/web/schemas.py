@@ -300,6 +300,21 @@ class StockDecisionContextOut(BaseModel):
     baskets: list[StockBasketContextOut] = Field(default_factory=list)
 
 
+class StockBacktestOut(BaseModel):
+    """个股一键回测结果（GET /api/stocks/{code}/backtest）。"""
+
+    code: str
+    hold_days: int
+    start_date: date
+    end_date: date
+    total_signals: int
+    win_rate: float | None = None  # 无信号时为 null
+    avg_return_pct: float | None = None
+    max_drawdown_pct: float | None = None
+    sharpe_ratio: float | None = None
+    message: str | None = None  # 无信号/数据不足时的中文提示，成功为 null
+
+
 # ---------- Portfolio ----------
 
 

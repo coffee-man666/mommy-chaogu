@@ -43,6 +43,12 @@ export interface ToolResultEvent {
   result?: string
 }
 
+/** done 之后由后台记忆抽取产生的预测（ws.py 推送） */
+export interface PredictionsCreatedEvent {
+  count: number
+  predictions: { id: number; code: string; name: string | null }[]
+}
+
 export async function agentChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
@@ -79,6 +85,7 @@ export function agentStream(
   onStateChange: (state: AgentStreamState) => void = () => {},
   onToolCall: (e: ToolCallEvent) => void = () => {},
   onToolResult: (e: ToolResultEvent) => void = () => {},
+  onPredictionsCreated: (e: PredictionsCreatedEvent) => void = () => {},
 ): {
   send: (
     message: string,
@@ -163,6 +170,12 @@ export function agentStream(
             status: msg.status === 'fail' ? 'fail' : 'done',
             elapsedMs: msg.elapsed_ms ?? 0,
             result: msg.result,
+          })
+        } else if (msg.type === 'predictions_created') {
+          const predictions = Array.isArray(msg.predictions) ? msg.predictions : []
+          onPredictionsCreated({
+            count: typeof msg.count === 'number' ? msg.count : predictions.length,
+            predictions,
           })
         } else if (msg.type === 'error') {
           turnInFlight = false

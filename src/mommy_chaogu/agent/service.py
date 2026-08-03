@@ -233,6 +233,7 @@ class AgentService:
         usage_out: dict[str, int] | None = None,
         on_status: Callable[[str, dict[str, Any]], None] | None = None,
         system_addendum: str | None = None,
+        on_predictions_created: Callable[[list[dict[str, Any]]], None] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
@@ -258,6 +259,9 @@ class AgentService:
         记忆：
         - 对话后的记录 + 提取（LLM 调用 + 报价补全）在后台 daemon 线程执行，
           不阻塞本次响应；单发进程（CLI 单次查询）退出前应调 flush() 等待完成。
+        - 如果传入 *on_predictions_created*，后台提取线程在 record_conversation
+          完成且本轮确实创建了预测时回调它（参数为 [{"id", "code", "name"}, ...]）；
+          回调本身抛异常只记日志，不影响后台线程。
 
         token 统计：
         - 如果传入 *usage_out*，它会被直接用作累加容器（worker 线程原地累加），
@@ -319,15 +323,22 @@ class AgentService:
             # 提取链（LLM 调用 + 逐条预测实时报价）是慢操作，放后台线程跑，
             # 不阻塞响应（P6）。write_messages=False 避免与上面 memory.add
             # 双写（外部 memory 与 MemoryService 内部 memory 并存时）。
-            self._spawn_background(
-                ms.record_conversation,
-                user_message,
-                resp.text,
-                adapter=adapter,
-                write_messages=memory is None,
-                usage_out=resp.usage,
-                usage_lock=self._usage_lock,
-            )
+            def _record_and_notify() -> None:
+                created = ms.record_conversation(
+                    user_message,
+                    resp.text,
+                    adapter=adapter,
+                    write_messages=memory is None,
+                    usage_out=resp.usage,
+                    usage_lock=self._usage_lock,
+                )
+                if created and on_predictions_created is not None:
+                    try:
+                        on_predictions_created(created)
+                    except Exception:
+                        _log.warning("on_predictions_created 回调失败", exc_info=True)
+
+            self._spawn_background(_record_and_notify)
 
         return resp
 

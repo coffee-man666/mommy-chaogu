@@ -245,12 +245,13 @@ class PredictionTracker(EngineOwner):
         actual_price: Decimal | float | None = None,
         actual_change_pct: float | None = None,
         accuracy_score: float | None = None,
-        data_coverage: dict[str, bool] | None = None,
+        data_coverage: dict[str, Any] | None = None,
     ) -> None:
         """更新预测状态，回填验证结果。
 
         设置 ``verified_at`` 为当前时间，并填入实际价格、实际涨跌幅、
-        命中分。*data_coverage* 序列化为 JSON 写入 ``data_coverage_at_verify``。
+        命中分。*data_coverage* 序列化为 JSON 写入 ``data_coverage_at_verify``
+        （bool 覆盖标记 + 可选的报价新鲜度字段，如 quote_age_seconds/source）。
         *actual_price* 建议传 ``Decimal``，入库前量化到 4 位小数。
         """
         verified_at = _utcnow().isoformat()

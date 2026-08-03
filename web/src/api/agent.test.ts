@@ -207,4 +207,96 @@ describe('agent websocket lifecycle', () => {
     expect(MockWebSocket.instances).toHaveLength(1)
     client.close()
   })
+
+  it('forwards predictions_created events that arrive after done', async () => {
+    const onDone = vi.fn()
+    const onPredictionsCreated = vi.fn()
+    const client = agentStream(
+      vi.fn(),
+      onDone,
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      onPredictionsCreated,
+    )
+    client.send('分析 600519')
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'done', text: '看多', tools_used: [], rounds: 1 }),
+    })
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'predictions_created',
+        count: 2,
+        predictions: [
+          { id: 12, code: '600519', name: '贵州茅台' },
+          { id: 13, code: '000858', name: null },
+        ],
+      }),
+    })
+
+    expect(onDone).toHaveBeenCalledWith('看多', [], 1)
+    expect(onPredictionsCreated).toHaveBeenCalledWith({
+      count: 2,
+      predictions: [
+        { id: 12, code: '600519', name: '贵州茅台' },
+        { id: 13, code: '000858', name: null },
+      ],
+    })
+    client.close()
+  })
+
+  it('derives count from the predictions array when missing', async () => {
+    const onPredictionsCreated = vi.fn()
+    const client = agentStream(
+      vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onPredictionsCreated,
+    )
+    client.send('分析 600519')
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'predictions_created',
+        predictions: [{ id: 12, code: '600519', name: '贵州茅台' }],
+      }),
+    })
+
+    expect(onPredictionsCreated).toHaveBeenCalledWith({
+      count: 1,
+      predictions: [{ id: 12, code: '600519', name: '贵州茅台' }],
+    })
+    client.close()
+  })
+
+  it('tolerates unknown event types', async () => {
+    const onDone = vi.fn()
+    const onPredictionsCreated = vi.fn()
+    const client = agentStream(
+      vi.fn(), onDone, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onPredictionsCreated,
+    )
+    client.send('分析 600519')
+    await vi.runAllTicks()
+
+    const socket = MockWebSocket.instances[0]
+    socket.readyState = MockWebSocket.OPEN
+    socket.onopen?.()
+    socket.onmessage?.({ data: JSON.stringify({ type: 'some_future_event', foo: 1 }) })
+    socket.onmessage?.({ data: 'not json at all' })
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'done', text: 'ok', tools_used: [], rounds: 1 }),
+    })
+
+    expect(onDone).toHaveBeenCalledWith('ok', [], 1)
+    expect(onPredictionsCreated).not.toHaveBeenCalled()
+    client.close()
+  })
 })

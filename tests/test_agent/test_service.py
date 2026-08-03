@@ -208,3 +208,93 @@ class TestAgentLoop:
 
         assert "工具调用次数过多" in resp.text
         assert resp.rounds == 3
+
+
+class TestPredictionsCreatedCallback:
+    """on_predictions_created：后台提取新建预测后的回调通道。"""
+
+    def _make_text_response(self, text: str) -> MagicMock:
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.choices[0].message.content = text
+        return mock_response
+
+    def _make_memory_service(self, created: list[dict]) -> MagicMock:
+        ms = MagicMock()
+        ms.has_memory = False
+        ms.get_context.return_value = "system prompt"
+        ms.record_conversation.return_value = created
+        return ms
+
+    @patch("openai.OpenAI")
+    def test_callback_fires_with_created_predictions(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """后台提取创建了预测 → 回调收到 [{id, code, name}]。"""
+        created = [{"id": 12, "code": "600519", "name": "贵州茅台"}]
+        svc = AgentService(
+            mock_ctx,
+            api_key="sk-test",
+            memory_service=self._make_memory_service(created),
+        )
+        svc._client.chat.completions.create.return_value = self._make_text_response("茅台看涨")
+
+        got: list[list[dict]] = []
+        svc.chat("茅台怎么样", on_predictions_created=got.append)
+        svc.flush(timeout=5)
+
+        assert got == [created]
+
+    @patch("openai.OpenAI")
+    def test_no_callback_no_error(self, _mock_openai: MagicMock, mock_ctx: ToolContext) -> None:
+        """默认 on_predictions_created=None → 行为不变，不报错。"""
+        created = [{"id": 12, "code": "600519", "name": "贵州茅台"}]
+        svc = AgentService(
+            mock_ctx,
+            api_key="sk-test",
+            memory_service=self._make_memory_service(created),
+        )
+        svc._client.chat.completions.create.return_value = self._make_text_response("茅台看涨")
+
+        resp = svc.chat("茅台怎么样")
+        svc.flush(timeout=5)
+        assert resp.text == "茅台看涨"
+
+    @patch("openai.OpenAI")
+    def test_empty_created_does_not_fire(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """本轮没有新建预测 → 不触发回调。"""
+        svc = AgentService(
+            mock_ctx,
+            api_key="sk-test",
+            memory_service=self._make_memory_service([]),
+        )
+        svc._client.chat.completions.create.return_value = self._make_text_response("随便聊聊")
+
+        got: list[list[dict]] = []
+        svc.chat("你好", on_predictions_created=got.append)
+        svc.flush(timeout=5)
+
+        assert got == []
+
+    @patch("openai.OpenAI")
+    def test_callback_exception_does_not_kill_background_thread(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """回调抛异常只记日志，后台线程与主流程不受影响。"""
+        created = [{"id": 12, "code": "600519", "name": "贵州茅台"}]
+        svc = AgentService(
+            mock_ctx,
+            api_key="sk-test",
+            memory_service=self._make_memory_service(created),
+        )
+        svc._client.chat.completions.create.return_value = self._make_text_response("茅台看涨")
+
+        def _raising(_preds: list[dict]) -> None:
+            raise RuntimeError("boom")
+
+        resp = svc.chat("茅台怎么样", on_predictions_created=_raising)
+        svc.flush(timeout=5)  # 不抛异常
+        assert resp.text == "茅台看涨"

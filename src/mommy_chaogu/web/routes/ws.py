@@ -108,6 +108,8 @@ async def ws_agent(websocket: WebSocket) -> None:
     - 服务端回: {"type": "tool_call_finished", "tool": "...", "status": "done|fail", "elapsed_ms": N, "result": "..."} (每次工具执行后)
     - 服务端回: {"type": "chunk", "text": "..."} (多次，真实 LLM delta)
     - 服务端回: {"type": "done", "tools_used": [...], "rounds": N}
+    - 服务端回: {"type": "predictions_created", "count": N, "predictions": [{id, code, name}]}
+      (done 之后异步到达；仅当后台记忆提取为本轮新建了预测时发送)
 
     兜底：若 agent 层流式不可用（provider 不支持 stream），on_chunk 不会
     被调用，此时把 resp.text 作为单个 chunk 补发，保证前端一定有回答。
@@ -224,6 +226,36 @@ async def ws_agent(websocket: WebSocket) -> None:
                     }
                 )
 
+            def on_predictions_created(predictions: list[dict[str, Any]]) -> None:
+                """后台提取线程回调：本轮新建的预测 → predictions_created 事件。
+
+                事件在 agent.chat 返回、done 帧发出之后才从后台线程到达，
+                不走 event_queue（drain 已结束），直接调度协程发送；
+                socket 已关 / loop 已停时静默降级，绝不影响后台线程。
+                """
+
+                async def _send() -> None:
+                    try:
+                        await websocket.send_json(
+                            {
+                                "type": "predictions_created",
+                                "count": len(predictions),
+                                "predictions": predictions,
+                            }
+                        )
+                    except Exception as exc:
+                        _log.warning("predictions_created 推送失败（连接可能已关闭）: %s", exc)
+
+                def _schedule() -> None:
+                    # 持有 task 引用直至完成（RUF006），异常已在 _send 内部捕获
+                    task = asyncio.ensure_future(_send())
+                    task.add_done_callback(lambda _t: None)
+
+                try:
+                    loop.call_soon_threadsafe(_schedule)  # noqa: B023
+                except RuntimeError:
+                    _log.debug("predictions_created: event loop 已关闭，丢弃事件")
+
             async def _drain_stream() -> None:
                 """持续从 queue 取事件发给前端，直到收到 None sentinel。"""
                 while True:
@@ -253,6 +285,7 @@ async def ws_agent(websocket: WebSocket) -> None:
                     on_tool_result,
                     on_chunk,
                     system_addendum="\n\n".join(addenda),
+                    on_predictions_created=on_predictions_created,
                 )
             finally:
                 # 通知 drain 结束 + 等 drain 把剩余事件发完

@@ -34,6 +34,8 @@ class VerifyResult:
     change_pct: float | None = None
     score: float = 0.0
     reason: str = ""
+    quote_source: str = ""  # "adapter" / "stale_cache"（空串 = 未取到报价）
+    quote_age_seconds: float | None = None  # 缓存报价的数据年龄（adapter 报价未知 → None）
 
 
 # ---------- timeframe 解析 ----------
@@ -180,6 +182,7 @@ def verify_one(
     # ---------- 第一优先：报价验证 ----------
     quote = None
     quote_source = ""
+    quote_age_seconds: float | None = None
 
     # 尝试 adapter
     try:
@@ -196,6 +199,10 @@ def verify_one(
             if cache_entry is not None:
                 quote = cache_entry.quote if hasattr(cache_entry, "quote") else cache_entry
                 quote_source = "stale_cache"
+                # 缓存条目带 age_seconds（QuoteCacheEntry）时如实记录数据年龄
+                age = getattr(cache_entry, "age_seconds", None)
+                if isinstance(age, int | float):
+                    quote_age_seconds = float(age)
                 _log.info("verify: using stale cache for %s", code)
         except Exception as e:
             _log.debug("verify: cache_store.get_quote(%s) failed: %s", code, e)
@@ -235,6 +242,8 @@ def verify_one(
             change_pct=change_pct,
             score=score,
             reason=f"目标价验证 ({quote_source})",
+            quote_source=quote_source,
+            quote_age_seconds=quote_age_seconds,
         )
 
     # 无目标价 → 方向验证。优先用相对 entry_price 的窗口涨跌幅判定
@@ -257,6 +266,8 @@ def verify_one(
         change_pct=judged_change_pct,
         score=score,
         reason=f"方向验证·{basis} ({quote_source})",
+        quote_source=quote_source,
+        quote_age_seconds=quote_age_seconds,
     )
 
 
@@ -327,7 +338,16 @@ def verify_pending(
 
         # hit / missed / unverifiable — 终态，回填验证结果
         # （unverifiable 不计入 hit/missed，hit_rate 分母不受影响）
-        data_coverage_verify = {"quote": result.price is not None}
+        # data_coverage_at_verify 保留 "quote" 布尔键（向后兼容），并补充
+        # 报价新鲜度：source（adapter / stale_cache）与 quote_age_seconds
+        # （仅缓存来源可知年龄，adapter 实时报价记 null）。
+        data_coverage_verify: dict[str, Any] = {
+            "quote": result.price is not None,
+            "quote_age_seconds": (
+                round(result.quote_age_seconds) if result.quote_age_seconds is not None else None
+            ),
+            "source": result.quote_source or None,
+        }
         tracker.update_status(
             pred_id,
             status=result.status,

@@ -16,6 +16,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from mommy_chaogu.backtest.engine import BacktestEngine
 from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
 from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 from mommy_chaogu.market_data import (
@@ -112,6 +113,12 @@ def get_alerter() -> Alerter:
 def get_portfolio_store() -> PortfolioStore:
     """全局持仓存储。"""
     return PortfolioStore(get_portfolio_db())
+
+
+@lru_cache(maxsize=1)
+def get_backtest_engine() -> BacktestEngine:
+    """全局回测引擎（完全离线，基于 market.db 缓存回放信号）。"""
+    return BacktestEngine(get_market_db())
 
 
 # ---------- 记忆系统 ----------
@@ -271,6 +278,7 @@ def close_cached_dependencies() -> None:
     for factory in (
         get_agent_service,
         get_memory_service,
+        get_backtest_engine,
         *resource_factories,
         get_alerter,
     ):

@@ -18,7 +18,13 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import { agentRoute, agentStream, getAgentHistory } from '@/api/agent'
-import type { AgentPageContext, AgentStreamState, ToolCallEvent, ToolResultEvent } from '@/api/agent'
+import type {
+  AgentPageContext,
+  AgentStreamState,
+  PredictionsCreatedEvent,
+  ToolCallEvent,
+  ToolResultEvent,
+} from '@/api/agent'
 import { getSnapshot } from '@/api/index'
 import { getIndexes } from '@/api/market'
 import { getPredictions } from '@/api/predictions'
@@ -60,6 +66,8 @@ interface Message {
   steps?: string[]
   workflowId?: string
   toolEvents?: ToolEvent[]
+  /** 本轮 done 之后由后台记忆抽取创建的预测（WS predictions_created） */
+  predictionsCreated?: PredictionsCreatedEvent
   streaming?: boolean
   error?: boolean
 }
@@ -85,7 +93,10 @@ const signalCount = ref(0)
 const recentPredictions = ref<Prediction[]>([])
 let activeRequestId = 0
 let activeAssistantIdx: number | null = null
+/** 最近一次 WS done 对应的 assistant 消息下标（predictions_created 附件挂到它上面） */
+let lastTurnAssistantIdx: number | null = null
 let routeAbortController: AbortController | null = null
+let streamCloseTimer: number | null = null
 
 const CHAT_STORAGE_KEY = 'mommy_chat_messages_v1'
 const CHAT_DRAFT_KEY = 'mommy_chat_draft_v1'
@@ -175,6 +186,22 @@ function renderMarkdown(text: string): string {
   })
 }
 
+/** 预测附件深链：全部预测同一只股时带 ?code= 过滤，否则进总列表 */
+function predictionLinkTarget(message: Message): string {
+  const created = message.predictionsCreated
+  if (!created || created.predictions.length === 0) return '/predictions'
+  const codes = new Set(created.predictions.map((p) => p.code))
+  return codes.size === 1
+    ? `/predictions?code=${encodeURIComponent(created.predictions[0]!.code)}`
+    : '/predictions'
+}
+
+function predictionLinkLabel(message: Message): string {
+  return message.predictionsCreated
+    ? `查看预测记录（${message.predictionsCreated.count}）`
+    : '查看预测跟踪'
+}
+
 function scrollToBottom(force = false) {
   nextTick(() => {
     if (userScrolledUp.value && !force) return
@@ -205,11 +232,33 @@ function processNextQueued() {
   if (next) window.setTimeout(() => void sendNow(next), 0)
 }
 
+/** 立即关闭当前流（并取消延迟关闭计时器） */
+function closeStream() {
+  if (streamCloseTimer != null) {
+    window.clearTimeout(streamCloseTimer)
+    streamCloseTimer = null
+  }
+  stream.value?.close()
+  stream.value = null
+}
+
+/**
+ * done 之后后台记忆抽取可能再推 predictions_created，
+ * 延迟关闭连接给它一个到达窗口；新消息/停止/卸载都会提前关闭。
+ */
+function scheduleStreamClose() {
+  if (streamCloseTimer != null) window.clearTimeout(streamCloseTimer)
+  streamCloseTimer = window.setTimeout(() => {
+    streamCloseTimer = null
+    stream.value?.close()
+    stream.value = null
+  }, 60_000)
+}
+
 function finishTurn() {
   loading.value = false
   activeAssistantIdx = null
-  stream.value?.close()
-  stream.value = null
+  if (stream.value) scheduleStreamClose()
   scrollToBottom()
   processNextQueued()
 }
@@ -219,8 +268,7 @@ function stopGeneration() {
   activeRequestId += 1
   routeAbortController?.abort()
   routeAbortController = null
-  stream.value?.close()
-  stream.value = null
+  closeStream()
   connectionState.value = 'idle'
   loading.value = false
   activeAssistantIdx = null
@@ -252,8 +300,7 @@ async function sendNow(text: string) {
   lastFailedMessage.value = ''
   routeAbortController?.abort()
   routeAbortController = null
-  stream.value?.close()
-  stream.value = null
+  closeStream()
   connectionState.value = 'idle'
 
   messages.value.push({ role: 'user', content: text })
@@ -309,6 +356,7 @@ async function sendNow(text: string) {
       messages.value[assistantIdx].toolsUsed = toolsUsed
       messages.value[assistantIdx].rounds = rounds
       messages.value[assistantIdx].streaming = false
+      lastTurnAssistantIdx = assistantIdx
       finishTurn()
     },
     () => {
@@ -358,6 +406,15 @@ async function sendNow(text: string) {
         })
       }
       scrollToBottom()
+    },
+    (event: PredictionsCreatedEvent) => {
+      if (requestId !== activeRequestId) return
+      const idx = lastTurnAssistantIdx
+      const assistant = idx != null ? messages.value[idx] : undefined
+      if (assistant && assistant.role === 'assistant') {
+        assistant.predictionsCreated = event
+        scrollToBottom()
+      }
     },
   )
   stream.value.send(text, history, activePageContext.value)
@@ -519,7 +576,7 @@ onMounted(async () => {
 onUnmounted(() => {
   activeRequestId += 1
   routeAbortController?.abort()
-  stream.value?.close()
+  closeStream()
   speech.stop()
 })
 </script>
@@ -663,8 +720,12 @@ onUnmounted(() => {
                 <Button v-if="message.error && index === messages.length - 1" variant="outline" size="sm" class="gap-1" @click="retry">
                   <RotateCcw class="size-3.5" aria-hidden="true" />重试
                 </Button>
-                <RouterLink v-if="message.role === 'assistant' && !message.streaming && !message.error" to="/predictions" class="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                  <Target class="size-3.5" aria-hidden="true" />查看预测跟踪
+                <RouterLink
+                  v-if="message.role === 'assistant' && !message.streaming && !message.error"
+                  :to="predictionLinkTarget(message)"
+                  class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <Target class="size-3.5" aria-hidden="true" />{{ predictionLinkLabel(message) }}
                 </RouterLink>
               </div>
             </article>

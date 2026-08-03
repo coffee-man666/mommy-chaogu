@@ -545,3 +545,111 @@ class TestVerifyPending:
         # 源事件的 prediction_id 应被回填
         source_event = episodic.get_by_id(event_id)
         assert source_event["prediction_id"] == pred_id
+
+
+# ---------- TestVerifyDataFreshness: 数据新鲜度 ----------
+
+
+class TestVerifyDataFreshness:
+    """data_coverage_at_verify 记录报价来源与数据年龄（保留 quote 布尔键）。"""
+
+    def test_verify_one_adapter_quote_has_source_no_age(self) -> None:
+        """adapter 实时报价：source=adapter，年龄未知 → None。"""
+        pred = make_pred()
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(83.0, 3.75)
+
+        result = verify_one(pred, adapter)
+        assert result.quote_source == "adapter"
+        assert result.quote_age_seconds is None
+
+    def test_verify_one_stale_cache_records_age(self) -> None:
+        """stale cache 报价：source=stale_cache，年龄取自 QuoteCacheEntry.age_seconds。"""
+        pred = make_pred()
+        adapter = MagicMock()
+        adapter.get_quote.return_value = None
+
+        cache_entry = MagicMock()
+        cache_entry.quote = make_quote(82.0, 2.5)
+        cache_entry.age_seconds = 12.5
+        cache_store = MagicMock()
+        cache_store.get_quote.return_value = cache_entry
+
+        result = verify_one(pred, adapter, cache_store=cache_store)
+        assert result.quote_source == "stale_cache"
+        assert result.quote_age_seconds == 12.5
+
+    def test_verify_pending_writes_freshness_for_adapter(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """终态回填的 data_coverage_at_verify 带 source + quote_age_seconds。"""
+        import json
+
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        tracker = PredictionTracker(tmp_path / "test.db")
+        pid = _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
+            code="603662",
+            name="柯力传感",
+            prediction="看涨",
+            direction="bullish",
+            timeframe="5d",
+        )
+
+        adapter = MagicMock()
+        adapter.get_quote.return_value = make_quote(84.0, 1.0)
+
+        results = verify_pending(tracker, None, adapter, None)
+        assert results["hit"] == 1
+
+        row = tracker.get_by_id(pid)
+        assert row is not None
+        coverage = json.loads(row["data_coverage_at_verify"])
+        assert coverage["quote"] is True  # 向后兼容的布尔键
+        assert coverage["source"] == "adapter"
+        assert coverage["quote_age_seconds"] is None
+
+    def test_verify_pending_writes_age_for_stale_cache(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """stale cache 来源的验证把缓存年龄（秒）写进 coverage。"""
+        import json
+
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        tracker = PredictionTracker(tmp_path / "test.db")
+        pid = _create_aged_prediction(
+            tracker,
+            monkeypatch,
+            days_old=6,
+            code="603662",
+            name="柯力传感",
+            prediction="看涨",
+            direction="bullish",
+            timeframe="5d",
+        )
+
+        adapter = MagicMock()
+        adapter.get_quote.return_value = None
+        cache_entry = MagicMock()
+        cache_entry.quote = make_quote(84.0, 1.0)
+        cache_entry.age_seconds = 30.4
+        cache_store = MagicMock()
+        cache_store.get_quote.return_value = cache_entry
+
+        results = verify_pending(tracker, None, adapter, cache_store)
+        assert results["hit"] == 1
+
+        row = tracker.get_by_id(pid)
+        assert row is not None
+        coverage = json.loads(row["data_coverage_at_verify"])
+        assert coverage["quote"] is True
+        assert coverage["source"] == "stale_cache"
+        assert coverage["quote_age_seconds"] == 30

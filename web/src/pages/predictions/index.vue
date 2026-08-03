@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { getPredictions, getPredictionStats } from '@/api/predictions'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { getPredictions, getPredictionStats, getStockPredictions } from '@/api/predictions'
 import { fmtPrice } from '@/utils/format'
+import { fmtCountdown } from '@/lib/predictionEvidence'
 import { cn } from '@/lib/utils'
 import type { Prediction, PredictionStats, PredictionStatus } from '@/api/types'
 
@@ -10,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
+const route = useRoute()
 const router = useRouter()
 
 const predictions = ref<Prediction[]>([])
@@ -17,9 +19,16 @@ const stats = ref<PredictionStats | null>(null)
 const loading = ref(true)
 const error = ref(false)
 
+/** ?code= 深链：只看单只股票的预测（聊天预测附件 / 个股页跳入） */
+const filterCode = computed(() =>
+  typeof route.query.code === 'string' && route.query.code ? route.query.code : ''
+)
+
 async function load() {
+  loading.value = true
+  error.value = false
   const [listRes, statsRes] = await Promise.allSettled([
-    getPredictions(20),
+    filterCode.value ? getStockPredictions(filterCode.value) : getPredictions(20),
     getPredictionStats(),
   ])
   if (listRes.status === 'fulfilled') {
@@ -62,19 +71,6 @@ function statusOf(s: PredictionStatus) {
 }
 
 // ---------- 时间格式化 ----------
-function fmtCountdown(iso: string): string {
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '-'
-  const diff = d.getTime() - Date.now()
-  if (diff <= 0) return '已到期'
-  const days = Math.floor(diff / 86_400_000)
-  const hours = Math.floor((diff % 86_400_000) / 3_600_000)
-  if (days >= 1) return `${days}天后`
-  if (hours >= 1) return `${hours}小时后`
-  const mins = Math.floor((diff % 3_600_000) / 60_000)
-  return `${mins}分钟后`
-}
-
 function fmtDate(iso: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
@@ -118,6 +114,11 @@ function goDetail(code: string) {
 }
 
 onMounted(load)
+
+// 页内切换 ?code=（如从聊天附件跳入后清除筛选）时重新加载
+watch(filterCode, () => {
+  void load()
+})
 </script>
 
 <template>
@@ -126,6 +127,16 @@ onMounted(load)
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-bold tracking-tight">🎯 预测跟踪</h1>
       <span class="font-mono text-xs text-muted-foreground">命中率闭环</span>
+    </div>
+
+    <!-- ?code= 深链筛选 chip -->
+    <div v-if="filterCode" class="flex items-center gap-2 text-xs">
+      <span class="rounded-full bg-primary/10 px-2.5 py-1 font-mono text-primary">
+        当前：{{ filterCode }}
+      </span>
+      <RouterLink to="/predictions" class="text-muted-foreground hover:text-foreground">
+        清除筛选
+      </RouterLink>
     </div>
 
     <!-- 顶部统计条 -->
@@ -283,7 +294,10 @@ onMounted(load)
 
             <!-- 底部：时间 + 倒计时 / 验证结果 -->
             <div class="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">
-              <span class="font-mono">📅 {{ fmtDate(p.created_at) }}</span>
+              <span class="flex flex-wrap items-center gap-x-3 font-mono">
+                <span>📅 {{ fmtDate(p.created_at) }}</span>
+                <span v-if="p.verified_at">验证于 {{ fmtDate(p.verified_at) }}</span>
+              </span>
               <template v-if="p.status === 'pending'">
                 <span class="font-mono">⏳ {{ fmtCountdown(p.verify_after) }} 验证</span>
               </template>

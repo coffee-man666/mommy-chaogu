@@ -362,3 +362,85 @@ class TestAgentWebSocket:
         with client.websocket_connect("/ws/agent") as ws:
             ws.send_json({"message": "hello", "session_id": "../bad"})
             assert ws.receive_json() == {"type": "error", "message": "无效的会话 ID"}
+
+
+class TestAgentWebSocketPredictionsCreated:
+    """后台记忆提取新建预测后，WS 推送 predictions_created 事件。"""
+
+    def _patch_agent(self, monkeypatch: object, agent: MagicMock) -> None:
+        from mommy_chaogu.web import deps
+
+        memory = MagicMock()
+        memory.for_session.return_value = MagicMock()
+        monkeypatch.setattr(deps, "get_agent_service", lambda: agent)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_agent_memory", lambda: memory)  # type: ignore[attr-defined]
+        monkeypatch.setattr(deps, "get_watchlist_store", _fake_watchlist_store)  # type: ignore[attr-defined]
+
+    def test_predictions_created_event_forwarded(
+        self, client: TestClient, monkeypatch: object
+    ) -> None:
+        """fake agent 在后台线程触发回调 → 客户端收到契约形状的事件。"""
+        import threading
+        import time
+
+        predictions = [{"id": 12, "code": "600519", "name": "贵州茅台"}]
+        done = threading.Event()
+
+        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
+            cb = kwargs.get("on_predictions_created")
+
+            def _bg() -> None:
+                # 模拟真实时序：done 帧发出后，后台提取线程才完成
+                time.sleep(0.1)
+                cb(predictions)
+                done.set()
+
+            threading.Thread(target=_bg, daemon=True).start()
+            return SimpleNamespace(text="茅台看涨", tool_calls=[], rounds=1)
+
+        agent = MagicMock()
+        agent.chat.side_effect = fake_chat
+        self._patch_agent(monkeypatch, agent)
+
+        with client.websocket_connect("/ws/agent") as ws:
+            ws.send_json({"message": "茅台怎么样"})
+            assert ws.receive_json() == {"type": "thinking"}
+            assert ws.receive_json() == {"type": "chunk", "text": "茅台看涨"}
+            assert ws.receive_json() == {"type": "done", "tools_used": [], "rounds": 1}
+            assert ws.receive_json() == {
+                "type": "predictions_created",
+                "count": 1,
+                "predictions": predictions,
+            }
+        assert done.wait(timeout=5)
+
+    def test_send_after_socket_closed_is_swallowed(
+        self, client: TestClient, monkeypatch: object
+    ) -> None:
+        """socket 关闭后才触发回调：发送失败被吞掉，不影响后续连接。"""
+        import time
+
+        captured: dict[str, object] = {}
+
+        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
+            captured["cb"] = kwargs.get("on_predictions_created")
+            return SimpleNamespace(text="ok", tool_calls=[], rounds=1)
+
+        agent = MagicMock()
+        agent.chat.side_effect = fake_chat
+        self._patch_agent(monkeypatch, agent)
+
+        with client.websocket_connect("/ws/agent") as ws:
+            ws.send_json({"message": "茅台"})
+            assert ws.receive_json() == {"type": "thinking"}
+            assert ws.receive_json() == {"type": "chunk", "text": "ok"}
+            assert ws.receive_json() == {"type": "done", "tools_used": [], "rounds": 1}
+
+        # socket 已关闭后才到达的 predictions_created：不抛异常、不杀连接
+        cb = captured["cb"]
+        cb([{"id": 1, "code": "600519", "name": "贵州茅台"}])
+        time.sleep(0.2)  # 让被调度的发送协程跑完（内部应捕获异常并记日志）
+
+        with client.websocket_connect("/ws/agent") as ws2:
+            ws2.send_json({"message": "再来"})
+            assert ws2.receive_json() == {"type": "thinking"}
