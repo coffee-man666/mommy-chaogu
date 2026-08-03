@@ -5,7 +5,7 @@
 > Review date: 2026-07-31
 > Related plan: [`PRODUCT-UX-EXECUTION-PLAN.md`](PRODUCT-UX-EXECUTION-PLAN.md)
 > Follow-up result: **Request changes** — several concrete fixes landed, but CI is red and two release-blocking behavior regressions remain.
-> Current implementation: **work packages 0–4 accepted through `30d9bc8`; work package 6 (shared preferences) implemented in `b1e6ba2`** — full local gates pass; prediction/backtest evidence and the remaining Weixin-loop UX stay open.
+> Current implementation: **work packages 0–4 accepted through `30d9bc8`; work package 6 (shared preferences) in `b1e6ba2`; work package 5 (prediction/backtest evidence flow) implemented in `bbb172e`** — full local gates pass; only the remaining Weixin-loop UX and closing items stay open.
 
 ## Commit-to-work index
 
@@ -761,3 +761,41 @@ Commit `b1e6ba2` implements the shared-preference package named as the next acti
 - Settings-UI editor for `watched_rules` (requires a signal-rule catalog).
 - P4 remainder: preference-driven merged/deduplicated summaries, deep links back into Web context, and channel-health presentation in “我的”.
 - Mobile/desktop screenshot acceptance for the final P3/P4 experience.
+
+<a id="review-work-package-5"></a>
+
+## 15. Work package 5 review — prediction/backtest evidence flow
+
+Commit `bbb172e` implements the prediction/backtest evidence flow, closing the P2 items left open after work packages 4 and 6.
+
+### Implemented
+
+- **依据覆盖 at creation**: chat-extracted predictions now persist the corrected `data_coverage_at_creation` (previously always NULL); the extractor records the per-code corrected coverage and returns the created prediction list. Historical NULL rows render as 「未记录」 instead of being disguised.
+- **数据新鲜度 at verify**: `data_coverage_at_verify` now carries `{"quote": bool, "quote_age_seconds": int|null, "source": "adapter"|"stale_cache"|null}` — the honest source labels (`stale_cache` rather than a blanket "live"), with the legacy `quote` boolean kept for backward compatibility.
+- **Decision-records evidence UI**: each prediction on the stock detail decisions tab shows creation time, verification time, status, evidence-coverage badges (quote→行情, flow_today→当日资金流, flow_5d→5日资金流, etc.), and a freshness line (source + quote age); pending rows show the verification countdown/deadline. The raw JSON dump is gone.
+- **Conditional Agent attachment**: the memory pipeline returns created predictions; `AgentService.chat(on_predictions_created=...)` invokes the callback from the background thread; `/ws/agent` pushes `{"type": "predictions_created", "count", "predictions"}` via `loop.call_soon_threadsafe` after `done`. The chat stream stays open for a 60-second grace window to receive it; the answer then shows 「查看预测记录（N）」 deep-linking to `/predictions?code=` when a single stock is involved. REST is unchanged by design.
+- **Predictions deep links**: `/predictions?code=` filters via the code-filtered endpoint, shows a filter chip with a clear action, and reacts to in-page query changes; cards show verification time.
+- **One-click stock backtest**: `GET /api/stocks/{code}/backtest` (hold_days 1–60, default from the shared preference's `default_hold_days`; 365-day window; fully offline `BacktestEngine`). Zero signals → Chinese hint message + null metrics; engine failure → clean HTTP 500. The decisions tab hosts a backtest card showing the preference-derived default horizon and a metrics grid （信号数/胜率/平均收益/最大回撤/夏普）.
+
+### Self-review
+
+- The `predictions_created` event depends on the frontend's 60-second post-`done` grace window; without it the event would be unreceivable. This coupling is documented in both ends.
+- The backtest engine replays `flow_in_spike` quantitative signals, not buy-and-hold; the UI copy shows the server message verbatim when no signals fired (which also covers insufficient cache data).
+- Page-level attachment logic has no component test (the project has no page-component harness); WS parsing is covered by vitest and the service/route path by pytest, including callback-failure survival.
+- The frontend label map was aligned after both tracks landed: backend `adapter`/`stale_cache` sources and `flow_today`/`flow_5d` coverage keys now render as Chinese labels instead of raw strings.
+
+### Verification
+
+- Ruff format and lint: **passed (335 files)**.
+- Strict mypy: **passed (182 source files)**.
+- Full offline Python suite: **1,854 passed, 13 deselected** (23 new WP5 tests).
+- Vue typecheck: **passed**. Vitest: **78 passed**.
+- Production build and packaged-static drift check: **passed**.
+- Playwright: **15 passed, 1 opt-in screenshot test skipped** (3 new WP5 flows).
+
+### Open after work package 5
+
+- P4 remainder: preference-driven merged/deduplicated Weixin summaries, deep links back into Web context, channel-health presentation in “我的”.
+- Settings-UI editor for `watched_rules` (requires a signal-rule catalog endpoint).
+- Legacy `/themes` routes and the industry-chain page consolidation once the unified basket page reaches specialist-metadata parity.
+- Mobile/desktop screenshot acceptance for the final P1–P4 experience.
