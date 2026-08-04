@@ -66,13 +66,19 @@ describe('preferences API', () => {
     expect(apiPut).not.toHaveBeenCalled()
   })
 
-  it('removes the legacy key even when migration fails', async () => {
+  it('keeps the legacy key when migration fails so a later load can retry', async () => {
     localStorage.setItem(LEGACY_STYLE_KEY, 'aggressive')
     vi.mocked(apiPut).mockRejectedValueOnce(new Error('network down'))
-    vi.mocked(apiGet).mockResolvedValueOnce(FULL)
+    vi.mocked(apiPut).mockResolvedValueOnce({ ...FULL, style: 'aggressive' })
+    vi.mocked(apiGet).mockResolvedValue(FULL)
 
     const prefs = await getPreferences()
     expect(prefs).toEqual(FULL)
+    expect(localStorage.getItem(LEGACY_STYLE_KEY)).toBe('aggressive')
+
+    await getPreferences()
+    expect(apiPut).toHaveBeenCalledTimes(2)
+    expect(apiPut).toHaveBeenLastCalledWith('/api/preferences', { style: 'aggressive' })
     expect(localStorage.getItem(LEGACY_STYLE_KEY)).toBeNull()
   })
 

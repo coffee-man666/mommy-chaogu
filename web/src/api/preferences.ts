@@ -100,7 +100,7 @@ function readLegacyStyle(): TradingStyle | null {
   return null
 }
 
-/** 旧版风格写到服务端后删除本地 key；任何失败也删除，保证只尝试一次 */
+/** 旧版风格成功写到服务端后删除本地 key；临时失败保留，供下次重试。 */
 async function migrateLegacyStyle(): Promise<void> {
   if (typeof window === 'undefined') return
   const legacy = readLegacyStyle()
@@ -110,10 +110,9 @@ async function migrateLegacyStyle(): Promise<void> {
   }
   try {
     await updatePreferences({ style: legacy })
-  } catch {
-    // 迁移失败静默忽略，偏好仍用服务端值
-  } finally {
     localStorage.removeItem(LEGACY_STYLE_KEY)
+  } catch {
+    // 迁移失败不阻塞服务端读取，也不丢弃旧值；下次加载会再次尝试。
   }
 }
 

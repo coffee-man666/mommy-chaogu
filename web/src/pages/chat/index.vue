@@ -91,12 +91,14 @@ const watchlistUp = ref(0)
 const watchlistDown = ref(0)
 const signalCount = ref(0)
 const recentPredictions = ref<Prediction[]>([])
+type AgentStreamClient = ReturnType<typeof agentStream>
+
 let activeRequestId = 0
 let activeAssistantIdx: number | null = null
-/** 最近一次 WS done 对应的 assistant 消息下标（predictions_created 附件挂到它上面） */
-let lastTurnAssistantIdx: number | null = null
 let routeAbortController: AbortController | null = null
-let streamCloseTimer: number | null = null
+/** 已完成回答仍保留各自的连接，等待后台预测附件；不能被下一轮提前关闭。 */
+const retainedStreams = new Set<AgentStreamClient>()
+const retainedStreamTimers = new Map<AgentStreamClient, number>()
 
 const CHAT_STORAGE_KEY = 'mommy_chat_messages_v1'
 const CHAT_DRAFT_KEY = 'mommy_chat_draft_v1'
@@ -232,33 +234,49 @@ function processNextQueued() {
   if (next) window.setTimeout(() => void sendNow(next), 0)
 }
 
-/** 立即关闭当前流（并取消延迟关闭计时器） */
-function closeStream() {
-  if (streamCloseTimer != null) {
-    window.clearTimeout(streamCloseTimer)
-    streamCloseTimer = null
+function closeStreamClient(client: AgentStreamClient) {
+  const timer = retainedStreamTimers.get(client)
+  if (timer != null) {
+    window.clearTimeout(timer)
+    retainedStreamTimers.delete(client)
   }
-  stream.value?.close()
-  stream.value = null
+  retainedStreams.delete(client)
+  if (stream.value === client) stream.value = null
+  client.close()
+}
+
+/** 立即关闭当前仍在生成的流；已完成轮次的附件连接不受影响。 */
+function closeActiveStream() {
+  const active = stream.value
+  if (active) closeStreamClient(active)
+}
+
+function closeAllStreams() {
+  const clients = new Set(retainedStreams)
+  if (stream.value) clients.add(stream.value)
+  for (const client of clients) closeStreamClient(client)
 }
 
 /**
  * done 之后后台记忆抽取可能再推 predictions_created，
- * 延迟关闭连接给它一个到达窗口；新消息/停止/卸载都会提前关闭。
+ * 每个已完成轮次分别保留一个到达窗口；只有新建对话/卸载会统一关闭。
  */
-function scheduleStreamClose() {
-  if (streamCloseTimer != null) window.clearTimeout(streamCloseTimer)
-  streamCloseTimer = window.setTimeout(() => {
-    streamCloseTimer = null
-    stream.value?.close()
-    stream.value = null
+function scheduleStreamClose(client: AgentStreamClient) {
+  const existing = retainedStreamTimers.get(client)
+  if (existing != null) window.clearTimeout(existing)
+  retainedStreams.add(client)
+  if (stream.value === client) stream.value = null
+  const timer = window.setTimeout(() => {
+    closeStreamClient(client)
   }, 60_000)
+  retainedStreamTimers.set(client, timer)
 }
 
 function finishTurn() {
   loading.value = false
   activeAssistantIdx = null
-  if (stream.value) scheduleStreamClose()
+  const finishedStream = stream.value
+  if (finishedStream) scheduleStreamClose(finishedStream)
   scrollToBottom()
   processNextQueued()
 }
@@ -268,7 +286,7 @@ function stopGeneration() {
   activeRequestId += 1
   routeAbortController?.abort()
   routeAbortController = null
-  closeStream()
+  closeActiveStream()
   connectionState.value = 'idle'
   loading.value = false
   activeAssistantIdx = null
@@ -300,7 +318,7 @@ async function sendNow(text: string) {
   lastFailedMessage.value = ''
   routeAbortController?.abort()
   routeAbortController = null
-  closeStream()
+  closeActiveStream()
   connectionState.value = 'idle'
 
   messages.value.push({ role: 'user', content: text })
@@ -356,7 +374,6 @@ async function sendNow(text: string) {
       messages.value[assistantIdx].toolsUsed = toolsUsed
       messages.value[assistantIdx].rounds = rounds
       messages.value[assistantIdx].streaming = false
-      lastTurnAssistantIdx = assistantIdx
       finishTurn()
     },
     () => {
@@ -408,9 +425,9 @@ async function sendNow(text: string) {
       scrollToBottom()
     },
     (event: PredictionsCreatedEvent) => {
-      if (requestId !== activeRequestId) return
-      const idx = lastTurnAssistantIdx
-      const assistant = idx != null ? messages.value[idx] : undefined
+      // 已完成轮次允许在后续轮次开始后继续接收自己的后台附件；连接本身
+      // 与 assistantIdx 一一对应，新建对话/卸载时会统一关闭这些连接。
+      const assistant = messages.value[assistantIdx]
       if (assistant && assistant.role === 'assistant') {
         assistant.predictionsCreated = event
         scrollToBottom()
@@ -452,6 +469,7 @@ function retry() {
 function startNewConversation() {
   queuedMessages.value = []
   stopGeneration()
+  closeAllStreams()
   resetChatSessionId()
   messages.value = []
   input.value = ''
@@ -576,7 +594,7 @@ onMounted(async () => {
 onUnmounted(() => {
   activeRequestId += 1
   routeAbortController?.abort()
-  closeStream()
+  closeAllStreams()
   speech.stop()
 })
 </script>
