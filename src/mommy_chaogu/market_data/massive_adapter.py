@@ -386,20 +386,25 @@ class MassiveAdapter:
 
         end_d = end or date.today()
         if start is None:
+            # 用 limit 推一个紧凑的日期范围，只拉够用的数据
             if interval == BarInterval.D1:
-                years = max(1, (limit or 500) // 250 + 1)
-                start_d = end_d - timedelta(days=years * 366)
+                days_needed = max(40, (limit or 250) + 30)  # ~250 交易日/年，加缓冲
+                start_d = end_d - timedelta(days=days_needed)
             elif interval == BarInterval.W1:
                 start_d = end_d - timedelta(weeks=max(52, (limit or 200) + 4))
             elif interval == BarInterval.M:
                 start_d = end_d - timedelta(days=max(24, (limit or 60) + 2) * 31)
             else:
+                # 分钟线：~240 根/天
                 days = max(5, (limit or 240) // 240 + 5)
                 start_d = end_d - timedelta(days=days)
         else:
             start_d = start
 
         adjusted = adjustment != AdjustmentType.NONE
+        # sort=desc 让 API 从最新日期往回返回；
+        # 不传 limit 给 API（API limit 是从头算的，配合 desc 会截断到错误的位置），
+        # 改为拉完整范围后自己截断。
         data = self._client.get_aggs(
             ticker=code,
             multiplier=mult,
@@ -408,7 +413,7 @@ class MassiveAdapter:
             to=end_d.isoformat(),
             adjusted=adjusted,
             sort="asc",
-            limit=min(limit or 50000, 50000),
+            limit=50000,
         )
         if data is None:
             return []
