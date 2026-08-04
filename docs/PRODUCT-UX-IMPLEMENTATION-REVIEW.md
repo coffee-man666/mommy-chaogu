@@ -5,7 +5,7 @@
 > Review date: 2026-07-31
 > Related plan: [`PRODUCT-UX-EXECUTION-PLAN.md`](PRODUCT-UX-EXECUTION-PLAN.md)
 > Follow-up result: **Request changes** — several concrete fixes landed, but CI is red and two release-blocking behavior regressions remain.
-> Current implementation: **work packages 0–4 accepted through `30d9bc8`; work package 6 (shared preferences) in `b1e6ba2`; work package 5 (prediction/backtest evidence flow) in `bbb172e`** — full local gates pass, with two reliability follow-ups recorded in the 2026-08-03 result review before P2/P3 are closed completely.
+> Current implementation: **work packages 0–5 accepted through `1b2a77a`; work package 6 shared-preference core is accepted through `1b2a77a`, with only the watched-rule settings editor remaining** — full local gates pass; P4 Weixin-loop UX and final visual acceptance remain open.
 
 ## Commit-to-work index
 
@@ -19,10 +19,12 @@ Use this index to move from an implementation commit to its detailed review and 
 | `66f467e` | Unified built-in/custom baskets and Today decision summaries | Accepted | [Work package 3 review](#review-work-package-3) |
 | `30d9bc8` | Stock holding context, basket provenance, and structured Agent page context | Accepted | [Work package 4 review](#review-work-package-4) |
 | `7038465` | Documentation synchronization for work package 4 | Documentation only | [Work package 4 review](#review-work-package-4) |
-| `b1e6ba2` | Shared server-owned preferences and product-surface consumers | Core implementation accepted; migration reliability and watched-rule UI remain | [Work package 6 review](#review-work-package-6) |
+| `b1e6ba2` | Shared server-owned preferences and product-surface consumers | Core implementation accepted; follow-ups recorded | [Work package 6 review](#review-work-package-6) |
 | `09d3885` | Documentation synchronization for work package 6 | Documentation only | [Work package 6 review](#review-work-package-6) |
-| `bbb172e` | Prediction evidence, Agent attachment, deep links, and stock backtest | Core implementation accepted; attachment ordering/lifetime remains | [Work package 5 review](#review-work-package-5) |
+| `bbb172e` | Prediction evidence, Agent attachment, deep links, and stock backtest | Core implementation accepted; attachment follow-up recorded | [Work package 5 review](#review-work-package-5) |
 | `ab5e8f9` | Documentation synchronization for work package 5 | Documentation only | [Work package 5 review](#review-work-package-5) |
+| `f9c83e5` | Result audit recording prediction-attachment and preference-migration risks | Documentation only; changes requested | [2026-08-03 result review](#review-result-2026-08-03) |
+| `1b2a77a` | Per-turn prediction attachment lifetime and retry-safe legacy preference migration | Accepted; both reliability findings resolved | [2026-08-03 result review](#review-result-2026-08-03) |
 
 <a id="review-initial"></a>
 
@@ -814,15 +816,21 @@ Reviewed baseline: `ab5e8f938ba65a25ca3d8d3881fba86565ff3d55` (`main`, equal to 
 
 ### Result
 
-The shared-preference and prediction/backtest foundations are implemented and the complete local quality gates pass. Two behavior-level reliability issues remain before P2/P3 should be called fully complete:
+The shared-preference and prediction/backtest foundations are implemented and the complete local quality gates pass. The audit identified two behavior-level reliability issues before remediation:
 
 1. **Prediction attachment ordering and connection lifetime** — the backend background callback is scheduled independently of the `done` frame, so `predictions_created` can arrive before `done`. The page assigns `lastTurnAssistantIdx` only in the `done` handler, which can drop the event or attach it to the preceding answer. After `done`, a quick follow-up or automatically processed queued message closes the old stream and invalidates its request id, defeating the 60-second grace period. Use a stable `turn_id` on all frames and retain/correlate attachment delivery independently of the active composer turn; add coverage for before-`done`, immediate-follow-up, and queued-message cases.
 2. **Legacy preference migration data loss** — `migrateLegacyStyle()` removes `mommy-trading-style` in `finally`, including when the server `PUT` fails. A transient startup or network failure therefore discards the only copy of the user's previous selection. Remove the key only after a successful write; retain a valid value for retry, while invalid legacy values may still be discarded.
 
+### Remediation result (`1b2a77a`)
+
+- **Prediction attachment resolved**: each completed turn retains its own WebSocket grace connection instead of sharing one global close timer. The attachment callback closes over that turn's `assistantIdx`, works whether the event arrives before or after `done`, and remains valid after a quick follow-up or queued message starts. New-conversation and unmount paths close every retained connection.
+- **Preference migration resolved**: a valid legacy style is removed only after a successful server update. A transient failure no longer blocks the subsequent server read, preserves the local value, and retries on the next load; the unit test covers failure followed by a successful retry.
+- The rebuilt production frontend is synchronized with the packaged static bundle.
+
 ### Documentation disposition
 
 - The commit-to-work index now includes implementation and documentation commits for work packages 5 and 6.
-- P2 and P3 are recorded as core-complete with explicit reliability/UX closeout items instead of fully complete.
+- P2 is complete after `1b2a77a`; P3 reliability is closed, while the watched-rule settings editor remains an explicit UX closeout item.
 - The older resolution matrix is labeled as a historical snapshot so it does not conflict with later accepted work.
 
 ### Verification rerun on 2026-08-03
@@ -836,7 +844,6 @@ The shared-preference and prediction/backtest foundations are implemented and th
 
 ### Next actions
 
-1. Fix and test prediction attachment correlation/lifetime.
-2. Make legacy preference migration retry-safe.
-3. Add the watched-rule catalog/editor and then mark P3 complete.
-4. Continue the remaining P4 Weixin summary, deep-link, and channel-health work.
+1. Add the watched-rule catalog/editor and then mark P3 complete.
+2. Continue the remaining P4 Weixin summary, deep-link, and channel-health work.
+3. Run the opt-in mobile/desktop screenshot acceptance for the final P1–P4 experience.
