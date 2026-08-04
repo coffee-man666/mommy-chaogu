@@ -612,9 +612,7 @@ onUnmounted(() => {
           <div class="flex gap-2">
             <Input
               v-model="form.code"
-              placeholder="代码（600519）"
-              inputmode="numeric"
-              maxlength="6"
+              placeholder="代码（600519 或 AAPL）"
             />
             <Input
               v-model="form.name"

@@ -48,7 +48,7 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
     {"backfill_history", "manage_watchlist", "manage_alert", "record_research_conclusion"}
 )
 
-_CODE_RE = re.compile(r"^\d{6}$")
+_CODE_RE = re.compile(r"^([A-Z]{1,6}|\d{6})$")
 
 
 RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
@@ -80,7 +80,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "pattern": "^\\d{6}$", "description": "股票代码"},
+                "code": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$", "description": "股票代码（A 股 6 位数字或美股字母）"},
                 "days": {
                     "type": "integer",
                     "description": "K 线和资金流回看天数，默认 20，最大 60",
@@ -122,7 +122,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "pattern": "^\\d{6}$", "description": "股票代码"},
+                "code": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$", "description": "股票代码（A 股 6 位数字或美股字母）"},
                 "days": {
                     "type": "integer",
                     "description": "历史资金流天数，默认 10，最大 60",
@@ -157,7 +157,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                     "enum": ["market", "sector", "stock", "portfolio"],
                     "description": "结论范围",
                 },
-                "code": {"type": "string", "pattern": "^\\d{6}$", "description": "股票代码"},
+                "code": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$", "description": "股票代码（A 股 6 位数字或美股字母）"},
                 "name": {"type": "string", "description": "股票或板块名称"},
                 "confidence": {
                     "type": "number",
@@ -315,7 +315,7 @@ class ResearchToolCatalog:
     def _code(args: dict[str, Any]) -> str:
         code = str(args.get("code", "")).strip()
         if not _CODE_RE.fullmatch(code):
-            raise ValueError("需要提供 6 位股票代码")
+            raise ValueError("需要提供有效的股票代码")
         return code
 
     def _market_brief(self, args: dict[str, Any]) -> dict[str, Any]:

@@ -246,11 +246,11 @@ class Services:
         load_dotenv()
         from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
         from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-        from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+        from mommy_chaogu.market_data import create_adapter_chain
         from mommy_chaogu.portfolio.store import PortfolioStore
         from mommy_chaogu.watchlist.store import WatchlistStore
 
-        base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])  # type: ignore[list-item]
+        base = create_adapter_chain()
         adapter = CachedMarketDataAdapter(base, CacheStore(MARKET_DB))  # type: ignore[arg-type]
         data_svc = DataService(
             adapter=adapter,

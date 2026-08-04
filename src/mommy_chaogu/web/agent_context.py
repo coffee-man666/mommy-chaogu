@@ -26,7 +26,7 @@ class AgentPageContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     surface: Literal["stock"]
-    stock_code: str = Field(pattern=r"^\d{6}$")
+    stock_code: str = Field(pattern=r"^([A-Z]{1,6}|\d{6})$")
     tab: Literal["overview", "chart", "flow", "decisions"] = "overview"
     basket_id: str | None = Field(default=None, pattern=r"^(theme|group):[A-Za-z0-9_-]+$")
     quote_as_of: datetime | None = None

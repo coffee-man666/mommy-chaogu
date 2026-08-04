@@ -104,16 +104,14 @@ class FlowService:
         *,
         use_fallback: bool = True,
     ) -> FlowService:
-        """默认构造：CacheStore + CachedMarketDataAdapter(Efinance + Tencent fallback)。"""
+        """默认构造：CacheStore + CachedMarketDataAdapter(create_adapter_chain fallback)。"""
         from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-        from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+        from mommy_chaogu.market_data import EfinanceAdapter, create_adapter_chain
 
         store = CacheStore(db_path)
-        # base 必须是 MarketDataAdapter Protocol，但 TencentAdapter.get_bars 用了 **kw，
-        # 跟 Protocol 里强类型签名不一致（运行时兼容）。所以这里统一用 Any 转一道。
         base: Any
         if use_fallback:
-            base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])  # type: ignore[list-item]
+            base = create_adapter_chain()
         else:
             base = EfinanceAdapter()
         adapter = CachedMarketDataAdapter(base, store)

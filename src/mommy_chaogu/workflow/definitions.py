@@ -15,7 +15,7 @@ from mommy_chaogu.workflow.engine import Workflow, WorkflowRegistry, WorkflowSte
 # 参数提取辅助函数
 # ============================================================
 
-_STOCK_CODE_RE = re.compile(r"\b(\d{6})\b")
+_STOCK_CODE_RE = re.compile(r"\b(\d{6}|[A-Z]{1,6})\b")
 
 
 def _extract_stock_code(user_input: str, _: list[dict[str, Any]]) -> dict[str, Any]:
@@ -298,10 +298,10 @@ WORKFLOWS: list[Workflow] = [
         id="stock_analysis",
         trigger_patterns=[
             r"分析.*股票",
-            r"分析.*\d{6}",
+            r"分析.*(\d{6}|[A-Z]{1,6})",
             r".*分析一下",
-            r"\d{6}.*怎么样",
-            r"\d{6}.*分析",
+            r"(\d{6}|[A-Z]{1,6}).*怎么样",
+            r"(\d{6}|[A-Z]{1,6}).*分析",
         ],
         description="单只股票深度分析：报价 + K线 + 资金流",
         steps=[

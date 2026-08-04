@@ -48,8 +48,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^\\d{6}$",
-                    "description": "股票代码（6 位数字，可选，按个股过滤），如 '600519'",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母，可选，按个股过滤），如 '600519' 或 'AAPL'",
                 },
                 "status": {
                     "type": "string",

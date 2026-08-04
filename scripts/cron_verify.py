@@ -60,18 +60,14 @@ def run_verify(db_path: Path, logger: logging.Logger) -> dict[str, int]:
     from mommy_chaogu.agent.verify_engine import verify_pending
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import MARKET_DB
-    from mommy_chaogu.market_data import (
-        EfinanceAdapter,
-        FallbackAdapter,
-        TencentAdapter,
-    )
+    from mommy_chaogu.market_data import create_adapter_chain
 
     tracker = PredictionTracker(db_path)
     episodic = EpisodicMemory(db_path)
 
     # 行情缓存属于 market.db（与缓存层读取一致），不写进 agent.db
     store = CacheStore(MARKET_DB)
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    base = create_adapter_chain()
     adapter = CachedMarketDataAdapter(base, store)
 
     logger.info("🔍 验证到期预测...")

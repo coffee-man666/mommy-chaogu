@@ -97,7 +97,7 @@ def search_stocks(
 
 @stocks_router.get("/{code}/decision-context", response_model=StockDecisionContextOut)
 def get_stock_decision_context(
-    code: Annotated[str, Path(pattern=r"^\d{6}$")],
+    code: Annotated[str, Path(pattern=r"^([A-Z]{1,6}|\d{6})$")],
     portfolio: Annotated[PortfolioStore, Depends(get_portfolio_store)],
     watchlist: Annotated[WatchlistStore, Depends(get_watchlist_store)],
 ) -> StockDecisionContextOut:
@@ -172,7 +172,9 @@ def _ranking(quotes: list[object], top: str, limit: int) -> list[dict[str, objec
             if abs(pct) > 11:
                 continue
             # 过滤 PE 为负且退市迹象
-            if not code or len(code) != 6:
+            # 过滤无效代码（非 6 位数字或 1-6 字母）
+            if not code or not (code.isdigit() and len(code) == 6 or code.isalpha() and 1 <= len(code) <= 6):
+                continue
                 continue
             filtered.append((q, pct))
         except Exception:

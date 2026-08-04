@@ -41,7 +41,7 @@ from mommy_chaogu.tui.widgets.working_indicator import WorkingIndicator
 
 _log = logging.getLogger(__name__)
 
-_CODE_RE = re.compile(r"[0-9]{6}")
+_CODE_RE = re.compile(r"(?:[0-9]{6}|[A-Z]{1,6})")
 _AT_TOKEN_RE = re.compile(r"@([^\s@]*)$")
 
 
@@ -590,7 +590,7 @@ class ChatView(Vertical):
     def _cmd_quote(self, args: str) -> None:
         code = args.strip()
         if not _CODE_RE.fullmatch(code):
-            self.append_hint("用法: /quote <6位代码>，如 /quote 600519")
+            self.append_hint("用法: /quote <代码>，如 /quote 600519 或 /quote AAPL")
             return
         self._show_quote(code)
 
@@ -632,7 +632,7 @@ class ChatView(Vertical):
         code = args.strip()
         if code:
             if not _CODE_RE.fullmatch(code):
-                self.append_hint("用法: /flows <6位代码>，如 /flows 688981")
+                self.append_hint("用法: /flows <代码>，如 /flows 688981 或 /flows AAPL")
                 return
 
             def _build() -> Static | None:
