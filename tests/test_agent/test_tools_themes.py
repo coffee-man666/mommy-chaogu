@@ -241,6 +241,32 @@ class TestGetThemeStocks:
         assert "price" not in item
         assert "change_pct" not in item
 
+    def test_failed_quote_error_is_visible_to_agent(
+        self,
+        registry: ToolRegistry,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake = _FakeThemeService(
+            quotes=[
+                {
+                    "code": "300001",
+                    "name": "某股",
+                    "subcategory": "",
+                    "level": "",
+                    "role": "",
+                    "price": None,
+                    "change_pct": None,
+                    "error": "批量行情请求失败: timeout",
+                }
+            ]
+        )
+        monkeypatch.setattr("mommy_chaogu.services.theme_service.ThemeService", fake)
+
+        result = registry.call("get_theme_stocks", {"theme_id": "test"})
+
+        data = json.loads(result)
+        assert data[0]["error"] == "批量行情请求失败: timeout"
+
     def test_earnings_watch_growth_fields(
         self,
         registry: ToolRegistry,

@@ -19,12 +19,17 @@ from pathlib import Path
 from typing import Any
 
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
+from mommy_chaogu.market_data.types import Quote
 
 _log = logging.getLogger(__name__)
 
 # Installed wheels carry the read-only seeds. Source checkouts and Docker can
 # still override them with repository-level data assets.
 _BUNDLED_DATA_ROOT = Path(__file__).resolve().parents[1] / "bundled_data"
+
+# Tencent supports up to 80 codes per request. Keep a smaller batch size so
+# this remains safe when the adapter falls back to another source.
+THEME_QUOTE_BATCH_SIZE = 50
 
 
 def _theme_data_dir() -> Path:
@@ -160,6 +165,7 @@ class ThemeService:
 
         stocks = theme["stocks"]
         results: list[dict[str, Any]] = []
+        items_by_code: dict[str, list[dict[str, Any]]] = {}
 
         for stock in stocks[:limit]:
             code = stock.get("code", "")
@@ -189,20 +195,47 @@ class ThemeService:
                 "error": None,
             }
 
-            if self._adapter is not None:
-                try:
-                    q = self._adapter.get_quote(code)
-                    if q:
-                        item["price"] = q.price
-                        item["change_pct"] = q.change_pct
-                        item["volume"] = q.volume
-                        item["turnover_rate"] = q.turnover_rate
-                        item["pe"] = q.pe_dynamic
-                        item["main_net_inflow"] = q.extra.get("main_net_inflow")
-                except Exception as e:
-                    _log.debug("quote failed for %s: %s", code, e)
-                    item["error"] = str(e)
-
+            items_by_code.setdefault(code, []).append(item)
             results.append(item)
+
+        if self._adapter is None:
+            return results
+
+        codes = list(items_by_code)
+        quotes_by_code: dict[str, Quote] = {}
+        for start in range(0, len(codes), THEME_QUOTE_BATCH_SIZE):
+            batch = codes[start : start + THEME_QUOTE_BATCH_SIZE]
+            try:
+                quotes = self._adapter.get_quotes(batch)
+            except Exception as e:
+                error = f"批量行情请求失败: {e}"
+                for code in batch:
+                    for item in items_by_code[code]:
+                        item["error"] = error
+                _log.warning("theme quotes batch failed (%d codes): %s", len(batch), e)
+                continue
+
+            for item_quote in quotes:
+                if item_quote.code in items_by_code:
+                    quotes_by_code[item_quote.code] = item_quote
+
+            # Batch adapters may skip individual failed codes. Preserve the
+            # successful results and expose missing codes as partial failures.
+            for code in batch:
+                if code not in quotes_by_code:
+                    for item in items_by_code[code]:
+                        item["error"] = "行情未返回"
+
+        for code, items in items_by_code.items():
+            selected_quote = quotes_by_code.get(code)
+            if selected_quote is None:
+                continue
+            for item in items:
+                item["price"] = selected_quote.price
+                item["change_pct"] = selected_quote.change_pct
+                item["volume"] = selected_quote.volume
+                item["turnover_rate"] = selected_quote.turnover_rate
+                item["pe"] = selected_quote.pe_dynamic
+                item["main_net_inflow"] = selected_quote.extra.get("main_net_inflow")
 
         return results

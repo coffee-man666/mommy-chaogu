@@ -14,6 +14,8 @@ from mommy_chaogu.cache import (
     CacheStore,
 )
 from mommy_chaogu.market_data import (
+    AdjustmentType,
+    BarInterval,
     MarketDataAdapter,
     MarketType,
     Money,
@@ -249,6 +251,41 @@ def test_list_market_quotes_failure_uses_cached(store: CacheStore, mock_adp: Moc
     cached._last_fetch_attempt["market_snapshot:all"] = datetime.now(UTC) - timedelta(seconds=120)
     quotes = cached.list_market_quotes()
     assert len(quotes) >= 1  # 用旧快照
+
+
+def test_get_bars_cached_result_respects_limit(
+    cached: CachedMarketDataAdapter, store: CacheStore
+) -> None:
+    """缓存已有较多 K 线时，仍只返回调用方要求的最后 N 根。"""
+    for index in range(5):
+        timestamp = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)
+        store.set_bar(
+            "600519",
+            BarInterval.D1.value,
+            AdjustmentType.FORWARD.value,
+            timestamp.strftime("%Y-%m-%d"),
+            {
+                "code": "600519",
+                "name": "贵州茅台",
+                "timestamp": timestamp.isoformat(),
+                "open": str(100 + index),
+                "high": str(101 + index),
+                "low": str(99 + index),
+                "close": str(100 + index),
+                "volume": 1000 + index,
+                "turnover": "100000",
+                "change_pct": None,
+                "turnover_rate": None,
+                "amplitude": None,
+            },
+        )
+
+    bars = cached.get_bars(
+        "600519", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD, limit=2
+    )
+
+    assert len(bars) == 2
+    assert [bar.timestamp.day for bar in bars] == [4, 5]
 
 
 # ---------- 持久化 ----------

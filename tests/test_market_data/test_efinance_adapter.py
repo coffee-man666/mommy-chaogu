@@ -9,6 +9,9 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import pandas as pd
 import pytest
 
 from mommy_chaogu.market_data import (
@@ -66,6 +69,27 @@ def test_get_quotes_dedup_and_skip_failures(adp: EfinanceAdapter) -> None:
     assert codes.count("600519") == 1
     assert "000001" in codes
     assert "INVALID" not in codes
+
+
+def test_get_quotes_uses_one_market_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """批量报价应复用一次全市场快照，而不是逐只调用 get_quote。"""
+    snapshot = pd.DataFrame(
+        [
+            {"股票代码": "000001", "股票名称": "平安银行", "最新价": "10.00"},
+            {"股票代码": "600519", "股票名称": "贵州茅台", "最新价": "1680.00"},
+        ]
+    )
+    fetch_snapshot = MagicMock(return_value=snapshot)
+    monkeypatch.setattr(
+        "mommy_chaogu.market_data.efinance_adapter.ef.stock.get_realtime_quotes",
+        fetch_snapshot,
+    )
+
+    adapter = EfinanceAdapter()
+    quotes = adapter.get_quotes(["600519", "000001", "600519"])
+
+    assert [quote.code for quote in quotes] == ["600519", "000001"]
+    fetch_snapshot.assert_called_once_with()
 
 
 @pytest.mark.network

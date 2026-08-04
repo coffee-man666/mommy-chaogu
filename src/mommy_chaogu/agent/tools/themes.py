@@ -84,6 +84,8 @@ def _handle_get_theme_stocks(ctx: ToolContext, args: dict[str, Any]) -> str:
         if it.get("growth_text"):
             item["growth_text"] = it["growth_text"]
             item["core_driver"] = it.get("core_driver", "")
+        if it.get("error"):
+            item["error"] = it["error"]
         if it["price"] is not None:
             item["price"] = float(it["price"])
             item["change_pct"] = float(it["change_pct"])

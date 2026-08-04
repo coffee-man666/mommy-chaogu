@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import warnings
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -210,25 +209,44 @@ class EfinanceAdapter:
             return None
 
     def get_quotes(self, codes: list[str]) -> list[Quote]:
-        """批量：循环单股，失败的跳过。
+        """批量拉取：一次全市场快照后按代码筛选，失败的跳过。
 
-        东财接口冷启动可能超时，本方法会先预热一次 get_realtime_quotes()
-        （全市场快照走同个东财 endpoint）能提高后续成功率。
+        旧实现虽然暴露了批量接口，但先拉一次全市场快照预热、随后仍对
+        每个代码调用 ``get_quote``，主题/篮子任务会退化成 N 次串行请求。
+        直接复用全市场快照可以把请求数从 N+1 降到 1；快照失败时返回空
+        列表，由 FallbackAdapter 继续尝试备用源。
         """
-        # 预热：调一次全市场走东财接口（失败也没关系）
-        with contextlib.suppress(Exception):
-            ef.stock.get_realtime_quotes()
+        requested = list(dict.fromkeys(codes))
+        if not requested:
+            return []
 
-        out: list[Quote] = []
-        seen: set[str] = set()
-        for code in dict.fromkeys(codes):  # 去重保持顺序
-            if code in seen:
+        try:
+            df = ef.stock.get_realtime_quotes()
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).warning("get_quotes batch failed: %s", e)
+            return []
+        if df is None or df.empty:
+            return []
+
+        requested_set = set(requested)
+        found: dict[str, Quote] = {}
+        for _, row in df.iterrows():
+            raw_code = row.get("股票代码", row.get("代码", ""))
+            code = str(raw_code or "").strip()
+            if code.isdigit():
+                code = code.zfill(6)
+            if code not in requested_set:
                 continue
-            q = self.get_quote(code)
-            if q is not None:
-                out.append(q)
-                seen.add(code)
-        return out
+            try:
+                found[code] = self._row_to_quote(row)
+            except Exception as e:
+                import logging
+
+                logging.getLogger(__name__).warning("_row_to_quote(%s) failed: %s", code, e)
+
+        return [found[code] for code in requested if code in found]
 
     def list_market_quotes(self) -> list[Quote]:
         """全市场实时快照（~5000+ 条）。"""

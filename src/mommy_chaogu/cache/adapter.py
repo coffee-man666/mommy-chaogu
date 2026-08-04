@@ -394,6 +394,8 @@ class CachedMarketDataAdapter:
                     amplitude=Decimal(bar_dict["amplitude"]) if bar_dict.get("amplitude") else None,
                 )
             )
+        if limit is not None:
+            bars = bars[-limit:]
         return bars
 
     # ============================================================
