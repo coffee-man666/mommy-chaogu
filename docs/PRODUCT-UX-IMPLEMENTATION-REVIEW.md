@@ -5,7 +5,7 @@
 > Review date: 2026-07-31
 > Related plan: [`PRODUCT-UX-EXECUTION-PLAN.md`](PRODUCT-UX-EXECUTION-PLAN.md)
 > Follow-up result: **Request changes** — several concrete fixes landed, but CI is red and two release-blocking behavior regressions remain.
-> Current implementation: **work packages 0–4 accepted through `30d9bc8`; work package 6 (shared preferences) in `b1e6ba2`; work package 5 (prediction/backtest evidence flow) implemented in `bbb172e`** — full local gates pass; only the remaining Weixin-loop UX and closing items stay open.
+> Current implementation: **work packages 0–4 accepted through `30d9bc8`; work package 6 (shared preferences) in `b1e6ba2`; work package 5 (prediction/backtest evidence flow) in `bbb172e`** — full local gates pass, with two reliability follow-ups recorded in the 2026-08-03 result review before P2/P3 are closed completely.
 
 ## Commit-to-work index
 
@@ -19,6 +19,10 @@ Use this index to move from an implementation commit to its detailed review and 
 | `66f467e` | Unified built-in/custom baskets and Today decision summaries | Accepted | [Work package 3 review](#review-work-package-3) |
 | `30d9bc8` | Stock holding context, basket provenance, and structured Agent page context | Accepted | [Work package 4 review](#review-work-package-4) |
 | `7038465` | Documentation synchronization for work package 4 | Documentation only | [Work package 4 review](#review-work-package-4) |
+| `b1e6ba2` | Shared server-owned preferences and product-surface consumers | Core implementation accepted; migration reliability and watched-rule UI remain | [Work package 6 review](#review-work-package-6) |
+| `09d3885` | Documentation synchronization for work package 6 | Documentation only | [Work package 6 review](#review-work-package-6) |
+| `bbb172e` | Prediction evidence, Agent attachment, deep links, and stock backtest | Core implementation accepted; attachment ordering/lifetime remains | [Work package 5 review](#review-work-package-5) |
+| `ab5e8f9` | Documentation synchronization for work package 5 | Documentation only | [Work package 5 review](#review-work-package-5) |
 
 <a id="review-initial"></a>
 
@@ -339,6 +343,8 @@ It does **not** address all P0/P1/P2 findings as the commit subject claims. The 
 3. Weixin delivery can still repeat indefinitely when its new relative dedup file cannot be persisted.
 
 ### 7.2 Resolution matrix
+
+The matrix below is the historical result at commit `9c0fd0b`; current dispositions and later work packages are recorded in the commit index and subsequent review sections.
 
 | Original finding | Follow-up status | Review note |
 |---|---|---|
@@ -799,3 +805,38 @@ Commit `bbb172e` implements the prediction/backtest evidence flow, closing the P
 - Settings-UI editor for `watched_rules` (requires a signal-rule catalog endpoint).
 - Legacy `/themes` routes and the industry-chain page consolidation once the unified basket page reaches specialist-metadata parity.
 - Mobile/desktop screenshot acceptance for the final P1–P4 experience.
+
+<a id="review-result-2026-08-03"></a>
+
+## 16. Result review — current branch after work packages 5 and 6
+
+Reviewed baseline: `ab5e8f938ba65a25ca3d8d3881fba86565ff3d55` (`main`, equal to `origin/main`).
+
+### Result
+
+The shared-preference and prediction/backtest foundations are implemented and the complete local quality gates pass. Two behavior-level reliability issues remain before P2/P3 should be called fully complete:
+
+1. **Prediction attachment ordering and connection lifetime** — the backend background callback is scheduled independently of the `done` frame, so `predictions_created` can arrive before `done`. The page assigns `lastTurnAssistantIdx` only in the `done` handler, which can drop the event or attach it to the preceding answer. After `done`, a quick follow-up or automatically processed queued message closes the old stream and invalidates its request id, defeating the 60-second grace period. Use a stable `turn_id` on all frames and retain/correlate attachment delivery independently of the active composer turn; add coverage for before-`done`, immediate-follow-up, and queued-message cases.
+2. **Legacy preference migration data loss** — `migrateLegacyStyle()` removes `mommy-trading-style` in `finally`, including when the server `PUT` fails. A transient startup or network failure therefore discards the only copy of the user's previous selection. Remove the key only after a successful write; retain a valid value for retry, while invalid legacy values may still be discarded.
+
+### Documentation disposition
+
+- The commit-to-work index now includes implementation and documentation commits for work packages 5 and 6.
+- P2 and P3 are recorded as core-complete with explicit reliability/UX closeout items instead of fully complete.
+- The older resolution matrix is labeled as a historical snapshot so it does not conflict with later accepted work.
+
+### Verification rerun on 2026-08-03
+
+- Ruff lint: **passed**.
+- Strict mypy: **passed (182 source files)**.
+- Full offline Python suite: **1,854 passed, 13 deselected**.
+- Vue typecheck: **passed**. Vitest: **78 passed**.
+- Production build and packaged-static parity: **passed**.
+- Playwright: **15 passed, 1 opt-in screenshot test skipped**.
+
+### Next actions
+
+1. Fix and test prediction attachment correlation/lifetime.
+2. Make legacy preference migration retry-safe.
+3. Add the watched-rule catalog/editor and then mark P3 complete.
+4. Continue the remaining P4 Weixin summary, deep-link, and channel-health work.
