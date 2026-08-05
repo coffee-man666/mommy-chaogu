@@ -16,6 +16,7 @@ from mommy_chaogu.market_data.rankings import (
 from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.semicon import SemiconStore
 from mommy_chaogu.services.stock_context_service import StockContextService
+from mommy_chaogu.services.us_market_service import fetch_us_market_brief
 from mommy_chaogu.watchlist import WatchlistStore
 from mommy_chaogu.web.deps import (
     get_adapter,
@@ -122,6 +123,23 @@ def get_indexes() -> list[IndexOut]:
     ]
 
 
+@router.get("/us", response_model=list[IndexOut])
+def get_us_indexes(
+    adapter: Annotated[MarketDataAdapter, Depends(get_adapter)],
+) -> list[IndexOut]:
+    """美股大盘概览（标普500/纳指/道指 + VIX + 10Y 美债利率）。"""
+    return [
+        IndexOut(
+            code=item["code"],
+            name=item["name"],
+            price=item["price"],
+            change_pct=item["change_pct"],
+            prev_close=item["prev_close"],
+        )
+        for item in fetch_us_market_brief(adapter)
+    ]
+
+
 @router.get("/sectors", response_model=list[SectorOut])
 def get_sectors(
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
@@ -173,7 +191,7 @@ def _ranking(quotes: list[object], top: str, limit: int) -> list[dict[str, objec
                 continue
             # 过滤 PE 为负且退市迹象
             # 过滤无效代码（非 6 位数字或 1-6 字母）
-            if not code or not (code.isdigit() and len(code) == 6 or code.isalpha() and 1 <= len(code) <= 6):
+            if not code or not ((code.isdigit() and len(code) == 6) or (code.isalpha() and 1 <= len(code) <= 6)):
                 continue
                 continue
             filtered.append((q, pct))

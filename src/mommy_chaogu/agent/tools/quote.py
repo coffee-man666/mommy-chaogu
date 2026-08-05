@@ -16,8 +16,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
-                    "description": "股票代码（A 股 6 位数字如 '600519'，美股字母如 'AAPL'）",
+                    "pattern": "^(\\^[A-Z]{1,6}|[A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字如 '600519'，美股字母如 'AAPL'，`^` 前缀为美股指数/利率/VIX 如 '^GSPC'/'^VIX'/'^TNX'）",
                 }
             },
             "required": ["code"],
@@ -31,8 +31,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$"},
-                    "description": "股票代码列表，如 ['600519', 'AAPL']",
+                    "items": {"type": "string", "pattern": "^(\\^[A-Z]{1,6}|[A-Z]{1,6}|\\d{6})$"},
+                    "description": "股票代码列表，如 ['600519', 'AAPL', '^GSPC']",
                 }
             },
             "required": ["codes"],

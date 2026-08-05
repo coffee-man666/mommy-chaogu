@@ -113,6 +113,21 @@ _MARKET_SUMMARY = """\
 6. 控制在 200 字以内
 """
 
+_US_MARKET_SUMMARY = """\
+请基于以下数据用通俗的语言给妈妈做美股行情概览。
+
+## 数据
+{context}
+
+## 要求
+1. 先一句话总结美股整体表现（三大指数涨跌 + VIX 恐慌程度）
+2. 三大指数分别点评（标普500 / 纳斯达克 / 道琼斯）
+3. 10 年期美债利率（^TNX）的变动方向，和股市的联动
+4. 用美元/百分比做单位，不要用"亿元"等人民币单位
+5. 不加"以上不构成投资建议"等免责声明
+6. 控制在 200 字以内
+"""
+
 _STOCK_ANALYSIS_SUMMARY = """\
 请基于以下数据用通俗的语言分析这只股票。
 
@@ -203,6 +218,30 @@ _EARNINGS_SUMMARY = """\
 # ============================================================
 
 WORKFLOWS: list[Workflow] = [
+    # ----------------------------------------------------------
+    # 0. 美股大盘概览
+    # 放最前：morning_brief 的"今天.*怎么样"会抢先命中"美股今天怎么样"，
+    # 美股相关触发词必须优先生效。
+    # ----------------------------------------------------------
+    Workflow(
+        id="us_market_brief",
+        trigger_patterns=[
+            r"美股.*(怎么样|如何|行情|走势)",
+            r"美国.*股市",
+            r"纳斯达克|道琼斯|标普500?",
+            r"美债利率|美债.*收益率",
+            r"恐慌指数",
+        ],
+        description="美股大盘概览：三大指数 + VIX + 10Y 美债利率",
+        steps=[
+            WorkflowStep(tool_name="get_quote", display_name="正在获取标普500", args={"code": "^GSPC"}),
+            WorkflowStep(tool_name="get_quote", display_name="正在获取纳斯达克", args={"code": "^IXIC"}),
+            WorkflowStep(tool_name="get_quote", display_name="正在获取道琼斯", args={"code": "^DJI"}),
+            WorkflowStep(tool_name="get_quote", display_name="正在获取VIX", args={"code": "^VIX"}),
+            WorkflowStep(tool_name="get_quote", display_name="正在获取10Y美债", args={"code": "^TNX"}),
+        ],
+        summary_template=_US_MARKET_SUMMARY,
+    ),
     # ----------------------------------------------------------
     # 1. 每日概览
     # ----------------------------------------------------------

@@ -44,6 +44,7 @@ def test_profiles_default_to_public_market_data() -> None:
     assert "get_memory_context" not in MARKET_ONLY_BASE_TOOLS
     assert allowed_research_tool_names("market-only") == {
         "research_market_brief",
+        "research_us_market",
         "research_stock",
         "research_sector",
         "research_money_flow",
@@ -67,6 +68,24 @@ def test_stock_research_returns_evidence_without_personal_memory() -> None:
         "get_fundamentals",
     ]
     assert all(name != "get_memory_context" for name, _ in registry.calls)
+
+
+def test_us_market_brief_queries_indexes() -> None:
+    catalog, registry = _catalog()
+    result = json.loads(catalog.call("research_us_market", {}))
+
+    assert result["research_type"] == "us_market_brief"
+    assert result["profile"] == "market-only"
+    assert result["subject"]["indexes"] == ["^GSPC", "^IXIC", "^DJI", "^VIX", "^TNX"]
+    assert [item["tool"] for item in result["evidence"]] == [
+        "get_quote",
+        "get_quote",
+        "get_quote",
+        "get_quote",
+        "get_quote",
+    ]
+    codes = [args["code"] for name, args in registry.calls if name == "get_quote"]
+    assert codes == ["^GSPC", "^IXIC", "^DJI", "^VIX", "^TNX"]
 
 
 def test_personal_stock_research_includes_memory_first() -> None:

@@ -46,6 +46,7 @@ class TestSlashRegistry:
     def test_all_expected_commands_present(self) -> None:
         expected = {
             "today",
+            "usmarket",
             "watch",
             "portfolio",
             "flows",

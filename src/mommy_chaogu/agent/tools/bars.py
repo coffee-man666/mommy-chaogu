@@ -17,8 +17,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
-                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                    "pattern": "^(\\^[A-Z]{1,6}|[A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母；`^` 前缀为美股指数/利率/VIX 如 '^GSPC'）",
                 },
                 "interval": {
                     "type": "string",
@@ -45,8 +45,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
-                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                    "pattern": "^(\\^[A-Z]{1,6}|[A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母；`^` 前缀为美股指数/利率/VIX 如 '^GSPC'）",
                 },
                 "days": {
                     "type": "integer",

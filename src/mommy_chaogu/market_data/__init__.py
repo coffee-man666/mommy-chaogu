@@ -24,15 +24,17 @@ from mommy_chaogu.market_data.types import (
     QuoteType,
     Tick,
 )
+from mommy_chaogu.market_data.yahoo_adapter import YahooAdapter
+from mommy_chaogu.market_data.yahoo_client import YahooClient
 
 
 def create_adapter_chain() -> MarketDataAdapter:
-    """构造默认适配器链：[Massive(美股), Efinance(A股), Tencent(A股兜底)]。
+    """构造默认适配器链：[Massive(美股), Yahoo(美股备用/指数/利率/VIX), Efinance(A股), Tencent(A股兜底)]。
 
-    MassiveAdapter 在链首——美股代码命中，A 股代码快速返回 None/[]（零网络开销），
-    自动 fallback 到 EfinanceAdapter。
+    MassiveAdapter 在链首——美股代码命中；`^` 前缀指数（^GSPC/^VIX/^TNX）Massive 无数据，
+    自动落到 YahooAdapter。A 股代码前两个源快速返回 None/[]（零网络开销），走 Efinance。
     """
-    adapters: list[MarketDataAdapter] = [MassiveAdapter()]
+    adapters: list[MarketDataAdapter] = [MassiveAdapter(), YahooAdapter()]
     adapters.append(EfinanceAdapter())
     adapters.append(TencentAdapter())
     return FallbackAdapter(adapters)
@@ -45,10 +47,10 @@ __all__ = [
     "Board",
     "EfinanceAdapter",
     "FallbackAdapter",
-    "MassiveAdapter",
-    "MassiveClient",
     "MarketDataAdapter",
     "MarketType",
+    "MassiveAdapter",
+    "MassiveClient",
     "Money",
     "MoneyFlow",
     "OrderBook",
@@ -57,6 +59,8 @@ __all__ = [
     "QuoteType",
     "TencentAdapter",
     "Tick",
+    "YahooAdapter",
+    "YahooClient",
     "create_adapter_chain",
     "filter_by_market",
     "find_quote",

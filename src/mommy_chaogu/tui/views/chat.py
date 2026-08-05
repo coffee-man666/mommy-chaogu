@@ -63,6 +63,7 @@ SLASH_COMMANDS: dict[str, SlashCommand] = {
     cmd.name: cmd
     for cmd in [
         SlashCommand("today", "今日总览（指数/自选/信号/预测）"),
+        SlashCommand("usmarket", "美股大盘（指数/VIX/10Y利率）"),
         SlashCommand("watch", "自选股列表"),
         SlashCommand("portfolio", "持仓"),
         SlashCommand("flows", "资金流（/flows 600519，无参数看自选榜）", has_args=True),
@@ -477,6 +478,8 @@ class ChatView(Vertical):
             self.app.exit()
         elif cmd == "today":
             self._run_card_worker(self._build_today_card)
+        elif cmd == "usmarket":
+            self._run_card_worker(self._build_us_market_card)
         elif cmd == "watch":
             self._run_card_worker(self._build_watch_card)
         elif cmd == "portfolio":
@@ -535,6 +538,20 @@ class ChatView(Vertical):
         data_svc = getattr(svc, "data", None)
         rows = data_svc.watchlist_quotes() if data_svc is not None else []
         return cards.watch_card(rows, self._theme())
+
+    def _build_us_market_card(self) -> Static | None:
+        """美股大盘卡：三大指数 + VIX + 10Y 美债利率。"""
+        svc = self._services()
+        data_svc = getattr(svc, "data", None)
+        adapter = getattr(data_svc, "adapter", None) if data_svc is not None else None
+        if adapter is None:
+            return self._hint_static("行情服务未配置")
+        from mommy_chaogu.services.us_market_service import fetch_us_market_brief
+
+        items = fetch_us_market_brief(adapter)
+        if not items:
+            return self._hint_static("美股行情源暂时不可用")
+        return cards.us_market_card(items, self._theme())
 
     def _build_portfolio_card(self) -> Static | None:
         svc = self._services()
