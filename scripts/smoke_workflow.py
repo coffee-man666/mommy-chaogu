@@ -44,18 +44,38 @@ def main() -> int:
 
     compiler = WorkflowCompiler(chat_raw, existing_workflows=get_default_registry().all_workflows())
     samples = tuple((opinion, ()) for opinion in args.opinion) if args.opinion else GOLDEN_SAMPLES
+    exit_code = 0
     for index, (opinion, expected) in enumerate(samples, start=1):
-        result = compiler.compile(opinion)
         print(f"\n--- opinion {index} ---\n{opinion}")
         if expected:
             print(f"expected skeleton: {' → '.join(expected)}")
+        try:
+            result = compiler.compile(opinion)
+        except Exception as exc:
+            exit_code = 2
+            print(
+                json.dumps(
+                    {
+                        "kind": "error",
+                        "errors": [f"network smoke 调用 LLM 失败: {type(exc).__name__}: {exc}"],
+                        "guidance": "检查 AGENT_PROVIDER / AGENT_MODEL 与 provider 的模型列表。",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            continue
         if result.spec is not None:
+            if expected:
+                actual = tuple(step.tool_name for step in result.spec.steps)
+                print(f"golden skeleton match: {actual == expected}")
             print(json.dumps(result.spec.to_dict(), ensure_ascii=False, indent=2))
         elif result.questions:
             print(json.dumps({"kind": "questions", "questions": result.questions}, ensure_ascii=False, indent=2))
         else:
             print(json.dumps({"kind": "error", "errors": result.errors, "guidance": result.guidance}, ensure_ascii=False, indent=2))
-    return 0
+            exit_code = 2
+    return exit_code
 
 
 if __name__ == "__main__":

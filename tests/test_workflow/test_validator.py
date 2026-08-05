@@ -34,6 +34,22 @@ def test_validator_checks_prior_step_and_regex() -> None:
     assert any("非前置步骤" in issue for issue in issues)
     assert any("user_regex 非法" in issue for issue in issues)
 
+    missing_pattern = _valid(
+        steps=[StepSpec("check_kline_signal", "missing", {"codes": ArgSource("user_regex")})]
+    )
+    assert any("user_regex 缺少 pattern" in issue for issue in validate_spec(missing_pattern))
+
+    wrong_field = _valid(
+        steps=[
+            StepSpec(
+                "check_kline_signal",
+                "wrong field",
+                {"codes": ArgSource("step_field", step_index=0, field="results")},
+            )
+        ]
+    )
+    assert any("codes 只能引用" in issue for issue in validate_spec(wrong_field))
+
 
 def test_validator_detects_builtin_trigger_conflict_and_warns_unknown_arg() -> None:
     builtins = get_default_registry().all_workflows()

@@ -70,7 +70,12 @@ def validate_spec(
                 issues.append(f"warning: 第 {index} 步参数 {name} 不在 {step.tool_name} 定义中")
             if source.kind == "step_field" and source.step_index >= index:
                 issues.append(f"第 {index} 步引用了非前置步骤: {source.step_index}")
+            if name == "codes" and source.kind == "step_field" and source.field != "codes":
+                issues.append(f"第 {index} 步 codes 只能引用前置步骤的 codes 字段")
             if source.kind == "user_regex":
+                if not source.pattern:
+                    issues.append(f"第 {index} 步 user_regex 缺少 pattern")
+                    continue
                 try:
                     re.compile(source.pattern)
                 except re.error as exc:

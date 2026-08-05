@@ -82,7 +82,7 @@ class WorkflowCompiler:
 参考样例：
 1. 自选股资金筛选：get_watchlist → screen_inflow_stocks(codes=step_field, threshold_bp=param)
 2. 持仓业绩检查：get_portfolio → check_earnings_catalyst(codes=step_field)
-3. 指定代码 K 线：check_kline_signal(codes=user_regex, signal=literal)
+3. 指定代码 K 线：check_kline_signal(codes=user_regex(pattern="(\\d{{6}})"), signal=literal)
 
 只允许输出以下两种 JSON 之一，不要 Markdown：
 {{"kind":"questions","questions":["需要澄清的问题"]}}
@@ -91,7 +91,8 @@ class WorkflowCompiler:
 "codes":{{"kind":"step_field","step_index":0,"field":"codes"}},
 "threshold_bp":{{"kind":"param","param_name":"threshold_bp"}}}}}}],
 "params":{{"threshold_bp":50}},"summary_template":null,"use_llm_summary":true,"spec_version":1}}
-规则：id 必须 user_ 开头；step_field 只能引用前置步骤；参数值必须来自 literal、user_regex、step_field 或 param；
+规则：id 必须 user_ 开头；step_field 只能引用前置步骤；user_regex 必须提供非空合法 pattern；
+参数值必须来自 literal、user_regex、step_field 或 param；
 积木结果遵守 results/count/total 契约，codes 只能从 get_watchlist/get_portfolio 或 results 提取。
 """
 

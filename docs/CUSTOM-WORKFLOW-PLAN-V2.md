@@ -10,11 +10,13 @@ V2 已完成：Phase 0 的数据口径确认、Phase 1 交易积木、Phase 2
 编译器及 `create/update` 命令、Phase 5 网络冒烟脚本均已落地。离线测试覆盖
 契约、提取规则、参数覆盖、信号判定、CRUD、命中计数、CLI 全链路和编译器重试。
 
-Phase 5 的真实网络冒烟需要本机配置 LLM key，运行：
+Phase 5 的真实网络冒烟需要本机配置有效的 LLM key 和模型名，运行：
 
 ```bash
 uv run python scripts/smoke_workflow.py
 ```
+
+配置错误时脚本返回退出码 `2` 并打印 provider/model 检查指引，不会留下 traceback。
 
 ## 设计哲学（三条，不动摇）
 
@@ -345,6 +347,11 @@ update 模式验证旧 spec 注入 prompt。
 `scripts/smoke_workflow.py`（标 network）：
 真实 adapter + 真实 LLM 跑 3 条固定观点 → 编译 → dry-run 打印 spec → 人眼检查。
 另备 3-5 组 golden 样本（观点 → 期望 spec 骨架），用于人工回归。
+
+本机实测：配置中的旧 z.ai 模型名会被服务端返回 `Unknown Model`，脚本能完整遍历
+3 条样本并以退出码 `2` 给出修复指引；临时指定 provider 默认的 `glm-4.7` 后，
+单条真实编译成功生成可运行的 `user_` spec。完整三条请求受远端响应超时影响时，
+脚本会逐条继续并保留每条结果，不把外部服务问题误报为代码通过。
 
 ---
 
