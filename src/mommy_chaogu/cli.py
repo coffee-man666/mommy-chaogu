@@ -25,6 +25,7 @@ from mommy_chaogu.cli_commands.report import *
 from mommy_chaogu.cli_commands.semicon import *
 from mommy_chaogu.cli_commands.watchlist import *
 from mommy_chaogu.cli_commands.web import *
+from mommy_chaogu.cli_commands.workflow import *
 from mommy_chaogu.setup import main_setup
 
 # ============================================================
@@ -515,6 +516,7 @@ def main_mommy() -> NoReturn:
         "memory": ("mommy-memory", main_memory),
         "web": ("mommy-web", main_web),
         "tui": ("mommy-tui", None),
+        "workflow": ("mommy-workflow", main_workflow),
     }
 
     # 直接子命令模式：mommy watchlist list
@@ -566,7 +568,7 @@ def main_mommy() -> NoReturn:
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
-            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui, workflow"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -628,9 +630,11 @@ def main_mommy() -> NoReturn:
     from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
-    from mommy_chaogu.workflow.engine import WorkflowExecutor
+    from mommy_chaogu.workflow.engine import WorkflowExecutor, WorkflowRegistry
     from mommy_chaogu.workflow.definitions import get_default_registry
     from mommy_chaogu.workflow.router import NLRouter
+    from mommy_chaogu.workflow.spec_runtime import spec_to_workflow
+    from mommy_chaogu.workflow.store import WorkflowStore
 
     base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(MARKET_DB)
@@ -682,7 +686,17 @@ def main_mommy() -> NoReturn:
         pass
 
     executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)  # type: ignore[arg-type]
-    router = NLRouter(get_default_registry(), executor=executor)
+    merged_registry = WorkflowRegistry()
+    for builtin in get_default_registry().all_workflows():
+        merged_registry.register(builtin)
+    workflow_store = WorkflowStore(AGENT_DB)
+    for custom_spec, _meta in workflow_store.load_all():
+        try:
+            if merged_registry.get(custom_spec.id) is None:
+                merged_registry.register(spec_to_workflow(custom_spec))
+        except (TypeError, ValueError):
+            continue
+    router = NLRouter(merged_registry, executor=executor)
 
     # 单次查询模式
     query = " ".join(args.query).strip() if args.query else ""
@@ -708,6 +722,8 @@ def main_mommy() -> NoReturn:
                 print(result.summary)
             else:
                 _print_workflow_result(result)
+            if result.workflow_id.startswith("user_") and result.succeeded:
+                workflow_store.increment_hit(result.workflow_id)
         else:
             # 未命中预设工作流
             if args.verbose:
