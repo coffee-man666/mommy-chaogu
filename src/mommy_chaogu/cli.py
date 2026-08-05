@@ -7,6 +7,11 @@ This module remains the stable compatibility facade for project entry points.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.text import Text
+
 # The facade intentionally re-exports the established command API.
 from mommy_chaogu.cli_support import *
 from mommy_chaogu.cli_commands.agent import *
@@ -48,15 +53,46 @@ _WELCOME = """\
 输入问题开始，输入 q 退出。
 """
 
-_REPL_GRANDMA_LOGO = """\
-   ▄████████▄
- ▄███▀▀██▀▀███▄
-███  ▄████▄  ███
-██  ◜◡─╮─◉◝  ██
-██   ╰─┴─╯   ██
-▀██▄  ╰▽╯  ▄██▀
-  ▀████████▀  ╱
-    ▀████▀   ╱↗"""
+_REPL_M_LOGO = """\
+███╗   ███╗
+████╗ ████║
+██╔████╔██║
+██║╚██╔╝██║
+██║ ╚═╝ ██║
+╚═╝     ╚═╝"""
+_REPL_SPARKLINE = "▁▂▄▃▅▆█"
+_LOGO_GRADIENT = ((124, 92, 255), (91, 192, 190))  # 品牌紫 → 青
+_SPARK_UP_STYLE = "bold #f43f5e"  # A股红涨
+_SPARK_DOWN_STYLE = "bold #22c55e"  # 绿跌
+_SPARK_ARROW_STYLE = "bold #f59e0b"
+
+
+def _render_logo() -> Text:
+    """量化终端风 logo：紫→青水平渐变的块体 M + 红绿迷你 K 线。"""
+    from rich.text import Text
+
+    lines = _REPL_M_LOGO.splitlines()
+    width = max(len(line) for line in lines) - 1
+    (r1, g1, b1), (r2, g2, b2) = _LOGO_GRADIENT
+    logo = Text(no_wrap=True)
+    for y, line in enumerate(lines):
+        if y:
+            logo.append("\n")
+        for x, char in enumerate(line):
+            t = x / width
+            r = round(r1 + (r2 - r1) * t)
+            g = round(g1 + (g2 - g1) * t)
+            b = round(b1 + (b2 - b1) * t)
+            logo.append(char, style=f"bold rgb({r},{g},{b})")
+    logo.append("\n")
+    levels = "▁▂▃▄▅▆▇█"
+    prev = 0
+    for char in _REPL_SPARKLINE:
+        level = levels.index(char)
+        logo.append(char, style=_SPARK_UP_STYLE if level >= prev else _SPARK_DOWN_STYLE)
+        prev = level
+    logo.append("↗", style=_SPARK_ARROW_STYLE)
+    return logo
 
 
 def _flush_agent(agent: object | None) -> None:
@@ -133,8 +169,7 @@ def _run_mommy_repl(
         )
         welcome_content = metadata
         if console.size.width >= 72:
-            logo = Text(_REPL_GRANDMA_LOGO, style="bold #7c5cff", no_wrap=True)
-            logo.highlight_regex(r"[◡◉▽↗]", style="bold #5bc0be")
+            logo = _render_logo()
             header = Table.grid(expand=True, padding=(0, 2))
             header.add_column(width=18, no_wrap=True)
             header.add_column(ratio=1)
@@ -149,7 +184,7 @@ def _run_mommy_repl(
                 welcome_content,
                 title="[bold #7c5cff]Welcome to mommy-chaogu[/]",
                 subtitle="[dim]你的本地 AI 投研助手[/]",
-                border_style="#168aad",
+                border_style="#5bc0be",
                 padding=(1, 2),
             )
         )
