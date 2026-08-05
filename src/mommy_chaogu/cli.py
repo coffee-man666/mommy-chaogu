@@ -7,6 +7,7 @@ This module remains the stable compatibility facade for project entry points.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -110,6 +111,7 @@ def _run_mommy_repl(
     executor: object,
     agent: object | None,
     verbose: bool = False,
+    workflow_hit_recorder: Callable[[str], None] | None = None,
 ) -> NoReturn:
     """专业化自然语言 REPL：富文本回答、单行进度和友好错误。"""
     import json
@@ -294,6 +296,12 @@ def _run_mommy_repl(
                 console.print(Markdown(result.summary))
             elif result.steps:
                 _print_workflow_result(result)
+            if (
+                workflow_hit_recorder is not None
+                and result.workflow_id.startswith("user_")
+                and result.succeeded
+            ):
+                workflow_hit_recorder(result.workflow_id)
             elapsed = time.monotonic() - started
             console.print(f"[dim]✓ {wf_desc} · {elapsed:.1f}s[/]")
             continue
@@ -635,6 +643,7 @@ def main_mommy() -> NoReturn:
     from mommy_chaogu.workflow.router import NLRouter
     from mommy_chaogu.workflow.spec_runtime import spec_to_workflow
     from mommy_chaogu.workflow.store import WorkflowStore
+    from mommy_chaogu.workflow.validator import blocking_issues, validate_spec
 
     base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
     store = CacheStore(MARKET_DB)
@@ -692,6 +701,9 @@ def main_mommy() -> NoReturn:
     workflow_store = WorkflowStore(AGENT_DB)
     for custom_spec, _meta in workflow_store.load_all():
         try:
+            issues = validate_spec(custom_spec, existing_workflows=merged_registry.all_workflows())
+            if blocking_issues(issues):
+                continue
             if merged_registry.get(custom_spec.id) is None:
                 merged_registry.register(spec_to_workflow(custom_spec))
         except (TypeError, ValueError):
@@ -769,7 +781,13 @@ def main_mommy() -> NoReturn:
         sys.exit(0)
 
     # 交互式 REPL
-    _run_mommy_repl(router, executor, agent, verbose=args.verbose)
+    _run_mommy_repl(
+        router,
+        executor,
+        agent,
+        verbose=args.verbose,
+        workflow_hit_recorder=workflow_store.increment_hit,
+    )
 
 
 def main() -> int:

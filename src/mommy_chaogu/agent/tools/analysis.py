@@ -118,7 +118,9 @@ def _handle_screen_inflow_stocks(ctx: ToolContext, args: dict[str, Any]) -> str:
     codes = _codes(args)
     if not codes:
         return _contract([])
-    threshold = _number(args.get("threshold_bp", 50)) or Decimal("50")
+    threshold = _number(args.get("threshold_bp", 50))
+    if threshold is None:
+        threshold = Decimal("50")
     # The adapter is single-code by contract.  Keep the loop in explicit
     # batches so a future batch-capable adapter can replace this body without
     # changing the tool's bounded behavior.
@@ -130,6 +132,11 @@ def _handle_screen_inflow_stocks(ctx: ToolContext, args: dict[str, Any]) -> str:
                 continue
             latest = flows[-1]
             ratio_pct = _number(latest.main_net_ratio)
+            if ratio_pct is None:
+                quote = ctx.adapter.get_quote(code)
+                circulating_cap = quote.circulating_market_cap if quote is not None else None
+                if circulating_cap is not None and circulating_cap.amount != 0:
+                    ratio_pct = latest.main_net.amount / circulating_cap.amount * Decimal("100")
             if ratio_pct is None:
                 continue
             ratio_bp = ratio_pct * Decimal("100")

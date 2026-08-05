@@ -9,7 +9,7 @@ from mommy_chaogu.agent.tools import ToolContext, analysis
 from mommy_chaogu.market_data.types import AdjustmentType, Bar, BarInterval, Money, MoneyFlow
 
 
-def _flow(code: str, ratio: str) -> MoneyFlow:
+def _flow(code: str, ratio: str | None) -> MoneyFlow:
     return MoneyFlow(
         code=code,
         name=f"股票{code}",
@@ -19,7 +19,7 @@ def _flow(code: str, ratio: str) -> MoneyFlow:
         medium_net=Money.from_yuan("0"),
         large_net=Money.from_yuan("0"),
         super_large_net=Money.from_yuan("0"),
-        main_net_ratio=Decimal(ratio),
+        main_net_ratio=Decimal(ratio) if ratio is not None else None,
     )
 
 
@@ -66,9 +66,35 @@ def test_screen_inflow_preclips_to_twenty() -> None:
     assert result["total"] == 25
 
 
+def test_screen_inflow_falls_back_to_circulating_cap_when_ratio_missing() -> None:
+    adapter = MagicMock()
+    adapter.get_today_money_flow.return_value = [_flow("600519", None)]
+    quote = MagicMock()
+    quote.circulating_market_cap = Money.from_yuan("10000")
+    adapter.get_quote.return_value = quote
+    result = _payload(
+        analysis._handle_screen_inflow_stocks(
+            ToolContext(adapter=adapter), {"codes": ["600519"], "threshold_bp": 50}
+        )
+    )
+    assert result["results"][0]["ratio_bp"] == "100.00"
+    adapter.get_quote.assert_called_once_with("600519")
+
+
 def test_empty_input_has_contract() -> None:
     result = _payload(analysis._handle_screen_inflow_stocks(ToolContext(adapter=MagicMock()), {"codes": []}))
     assert result == {"results": [], "count": 0, "total": 0}
+
+
+def test_zero_threshold_is_not_replaced_by_default() -> None:
+    adapter = MagicMock()
+    adapter.get_today_money_flow.return_value = [_flow("600519", "0")]
+    result = _payload(
+        analysis._handle_screen_inflow_stocks(
+            ToolContext(adapter=adapter), {"codes": ["600519"], "threshold_bp": 0}
+        )
+    )
+    assert result["count"] == 1
 
 
 def test_volume_breakout_uses_completed_bar() -> None:

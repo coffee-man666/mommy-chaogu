@@ -126,11 +126,16 @@ def spec_to_workflow(
         )
         for step in spec.steps
     ]
+    safe_description = spec.description.replace("{", "{{").replace("}", "}}")
+    summary_template = spec.summary_template or (
+        f"请基于以下工作流数据，用通俗、简洁的中文总结‘{safe_description}’的结果。"
+        "只引用数据中明确出现的事实，不做额外计算。\n\n数据：{context}"
+    )
     return Workflow(
         id=spec.id,
         trigger_patterns=list(spec.trigger_patterns),
         description=spec.description,
         steps=steps,
-        summary_template=spec.summary_template,
+        summary_template=summary_template,
         use_llm_summary=spec.use_llm_summary,
     )

@@ -154,7 +154,7 @@ def _cmd_delete(args: argparse.Namespace) -> int:
         store.close()
 
 
-def _compiler() -> WorkflowCompiler | None:
+def _compiler(exclude_id: str | None = None) -> WorkflowCompiler | None:
     client, model, _ = _build_llm_client()
     if client is None or model is None:
         return None
@@ -163,11 +163,21 @@ def _compiler() -> WorkflowCompiler | None:
         response = client.chat.completions.create(model=model, messages=messages, temperature=0)
         return str(response.choices[0].message.content or "")
 
-    return WorkflowCompiler(chat_raw, existing_workflows=_existing())
+    store = _store()
+    try:
+        existing = _existing()
+        existing.extend(
+            spec_to_workflow(spec)
+            for spec, _meta in store.load_all()
+            if spec.id != exclude_id
+        )
+    finally:
+        store.close()
+    return WorkflowCompiler(chat_raw, existing_workflows=existing)
 
 
 def _cmd_compile(args: argparse.Namespace, current: WorkflowSpec | None = None) -> int:
-    compiler = _compiler()
+    compiler = _compiler(current.id if current is not None else None)
     if compiler is None:
         print("未配置 LLM，请先运行 mommy setup")
         return 1

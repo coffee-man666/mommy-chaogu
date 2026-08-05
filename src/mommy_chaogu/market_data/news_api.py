@@ -116,7 +116,13 @@ def get_announcements(code: str, limit: int = 10) -> list[dict[str, Any]]:
         )
         r.raise_for_status()
         data = r.json()
-        items = (data.get("data") or {}).get("list", [])
+        payload = data.get("data") if isinstance(data, dict) else None
+        if isinstance(payload, dict):
+            items = payload.get("list", [])
+        elif isinstance(data, dict):
+            items = data.get("list", [])
+        else:
+            items = []
 
         out: list[dict[str, Any]] = []
         for item in items[:limit]:
@@ -125,11 +131,20 @@ def get_announcements(code: str, limit: int = 10) -> list[dict[str, Any]]:
             if ":" in title:
                 title = title.split(":", 1)[1]
             art_code = item.get("art_code", "")
+            columns = item.get("columns", {})
+            if isinstance(columns, list):
+                ann_type = str((columns[0] or {}).get("column_name", "")) if columns else ""
+            elif isinstance(columns, dict):
+                ann_type = str(
+                    columns.get("announcement_type_name", columns.get("column_name", ""))
+                )
+            else:
+                ann_type = ""
             out.append(
                 {
                     "title": title,
                     "date": item.get("notice_date", ""),
-                    "ann_type": item.get("columns", {}).get("announcement_type_name", ""),
+                    "ann_type": ann_type,
                     "url": f"https://np-cnotice-stock.eastmoney.com/api/content/ann?art_code={art_code}"
                     if art_code
                     else "",

@@ -32,6 +32,19 @@ def test_compiler_returns_spec_and_questions() -> None:
     assert questions.questions
 
 
+def test_compiler_prompt_contains_tool_directory_and_golden_examples() -> None:
+    prompts: list[str] = []
+
+    def chat(messages: list[dict[str, str]]) -> str:
+        prompts.append(messages[-1]["content"])
+        return _payload()
+
+    WorkflowCompiler(chat).compile("编译测试")
+    assert '"name": "screen_inflow_stocks"' in prompts[0]
+    assert "自选股资金筛选" in prompts[0]
+    assert "指定代码 K 线" in prompts[0]
+
+
 def test_compiler_retries_invalid_response_once() -> None:
     responses = iter(["not json", _payload()])
     result = WorkflowCompiler(lambda _: next(responses)).compile("重试")

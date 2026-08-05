@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from mommy_chaogu.agent.tools.registry import _TOOL_DEFINITIONS
 from mommy_chaogu.workflow.engine import Workflow
 from mommy_chaogu.workflow.spec import WorkflowSpec
 from mommy_chaogu.workflow.validator import blocking_issues, validate_spec
@@ -58,11 +59,31 @@ class WorkflowCompiler:
         self._existing_workflows = list(existing_workflows or ())
 
     def _prompt(self, viewpoint: str, current_spec: WorkflowSpec | None, retry: str = "") -> str:
+        tool_directory = json.dumps(
+            [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                }
+                for tool in _TOOL_DEFINITIONS
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
         old = f"\n当前 spec（update 时必须在此基础上修改）：\n{current_spec.to_json()}\n" if current_spec else ""
         retry_text = f"\n上一次错误，请修正：\n{retry}\n" if retry else ""
         return f"""你是交易工作流编译器。只负责把用户观点转成 JSON spec，不做行情计算。
 观点：{viewpoint}
 {old}{retry_text}
+可用工具目录（只能使用这些工具）：
+{tool_directory}
+
+参考样例：
+1. 自选股资金筛选：get_watchlist → screen_inflow_stocks(codes=step_field, threshold_bp=param)
+2. 持仓业绩检查：get_portfolio → check_earnings_catalyst(codes=step_field)
+3. 指定代码 K 线：check_kline_signal(codes=user_regex, signal=literal)
+
 只允许输出以下两种 JSON 之一，不要 Markdown：
 {{"kind":"questions","questions":["需要澄清的问题"]}}
 或 {{"kind":"spec","id":"user_example","trigger_patterns":["..."],"description":"...",

@@ -13,10 +13,19 @@ from mommy_chaogu.cli_commands.agent import _build_llm_client
 from mommy_chaogu.workflow.compiler import WorkflowCompiler
 from mommy_chaogu.workflow.definitions import get_default_registry
 
-OPINIONS = (
-    "当自选股主力净流入超过0.5%时，检查业绩催化和K线放量上涨",
-    "从持仓中找出资金流入超过1%的股票，再看最近的业绩公告",
-    "筛选指定股票的5日线上穿20日线信号，并保留前20条",
+GOLDEN_SAMPLES = (
+    (
+        "当自选股主力净流入超过0.5%时，检查业绩催化和K线放量上涨",
+        ("get_watchlist", "screen_inflow_stocks", "check_earnings_catalyst", "check_kline_signal"),
+    ),
+    (
+        "从持仓中找出资金流入超过1%的股票，再看最近的业绩公告",
+        ("get_portfolio", "screen_inflow_stocks", "check_earnings_catalyst"),
+    ),
+    (
+        "筛选指定股票的5日线上穿20日线信号，并保留前20条",
+        ("check_kline_signal",),
+    ),
 )
 
 
@@ -34,10 +43,12 @@ def main() -> int:
         return str(response.choices[0].message.content or "")
 
     compiler = WorkflowCompiler(chat_raw, existing_workflows=get_default_registry().all_workflows())
-    opinions = tuple(args.opinion or OPINIONS)
-    for index, opinion in enumerate(opinions, start=1):
+    samples = tuple((opinion, ()) for opinion in args.opinion) if args.opinion else GOLDEN_SAMPLES
+    for index, (opinion, expected) in enumerate(samples, start=1):
         result = compiler.compile(opinion)
         print(f"\n--- opinion {index} ---\n{opinion}")
+        if expected:
+            print(f"expected skeleton: {' → '.join(expected)}")
         if result.spec is not None:
             print(json.dumps(result.spec.to_dict(), ensure_ascii=False, indent=2))
         elif result.questions:

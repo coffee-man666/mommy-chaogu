@@ -80,10 +80,14 @@ KNOWN_CODE_EXTRACTORS: dict[str, Callable[[Any], list[str]]] = {
 ### Phase 0 实际确认记录
 
 `MoneyFlow.main_net_ratio` 在 `market_data/types.py` 中明确标注为百分比（`%`），
-efinance 适配器直接映射源字段“主力净流入占比”。因此积木按
-`ratio_bp = main_net_ratio(%) × 100` 换算：例如 `2.5% = 250bp`，无需额外请求
-流通市值；同一批次只调用 `get_today_money_flow`。当前五个工具的输出形状也已对照
-实现确认：`get_watchlist` 当前返回股票数组（运行时同时兼容计划中的
+因此字段存在时按 `ratio_bp = main_net_ratio(%) × 100` 换算：例如 `2.5% = 250bp`。
+2026-08-04 用真实 efinance 拉取 `600519` 时，源返回的资金流列没有
+“主力净流入占比”，适配后的字段为 `None`；同一时点主力净流入为
+`-769,324,349`、流通市值为 `1,634,856,717,788`，手算
+`main_net / circulating_market_cap × 100 = -0.0470656%`。因此积木现在采用
+明确 fallback：字段缺失时额外读取报价的流通市值并按上述公式计算，再换算 bp；
+这只在源字段缺失时发生，避免把实时数据静默过滤掉。当前五个工具的输出形状也已
+对照实现确认：`get_watchlist` 当前返回股票数组（运行时同时兼容计划中的
 `groups[].stocks[]` 嵌套形状），`get_portfolio` 返回 `positions`，三个行情积木
 统一返回 `results/count/total` 契约。
 
@@ -137,6 +141,15 @@ efinance 适配器直接映射源字段“主力净流入占比”。因此积�
 **用真实 adapter 手动跑一遍三个积木**（不写自动化，打印出来人眼看）：
 输出形状符合契约、数值口径和手算一致。积木行为是 compiler prompt 里要宣称的事实，
 积木错了，LLM 生成的所有 spec 继承错误且极难定位——这一步不能省。
+
+### Phase 1 实际核验记录
+
+已用真实 `EfinanceAdapter` 对 `600519` 手动运行三个积木。资金流积木在
+`threshold_bp=-100` 下返回 1 条，实测 `main_net=-766051346.0`、
+`ratio_bp=-4.677942...`，与 `main_net / circulating_market_cap × 100 × 100`
+一致；业绩积木返回 3 条公告标题并保持契约；K 线积木在当前没有信号时返回
+`results=[]/count=0/total=0`。这同时验证了真实 efinance 当前缺少占比字段时的
+流通市值 fallback，以及所有分支的统一输出形状。
 
 ---
 

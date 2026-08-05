@@ -34,6 +34,25 @@ def test_spec_json_round_trip() -> None:
     assert json.loads(spec.to_json())["spec_version"] == 1
 
 
+def test_default_summary_template_uses_description() -> None:
+    workflow = spec_to_workflow(_spec())
+    assert workflow.summary_template is not None
+    assert "筛选资金流" in workflow.summary_template
+    assert "{context}" in workflow.summary_template
+
+
+def test_default_summary_template_escapes_format_braces_in_description() -> None:
+    spec = WorkflowSpec(
+        id="user_braces",
+        trigger_patterns=["braces"],
+        description="阈值 {threshold}",
+        steps=[StepSpec("screen_inflow_stocks", "筛选")],
+    )
+    workflow = spec_to_workflow(spec)
+    assert workflow.summary_template is not None
+    assert workflow.summary_template.format(context="{}")
+
+
 def test_all_arg_source_kinds_resolve() -> None:
     spec = WorkflowSpec(
         id="user_sources",
