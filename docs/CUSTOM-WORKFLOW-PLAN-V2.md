@@ -12,6 +12,11 @@ V2 的产品代码已完成：Phase 0 的数据口径确认、Phase 1 交易积�
 网络冒烟现在还会构造生产形态的真实行情 adapter + ToolRegistry，对模型生成的
 spec 做无副作用 dry-run 校验，但不会执行工具或修改自选股、持仓、记忆数据。
 
+同日完成执行审核（见文末「执行审核报告」）与审核修复（`12939ac`，见「审核修复
+执行记录」）：审核发现的 2 中 2 低问题全部闭环，仅低 5（news_api 单点容错）与
+风格项留 backlog。当前质量门：112 个 workflow/analysis 离线测试、ruff、mypy
+--strict 全绿。
+
 Phase 5 的真实网络冒烟需要本机配置有效的 LLM key 和模型名，运行：
 
 ```bash
@@ -459,7 +464,11 @@ create（编译）→ run（反复使用，hit_count 增长）→ update（修�
 
 ## 发现的问题（2 中 3 低）
 
-### 中 1：extractor 异常穿透 `WorkflowExecutor`
+> **闭环状态（2026-08-05）**：中 1 / 中 2 / 低 3 / 低 4 已由 `12939ac fix(workflow):
+> complete audit repair plan` 修复并验收（112 passed + ruff/mypy 全绿），
+> 详见文末「审核修复执行记录」。仅剩低 5 与风格项在 backlog。
+
+### 中 1：extractor 异常穿透 `WorkflowExecutor` — ✅ 已修复（12939ac）
 
 `spec_runtime` 的 extractor 设计为显式 raise（user_regex 不匹配、step_field 形状不符），
 但 `engine.py:200` 的 extractor 调用**不在 try 块内**——异常直接穿透到 CLI，
@@ -470,25 +479,25 @@ create（编译）→ run（反复使用，hit_count 增长）→ update（修�
 
 修法：在这两个调用点 try 住 `ValueError` 打印友好文案，不用动 engine。
 
-### 中 2：`workflow run` 传 `user_input=""`
+### 中 2：`workflow run` 传 `user_input=""` — ✅ 已修复（12939ac）
 
 `cli_commands/workflow.py:113` 执行时传空字符串——任何含 `user_regex` 步骤的工作流
 在 run 模式下**必然失败**（正则无输入可匹配），而计划示例 3 恰恰就是这类工作流。
 建议给 `run` 加 `--input "自由文本"` 参数透传为 user_input。
 
-### 低 3：`workflow run` 没有 LLM 总结
+### 低 3：`workflow run` 没有 LLM 总结 — ✅ 已修复（12939ac，help 文案标明）
 
 `_cmd_run` 构造 `WorkflowExecutor` 时未传 `llm_summarizer`，`use_llm_summary: true`
 的 spec 在 run 下永远走 JSON 输出分支。可视为调试模式的合理简化，但应在
 `run --help` 或文档写明。
 
-### 低 4：`cli.py` 主入口的 `WorkflowStore` 未 close
+### 低 4：`cli.py` 主入口的 `WorkflowStore` 未 close — ✅ 已修复（12939ac）
 
 `cli_commands/workflow.py` 全部 `finally: store.close()`，唯独 `cli.py` 主入口的
 `workflow_store` 单次模式 `sys.exit` 前、REPL 退出后都未关闭。进程退出会回收，
 实际无害，但不符合项目 `EngineOwner` 惯例。
 
-### 低 5：`check_earnings_catalyst` 单点失败面
+### 低 5：`check_earnings_catalyst` 单点失败面 — ⏳ 未修复（backlog）
 
 模块级 `get_fundamentals`/`get_announcements` 直调网络，单只网络异常会炸掉整个
 工具步骤。与 `intel.py` 现有行为一致（**不是 V2 新引入**——计划假设 fundamentals
@@ -502,11 +511,11 @@ create（编译）→ run（反复使用，hit_count 增长）→ update（修�
 2. 一度怀疑积木缺少 per-code try——实际 `CachedMarketDataAdapter` 内部吞异常
    （拉新失败 → fallback 缓存 → 返回 `[]`），`if not flows: continue` 契约成立，无此问题。
 
-## 遗留建议
+## 遗留建议（修复后更新，2026-08-05）
 
-- 中 1 + 中 2 同源（extractor 异常路径），约 30 行改动，建议合一个
-  `fix(workflow): handle extractor failures in run path` 修掉。
-- 低 3/4/5 可留到下个迭代。
+- ~~中 1 + 中 2 同源（extractor 异常路径），约 30 行改动~~ → 已由 `12939ac` 修复，
+  同时低 3/低 4 一并处理，详见「审核修复计划」与「审核修复执行记录」。
+- 低 5（`check_earnings_catalyst` 单点失败面）仍在 backlog，单独迭代。
 - 风格项（不阻塞）：`compiler.py`/`validator.py` 导入了 registry 的私有名
   `_TOOL_DEFINITIONS`/`_TOOL_MAP`，建议在 `registry.py` 暴露公开访问器；
   `_patterns_conflict` 启发式有误报可能（注释已坦承），保守方向可接受。
@@ -514,6 +523,8 @@ create（编译）→ run（反复使用，hit_count 增长）→ update（修�
 ---
 
 # 审核修复计划（可执行）
+
+> **执行状态（2026-08-05）**：✅ 已完成，见文末「审核修复执行记录」（`12939ac`）。
 
 针对审核发现的 2 个中等问题 + 2 个低成本低优先级问题，一个提交修完。
 预估工作量：约 40 行产品代码 + 2 个测试用例，半天以内。
