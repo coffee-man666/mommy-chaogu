@@ -83,6 +83,7 @@ mommy channel weixin stop      # 停止网关，但保留本机授权
 | 本机网页 | `mommy web` | 打开 `http://127.0.0.1:8000`，本机默认免登录 |
 | Claude Code | `mommy connect claude` | 复用 Claude 登录，不再配置一套 LLM Key |
 | Kimi Code | `mommy connect kimi` | 安装本地 MCP 和 `mommy-research` Skill |
+| Cline | `mommy connect cline` | 安装本地 MCP 和 `mommy-research` Skill，写入 `~/.cline` |
 | 微信远程对话 | `mommy channel weixin connect` | 扫码连接本地网关，不开放公网端口 |
 
 开发者如果不想安装全局命令，可以在源码仓库中把 `mommy` 替换为 `uv run mommy`。

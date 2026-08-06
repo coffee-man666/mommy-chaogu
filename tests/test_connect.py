@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from datetime import timedelta
@@ -25,14 +26,20 @@ def _which_with_fake_kimi(name: str) -> str | None:
     return "/bin/kimi" if name == "kimi" else _REAL_WHICH(name)
 
 
+def _which_with_fake_cline(name: str) -> str | None:
+    return "/bin/cline" if name == "cline" else _REAL_WHICH(name)
+
+
 @pytest.fixture
 def isolated_homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     config = tmp_path / "mommy"
     kimi = tmp_path / "kimi"
     claude = tmp_path / "claude"
+    cline = tmp_path / "clinedata"
     monkeypatch.setenv("MOMMY_CONFIG_DIR", str(config))
     monkeypatch.setenv("KIMI_CODE_HOME", str(kimi))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("CLINE_DATA_DIR", str(cline))
     return config, kimi
 
 
@@ -86,6 +93,45 @@ def test_kimi_connect_preserves_other_servers_and_installs_skill(
     state = json.loads((config_home / "connections.json").read_text(encoding="utf-8"))
     assert state["connections"]["kimi"]["profile"] == "market-only"
     assert "默认未开放持仓" in capsys.readouterr().out
+
+
+def test_cline_connect_installs_skill_and_mcp(
+    isolated_homes: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_home, _ = isolated_homes
+    cline_settings = Path(os.environ["CLINE_DATA_DIR"]) / "settings"
+    args = build_connect_parser().parse_args(["cline", "--skip-test"])
+    with patch(
+        "mommy_chaogu.cli_commands.connect.shutil.which", side_effect=_which_with_fake_cline
+    ):
+        assert cmd_connect(args) == 0
+
+    mcp = json.loads((cline_settings / "cline_mcp_settings.json").read_text(encoding="utf-8"))
+    assert "mommy-chaogu" in mcp["mcpServers"]
+    transport = mcp["mcpServers"]["mommy-chaogu"]["transport"]
+    assert transport["type"] == "stdio"
+    assert transport["args"][-2:] == ["--profile", "market-only"]
+    assert "MOMMY_AGENT_DB" in transport["env"]
+    assert (cline_settings / "skills" / "mommy-research" / "SKILL.md").is_file()
+
+    state = json.loads((config_home / "connections.json").read_text(encoding="utf-8"))
+    assert state["connections"]["cline"]["profile"] == "market-only"
+
+
+def test_cline_disconnect_removes_managed_entry(isolated_homes: tuple[Path, Path]) -> None:
+    connect = build_connect_parser().parse_args(["cline", "--skip-test"])
+    with patch(
+        "mommy_chaogu.cli_commands.connect.shutil.which", side_effect=_which_with_fake_cline
+    ):
+        assert cmd_connect(connect) == 0
+
+    disconnect = build_connect_parser().parse_args(["disconnect", "cline"])
+    assert cmd_connect(disconnect) == 0
+
+    cline_settings = Path(os.environ["CLINE_DATA_DIR"]) / "settings"
+    after = json.loads((cline_settings / "cline_mcp_settings.json").read_text(encoding="utf-8"))
+    assert "mommy-chaogu" not in after["mcpServers"]
+    assert not (cline_settings / "skills" / "mommy-research").exists()
 
 
 def test_kimi_connect_does_not_overwrite_unmanaged_server_without_force(

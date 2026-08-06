@@ -64,11 +64,11 @@ class ConnectError(RuntimeError):
 def build_connect_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mommy-connect",
-        description="把本地投研能力连接到 Claude Code 或 Kimi Code",
+        description="把本地投研能力连接到 Claude Code、Kimi Code 或 Cline",
     )
     action = parser.add_subparsers(dest="action", required=True)
-    for target in ("claude", "kimi"):
-        connect = action.add_parser(target, help=f"连接 {target.title()} Code")
+    for target in ("claude", "kimi", "cline"):
+        connect = action.add_parser(target, help=f"连接 {_display_name(target)}")
         connect.add_argument(
             "--profile",
             choices=("market-only", "personal"),
@@ -79,14 +79,21 @@ def build_connect_parser() -> argparse.ArgumentParser:
         connect.add_argument("--skip-test", action="store_true", help="安装后跳过 MCP 连通测试")
 
     status = action.add_parser("status", help="查看连接状态")
-    status.add_argument("target", nargs="?", choices=("claude", "kimi"))
+    status.add_argument("target", nargs="?", choices=("claude", "kimi", "cline"))
 
     disconnect = action.add_parser("disconnect", help="断开连接并删除托管的 Skill")
-    disconnect.add_argument("target", choices=("claude", "kimi", "all"))
+    disconnect.add_argument("target", choices=("claude", "kimi", "cline", "all"))
 
     test = action.add_parser("test", help="启动 MCP 并检查可用工具")
-    test.add_argument("target", choices=("claude", "kimi"))
+    test.add_argument("target", choices=("claude", "kimi", "cline"))
     return parser
+
+
+def _display_name(target: str) -> str:
+    """Human-readable display name for a connect target."""
+    if target == "cline":
+        return "Cline"
+    return f"{target.title()} Code"
 
 
 def _state_path() -> Path:
@@ -126,8 +133,21 @@ def _agent_home(target: str) -> Path:
     if target == "claude":
         override = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
         return Path(override).expanduser() if override else Path.home() / ".claude"
+    if target == "cline":
+        return _cline_settings_dir()
     override = os.environ.get("KIMI_CODE_HOME", "").strip()
     return Path(override).expanduser() if override else Path.home() / ".kimi-code"
+
+
+def _cline_settings_dir() -> Path:
+    """Cline global settings dir (skills live under settings/skills)."""
+    override = os.environ.get("CLINE_DATA_DIR", "").strip()
+    base = Path(override).expanduser() if override else Path.home() / ".cline" / "data"
+    return base / "settings"
+
+
+def _cline_config_path() -> Path:
+    return _cline_settings_dir() / "cline_mcp_settings.json"
 
 
 def _skill_dir(target: str) -> Path:
@@ -220,6 +240,9 @@ def _current_mcp_entry(target: str) -> dict[str, Any] | None:
     if target == "kimi":
         entry = _load_kimi_config()["mcpServers"].get(SERVER_NAME)
         return entry if isinstance(entry, dict) else None
+    if target == "cline":
+        entry = _load_cline_config()["mcpServers"].get(SERVER_NAME)
+        return entry if isinstance(entry, dict) else None
     path = _claude_config_path()
     if not path.is_file():
         return None
@@ -233,10 +256,17 @@ def _current_mcp_entry(target: str) -> dict[str, Any] | None:
     return entry if isinstance(entry, dict) else None
 
 
+def _transport_of(entry: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a Cline-style nested ``transport`` entry to a flat mapping."""
+    transport = entry.get("transport")
+    return transport if isinstance(transport, dict) else entry
+
+
 def _entry_matches_spec(target: str, entry: dict[str, Any], spec: ConnectionSpec) -> bool:
-    if entry.get("command") != spec.command or entry.get("args", []) != spec.args:
+    transport = _transport_of(entry)
+    if transport.get("command") != spec.command or transport.get("args", []) != spec.args:
         return False
-    if entry.get("env", {}) != spec.env:
+    if transport.get("env", {}) != spec.env:
         return False
     return target != "kimi" or entry.get("cwd") == spec.cwd
 
@@ -244,14 +274,16 @@ def _entry_matches_spec(target: str, entry: dict[str, Any], spec: ConnectionSpec
 def _preflight(target: str, previous: dict[str, Any] | None, *, force: bool) -> None:
     binary = shutil.which(target)
     if binary is None:
-        raise ConnectError(f"没有找到 {target}，请先安装并登录 {target.title()} Code。")
+        raise ConnectError(f"没有找到 {target}，请先安装并登录 {_display_name(target)}。")
     if target == "claude":
         exists = _claude_exists(binary)
+    elif target == "cline":
+        exists = SERVER_NAME in _load_cline_config()["mcpServers"]
     else:
         exists = SERVER_NAME in _load_kimi_config()["mcpServers"]
     if exists and previous is None and not force:
         raise ConnectError(
-            f"{target.title()} Code 中已存在非本工具管理的 {SERVER_NAME}；如需替换请加 --force。"
+            f"{_display_name(target)} 中已存在非本工具管理的 {SERVER_NAME}；如需替换请加 --force。"
         )
     if exists and previous is not None and not force:
         raw_spec = previous.get("spec")
@@ -325,6 +357,32 @@ def _save_kimi_config(config: dict[str, Any]) -> None:
     path.chmod(0o600)
 
 
+def _load_cline_config() -> dict[str, Any]:
+    path = _cline_config_path()
+    if not path.is_file():
+        return {"mcpServers": {}}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConnectError(f"Cline MCP 配置损坏：{path}（{exc}）") from exc
+    if not isinstance(value, dict):
+        raise ConnectError(f"Cline MCP 配置格式无效：{path}")
+    servers = value.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        raise ConnectError(f"Cline MCP 配置的 mcpServers 必须是对象：{path}")
+    return value
+
+
+def _save_cline_config(config: dict[str, Any]) -> None:
+    path = _cline_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp.chmod(0o600)
+    temp.replace(path)
+    path.chmod(0o600)
+
+
 def _register_kimi(
     spec: ConnectionSpec,
     previous: dict[str, Any] | None,
@@ -347,6 +405,29 @@ def _register_kimi(
         "toolTimeoutMs": 60000,
     }
     _save_kimi_config(config)
+
+
+def _register_cline(
+    spec: ConnectionSpec,
+    previous: dict[str, Any] | None,
+    *,
+    force: bool,
+) -> None:
+    if shutil.which("cline") is None:
+        raise ConnectError("没有找到 cline，请先安装 Cline CLI。")
+    config = _load_cline_config()
+    servers: dict[str, Any] = config["mcpServers"]
+    if SERVER_NAME in servers and previous is None and not force:
+        raise ConnectError(f"Cline 中已存在非托管的 {SERVER_NAME}")
+    servers[SERVER_NAME] = {
+        "transport": {
+            "type": "stdio",
+            "command": spec.command,
+            "args": spec.args,
+            "env": spec.env,
+        },
+    }
+    _save_cline_config(config)
 
 
 async def _probe(spec: ConnectionSpec) -> list[str]:
@@ -401,6 +482,8 @@ def _connect(target: str, profile: str, *, force: bool, skip_test: bool) -> int:
     skill_path, skill_hash = _install_skill(target, previous, force=force)
     if target == "claude":
         _register_claude(spec, previous, force=force)
+    elif target == "cline":
+        _register_cline(spec, previous, force=force)
     else:
         _register_kimi(spec, previous, force=force)
 
@@ -412,7 +495,7 @@ def _connect(target: str, profile: str, *, force: bool, skip_test: bool) -> int:
     }
     _save_state(state)
 
-    print(f"✅ 已连接 {target.title()} Code（profile: {spec.profile}）")
+    print(f"✅ 已连接 {_display_name(target)}（profile: {spec.profile}）")
     print(f"   投研 Skill：{skill_path}")
     if skip_test:
         print("   已跳过连通测试；稍后可运行 `mommy connect test " + target + "`。")
@@ -423,14 +506,14 @@ def _connect(target: str, profile: str, *, force: bool, skip_test: bool) -> int:
         print("   默认未开放持仓、自选和历史记忆。")
     else:
         print("   ⚠ personal 模式：被调用的个人数据会进入当前模型上下文。")
-    print(f"   重新启动 {target.title()} Code 后即可使用。")
+    print(f"   重新启动 {_display_name(target)} 后即可使用。")
     return 0
 
 
 def _status(target: str | None) -> int:
     state = _load_state()
     connections: dict[str, Any] = state["connections"]
-    targets = [target] if target else ["claude", "kimi"]
+    targets = [target] if target else ["claude", "kimi", "cline"]
     for name in targets:
         item = connections.get(name)
         if not isinstance(item, dict):
@@ -472,6 +555,21 @@ def _disconnect_one(target: str, state: dict[str, Any]) -> None:
             _run_command([binary, "mcp", "remove", "--scope", "user", SERVER_NAME])
         elif current is not None:
             print("⚠ 保留已被修改的 Claude MCP 配置。")
+    elif target == "cline":
+        config = _load_cline_config()
+        servers: dict[str, Any] = config["mcpServers"]
+        current = servers.get(SERVER_NAME)
+        raw_spec = item.get("spec")
+        matches = (
+            isinstance(current, dict)
+            and isinstance(raw_spec, dict)
+            and _entry_matches_spec("cline", current, ConnectionSpec.from_dict(raw_spec))
+        )
+        if matches:
+            del servers[SERVER_NAME]
+            _save_cline_config(config)
+        elif current is not None:
+            print("⚠ 保留已被修改的 Cline MCP 配置。")
     else:
         config = _load_kimi_config()
         servers: dict[str, Any] = config["mcpServers"]
@@ -495,12 +593,12 @@ def _disconnect_one(target: str, state: dict[str, Any]) -> None:
     elif skill.exists():
         print(f"⚠ 保留已被修改的 Skill：{skill}")
     connections.pop(target, None)
-    print(f"✅ 已断开 {target.title()} Code。")
+    print(f"✅ 已断开 {_display_name(target)}。")
 
 
 def _disconnect(target: str) -> int:
     state = _load_state()
-    targets = ["claude", "kimi"] if target == "all" else [target]
+    targets = ["claude", "kimi", "cline"] if target == "all" else [target]
     for name in targets:
         _disconnect_one(name, state)
     _save_state(state)
@@ -521,7 +619,7 @@ def _test(target: str) -> int:
 
 def cmd_connect(args: argparse.Namespace) -> int:
     try:
-        if args.action in {"claude", "kimi"}:
+        if args.action in {"claude", "kimi", "cline"}:
             return _connect(
                 args.action,
                 args.profile,
