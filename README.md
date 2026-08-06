@@ -74,21 +74,6 @@ mommy channel weixin stop      # 停止网关，但保留本机授权
 内容会发送给用户选择的 LLM Provider。详细权限与排障见
 [微信本地频道](docs/WEIXIN-CHANNEL.md)。
 
-## 美股数据源
-
-美股行情优先走 Massive / Polygon（Base 免费档即可，日线 T+1）。在
-[https://massive.com](https://massive.com) 注册后，把 API key 写入 `.env`：
-
-```bash
-MASSIVE_API_KEY=your_key_here
-```
-
-旧名称 `POLYGON_API_KEY` 同样生效。接口文档见
-[Massive REST Stocks](https://massive.com/docs/rest/stocks/overview)。
-
-不配置 key 也不影响使用：Yahoo Finance 回退源免 key，美股行情、`^` 前缀指数
-（`^GSPC` / `^VIX` / `^TNX`）和美债利率依然可查。
-
 ## 启动方式
 
 | 你想要的体验 | 启动命令 | 说明 |
@@ -136,6 +121,30 @@ mommy workflow list           # 查看内置和自定义工作流
 
 完整配置位置、Provider、权限模式、局域网和 Docker 说明见
 [从安装到运行](docs/GETTING-STARTED.md)。
+
+## 数据源
+
+行情按市场自动路由：A 股代码走 A 股源，美股 / `^` 前缀指数走美股源，主源失败自动
+降级到下一层兜底。
+
+### A 股数据源
+
+- **东方财富（efinance）**——A 股行情、资金流和板块数据主源，免费、无需配置 key。
+- **腾讯财经（兜底）**——主源不可用时自动降级。
+
+### 美股数据源
+
+- **Massive / Polygon**——美股行情主源。在 [massive.com](https://massive.com) 注册
+  后（Base 免费档即可，日线 T+1），把 API key 写入 `.env`：
+
+  ```bash
+  MASSIVE_API_KEY=your_key_here
+  ```
+
+  旧名称 `POLYGON_API_KEY` 同样生效。接口文档见
+  [Massive REST Stocks](https://massive.com/docs/rest/stocks/overview)。
+- **Yahoo Finance（兜底）**——免 key，美股行情、`^` 前缀指数（`^GSPC` / `^VIX` /
+  `^TNX`）和美债利率依然可查；不配置美股 key 不影响使用。
 
 ## 文档
 
