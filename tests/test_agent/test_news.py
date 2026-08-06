@@ -103,6 +103,28 @@ class TestGetAnnouncements:
         mock_get.side_effect = Exception("network error")
         assert get_announcements("600519") == []
 
+    @patch("mommy_chaogu.market_data.news_api.requests.get")
+    def test_accepts_eastmoney_columns_list(self, mock_get: MagicMock) -> None:
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "data": {
+                "list": [
+                    {
+                        "title": "贵州茅台:2025年年度报告",
+                        "notice_date": "2026-04-01",
+                        "columns": [{"column_name": "定期报告"}],
+                        "art_code": "A1",
+                    }
+                ]
+            }
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        items = get_announcements("600519", limit=3)
+        assert items[0]["title"] == "2025年年度报告"
+        assert items[0]["ann_type"] == "定期报告"
+
 
 class TestGetLonghuban:
     @patch("mommy_chaogu.market_data.news_api.requests.get")

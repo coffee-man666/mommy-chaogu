@@ -920,6 +920,7 @@ wheels = [
 name = "mommy-chaogu"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "efinance" },
     { name = "fastapi" },
     { name = "jinja2" },
@@ -951,6 +952,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.0" },
     { name = "efinance", specifier = ">=0.5.8" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },

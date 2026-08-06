@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mommy_chaogu.cli import _REPL_GRANDMA_LOGO, _run_mommy_repl
+from mommy_chaogu.cli import _REPL_SPARKLINE, _render_logo, _run_mommy_repl
 from mommy_chaogu.cli_prompt import ReplPrompt
 
 
@@ -48,13 +48,20 @@ def test_repl_renders_rich_answer_and_quits(
     assert exc.value.code == 0
     output = capsys.readouterr().out
     assert "mommy-chaogu" in output
-    assert "◉" in output
+    assert "███" in output
+    assert "▂" in output
     assert "结论" in output
     assert "完成" in output
     assert "再见" in output
 
 
-def test_repl_header_logo_keeps_grandma_and_market_motifs() -> None:
-    assert "◡" in _REPL_GRANDMA_LOGO
-    assert "◉" in _REPL_GRANDMA_LOGO
-    assert "↗" in _REPL_GRANDMA_LOGO
+def test_repl_header_logo_is_quant_style_gradient() -> None:
+    logo = _render_logo()
+    assert "███" in logo.plain
+    assert _REPL_SPARKLINE in logo.plain
+    assert "↗" in logo.plain
+    styles = [str(span.style) for span in logo.spans]
+    assert any("124,92,255" in s for s in styles)  # 渐变起点：品牌紫
+    assert any("91,192,190" in s for s in styles)  # 渐变终点：青
+    assert any("#f43f5e" in s for s in styles)  # 红涨
+    assert any("#22c55e" in s for s in styles)  # 绿跌

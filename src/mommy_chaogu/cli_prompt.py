@@ -68,9 +68,11 @@ class ReplPrompt:
                 "frame.label": "bold #7c5cff",
                 "prompt": "bold #7c5cff",
                 "input": "#f3f4f6",
-                "toolbar": "bg:#20242c #aeb4bf",
-                "toolbar.model": "bg:#20242c bold #e5e7eb",
-                "toolbar.hint": "bg:#20242c #7f8794",
+                # Keep the status bar distinct from a black terminal background;
+                # use near-white text so the model, state, and path stay legible.
+                "toolbar": "bg:#2b344a #f8fafc",
+                "toolbar.model": "bg:#2b344a bold #ffffff",
+                "toolbar.hint": "bg:#2b344a #dbeafe",
                 "completion-menu.completion": "bg:#20242c #d1d5db",
                 "completion-menu.completion.current": "bg:#7c5cff #ffffff",
                 "completion-menu.meta.completion": "bg:#20242c #7f8794",

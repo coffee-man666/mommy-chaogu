@@ -7,6 +7,12 @@ This module remains the stable compatibility facade for project entry points.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.text import Text
+
 # The facade intentionally re-exports the established command API.
 from mommy_chaogu.cli_support import *
 from mommy_chaogu.cli_commands.agent import *
@@ -20,6 +26,7 @@ from mommy_chaogu.cli_commands.report import *
 from mommy_chaogu.cli_commands.semicon import *
 from mommy_chaogu.cli_commands.watchlist import *
 from mommy_chaogu.cli_commands.web import *
+from mommy_chaogu.cli_commands.workflow import *
 from mommy_chaogu.setup import main_setup
 
 # ============================================================
@@ -48,15 +55,46 @@ _WELCOME = """\
 输入问题开始，输入 q 退出。
 """
 
-_REPL_GRANDMA_LOGO = """\
-   ▄████████▄
- ▄███▀▀██▀▀███▄
-███  ▄████▄  ███
-██  ◜◡─╮─◉◝  ██
-██   ╰─┴─╯   ██
-▀██▄  ╰▽╯  ▄██▀
-  ▀████████▀  ╱
-    ▀████▀   ╱↗"""
+_REPL_M_LOGO = """\
+███╗   ███╗
+████╗ ████║
+██╔████╔██║
+██║╚██╔╝██║
+██║ ╚═╝ ██║
+╚═╝     ╚═╝"""
+_REPL_SPARKLINE = "▁▂▄▃▅▆█"
+_LOGO_GRADIENT = ((124, 92, 255), (91, 192, 190))  # 品牌紫 → 青
+_SPARK_UP_STYLE = "bold #f43f5e"  # A股红涨
+_SPARK_DOWN_STYLE = "bold #22c55e"  # 绿跌
+_SPARK_ARROW_STYLE = "bold #f59e0b"
+
+
+def _render_logo() -> Text:
+    """量化终端风 logo：紫→青水平渐变的块体 M + 红绿迷你 K 线。"""
+    from rich.text import Text
+
+    lines = _REPL_M_LOGO.splitlines()
+    width = max(len(line) for line in lines) - 1
+    (r1, g1, b1), (r2, g2, b2) = _LOGO_GRADIENT
+    logo = Text(no_wrap=True)
+    for y, line in enumerate(lines):
+        if y:
+            logo.append("\n")
+        for x, char in enumerate(line):
+            t = x / width
+            r = round(r1 + (r2 - r1) * t)
+            g = round(g1 + (g2 - g1) * t)
+            b = round(b1 + (b2 - b1) * t)
+            logo.append(char, style=f"bold rgb({r},{g},{b})")
+    logo.append("\n")
+    levels = "▁▂▃▄▅▆▇█"
+    prev = 0
+    for char in _REPL_SPARKLINE:
+        level = levels.index(char)
+        logo.append(char, style=_SPARK_UP_STYLE if level >= prev else _SPARK_DOWN_STYLE)
+        prev = level
+    logo.append("↗", style=_SPARK_ARROW_STYLE)
+    return logo
 
 
 def _flush_agent(agent: object | None) -> None:
@@ -73,6 +111,7 @@ def _run_mommy_repl(
     executor: object,
     agent: object | None,
     verbose: bool = False,
+    workflow_hit_recorder: Callable[[str], None] | None = None,
 ) -> NoReturn:
     """专业化自然语言 REPL：富文本回答、单行进度和友好错误。"""
     import json
@@ -133,8 +172,7 @@ def _run_mommy_repl(
         )
         welcome_content = metadata
         if console.size.width >= 72:
-            logo = Text(_REPL_GRANDMA_LOGO, style="bold #7c5cff", no_wrap=True)
-            logo.highlight_regex(r"[◡◉▽↗]", style="bold #5bc0be")
+            logo = _render_logo()
             header = Table.grid(expand=True, padding=(0, 2))
             header.add_column(width=18, no_wrap=True)
             header.add_column(ratio=1)
@@ -149,7 +187,7 @@ def _run_mommy_repl(
                 welcome_content,
                 title="[bold #7c5cff]Welcome to mommy-chaogu[/]",
                 subtitle="[dim]你的本地 AI 投研助手[/]",
-                border_style="#168aad",
+                border_style="#5bc0be",
                 padding=(1, 2),
             )
         )
@@ -258,6 +296,12 @@ def _run_mommy_repl(
                 console.print(Markdown(result.summary))
             elif result.steps:
                 _print_workflow_result(result)
+            if (
+                workflow_hit_recorder is not None
+                and result.workflow_id.startswith("user_")
+                and result.succeeded
+            ):
+                workflow_hit_recorder(result.workflow_id)
             elapsed = time.monotonic() - started
             console.print(f"[dim]✓ {wf_desc} · {elapsed:.1f}s[/]")
             continue
@@ -480,6 +524,7 @@ def main_mommy() -> NoReturn:
         "memory": ("mommy-memory", main_memory),
         "web": ("mommy-web", main_web),
         "tui": ("mommy-tui", None),
+        "workflow": ("mommy-workflow", main_workflow),
     }
 
     # 直接子命令模式：mommy watchlist list
@@ -531,7 +576,7 @@ def main_mommy() -> NoReturn:
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
-            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui, workflow"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -593,9 +638,12 @@ def main_mommy() -> NoReturn:
     from mommy_chaogu.market_data import create_adapter_chain
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
-    from mommy_chaogu.workflow.engine import WorkflowExecutor
+    from mommy_chaogu.workflow.engine import WorkflowExecutor, WorkflowRegistry
     from mommy_chaogu.workflow.definitions import get_default_registry
     from mommy_chaogu.workflow.router import NLRouter
+    from mommy_chaogu.workflow.spec_runtime import spec_to_workflow
+    from mommy_chaogu.workflow.store import WorkflowStore
+    from mommy_chaogu.workflow.validator import blocking_issues, validate_spec
 
     base = create_adapter_chain()
     store = CacheStore(MARKET_DB)
@@ -647,7 +695,20 @@ def main_mommy() -> NoReturn:
         pass
 
     executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)  # type: ignore[arg-type]
-    router = NLRouter(get_default_registry(), executor=executor)
+    merged_registry = WorkflowRegistry()
+    for builtin in get_default_registry().all_workflows():
+        merged_registry.register(builtin)
+    workflow_store = WorkflowStore(AGENT_DB)
+    for custom_spec, _meta in workflow_store.load_all():
+        try:
+            issues = validate_spec(custom_spec, existing_workflows=merged_registry.all_workflows())
+            if blocking_issues(issues):
+                continue
+            if merged_registry.get(custom_spec.id) is None:
+                merged_registry.register(spec_to_workflow(custom_spec))
+        except (TypeError, ValueError):
+            continue
+    router = NLRouter(merged_registry, executor=executor)
 
     # 单次查询模式
     query = " ".join(args.query).strip() if args.query else ""
@@ -673,6 +734,8 @@ def main_mommy() -> NoReturn:
                 print(result.summary)
             else:
                 _print_workflow_result(result)
+            if result.workflow_id.startswith("user_") and result.succeeded:
+                workflow_store.increment_hit(result.workflow_id)
         else:
             # 未命中预设工作流
             if args.verbose:
@@ -718,7 +781,13 @@ def main_mommy() -> NoReturn:
         sys.exit(0)
 
     # 交互式 REPL
-    _run_mommy_repl(router, executor, agent, verbose=args.verbose)
+    _run_mommy_repl(
+        router,
+        executor,
+        agent,
+        verbose=args.verbose,
+        workflow_hit_recorder=workflow_store.increment_hit,
+    )
 
 
 def main() -> int:

@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Release: v1.2.0](https://img.shields.io/badge/release-v1.2.0-blue.svg)](CHANGELOG.md)
+[![Release: v1.3.0](https://img.shields.io/badge/release-v1.3.0-blue.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 </div>
