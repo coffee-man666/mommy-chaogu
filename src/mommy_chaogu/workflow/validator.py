@@ -32,8 +32,14 @@ def validate_spec(
     existing_workflows: Iterable[Workflow | WorkflowSpec] | None = None,
 ) -> list[str]:
     """Return errors and ``warning:`` diagnostics for a workflow spec."""
-    del tool_registry  # ToolRegistry is accepted for the public API; definitions are static.
     issues: list[str] = []
+    # The static map is the normal production registry, but smoke tests and
+    # embedders may provide a narrower registry.  Validate against the actual
+    # runtime surface when one is supplied; otherwise retain the static
+    # definitions for backwards-compatible callers.
+    registered_names = (
+        set(tool_registry.tool_names()) if tool_registry is not None else set(_TOOL_MAP)
+    )
     if spec.spec_version != 1:
         issues.append(f"spec_version 不受支持: {spec.spec_version}")
     if not spec.id.startswith("user_"):
@@ -63,6 +69,9 @@ def validate_spec(
         tool_def = _TOOL_MAP.get(step.tool_name)
         if tool_def is None:
             issues.append(f"第 {index} 步工具不存在: {step.tool_name}")
+            continue
+        if step.tool_name not in registered_names:
+            issues.append(f"第 {index} 步工具未在当前 ToolRegistry 注册: {step.tool_name}")
             continue
         properties = tool_def.parameters.get("properties", {})
         for name, source in step.inputs.items():

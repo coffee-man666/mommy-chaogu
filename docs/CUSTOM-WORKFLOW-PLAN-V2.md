@@ -3,12 +3,14 @@
 > V2 相对 V1（`CUSTOM-WORKFLOW-PLAN.md`）的变化：架构不变，修正了评审发现的
 > 设计缺陷，并按「零 LLM 依赖优先验证」重排了实现顺序。变化对照表见文末。
 
-## 实施状态（2026-08-04）
+## 实施状态（2026-08-05）
 
-V2 已完成：Phase 0 的数据口径确认、Phase 1 交易积木、Phase 2
+V2 的产品代码已完成：Phase 0 的数据口径确认、Phase 1 交易积木、Phase 2
 `WorkflowSpec` 运行时与校验器、Phase 3 SQLite 存储与显式 CLI、Phase 4
 编译器及 `create/update` 命令、Phase 5 网络冒烟脚本均已落地。离线测试覆盖
-契约、提取规则、参数覆盖、信号判定、CRUD、命中计数、CLI 全链路和编译器重试。
+契约、提取规则、参数覆盖、信号判定、CRUD、命中计数、CLI 全链路和编译器重试；
+网络冒烟现在还会构造生产形态的真实行情 adapter + ToolRegistry，对模型生成的
+spec 做无副作用 dry-run 校验，但不会执行工具或修改自选股、持仓、记忆数据。
 
 Phase 5 的真实网络冒烟需要本机配置有效的 LLM key 和模型名，运行：
 
@@ -345,7 +347,8 @@ update 模式验证旧 spec 注入 prompt。
 ## Phase 5：端到端冒烟（脚本，不进 CI）
 
 `scripts/smoke_workflow.py`（标 network）：
-真实 adapter + 真实 LLM 跑 3 条固定观点 → 编译 → dry-run 打印 spec → 人眼检查。
+真实 adapter + 真实 LLM 跑 3 条固定观点 → 编译 → 用真实 ToolRegistry dry-run
+校验 → 打印 spec → 人眼检查；dry-run 不执行任何工具步骤。
 另备 3-5 组 golden 样本（观点 → 期望 spec 骨架），用于人工回归。
 
 本机实测：配置中的旧 z.ai 模型名会被服务端返回 `Unknown Model`，脚本能完整遍历
