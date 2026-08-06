@@ -1,8 +1,4 @@
-<<<<<<<< HEAD:src/mommy_chaogu/web/static/static/send-I-m6c5zj.js
 import{c as a}from"./index-C8wE6r7d.js";/**
-========
-import{c as a}from"./index-Dgd79z8I.js";/**
->>>>>>>> origin/main:src/mommy_chaogu/web/static/static/send-B-wR9ANt.js
  * @license lucide-vue-next v1.0.0 - ISC
  *
  * This source code is licensed under the ISC license.

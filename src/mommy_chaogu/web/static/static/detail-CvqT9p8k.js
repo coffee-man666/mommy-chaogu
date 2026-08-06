@@ -1,8 +1,4 @@
-<<<<<<<< HEAD:src/mommy_chaogu/web/static/static/detail-CvqT9p8k.js
 import{c as T,d as E,D as F,e as i,g,w as h,u as r,R as _,f as t,i as C,t as a,j as u,k as j,h as y,F as M,r as R,p as v,E as A,x as n,m as I,v as K,X as S,V as q,q as D,H}from"./index-C8wE6r7d.js";import{a as U,b as W}from"./baskets-CBRMTx6T.js";import{_ as P}from"./ErrorState.vue_vue_type_script_setup_true_lang-DfDBo31C.js";import{c as N,a as V}from"./format-DLBIvhbs.js";import{T as X}from"./triangle-alert-BlgwbcfR.js";import"./index-BZVJnDvk.js";import"./utils-rSuFKI8m.js";/**
-========
-import{c as T,d as E,D as F,e as i,g,w as h,u as r,R as _,f as t,i as C,t as a,j as u,k as j,h as y,F as M,r as R,p as v,E as A,x as n,m as I,v as K,X as S,V as q,q as D,H}from"./index-Dgd79z8I.js";import{a as U,b as W}from"./baskets-Td6F2mtj.js";import{_ as P}from"./ErrorState.vue_vue_type_script_setup_true_lang-DZBG2I0p.js";import{c as N,a as V}from"./format-fTPpUxSb.js";import{T as X}from"./triangle-alert-B4leWTAA.js";import"./index-DvfJo_zJ.js";import"./utils-Yek-x8aQ.js";/**
->>>>>>>> origin/main:src/mommy_chaogu/web/static/static/detail-f34guJm1.js
  * @license lucide-vue-next v1.0.0 - ISC
  *
  * This source code is licensed under the ISC license.

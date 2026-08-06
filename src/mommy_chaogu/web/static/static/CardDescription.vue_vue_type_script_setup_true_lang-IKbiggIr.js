@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:src/mommy_chaogu/web/static/static/CardDescription.vue_vue_type_script_setup_true_lang-DMuiHHGj.js
-import{c as r}from"./utils-rSuFKI8m.js";import{d as a,x as o,e as n,n as c,u as l,y as p}from"./index-C8wE6r7d.js";const u=a({__name:"CardDescription",props:{class:{type:[Boolean,null,String,Object,Array]}},setup(e){const s=e;return(t,m)=>(o(),n("p",{"data-slot":"card-description",class:c(l(r)("text-muted-foreground text-sm",s.class))},[p(t.$slots,"default")],2))}});export{u as _};
-========
-import{c as r}from"./utils-Yek-x8aQ.js";import{d as a,x as o,e as n,n as c,u as l,y as p}from"./index-Dgd79z8I.js";const u=a({__name:"CardDescription",props:{class:{type:[Boolean,null,String,Object,Array]}},setup(e){const s=e;return(t,m)=>(o(),n("p",{"data-slot":"card-description",class:c(l(r)("text-muted-foreground text-sm",s.class))},[p(t.$slots,"default")],2))}});export{u as _};
->>>>>>>> origin/main:src/mommy_chaogu/web/static/static/CardDescription.vue_vue_type_script_setup_true_lang-IKbiggIr.js
