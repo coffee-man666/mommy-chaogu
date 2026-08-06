@@ -419,3 +419,215 @@ create（编译）→ run（反复使用，hit_count 增长）→ update（修�
 | 10 | volume_breakout 明确为收盘后信号，跳过残缺 bar | K3 评审：语义坑 |
 | 11 | 顺序重排：Store/CLI（Phase 3）先于 Compiler（Phase 4），LLM 出现前全链路零 LLM 可测 | K3：风险驱动排序 |
 | 12 | Phase 1 出口标准含真实数据人工验证 | K3：实现顺序调整 |
+
+---
+
+# 执行审核报告（2026-08-05）
+
+**审核范围**：`3242173`（主体实现）→ `c412d84`（真实数据修复）→ `b9dfb08`（校验加固）
+→ `d4ebbf6`（冒烟验证）+ 全部新增源码与测试。审核方式：逐文件对照计划 +
+疑点追踪（异常路径、私有导入、口径假设）+ 质量门实测。
+
+## 总体结论：执行忠实且多处超出计划，质量门全绿
+
+| Phase | 状态 | 关键证据 |
+|---|---|---|
+| 0 口径确认 | ✅ | 文档有实际确认记录：`main_net_ratio` 在 `types.py` 标注为百分比，`ratio_bp = % × 100`；真实验证发现 efinance 当前**缺该字段** → `c412d84` 补了 quote fallback |
+| 1 积木 | ✅ | 3 积木全落地，契约/预裁剪/残缺 bar 剔除（15:05 规则）齐全；`ma_golden_cross` 只报最近 2 根交叉，比计划严谨 |
+| 2 Spec/Runtime/Validator | ✅ | spec_version、4 种 ArgSource、提取规则表显式报错、trigger 冲突检测、`user_` 前缀、blocking/warning 分级 |
+| 3 Store + CLI | ✅ | upsert 保留 hit_count、命令全集 add/run/list/delete、`--set` 覆盖、分组 list + stale 标记、merged registry 新实例且 **validate 通过才注册**（比计划严） |
+| 4 Compiler + create/update | ✅ | 双模式输出（spec/questions）、retry 带错误、update 强制保留 id 并注入旧 spec、temperature=0 |
+| 5 冒烟 | ✅ | 3 条 golden 骨架、真实 LLM + 真实 registry 的 dry-run、无副作用边界清晰、配套离线测试 |
+
+**质量门实测**：
+
+- `pytest tests/test_workflow/ tests/test_tools/test_analysis.py -m "not network"`：**109 passed**
+- `pytest tests/test_agent/test_tools.py`：23 passed（工具计数断言已同步 analysis 模块）
+- `ruff check`（全部新增文件）：通过
+- `mypy --strict`（6 个新模块）：通过
+
+## 超出计划的亮点
+
+1. **真实数据验证是真的做了，且抓到了只跑真实数据才能发现的问题**（`c412d84`）：
+   - efinance 当前缺少 `main_net_ratio` 字段 → 补 quote fallback 计算链
+   - 东财公告 API payload 形状漂移（`data.list` vs 顶层 `list`，`columns` 时 list 时 dict）→ `news_api.py` 容错
+   - `threshold_bp=0` 被 `or` 短路成 50 的边界 bug → 显式 None 判断
+2. `spec_runtime.py:129` 对 LLM 生成的 description 做 `{}` 转义，防 `.format(context=...)` 炸掉——计划外自补的防御。
+3. `validator` 支持传入实际 `ToolRegistry` 做窄注册表校验（smoke 场景），比计划的纯静态校验更灵活。
+4. CLI 层加载自定义工作流时**先 validate 再注册**（stale 的直接不进 registry），比计划的「try/except 跳过损坏」更严。
+5. hit 计数覆盖单次查询 + REPL 双模式（`workflow_hit_recorder` 依赖注入 REPL）。
+
+## 发现的问题（2 中 3 低）
+
+### 中 1：extractor 异常穿透 `WorkflowExecutor`
+
+`spec_runtime` 的 extractor 设计为显式 raise（user_regex 不匹配、step_field 形状不符），
+但 `engine.py:200` 的 extractor 调用**不在 try 块内**——异常直接穿透到 CLI，
+用户看到 traceback 而不是友好错误。两个暴露面：
+
+- `cli_commands/workflow.py:113` `_cmd_run` 直接 `execute()`
+- `cli.py` 自然语言入口命中自定义工作流时
+
+修法：在这两个调用点 try 住 `ValueError` 打印友好文案，不用动 engine。
+
+### 中 2：`workflow run` 传 `user_input=""`
+
+`cli_commands/workflow.py:113` 执行时传空字符串——任何含 `user_regex` 步骤的工作流
+在 run 模式下**必然失败**（正则无输入可匹配），而计划示例 3 恰恰就是这类工作流。
+建议给 `run` 加 `--input "自由文本"` 参数透传为 user_input。
+
+### 低 3：`workflow run` 没有 LLM 总结
+
+`_cmd_run` 构造 `WorkflowExecutor` 时未传 `llm_summarizer`，`use_llm_summary: true`
+的 spec 在 run 下永远走 JSON 输出分支。可视为调试模式的合理简化，但应在
+`run --help` 或文档写明。
+
+### 低 4：`cli.py` 主入口的 `WorkflowStore` 未 close
+
+`cli_commands/workflow.py` 全部 `finally: store.close()`，唯独 `cli.py` 主入口的
+`workflow_store` 单次模式 `sys.exit` 前、REPL 退出后都未关闭。进程退出会回收，
+实际无害，但不符合项目 `EngineOwner` 惯例。
+
+### 低 5：`check_earnings_catalyst` 单点失败面
+
+模块级 `get_fundamentals`/`get_announcements` 直调网络，单只网络异常会炸掉整个
+工具步骤。与 `intel.py` 现有行为一致（**不是 V2 新引入**——计划假设 fundamentals
+走 adapter，实现跟随了项目现实，此取舍正确），但积木被串联后失败面放大，
+建议后续给这两个 API 加 per-code 容错。
+
+## 审核中澄清的两个误判（留档）
+
+1. 提交信息 "deterministic compiler" 一度让人以为编译器被改成规则式——实际就是
+   LLM 驱动（`chat_raw` + temperature=0），deterministic 指**产物**。命名可接受但略有误导。
+2. 一度怀疑积木缺少 per-code try——实际 `CachedMarketDataAdapter` 内部吞异常
+   （拉新失败 → fallback 缓存 → 返回 `[]`），`if not flows: continue` 契约成立，无此问题。
+
+## 遗留建议
+
+- 中 1 + 中 2 同源（extractor 异常路径），约 30 行改动，建议合一个
+  `fix(workflow): handle extractor failures in run path` 修掉。
+- 低 3/4/5 可留到下个迭代。
+- 风格项（不阻塞）：`compiler.py`/`validator.py` 导入了 registry 的私有名
+  `_TOOL_DEFINITIONS`/`_TOOL_MAP`，建议在 `registry.py` 暴露公开访问器；
+  `_patterns_conflict` 启发式有误报可能（注释已坦承），保守方向可接受。
+
+---
+
+# 审核修复计划（可执行）
+
+针对审核发现的 2 个中等问题 + 2 个低成本低优先级问题，一个提交修完。
+预估工作量：约 40 行产品代码 + 2 个测试用例，半天以内。
+
+## 修复 1（中 2）：`workflow run` 增加 `--input` 参数
+
+**文件**：`src/mommy_chaogu/cli_commands/workflow.py`
+
+argparse 定义处（当前 28-30 行）加参数：
+
+```python
+run = sub.add_parser("run", help="显式执行工作流")
+run.add_argument("id")
+run.add_argument("--set", dest="overrides", action="append", default=[], metavar="KEY=VALUE")
+run.add_argument(
+    "--input",
+    dest="user_input",
+    default="",
+    help="自由文本输入；含 user_regex 步骤的工作流从这里提取参数（如 --input '分析 600519'）",
+)
+```
+
+`_cmd_run`（当前 113 行）把空字符串换成传入值：
+
+```python
+result = WorkflowExecutor(ToolRegistry(context)).execute(workflow, args.user_input)
+```
+
+## 修复 2（中 1）：extractor 异常在两个调用点兜底
+
+**背景**：`spec_runtime` 的 extractor 显式 raise `ValueError`（user_regex 不匹配、
+step_field 形状不符、param 缺失），但 `engine.py:200` 的 extractor 调用不在
+try 块内，异常穿透成 traceback。按「不改 engine.py」原则，在调用点修。
+
+REPL 模式（`cli.py:290`）已有 `except Exception: render_error(exc)` 兜底，**无需改动**。
+
+**改动点 A**：`cli_commands/workflow.py` `_cmd_run`（当前 113 行附近）：
+
+```python
+try:
+    result = WorkflowExecutor(ToolRegistry(context)).execute(workflow, args.user_input)
+except ValueError as exc:
+    print(f"工作流参数解析失败: {exc}")
+    print("提示：含 user_regex 步骤的工作流需要 --input 提供输入文本")
+    return 1
+```
+
+**改动点 B**：`cli.py` 单次查询模式（当前 665-670 行的 `router.execute_route(...)`）：
+
+```python
+try:
+    result = router.execute_route(
+        route, query,
+        on_step_start=lambda n: print(f"  ⠹ {n}...", end="\r", flush=True),
+        on_step_done=lambda n, ok: print(f"  {'✓' if ok else '✗'} {n}" + " " * 10),
+    )
+except ValueError as exc:
+    print(f"  ⚠️ 工作流参数解析失败: {exc}")
+    sys.exit(1)
+```
+
+## 修复 3（低 4）：`cli.py` 主入口的 WorkflowStore 补 close
+
+- 单次查询模式：`sys.exit(0)` 之前调 `workflow_store.close()`
+- REPL 模式：`_run_mommy_repl(...)` 返回后调 `workflow_store.close()`
+  （注意 REPL 持有的是 `workflow_store.increment_hit` 引用，REPL 退出后 close 安全）
+
+## 修复 4（低 3）：`run --help` 写明无 LLM 总结
+
+`cli_commands/workflow.py` 的 run parser help 补充一句：
+
+```python
+run = sub.add_parser(
+    "run",
+    help="显式执行工作流（调试模式：无 LLM 总结，输出原始步骤 JSON）",
+)
+```
+
+## 测试补充（`tests/test_workflow/test_cli_workflow.py`，对齐现有 MagicMock 风格）
+
+```python
+def test_run_user_regex_with_input(tmp_path, monkeypatch, capsys) -> None:
+    """user_regex 工作流 + --input 传入代码 → 执行成功并提取参数。"""
+    # spec：check_kline_signal(codes=user_regex(pattern=r"(\d{6})"))
+    # monkeypatch _build_agent_context 返回 mock adapter（get_bars 返回 30 根假 bar）
+    # _cmd_run(MagicMock(id=..., overrides=[], user_input="分析 600519")) == 0
+
+def test_run_extractor_failure_friendly_error(tmp_path, monkeypatch, capsys) -> None:
+    """user_regex 工作流不传 --input → 返回 1 + 友好文案，无 traceback。"""
+    # 同上 spec，user_input=""
+    # _cmd_run(...) == 1
+    # capsys 输出含 "工作流参数解析失败"，不含 "Traceback"
+```
+
+## 验收标准
+
+```bash
+# 1. 全部既有 + 新增测试通过
+uv run pytest tests/test_workflow/ tests/test_tools/test_analysis.py -m "not network" -q
+# 预期：111 passed（109 + 2 新增）
+
+# 2. lint + 类型
+uv run ruff check src/mommy_chaogu/cli_commands/workflow.py src/mommy_chaogu/cli.py
+uv run mypy --strict src/mommy_chaogu/cli_commands/workflow.py
+
+# 3. 手动验证（真实 CLI）
+mommy workflow add /tmp/user_regex_spec.json
+mommy workflow run user_xxx                     # 无 --input → 友好错误，无 traceback
+mommy workflow run user_xxx --input "分析 600519"  # 正常执行
+mommy workflow list                              # 显示 hits 计数
+```
+
+## 不在本次范围
+
+- 低 5（`check_earnings_catalyst` 的 news_api/fundamentals_api 单点失败面）：
+  与 `intel.py` 现有行为一致，涉及面超出 workflow 模块，单独迭代。
+- `registry.py` 私有名公开化、`_patterns_conflict` 启发式改进：风格项，不阻塞。
