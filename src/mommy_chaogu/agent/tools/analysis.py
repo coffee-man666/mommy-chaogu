@@ -89,6 +89,8 @@ DEFS: list[ToolDef] = [
 
 def _codes(args: dict[str, Any]) -> list[str]:
     raw = args.get("codes", [])
+    if isinstance(raw, str):
+        raw = [raw]
     if not isinstance(raw, list):
         return []
     return list(dict.fromkeys(str(code) for code in raw if str(code).isdigit()))[:MAX_CODES]

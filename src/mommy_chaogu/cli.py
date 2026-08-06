@@ -723,12 +723,17 @@ def main_mommy() -> NoReturn:
                 wf_desc = route.workflow.description  # type: ignore[attr-defined]
                 print(f"  [匹配: {wf_desc}]")
             print()
-            result = router.execute_route(
-                route,
-                query,
-                on_step_start=lambda n: print(f"  ⠹ {n}...", end="\r", flush=True),
-                on_step_done=lambda n, ok: print(f"  {'✓' if ok else '✗'} {n}" + " " * 10),
-            )
+            try:
+                result = router.execute_route(
+                    route,
+                    query,
+                    on_step_start=lambda n: print(f"  ⠹ {n}...", end="\r", flush=True),
+                    on_step_done=lambda n, ok: print(f"  {'✓' if ok else '✗'} {n}" + " " * 10),
+                )
+            except ValueError as exc:
+                print(f"  ⚠️ 工作流参数解析失败: {exc}")
+                workflow_store.close()
+                sys.exit(1)
             print()
             if result.summary:
                 print(result.summary)
@@ -778,16 +783,20 @@ def main_mommy() -> NoReturn:
                         print("\n⚠️ API key 无效，请运行 mommy setup 重新配置。\n")
                     else:
                         print(f"\n⚠️ 出错了: {e}\n")
+        workflow_store.close()
         sys.exit(0)
 
     # 交互式 REPL
-    _run_mommy_repl(
-        router,
-        executor,
-        agent,
-        verbose=args.verbose,
-        workflow_hit_recorder=workflow_store.increment_hit,
-    )
+    try:
+        _run_mommy_repl(
+            router,
+            executor,
+            agent,
+            verbose=args.verbose,
+            workflow_hit_recorder=workflow_store.increment_hit,
+        )
+    finally:
+        workflow_store.close()
 
 
 def main() -> int:

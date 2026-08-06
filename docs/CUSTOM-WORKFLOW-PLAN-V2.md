@@ -631,3 +631,31 @@ mommy workflow list                              # 显示 hits 计数
 - 低 5（`check_earnings_catalyst` 的 news_api/fundamentals_api 单点失败面）：
   与 `intel.py` 现有行为一致，涉及面超出 workflow 模块，单独迭代。
 - `registry.py` 私有名公开化、`_patterns_conflict` 启发式改进：风格项，不阻塞。
+
+---
+
+# 审核修复执行记录（2026-08-05）
+
+审核计划已执行完成：
+
+- `workflow run` 新增 `--input`，并将输入透传给 `user_regex` extractor；
+- `workflow run` 和自然语言单次查询对 extractor `ValueError` 输出友好错误，
+  不再泄露 traceback；REPL 原有错误边界保持不变；
+- 单次查询和 REPL 退出路径均关闭 `WorkflowStore`；
+- `workflow run --help` 明确这是无 LLM 总结的调试执行路径；
+- 分析积木的 `codes` 参数兼容单个代码字符串，闭合 `user_regex → codes` 的实际契约；
+- 新增 `--input` 成功提取、缺少输入友好失败和 parser help 回归测试。
+
+验证结果：
+
+```text
+uv run pytest tests/test_workflow/ tests/test_tools/test_analysis.py -m "not network"
+112 passed
+uv run ruff check src tests scripts
+All checks passed
+uv run mypy --strict src
+Success: no issues found
+```
+
+未纳入本次修复的低优先级建议仍包括 `check_earnings_catalyst` 的单点网络容错、
+registry 私有访问器公开化和 trigger 冲突启发式精化。

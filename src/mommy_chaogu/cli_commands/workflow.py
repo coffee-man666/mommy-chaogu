@@ -25,9 +25,18 @@ def build_workflow_parser() -> argparse.ArgumentParser:
     add = sub.add_parser("add", help="从 JSON 文件注册工作流")
     add.add_argument("file", help="WorkflowSpec JSON 文件")
 
-    run = sub.add_parser("run", help="显式执行工作流")
+    run = sub.add_parser(
+        "run",
+        help="显式执行工作流（调试模式：无 LLM 总结，输出原始步骤 JSON）",
+    )
     run.add_argument("id")
     run.add_argument("--set", dest="overrides", action="append", default=[], metavar="KEY=VALUE")
+    run.add_argument(
+        "--input",
+        dest="user_input",
+        default="",
+        help="自由文本输入；含 user_regex 步骤的工作流从这里提取参数（如 --input '分析 600519'）",
+    )
 
     sub.add_parser("list", help="列出内置和自定义工作流")
     delete = sub.add_parser("delete", help="删除自定义工作流")
@@ -109,8 +118,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
             print(f"工作流已 stale，不能执行: {', '.join(errors)}")
             return 1
         context = _build_agent_context()
-        workflow = spec_to_workflow(spec, _parse_overrides(args.overrides))
-        result = WorkflowExecutor(ToolRegistry(context)).execute(workflow, "")
+        user_input = getattr(args, "user_input", "")
+        if not isinstance(user_input, str):
+            user_input = ""
+        try:
+            workflow = spec_to_workflow(spec, _parse_overrides(args.overrides))
+            result = WorkflowExecutor(ToolRegistry(context)).execute(workflow, user_input)
+        except ValueError as exc:
+            print(f"工作流参数解析失败: {exc}")
+            print("提示：含 user_regex 步骤的工作流需要 --input 提供输入文本")
+            return 1
         if result.summary:
             print(result.summary)
         else:
