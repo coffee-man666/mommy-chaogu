@@ -71,7 +71,11 @@ class WorkflowCompiler:
             ensure_ascii=False,
             indent=2,
         )
-        old = f"\n当前 spec（update 时必须在此基础上修改）：\n{current_spec.to_json()}\n" if current_spec else ""
+        old = (
+            f"\n当前 spec（update 时必须在此基础上修改）：\n{current_spec.to_json()}\n"
+            if current_spec
+            else ""
+        )
         retry_text = f"\n上一次错误，请修正：\n{retry}\n" if retry else ""
         return f"""你是交易工作流编译器。只负责把用户观点转成 JSON spec，不做行情计算。
 观点：{viewpoint}
@@ -151,7 +155,9 @@ class WorkflowCompiler:
                 payload = self._call(self._prompt(viewpoint, current_spec, last_error))
                 result = self._interpret(payload, current_spec)
             except ValueError as exc:
-                result = CompileResult("error", errors=[str(exc)], guidance="请让模型只返回合法 JSON。")
+                result = CompileResult(
+                    "error", errors=[str(exc)], guidance="请让模型只返回合法 JSON。"
+                )
             if result.kind != "error":
                 return result
             last_error = "; ".join(result.errors)

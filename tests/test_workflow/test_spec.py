@@ -79,7 +79,9 @@ def test_all_arg_source_kinds_resolve() -> None:
         id="user_literal",
         trigger_patterns=["literal"],
         description="literal",
-        steps=[StepSpec("screen_inflow_stocks", "run", {"codes": ArgSource("literal", ["600519"])})],
+        steps=[
+            StepSpec("screen_inflow_stocks", "run", {"codes": ArgSource("literal", ["600519"])})
+        ],
     )
     literal_extractor = spec_to_workflow(literal_spec).steps[0].args_extractor
     assert literal_extractor is not None
