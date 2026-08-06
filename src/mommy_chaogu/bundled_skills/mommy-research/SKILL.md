@@ -47,12 +47,26 @@ evidence pack is deterministic and contains no hidden LLM summary.
 
 ## Respect privacy profiles
 
-Treat missing personal tools as an intentional privacy boundary. Under `market-only`, do not try to
-recover portfolio, watchlist, alert, prediction, or memory data through shell/database access. Tell
-the user they can explicitly reconnect with `mommy connect <agent> --profile personal`.
+The `mommy-chaogu` MCP server runs with one of two fixed privacy profiles
+(`market-only` or `personal`), chosen when it is connected and unchanged for that
+session. Detect the active profile by listing the available tools: presence of
+`research_portfolio`, `get_memory_context`, or write tools (`manage_watchlist`,
+`manage_alert`, `record_research_conclusion`) means `personal`; their absence means
+`market-only`.
 
-Personal tool results enter the current model context when called. Mention this before the first
-personal-data call if the user has not already asked for personal analysis.
+**At the start of a session that may involve personal data, ask the user before using it:**
+> 这次分析需要用到你的持仓 / 自选 / 历史记忆吗？
+
+- Not needed (or unsure) → use only public market and research tools.
+- Needed, and the active profile is `personal` → personal tools are available. Mention
+  before the first personal-data call that the result will enter the current model context.
+- Needed, but the active profile is `market-only` → personal tools are intentionally not
+  published. Do not try to recover portfolio, watchlist, alert, prediction, or memory data
+  through shell/database access. Tell the user to reconnect and pick personal:
+  `mommy connect <agent> --profile personal`（交互式连接会询问；非交互默认 market-only）。
+  Restarting the agent is required for the new profile to take effect.
+
+Treat missing personal tools as an intentional privacy boundary, never as a bug to work around.
 
 ## Analyze the evidence
 

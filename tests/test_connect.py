@@ -15,6 +15,7 @@ from mommy_chaogu.cli_commands.connect import (
     _connection_spec,
     _mcp_read_timeout,
     _probe_sync,
+    _resolve_profile,
     build_connect_parser,
     cmd_connect,
 )
@@ -47,9 +48,35 @@ def test_connect_parser_defaults_to_market_only() -> None:
     parser = build_connect_parser()
     args = parser.parse_args(["kimi", "--skip-test"])
     assert args.action == "kimi"
-    assert args.profile == "market-only"
+    assert args.profile is None
     assert args.skip_test is True
     assert parser.parse_args(["claude", "--profile", "personal"]).profile == "personal"
+
+
+def test_resolve_profile_honors_explicit() -> None:
+    assert _resolve_profile("personal") == "personal"
+    assert _resolve_profile("market-only") == "market-only"
+
+
+def test_resolve_profile_defaults_to_market_only_non_tty() -> None:
+    with patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=False):
+        assert _resolve_profile(None) == "market-only"
+
+
+def test_resolve_profile_interactive_choice() -> None:
+    with (
+        patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=True),
+        patch("builtins.input", return_value="2"),
+    ):
+        assert _resolve_profile(None) == "personal"
+
+
+def test_resolve_profile_interactive_defaults_to_market_only() -> None:
+    with (
+        patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=True),
+        patch("builtins.input", return_value="   "),
+    ):
+        assert _resolve_profile(None) == "market-only"
 
 
 def test_connection_spec_keeps_virtualenv_python_fallback() -> None:

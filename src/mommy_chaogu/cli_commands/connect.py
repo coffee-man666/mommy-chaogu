@@ -72,8 +72,8 @@ def build_connect_parser() -> argparse.ArgumentParser:
         connect.add_argument(
             "--profile",
             choices=("market-only", "personal"),
-            default="market-only",
-            help="market-only 默认不开放持仓和记忆；personal 明确开放个人数据",
+            default=None,
+            help="隐私权限：market-only 或 personal。不指定时在交互终端会询问（非交互默认 market-only）",
         )
         connect.add_argument("--force", action="store_true", help="替换同名的非托管配置或 Skill")
         connect.add_argument("--skip-test", action="store_true", help="安装后跳过 MCP 连通测试")
@@ -470,13 +470,35 @@ def _probe_sync(spec: ConnectionSpec) -> list[str]:
         raise ConnectError(f"MCP 连通测试失败：{exc}") from exc
 
 
-def _connect(target: str, profile: str, *, force: bool, skip_test: bool) -> int:
+def _resolve_profile(profile: str | None) -> str:
+    """Resolve the effective privacy profile.
+
+    An explicit ``--profile`` wins. Otherwise, when stdin is an interactive
+    terminal, ask the user to choose; in non-interactive contexts (scripts, CI,
+    tests) fall back to the safe default ``market-only``.
+    """
+    if profile:
+        return normalize_mcp_profile(profile)
+    if sys.stdin.isatty():
+        print("选择投研数据范围：")
+        print("  1) market-only（默认）：只看公共行情，不读持仓 / 自选 / 记忆")
+        print("  2) personal：开放本地持仓、自选和历史记忆")
+        try:
+            choice = input("请输入 1 或 2 [1]: ").strip() or "1"
+        except EOFError:
+            choice = "1"
+        return "market-only" if choice == "1" else "personal"
+    return "market-only"
+
+
+def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) -> int:
     state = _load_state()
     connections: dict[str, Any] = state["connections"]
     previous = connections.get(target)
     if previous is not None and not isinstance(previous, dict):
         raise ConnectError(f"{target} 的连接状态格式损坏")
 
+    profile = _resolve_profile(profile)
     _preflight(target, previous, force=force)
     spec = _connection_spec(profile)
     skill_path, skill_hash = _install_skill(target, previous, force=force)
