@@ -88,7 +88,11 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$", "description": "股票代码（A 股 6 位数字或美股字母）"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                },
                 "days": {
                     "type": "integer",
                     "description": "K 线和资金流回看天数，默认 20，最大 60",
@@ -130,7 +134,11 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$", "description": "股票代码（A 股 6 位数字或美股字母）"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                },
                 "days": {
                     "type": "integer",
                     "description": "历史资金流天数，默认 10，最大 60",
@@ -165,7 +173,11 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                     "enum": ["market", "sector", "stock", "portfolio"],
                     "description": "结论范围",
                 },
-                "code": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$", "description": "股票代码（A 股 6 位数字或美股字母）"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                },
                 "name": {"type": "string", "description": "股票或板块名称"},
                 "confidence": {
                     "type": "number",

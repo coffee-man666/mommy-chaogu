@@ -191,7 +191,9 @@ def _ranking(quotes: list[object], top: str, limit: int) -> list[dict[str, objec
                 continue
             # 过滤 PE 为负且退市迹象
             # 过滤无效代码（非 6 位数字或 1-6 字母）
-            if not code or not ((code.isdigit() and len(code) == 6) or (code.isalpha() and 1 <= len(code) <= 6)):
+            if not code or not (
+                (code.isdigit() and len(code) == 6) or (code.isalpha() and 1 <= len(code) <= 6)
+            ):
                 continue
                 continue
             filtered.append((q, pct))

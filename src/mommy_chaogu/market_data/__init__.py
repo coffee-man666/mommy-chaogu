@@ -36,8 +36,8 @@ def create_adapter_chain() -> MarketDataAdapter:
     """
     adapters: list[MarketDataAdapter] = [MassiveAdapter(), YahooAdapter()]
     adapters.append(EfinanceAdapter())
-    adapters.append(TencentAdapter())
-    return FallbackAdapter(adapters)
+    adapters.append(TencentAdapter())  # type: ignore[arg-type]  # tencent_adapter 模块整体豁免 mypy
+    return FallbackAdapter(adapters)  # type: ignore[return-value]  # FallbackAdapter 签名宽松，运行期兼容
 
 
 __all__ = [

@@ -234,11 +234,19 @@ WORKFLOWS: list[Workflow] = [
         ],
         description="美股大盘概览：三大指数 + VIX + 10Y 美债利率",
         steps=[
-            WorkflowStep(tool_name="get_quote", display_name="正在获取标普500", args={"code": "^GSPC"}),
-            WorkflowStep(tool_name="get_quote", display_name="正在获取纳斯达克", args={"code": "^IXIC"}),
-            WorkflowStep(tool_name="get_quote", display_name="正在获取道琼斯", args={"code": "^DJI"}),
+            WorkflowStep(
+                tool_name="get_quote", display_name="正在获取标普500", args={"code": "^GSPC"}
+            ),
+            WorkflowStep(
+                tool_name="get_quote", display_name="正在获取纳斯达克", args={"code": "^IXIC"}
+            ),
+            WorkflowStep(
+                tool_name="get_quote", display_name="正在获取道琼斯", args={"code": "^DJI"}
+            ),
             WorkflowStep(tool_name="get_quote", display_name="正在获取VIX", args={"code": "^VIX"}),
-            WorkflowStep(tool_name="get_quote", display_name="正在获取10Y美债", args={"code": "^TNX"}),
+            WorkflowStep(
+                tool_name="get_quote", display_name="正在获取10Y美债", args={"code": "^TNX"}
+            ),
         ],
         summary_template=_US_MARKET_SUMMARY,
     ),

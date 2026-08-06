@@ -251,7 +251,7 @@ class Services:
         from mommy_chaogu.watchlist.store import WatchlistStore
 
         base = create_adapter_chain()
-        adapter = CachedMarketDataAdapter(base, CacheStore(MARKET_DB))  # type: ignore[arg-type]
+        adapter = CachedMarketDataAdapter(base, CacheStore(MARKET_DB))
         data_svc = DataService(
             adapter=adapter,
             watchlist_store=WatchlistStore(PORTFOLIO_DB),

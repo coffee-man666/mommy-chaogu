@@ -18,7 +18,7 @@ def _make_adapter(args: argparse.Namespace) -> object:
     东财接口挂了 → 自动降级到腾讯财经（数据稳定）
     """
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-    from mommy_chaogu.market_data import EfinanceAdapter, create_adapter_chain
+    from mommy_chaogu.market_data import create_adapter_chain
 
     base = create_adapter_chain()
     store = CacheStore(Path(args.db))

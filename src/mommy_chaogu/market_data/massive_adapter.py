@@ -524,11 +524,17 @@ class MassiveAdapter:
         if indicator == "macd":
             data = self._client.get_macd(code, timespan=timespan, limit=limit)
         elif indicator == "sma":
-            data = self._client.get_sma(code, timespan=timespan, window=window, series_type=series_type, limit=limit)
+            data = self._client.get_sma(
+                code, timespan=timespan, window=window, series_type=series_type, limit=limit
+            )
         elif indicator == "ema":
-            data = self._client.get_ema(code, timespan=timespan, window=window, series_type=series_type, limit=limit)
+            data = self._client.get_ema(
+                code, timespan=timespan, window=window, series_type=series_type, limit=limit
+            )
         elif indicator == "rsi":
-            data = self._client.get_rsi(code, timespan=timespan, window=window, series_type=series_type, limit=limit)
+            data = self._client.get_rsi(
+                code, timespan=timespan, window=window, series_type=series_type, limit=limit
+            )
         else:
             return []
         if data is None:

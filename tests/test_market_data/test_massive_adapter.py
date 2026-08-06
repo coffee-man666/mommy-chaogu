@@ -16,7 +16,6 @@ from mommy_chaogu.market_data.types import (
     QuoteType,
 )
 
-
 # ---------- 工具函数 ----------
 
 
@@ -104,9 +103,23 @@ class TestAStockCodes:
     def test_a_stock_filtered_from_quotes(self):
         """混合列表中的 A 股代码被过滤，但美股代码正常请求。"""
         adapter = _make_adapter()
-        adapter._client.get_snapshots_batch.return_value = {"results": [
-            {"ticker": "AAPL", "name": "Apple", "day": {"c": "190.0", "o": "189.0", "h": "191.0", "l": "188.0", "v": 1000, "vw": "189.5"}, "prevDay": {"c": "188.0"}},
-        ]}
+        adapter._client.get_snapshots_batch.return_value = {
+            "results": [
+                {
+                    "ticker": "AAPL",
+                    "name": "Apple",
+                    "day": {
+                        "c": "190.0",
+                        "o": "189.0",
+                        "h": "191.0",
+                        "l": "188.0",
+                        "v": 1000,
+                        "vw": "189.5",
+                    },
+                    "prevDay": {"c": "188.0"},
+                },
+            ]
+        }
         quotes = adapter.get_quotes(["600519", "AAPL", "000001"])
         # A 股被过滤，只有 AAPL 请求了
         assert len(quotes) == 1
@@ -123,7 +136,14 @@ class TestGetQuote:
             "results": {
                 "ticker": "AAPL",
                 "name": "Apple Inc.",
-                "day": {"o": "189.50", "h": "191.00", "l": "188.20", "c": "190.30", "v": 50000000, "vw": "189.85"},
+                "day": {
+                    "o": "189.50",
+                    "h": "191.00",
+                    "l": "188.20",
+                    "c": "190.30",
+                    "v": 50000000,
+                    "vw": "189.85",
+                },
                 "prevDay": {"c": "188.00"},
                 "market_cap": 3000000000000,
                 "updated": 1700000000000,
@@ -155,7 +175,21 @@ class TestGetQuote:
 
     def test_uppercase_ticker(self):
         """小写 ticker 自动转大写。"""
-        snap_data = {"results": {"ticker": "AAPL", "name": "Apple", "day": {"c": "190.0", "o": "189.0", "h": "191.0", "l": "188.0", "v": 100, "vw": "189.5"}, "prevDay": {"c": "188.0"}}}
+        snap_data = {
+            "results": {
+                "ticker": "AAPL",
+                "name": "Apple",
+                "day": {
+                    "c": "190.0",
+                    "o": "189.0",
+                    "h": "191.0",
+                    "l": "188.0",
+                    "v": 100,
+                    "vw": "189.5",
+                },
+                "prevDay": {"c": "188.0"},
+            }
+        }
         adapter = _make_adapter()
         adapter._client.get_snapshot.return_value = snap_data
         q = adapter.get_quote("aapl")
@@ -164,7 +198,20 @@ class TestGetQuote:
 
     def test_none_snapshot_falls_back_to_prev_close(self):
         """Basic tier: snapshot=None → fallback to previous_close."""
-        prev_data = {"results": [{"T": "AAPL", "o": "309.0", "h": "311.0", "l": "302.0", "c": "303.0", "v": 75000000, "vw": "306.0", "t": 1700000000000}]}
+        prev_data = {
+            "results": [
+                {
+                    "T": "AAPL",
+                    "o": "309.0",
+                    "h": "311.0",
+                    "l": "302.0",
+                    "c": "303.0",
+                    "v": 75000000,
+                    "vw": "306.0",
+                    "t": 1700000000000,
+                }
+            ]
+        }
         details = {"results": {"name": "Apple Inc.", "market_cap": 4000000000000}}
         adapter = _make_adapter()
         adapter._client.get_snapshot.return_value = None
@@ -186,7 +233,20 @@ class TestGetQuote:
 
     def test_fills_name_from_ticker_details(self):
         """snapshot 没带 name → 查 ticker details 补全。"""
-        snap_data = {"results": {"ticker": "AAPL", "day": {"c": "190.0", "o": "189.0", "h": "191.0", "l": "188.0", "v": 100, "vw": "189.5"}, "prevDay": {"c": "188.0"}}}
+        snap_data = {
+            "results": {
+                "ticker": "AAPL",
+                "day": {
+                    "c": "190.0",
+                    "o": "189.0",
+                    "h": "191.0",
+                    "l": "188.0",
+                    "v": 100,
+                    "vw": "189.5",
+                },
+                "prevDay": {"c": "188.0"},
+            }
+        }
         adapter = _make_adapter()
         adapter._client.get_snapshot.return_value = snap_data
         adapter._client.get_ticker_details.return_value = {"results": {"name": "Apple Inc."}}
@@ -205,13 +265,27 @@ class TestGetQuotes:
                 {
                     "ticker": "AAPL",
                     "name": "Apple Inc.",
-                    "day": {"o": "189.0", "h": "191.0", "l": "188.0", "c": "190.0", "v": 1000, "vw": "189.5"},
+                    "day": {
+                        "o": "189.0",
+                        "h": "191.0",
+                        "l": "188.0",
+                        "c": "190.0",
+                        "v": 1000,
+                        "vw": "189.5",
+                    },
                     "prevDay": {"c": "188.0"},
                 },
                 {
                     "ticker": "MSFT",
                     "name": "Microsoft Corp.",
-                    "day": {"o": "410.0", "h": "415.0", "l": "408.0", "c": "412.0", "v": 2000, "vw": "411.0"},
+                    "day": {
+                        "o": "410.0",
+                        "h": "415.0",
+                        "l": "408.0",
+                        "c": "412.0",
+                        "v": 2000,
+                        "vw": "411.0",
+                    },
                     "prevDay": {"c": "409.0"},
                 },
             ]
@@ -231,7 +305,19 @@ class TestGetQuotes:
 
     def test_batch_fallback_to_prev_close(self):
         """Basic tier: batch snapshot returns empty → fallback to previous_close per ticker."""
-        prev_aapl = {"results": [{"o": "189.0", "h": "191.0", "l": "188.0", "c": "190.0", "v": 1000, "vw": "189.5", "t": 1700000000000}]}
+        prev_aapl = {
+            "results": [
+                {
+                    "o": "189.0",
+                    "h": "191.0",
+                    "l": "188.0",
+                    "c": "190.0",
+                    "v": 1000,
+                    "vw": "189.5",
+                    "t": 1700000000000,
+                }
+            ]
+        }
         details_aapl = {"results": {"name": "Apple Inc."}}
         adapter = _make_adapter()
         adapter._client.get_snapshots_batch.return_value = {"results": []}  # empty → fallback
@@ -250,8 +336,24 @@ class TestGetBars:
     def test_parses_aggregate_bars(self):
         agg_data = {
             "results": [
-                {"t": 1700000000000, "o": "189.0", "h": "191.0", "l": "188.0", "c": "190.0", "v": 50000, "vw": "189.5"},
-                {"t": 1700086400000, "o": "190.0", "h": "192.0", "l": "189.5", "c": "191.5", "v": 60000, "vw": "190.8"},
+                {
+                    "t": 1700000000000,
+                    "o": "189.0",
+                    "h": "191.0",
+                    "l": "188.0",
+                    "c": "190.0",
+                    "v": 50000,
+                    "vw": "189.5",
+                },
+                {
+                    "t": 1700086400000,
+                    "o": "190.0",
+                    "h": "192.0",
+                    "l": "189.5",
+                    "c": "191.5",
+                    "v": 60000,
+                    "vw": "190.8",
+                },
             ]
         }
         adapter = _make_adapter()
@@ -271,7 +373,15 @@ class TestGetBars:
     def test_limit_truncation(self):
         """limit 截断取最后 N 根。"""
         results = [
-            {"t": 1700000000000 + i * 86400000, "o": "100", "h": "101", "l": "99", "c": "100.5", "v": 1000, "vw": "100.2"}
+            {
+                "t": 1700000000000 + i * 86400000,
+                "o": "100",
+                "h": "101",
+                "l": "99",
+                "c": "100.5",
+                "v": 1000,
+                "vw": "100.2",
+            }
             for i in range(10)
         ]
         adapter = _make_adapter()
@@ -302,7 +412,10 @@ class TestGetBars:
 class TestHealthCheck:
     def test_enabled_and_ok(self):
         adapter = _make_adapter()
-        adapter._client.get_market_status.return_value = {"market": "US", "serverTime": 1700000000000}
+        adapter._client.get_market_status.return_value = {
+            "market": "US",
+            "serverTime": 1700000000000,
+        }
         assert adapter.health_check() is True
 
     def test_enabled_but_bad_response(self):

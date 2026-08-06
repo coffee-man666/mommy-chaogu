@@ -138,7 +138,12 @@ class MassiveClient:
         sort: str = "ticker",
     ) -> list[dict[str, Any]]:
         """GET /v3/reference/tickers — 全量 ticker 列表（带翻页）。"""
-        params: dict[str, Any] = {"market": market, "active": "true", "limit": min(limit, 1000), "sort": sort}
+        params: dict[str, Any] = {
+            "market": market,
+            "active": "true",
+            "limit": min(limit, 1000),
+            "sort": sort,
+        }
         if type:
             params["type"] = type
         return self._get_paginated("/v3/reference/tickers", params, max_results=limit)

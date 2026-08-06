@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from requests import Response
 
 from mommy_chaogu.market_data.massive_client import MassiveClient
-
 
 # ---------- 工具 ----------
 
@@ -78,7 +77,9 @@ class TestInit:
 class TestTickers:
     def test_get_ticker_details(self):
         c = _make_client()
-        c._session.get = MagicMock(return_value=_mock_response({"results": {"ticker": "AAPL", "name": "Apple Inc."}}))
+        c._session.get = MagicMock(
+            return_value=_mock_response({"results": {"ticker": "AAPL", "name": "Apple Inc."}})
+        )
         data = c.get_ticker_details("aapl")
         assert data is not None
         assert data["results"]["ticker"] == "AAPL"
@@ -94,7 +95,9 @@ class TestTickers:
 
     def test_get_ticker_types(self):
         c = _make_client()
-        c._session.get = MagicMock(return_value=_mock_response({"results": [{"asset_type": "stock"}]}))
+        c._session.get = MagicMock(
+            return_value=_mock_response({"results": [{"asset_type": "stock"}]})
+        )
         data = c.get_ticker_types()
         assert data is not None
         assert data["results"][0]["asset_type"] == "stock"
@@ -123,9 +126,7 @@ class TestSnapshots:
     def test_get_snapshots_batch(self):
         c = _make_client()
         c._session.get = MagicMock(
-            return_value=_mock_response(
-                {"results": [{"ticker": "AAPL"}, {"ticker": "MSFT"}]}
-            )
+            return_value=_mock_response({"results": [{"ticker": "AAPL"}, {"ticker": "MSFT"}]})
         )
         data = c.get_snapshots_batch(["AAPL", "MSFT"])
         assert data is not None
@@ -242,14 +243,18 @@ class TestIndicators:
 class TestMarketOps:
     def test_get_market_status(self):
         c = _make_client()
-        c._session.get = MagicMock(return_value=_mock_response({"market": "US", "serverTime": 1700000000000}))
+        c._session.get = MagicMock(
+            return_value=_mock_response({"market": "US", "serverTime": 1700000000000})
+        )
         data = c.get_market_status()
         assert data is not None
         assert data["market"] == "US"
 
     def test_get_market_holidays(self):
         c = _make_client()
-        c._session.get = MagicMock(return_value=_mock_response({"results": [{"exchange": "NASDAQ"}]}))
+        c._session.get = MagicMock(
+            return_value=_mock_response({"results": [{"exchange": "NASDAQ"}]})
+        )
         data = c.get_market_holidays()
         assert data is not None
 
@@ -266,7 +271,9 @@ class TestMarketOps:
 class TestCorporateActions:
     def test_get_splits(self):
         c = _make_client()
-        c._session.get = MagicMock(return_value=_mock_response({"results": [{"split_ratio": "4:1"}]}))
+        c._session.get = MagicMock(
+            return_value=_mock_response({"results": [{"split_ratio": "4:1"}]})
+        )
         data = c.get_splits("AAPL")
         assert data is not None
         assert data["results"][0]["split_ratio"] == "4:1"
@@ -285,7 +292,9 @@ class TestCorporateActions:
 
     def test_get_float(self):
         c = _make_client()
-        c._session.get = MagicMock(return_value=_mock_response({"results": {"ticker": "AAPL", "float": 15000000000}}))
+        c._session.get = MagicMock(
+            return_value=_mock_response({"results": {"ticker": "AAPL", "float": 15000000000}})
+        )
         data = c.get_float("AAPL")
         assert data is not None
 
@@ -296,7 +305,9 @@ class TestCorporateActions:
 class TestNews:
     def test_get_news_with_ticker(self):
         c = _make_client()
-        c._session.get = MagicMock(return_value=_mock_response({"results": [{"title": "Apple earnings"}]}))
+        c._session.get = MagicMock(
+            return_value=_mock_response({"results": [{"title": "Apple earnings"}]})
+        )
         data = c.get_news("AAPL", limit=5)
         assert data is not None
         params = c._session.get.call_args.kwargs["params"]
@@ -317,16 +328,16 @@ class TestNews:
 class TestPagination:
     def test_single_page_no_next_url(self):
         c = _make_client()
-        c._session.get = MagicMock(
-            return_value=_mock_response({"results": [{"a": 1}, {"b": 2}]})
-        )
+        c._session.get = MagicMock(return_value=_mock_response({"results": [{"a": 1}, {"b": 2}]}))
         results = c._get_paginated("/test", max_results=100)
         assert len(results) == 2
         assert c._session.get.call_count == 1
 
     def test_multi_page_with_next_url(self):
         c = _make_client()
-        page1 = _mock_response({"results": [{"a": 1}], "next_url": "https://api.massive.com/test?page=2"})
+        page1 = _mock_response(
+            {"results": [{"a": 1}], "next_url": "https://api.massive.com/test?page=2"}
+        )
         page2 = _mock_response({"results": [{"b": 2}]})
         c._session.get = MagicMock(side_effect=[page1, page2])
         results = c._get_paginated("/test", max_results=100)
@@ -335,7 +346,12 @@ class TestPagination:
 
     def test_max_results_truncation(self):
         c = _make_client()
-        page1 = _mock_response({"results": [{"a": i} for i in range(100)], "next_url": "https://api.massive.com/test?page=2"})
+        page1 = _mock_response(
+            {
+                "results": [{"a": i} for i in range(100)],
+                "next_url": "https://api.massive.com/test?page=2",
+            }
+        )
         page2 = _mock_response({"results": [{"b": i} for i in range(100)]})
         c._session.get = MagicMock(side_effect=[page1, page2])
         results = c._get_paginated("/test", max_results=50)

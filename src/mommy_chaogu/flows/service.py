@@ -109,11 +109,7 @@ class FlowService:
         from mommy_chaogu.market_data import EfinanceAdapter, create_adapter_chain
 
         store = CacheStore(db_path)
-        base: Any
-        if use_fallback:
-            base = create_adapter_chain()
-        else:
-            base = EfinanceAdapter()
+        base: Any = create_adapter_chain() if use_fallback else EfinanceAdapter()
         adapter = CachedMarketDataAdapter(base, store)
         return cls(adapter, store)
 

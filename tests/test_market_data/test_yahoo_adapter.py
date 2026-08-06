@@ -284,7 +284,9 @@ class TestGetBars:
         adapter, client = _make_adapter()
         client.get_chart.return_value = _chart(AAPL_META, AAPL_BARS, adjclose=adjclose)
 
-        bars_fwd = adapter.get_bars("AAPL", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD)
+        bars_fwd = adapter.get_bars(
+            "AAPL", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD
+        )
         assert bars_fwd[-1].close == Decimal("309.5")
 
         bars_raw = adapter.get_bars("AAPL", interval=BarInterval.D1, adjustment=AdjustmentType.NONE)
