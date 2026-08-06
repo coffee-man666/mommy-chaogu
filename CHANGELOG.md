@@ -5,12 +5,34 @@
 
 ---
 
-## [Unreleased]
+## [1.4.0] - 2026-08-06
+
+### 新增
+
+- **美股支持**——集成 Massive/Polygon 美股 REST API，A 股 / 美股多市场无缝切换，
+  同一套工具、TUI 与 Web 界面覆盖两个市场；新增 Yahoo Finance 图表接口作美股回退源
+  （无 key），支持 `^` 前缀指数代码（`^GSPC` / `^IXIC` / `^DJI` / `^VIX` / `^TNX`）。
+- **确定性的美股市场简报**——新增 `research_us_market` MCP 投研工具，聚合三大指数 +
+  VIX + 10 年期美债利率证据包；统一由 `us_market_service` 驱动，REPL（`us_market_brief`
+  工作流，优先匹配）、Web（`GET /api/market/us` + 仪表盘美股区块）和 TUI（`/usmarket`
+  命令 + 美股卡片）三端接入。
+- **自定义工作流编译器**——确定性把自然语言编译为 `WorkflowSpec`；接入真实
+  ToolRegistry 的 dry-run 校验、冒烟验证，并补齐真实数据与编译器审计缺口；配套自定义
+  工作流规划文档与执行审计记录。
+- **mommy-research Skill 入仓**——投研 Skill、Agent 配置与分析参考文档随仓库分发
+  （`.kimi-code/skills`），外部 Coding Agent 接入后可直接使用。
 
 ### 改进
 
-- **REPL 欢迎页 logo**——块体字母 M 加紫→青水平渐变，下方配红绿迷你 K 线和琥珀色
-  趋势箭头；欢迎面板边框提亮，深色终端下更清晰。
+- **REPL 品牌焕新**——欢迎页 logo 改为块体字母 M 加紫→青水平渐变，配红绿迷你 K 线和
+  琥珀色趋势箭头；工具栏对比度优化，深色终端下更清晰。
+- **CI 门稳定性**——format / lint / mypy 改用锁定工具版本，前端静态资源与源码构建
+  产物保持一致并随合并重建。
+
+### 修复
+
+- **get_bars 日期推断**——修复 K 线查询日期推断可能返回过期数据的问题。
+- **依赖安全**——cryptography 49.0.0 → 50.0.0，修复 PYSEC-2026-3552 依赖审计问题。
 
 ## [1.3.0] - 2026-08-04
 

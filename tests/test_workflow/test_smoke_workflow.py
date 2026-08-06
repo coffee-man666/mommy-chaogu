@@ -57,7 +57,9 @@ def test_real_runtime_builder_only_opens_market_cache(tmp_path: Path, monkeypatc
         adapter.close()
 
 
-def test_create_dry_run_uses_compiler_without_persisting(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_create_dry_run_uses_compiler_without_persisting(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
     db = tmp_path / "agent.db"
     monkeypatch.setattr(workflow_cli, "AGENT_DB", db)
     compiled = _spec()

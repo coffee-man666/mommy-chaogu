@@ -23,6 +23,8 @@ htmlcov/
 coverage.json
 coverage.xml
 output/playwright/
+output/semicon_watch/
+reports/
 .mypy_cache/
 .ruff_cache/
 

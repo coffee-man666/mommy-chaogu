@@ -2,24 +2,28 @@
 
 <div align="center">
 
-**本地优先的 A 股投研助手。用一句话看行情、查资金、分析持仓，并把判断变成可验证的投研记录。**
+**本地优先的 A 股 / 美股投研助手。用一句话看行情、查资金、分析持仓，并把判断变成可验证的投研记录。**
 
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Release: v1.3.0](https://img.shields.io/badge/release-v1.3.0-blue.svg)](CHANGELOG.md)
+[![Release: v1.4.0](https://img.shields.io/badge/release-v1.4.0-blue.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 </div>
 
-mommy-chaogu 把实时行情、资金流、持仓、信号、记忆和 AI Agent 放进同一条对话。
-它可以作为独立 CLI / TUI / Web App 使用，也可以把投研能力接入 Claude Code、Kimi Code
-或微信。
+mommy-chaogu 把实时行情、资金流、持仓、信号、记忆和 AI Agent 放进同一条对话，
+同时覆盖 A 股与美股（Massive/Polygon + Yahoo Finance 双数据源）。它可以作为独立
+CLI / TUI / Web App 使用，也可以把投研能力接入 Claude Code、Kimi Code 或微信。
 
 ## 为什么是 mommy-chaogu
 
 - **一句话开始研究**：从市场概览到个股、板块、资金流和持仓，不用先学习一套命令。
 - **不只生成一段答案**：保存研究结论和预测，持续验证判断是否成立。
 - **一个内核，多种入口**：终端、Web、微信和外部 Coding Agent 使用同一套投研工具。
+- **A 股 + 美股一个入口**：Massive/Polygon 美股主源、Yahoo Finance 免 key 兜底，
+  `^` 前缀指数（`^GSPC` / `^VIX` / `^TNX`）和美股大盘简报同样一句话可查。
+- **把观点变成可执行工作流**：用自然语言描述交易观点，自动编译成可复现、可校验的
+  结构化工作流，持久化后随时重跑。
 - **本地优先**：密钥、持仓、记忆和数据库由用户自己的设备保存。
 
 ## 30 秒启动
@@ -70,6 +74,21 @@ mommy channel weixin stop      # 停止网关，但保留本机授权
 内容会发送给用户选择的 LLM Provider。详细权限与排障见
 [微信本地频道](docs/WEIXIN-CHANNEL.md)。
 
+## 美股数据源
+
+美股行情优先走 Massive / Polygon（Base 免费档即可，日线 T+1）。在
+[https://massive.com](https://massive.com) 注册后，把 API key 写入 `.env`：
+
+```bash
+MASSIVE_API_KEY=your_key_here
+```
+
+旧名称 `POLYGON_API_KEY` 同样生效。接口文档见
+[Massive REST Stocks](https://massive.com/docs/rest/stocks/overview)。
+
+不配置 key 也不影响使用：Yahoo Finance 回退源免 key，美股行情、`^` 前缀指数
+（`^GSPC` / `^VIX` / `^TNX`）和美债利率依然可查。
+
 ## 启动方式
 
 | 你想要的体验 | 启动命令 | 说明 |
@@ -87,7 +106,9 @@ mommy channel weixin stop      # 停止网关，但保留本机授权
 
 ```bash
 mommy "今天大盘怎么样"
+mommy "美股今天怎么样"
 mommy "分析一下比亚迪"
+mommy "分析一下 AAPL"
 mommy "半导体板块最近强不强"
 mommy "主力资金在买什么"
 mommy -v "分析 600519"       # 展开路由和工具调用
@@ -95,6 +116,14 @@ mommy -v "分析 600519"       # 展开路由和工具调用
 
 命中固定工作流时，mommy 会直接获取结构化数据；需要开放式判断时，再交给 LLM Agent
 自主选择工具。事实、工具结果和模型推断保持可区分。
+
+更复杂的交易观点可以编译成可执行工作流：
+
+```bash
+mommy workflow create "开盘 30 分钟后，如果创业板主力资金净流入超过 50bp 就提醒我"
+mommy workflow run <id>       # 随时重跑
+mommy workflow list           # 查看内置和自定义工作流
+```
 
 ## 本地优先
 

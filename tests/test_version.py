@@ -5,6 +5,6 @@ from mommy_chaogu.web import create_app
 
 
 def test_version_has_one_canonical_source() -> None:
-    assert __version__ == "1.3.0"
+    assert __version__ == "1.4.0"
     assert version("mommy-chaogu") == __version__
     assert create_app().version == __version__

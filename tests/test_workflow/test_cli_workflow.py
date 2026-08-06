@@ -139,6 +139,8 @@ def test_run_parser_accepts_input_and_explains_debug_output() -> None:
     parser = workflow_cli.build_workflow_parser()
     args = parser.parse_args(["run", "user_regex_cli", "--input", "分析 600519"])
     assert args.user_input == "分析 600519"
-    subparsers = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
+    subparsers = next(
+        action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
+    )
     run_choice = next(action for action in subparsers._choices_actions if action.dest == "run")
     assert "无 LLM 总结" in run_choice.help
