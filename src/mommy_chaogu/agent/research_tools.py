@@ -48,7 +48,7 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
     {"backfill_history", "manage_watchlist", "manage_alert", "record_research_conclusion"}
 )
 
-_CODE_RE = re.compile(r"^\d{6}$")
+_CODE_RE = re.compile(r"^(\^[A-Z]{1,6}|[A-Z]{1,6}|\d{6})$")
 
 
 RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
@@ -72,6 +72,14 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         },
     ),
     ToolDef(
+        name="research_us_market",
+        description=(
+            "获取确定性的美股市场概览证据包（标普500/纳指综合/道指 + VIX + 10 年期美债利率），"
+            "不调用内部 LLM。请基于 evidence 自行归纳结论，并明确区分事实与推断。"
+        ),
+        parameters={"type": "object", "properties": {}},
+    ),
+    ToolDef(
         name="research_stock",
         description=(
             "获取单只 A 股的结构化研究证据包：报价、日 K、当日及历史资金流、基本面；"
@@ -80,7 +88,11 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "pattern": "^\\d{6}$", "description": "股票代码"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                },
                 "days": {
                     "type": "integer",
                     "description": "K 线和资金流回看天数，默认 20，最大 60",
@@ -122,7 +134,11 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         parameters={
             "type": "object",
             "properties": {
-                "code": {"type": "string", "pattern": "^\\d{6}$", "description": "股票代码"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                },
                 "days": {
                     "type": "integer",
                     "description": "历史资金流天数，默认 10，最大 60",
@@ -157,7 +173,11 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                     "enum": ["market", "sector", "stock", "portfolio"],
                     "description": "结论范围",
                 },
-                "code": {"type": "string", "pattern": "^\\d{6}$", "description": "股票代码"},
+                "code": {
+                    "type": "string",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                },
                 "name": {"type": "string", "description": "股票或板块名称"},
                 "confidence": {
                     "type": "number",
@@ -189,7 +209,13 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
 
 _RESEARCH_DEF_MAP = {tool.name: tool for tool in RESEARCH_TOOL_DEFS}
 _MARKET_RESEARCH_NAMES = frozenset(
-    {"research_market_brief", "research_stock", "research_sector", "research_money_flow"}
+    {
+        "research_market_brief",
+        "research_us_market",
+        "research_stock",
+        "research_sector",
+        "research_money_flow",
+    }
 )
 
 
@@ -253,6 +279,7 @@ class ResearchToolCatalog:
             )
         handlers = {
             "research_market_brief": self._market_brief,
+            "research_us_market": self._us_market_brief,
             "research_stock": self._stock,
             "research_sector": self._sector,
             "research_money_flow": self._money_flow,
@@ -315,7 +342,7 @@ class ResearchToolCatalog:
     def _code(args: dict[str, Any]) -> str:
         code = str(args.get("code", "")).strip()
         if not _CODE_RE.fullmatch(code):
-            raise ValueError("需要提供 6 位股票代码")
+            raise ValueError("需要提供有效的股票代码")
         return code
 
     def _market_brief(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -328,6 +355,27 @@ class ResearchToolCatalog:
             "market_brief",
             evidence,
             ["判断主要指数方向和市场广度", "识别领涨与领跌板块", "给出下一步观察点"],
+        )
+
+    def _us_market_brief(self, _args: dict[str, Any]) -> dict[str, Any]:
+        """美股市场概览：三大指数 + VIX + 10 年期美债利率。"""
+        evidence = [
+            self._call("get_quote", {"code": "^GSPC"}),
+            self._call("get_quote", {"code": "^IXIC"}),
+            self._call("get_quote", {"code": "^DJI"}),
+            self._call("get_quote", {"code": "^VIX"}),
+            self._call("get_quote", {"code": "^TNX"}),
+        ]
+        return self._pack(
+            "us_market_brief",
+            evidence,
+            [
+                "判断三大指数方向是否一致，VIX 反映的恐慌程度与涨跌是否匹配",
+                "看 10 年期美债利率（^TNX）与股指的联动方向",
+                "只引用 ok=true 的证据；缺失的指数必须明确说明",
+                "单日涨跌不能外推为趋势，列出使结论失效的风险条件",
+            ],
+            subject={"indexes": ["^GSPC", "^IXIC", "^DJI", "^VIX", "^TNX"]},
         )
 
     def _stock(self, args: dict[str, Any]) -> dict[str, Any]:

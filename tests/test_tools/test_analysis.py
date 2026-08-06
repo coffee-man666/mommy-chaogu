@@ -46,7 +46,9 @@ def _payload(raw: str) -> dict:
 
 def test_screen_inflow_converts_percent_to_bp_sorts_and_caps() -> None:
     adapter = MagicMock()
-    adapter.get_today_money_flow.side_effect = lambda code: [_flow(code, "2.5" if code == "600000" else "0.4")]
+    adapter.get_today_money_flow.side_effect = lambda code: [
+        _flow(code, "2.5" if code == "600000" else "0.4")
+    ]
     result = _payload(
         analysis._handle_screen_inflow_stocks(
             ToolContext(adapter=adapter), {"codes": ["000001", "600000"], "threshold_bp": 50}
@@ -61,7 +63,9 @@ def test_screen_inflow_preclips_to_twenty() -> None:
     adapter = MagicMock()
     adapter.get_today_money_flow.side_effect = lambda code: [_flow(code, "1")]
     codes = [f"{index:06d}" for index in range(25)]
-    result = _payload(analysis._handle_screen_inflow_stocks(ToolContext(adapter=adapter), {"codes": codes}))
+    result = _payload(
+        analysis._handle_screen_inflow_stocks(ToolContext(adapter=adapter), {"codes": codes})
+    )
     assert result["count"] == 20
     assert result["total"] == 25
 
@@ -82,7 +86,9 @@ def test_screen_inflow_falls_back_to_circulating_cap_when_ratio_missing() -> Non
 
 
 def test_empty_input_has_contract() -> None:
-    result = _payload(analysis._handle_screen_inflow_stocks(ToolContext(adapter=MagicMock()), {"codes": []}))
+    result = _payload(
+        analysis._handle_screen_inflow_stocks(ToolContext(adapter=MagicMock()), {"codes": []})
+    )
     assert result == {"results": [], "count": 0, "total": 0}
 
 

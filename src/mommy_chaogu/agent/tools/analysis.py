@@ -168,7 +168,10 @@ def _handle_check_earnings_catalyst(ctx: ToolContext, args: dict[str, Any]) -> s
                 "pe": fundamentals.get("pe"),
                 "roe": fundamentals.get("roe"),
                 "has_earnings_ann": any(
-                    any(word in str(item.get("title", "")) for word in ("业绩", "财报", "年报", "半年报"))
+                    any(
+                        word in str(item.get("title", ""))
+                        for word in ("业绩", "财报", "年报", "半年报")
+                    )
                     for item in announcements
                 ),
                 "ann_titles": [str(item.get("title", "")) for item in announcements],
@@ -219,9 +222,7 @@ def _handle_check_kline_signal(ctx: ToolContext, args: dict[str, Any]) -> str:
         return _json({"error": "signal 必须是 volume_breakout 或 ma_golden_cross"})
     results: list[dict[str, Any]] = []
     for code in _codes(args):
-        bars = _completed_daily_bars(
-            ctx.adapter.get_bars(code, interval=BarInterval.D1, limit=30)
-        )
+        bars = _completed_daily_bars(ctx.adapter.get_bars(code, interval=BarInterval.D1, limit=30))
         if not bars:
             continue
         index = len(bars) - 1

@@ -215,7 +215,7 @@ function growthVariant(low: number | null): 'default' | 'secondary' | 'outline' 
 }
 
 function goDetail(code: string) {
-  if (/^\d{6}$/.test(code)) router.push({ name: 'detail', params: { code } })
+  if (/^(\d{6}|[A-Z]{1,6})$/.test(code)) router.push({ name: 'detail', params: { code } })
 }
 </script>
 

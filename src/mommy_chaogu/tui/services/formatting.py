@@ -56,16 +56,26 @@ def change_arrow(val: Decimal | float | None) -> str:
     return "—"
 
 
-def change_color(val: Decimal | float | None, theme: str = "dark") -> str:
-    """涨跌颜色（A股约定：红涨绿跌）。
+def change_color(
+    val: Decimal | float | None,
+    theme: str = "dark",
+    market: str = "",
+) -> str:
+    """涨跌颜色。
 
-    在 ``colorblind`` 主题下，绿跌改为蓝色以帮助红绿色弱用户区分。
+    A 股约定（默认）：红涨绿跌。
+    美股约定（market="US"）：绿涨红跌。
+
+    在 ``colorblind`` 主题下，下跌改为蓝色以帮助红绿色弱用户区分。
     """
     if val is None:
         return "dim"
     v = float(val)
+    us = market.upper() == "US"
     if v > 0:
-        return "red"  # A股红涨
+        return "green" if us else "red"  # A 股红涨 / 美股绿涨
     if v < 0:
-        return "blue" if theme == "colorblind" else "green"  # A股绿跌 / 色盲蓝跌
+        if theme == "colorblind":
+            return "blue"
+        return "red" if us else "green"  # A 股绿跌 / 美股红跌
     return "dim"

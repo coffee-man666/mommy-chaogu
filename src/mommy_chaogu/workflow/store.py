@@ -44,10 +44,16 @@ class WorkflowStore(EngineOwner):
     def save(self, spec: WorkflowSpec, source_text: str = "") -> None:
         now = _now()
         with self.engine.begin() as connection:
-            existing = connection.execute(
-                text("SELECT created_at, hit_count, last_used FROM custom_workflows WHERE id = :id"),
-                {"id": spec.id},
-            ).mappings().one_or_none()
+            existing = (
+                connection.execute(
+                    text(
+                        "SELECT created_at, hit_count, last_used FROM custom_workflows WHERE id = :id"
+                    ),
+                    {"id": spec.id},
+                )
+                .mappings()
+                .one_or_none()
+            )
             if existing is None:
                 connection.execute(
                     text(
@@ -101,23 +107,23 @@ class WorkflowStore(EngineOwner):
         return WorkflowSpec.from_json(str(raw))
 
     def load_all(self) -> list[tuple[WorkflowSpec, dict[str, Any]]]:
-        return [
-            (spec, meta)
-            for spec, meta in self.load_all_records()
-            if spec is not None
-        ]
+        return [(spec, meta) for spec, meta in self.load_all_records() if spec is not None]
 
     def load_all_records(self) -> list[tuple[WorkflowSpec | None, dict[str, Any]]]:
         """Load every row, retaining ``None`` for corrupt specs for stale reporting."""
         with self.engine.connect() as connection:
-            rows = connection.execute(
-                text(
-                    """
+            rows = (
+                connection.execute(
+                    text(
+                        """
                     SELECT id, spec_json, source_text, created_at, updated_at, hit_count, last_used
                     FROM custom_workflows ORDER BY created_at, id
                     """
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
         loaded: list[tuple[WorkflowSpec | None, dict[str, Any]]] = []
         for row in rows:
             spec: WorkflowSpec | None
@@ -138,10 +144,14 @@ class WorkflowStore(EngineOwner):
 
     def metadata(self, workflow_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
-            row = connection.execute(
-                text("SELECT * FROM custom_workflows WHERE id = :id"),
-                {"id": workflow_id},
-            ).mappings().one_or_none()
+            row = (
+                connection.execute(
+                    text("SELECT * FROM custom_workflows WHERE id = :id"),
+                    {"id": workflow_id},
+                )
+                .mappings()
+                .one_or_none()
+            )
         if row is None:
             return None
         return {key: row[key] for key in row if key != "spec_json"}

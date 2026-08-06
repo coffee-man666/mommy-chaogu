@@ -81,11 +81,11 @@ def _build_context() -> ToolContext:
     """从项目默认配置构造 ToolContext（含记忆服务 + LLM client）。"""
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.market_data import create_adapter_chain
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
 
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    base = create_adapter_chain()
     store = CacheStore(MARKET_DB)
     adapter = CachedMarketDataAdapter(base, store)
 

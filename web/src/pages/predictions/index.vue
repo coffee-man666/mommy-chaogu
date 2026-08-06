@@ -106,7 +106,7 @@ const deviationById = computed(() => {
 })
 
 function isStockCode(code: string): boolean {
-  return /^\d{6}$/.test(code)
+  return /^(\d{6}|[A-Z]{1,6})$/.test(code)
 }
 
 function goDetail(code: string) {

@@ -47,13 +47,20 @@ export function fmtAge(seconds: number): string {
   return `${Math.floor(seconds / 86400)}天前`
 }
 
-/** A 股红涨绿跌颜色 */
-export function changeColor(changePct: string | number | null | undefined): string {
+/**
+ * 涨跌颜色。
+ * A 股（默认）：红涨绿跌。美股（market="US"）：绿涨红跌。
+ */
+export function changeColor(
+  changePct: string | number | null | undefined,
+  market: string = '',
+): string {
   if (changePct == null) return '#666'
   const n = Number(changePct)
   if (isNaN(n)) return '#666'
-  if (n > 0) return '#c83e3e' // 红涨
-  if (n < 0) return '#2d8e3d' // 绿跌
+  const us = market.toUpperCase() === 'US'
+  if (n > 0) return us ? '#2d8e3d' : '#c83e3e' // A 股红涨 / 美股绿涨
+  if (n < 0) return us ? '#c83e3e' : '#2d8e3d' // A 股绿跌 / 美股红跌
   return '#666'
 }
 

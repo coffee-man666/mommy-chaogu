@@ -62,8 +62,8 @@ DEFS: list[ToolDef] = [
                 },
                 "code": {
                     "type": "string",
-                    "pattern": "^\\d{6}$",
-                    "description": "6 位股票代码（必填）",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母，必填）",
                 },
                 "group": {
                     "type": "string",

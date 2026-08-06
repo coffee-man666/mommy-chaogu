@@ -18,13 +18,13 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^\\d{6}$",
-                    "description": "股票代码（6 位数字，单只，与 codes 二选一）",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母，单只，与 codes 二选一。注意：资金流为 A 股特有数据，美股无此概念）",
                 },
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string", "pattern": "^\\d{6}$"},
-                    "description": "股票代码列表（多只批量查询，最多前 10 只，与 code 二选一）",
+                    "items": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$"},
+                    "description": "股票代码列表（多只批量查询，最多前 10 只，与 code 二选一。注意：资金流为 A 股特有数据，美股无此概念）",
                 },
             },
         },
@@ -37,8 +37,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^\\d{6}$",
-                    "description": "股票代码（6 位数字）",
+                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "description": "股票代码（A 股 6 位数字或美股字母）",
                 },
                 "days": {
                     "type": "integer",
