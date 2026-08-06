@@ -92,7 +92,7 @@ class TestNLRouter:
     def test_suggest_prompts(self) -> None:
         router = NLRouter(get_default_registry())
         prompts = router.suggest_prompts()
-        assert len(prompts) == 9
+        assert len(prompts) == 10
         # 每个提示应该是一句中文描述
         for p in prompts:
             assert isinstance(p, str)

@@ -60,10 +60,11 @@ export function fmtAge(seconds: number): string {
   return `${Math.floor(seconds / 86400)}天前`
 }
 
-export function changeColor(changePct: string): string {
+export function changeColor(changePct: string, market: string = ''): string {
   const n = Number(changePct)
   if (isNaN(n)) return '#666'
-  if (n > 0) return '#c83e3e'  // A 股红涨
-  if (n < 0) return '#2d8e3d'  // 绿跌
+  const us = market.toUpperCase() === 'US'
+  if (n > 0) return us ? '#2d8e3d' : '#c83e3e' // 美股绿涨 / A 股红涨
+  if (n < 0) return us ? '#c83e3e' : '#2d8e3d' // 美股红跌 / A 股绿跌
   return '#666'
 }

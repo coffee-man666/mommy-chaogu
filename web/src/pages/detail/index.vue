@@ -562,8 +562,6 @@ onUnmounted(() => {
         autocomplete="off"
         aria-label="股票代码"
         placeholder="输入代码后回车…"
-        inputmode="numeric"
-        maxlength="6"
         class="h-8 w-40 border-primary-foreground/30 bg-primary-foreground/15 text-primary-foreground placeholder:text-primary-foreground/60"
         @keyup.enter="onCodeEnter"
       />

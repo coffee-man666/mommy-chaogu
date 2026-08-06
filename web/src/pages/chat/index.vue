@@ -106,7 +106,7 @@ const CHAT_DRAFT_KEY = 'mommy_chat_draft_v1'
 const activePageContext = computed<AgentPageContext | undefined>(() => {
   const stockCode = typeof route.query.stock === 'string' ? route.query.stock : ''
   const tab = typeof route.query.tab === 'string' ? route.query.tab : 'overview'
-  if (!/^\d{6}$/.test(stockCode) || !['overview', 'chart', 'flow', 'decisions'].includes(tab)) {
+  if (!/^(\d{6}|[A-Z]{1,6})$/.test(stockCode) || !['overview', 'chart', 'flow', 'decisions'].includes(tab)) {
     return undefined
   }
   const basketId = typeof route.query.basket === 'string'

@@ -105,6 +105,56 @@ class TestGetIndexes:
         assert resp.json() == []
 
 
+# ---------- GET /api/market/us ----------
+
+
+class TestGetUsIndexes:
+    def test_returns_us_indexes(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.market.fetch_us_market_brief",
+            lambda adapter: [
+                {
+                    "code": "^GSPC",
+                    "name": "标普500",
+                    "price": Decimal("7736.52"),
+                    "change_pct": Decimal("1.79"),
+                    "prev_close": Decimal("7428.78"),
+                },
+                {
+                    "code": "^VIX",
+                    "name": "VIX 恐慌指数",
+                    "price": Decimal("16.5"),
+                    "change_pct": Decimal("4.04"),
+                    "prev_close": Decimal("15.86"),
+                },
+            ],
+        )
+        resp = client.get("/api/market/us")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 2
+        assert body[0]["code"] == "^GSPC"
+        assert body[0]["name"] == "标普500"
+        assert body[0]["price"] == "7736.52"
+        assert body[0]["change_pct"] == "1.79"
+
+    def test_empty_us_indexes(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.market.fetch_us_market_brief", lambda adapter: []
+        )
+        resp = client.get("/api/market/us")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
 # ---------- GET /api/market/sectors ----------
 
 

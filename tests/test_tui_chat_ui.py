@@ -108,7 +108,7 @@ class TestTruncateAtWord:
 
 class TestMatchSlashCommands:
     def test_all_on_bare_slash(self) -> None:
-        assert len(match_slash_commands("/")) == 13
+        assert len(match_slash_commands("/")) == 14
 
     def test_prefix(self) -> None:
         names = [c.name for c in match_slash_commands("/to")]
@@ -462,13 +462,13 @@ class TestSlashCycling:
                 prompt.value = "/"
                 await pilot.pause()
 
-                assert len(chat._slash_matches) == 13
+                assert len(chat._slash_matches) == 14
                 assert chat._slash_sel == 0
 
                 await pilot.press("down")
                 await pilot.pause()
                 assert chat._slash_sel == 1
-                assert chat.selected_completion() == "/watch"
+                assert chat.selected_completion() == "/usmarket"
 
                 await pilot.press("up")
                 await pilot.pause()
@@ -477,7 +477,7 @@ class TestSlashCycling:
                 # 继续 up → 环绕到最后一项
                 await pilot.press("up")
                 await pilot.pause()
-                assert chat._slash_sel == 12
+                assert chat._slash_sel == 13
                 assert chat.selected_completion() == "/quit"
 
         _run(_test())
@@ -497,12 +497,12 @@ class TestSlashCycling:
                 prompt.value = "/"
                 await pilot.pause()
 
-                # ↓ 移到 /watch，Tab 接受选中项
+                # ↓ 移到 /usmarket，Tab 接受选中项
                 await pilot.press("down")
                 await pilot.pause()
                 await pilot.press("tab")
                 await pilot.pause()
-                assert prompt.value == "/watch"
+                assert prompt.value == "/usmarket"
 
         _run(_test())
 

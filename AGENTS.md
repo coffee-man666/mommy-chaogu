@@ -68,7 +68,7 @@ uv run python scripts/migrate_db_layout.py            # 执行迁移
 
 ```
 src/mommy_chaogu/
-├── market_data/     # 数据源适配层（efinance + tencent + fallback）
+├── market_data/     # 数据源适配层（massive + yahoo 美股 + efinance + tencent fallback）
 ├── cache/           # SQLite 缓存（5 张表 + 节流 + freshness）
 ├── watchlist/       # 自选股（SQLite + SQLAlchemy 2.0）
 ├── monitor/         # 实时监控

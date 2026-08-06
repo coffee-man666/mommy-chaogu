@@ -31,7 +31,7 @@ _NO_SIGNAL_MESSAGE = "区间内未触发信号或缓存数据不足"
 
 @router.get("/{code}/backtest", response_model=StockBacktestOut)
 def get_stock_backtest(
-    code: Annotated[str, Path(pattern=r"^\d{6}$")],
+    code: Annotated[str, Path(pattern=r"^([A-Z]{1,6}|\d{6})$")],
     engine: Annotated[BacktestEngine, Depends(get_backtest_engine)],
     store: Annotated[WatchlistStore, Depends(get_watchlist_store)],
     hold_days: Annotated[int | None, Query(ge=1, le=60)] = None,

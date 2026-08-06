@@ -131,7 +131,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if result.summary:
             print(result.summary)
         else:
-            print(json.dumps({"workflow_id": result.workflow_id, "steps": [step.__dict__ for step in result.steps]}, ensure_ascii=False, default=str, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "workflow_id": result.workflow_id,
+                        "steps": [step.__dict__ for step in result.steps],
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                    indent=2,
+                )
+            )
         if result.succeeded:
             store.increment_hit(spec.id)
             return 0
@@ -184,9 +194,7 @@ def _compiler(exclude_id: str | None = None) -> WorkflowCompiler | None:
     try:
         existing = _existing()
         existing.extend(
-            spec_to_workflow(spec)
-            for spec, _meta in store.load_all()
-            if spec.id != exclude_id
+            spec_to_workflow(spec) for spec, _meta in store.load_all() if spec.id != exclude_id
         )
     finally:
         store.close()

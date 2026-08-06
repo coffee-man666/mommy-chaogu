@@ -18,7 +18,11 @@ def _patterns_conflict(left: str, right: str) -> bool:
     # containment as a conflict while avoiding an expensive regex SAT solver.
     left_literal = re.sub(r"\\[.*?]|[().*+?{}|^$]", "", left)
     right_literal = re.sub(r"\\[.*?]|[().*+?{}|^$]", "", right)
-    return bool(left_literal and right_literal and (left_literal in right_literal or right_literal in left_literal))
+    return bool(
+        left_literal
+        and right_literal
+        and (left_literal in right_literal or right_literal in left_literal)
+    )
 
 
 def _workflow_patterns(item: Any) -> tuple[str, list[str]]:

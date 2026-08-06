@@ -28,6 +28,7 @@ const router = useRouter()
 
 // ---------- 数据 ----------
 const indexes = ref<IndexQuote[]>([])
+const usIndexes = ref<IndexQuote[]>([])
 const quotes = ref<Quote[]>([])
 const portfolio = ref<PortfolioSummary | null>(null)
 const sectors = ref<SectorQuote[]>([])
@@ -38,6 +39,7 @@ const loading = ref(false)
 const errorCount = ref(0) // number of API calls that failed in last cycle
 /** 各数据源最近一次失败原因（成功时清空，失败时保留旧数据） */
 const indexesError = ref<ApiError | null>(null)
+const usIndexesError = ref<ApiError | null>(null)
 const quotesError = ref<ApiError | null>(null)
 const watchlistError = ref<ApiError | null>(null)
 
@@ -66,6 +68,9 @@ async function loadAll() {
     apiGet<IndexQuote[]>('/api/market/indexes')
       .then((d) => { indexes.value = d; indexesError.value = null; successes++ })
       .catch((e) => { failures++; indexesError.value = toApiError(e) }),
+    apiGet<IndexQuote[]>('/api/market/us')
+      .then((d) => { usIndexes.value = d; usIndexesError.value = null; successes++ })
+      .catch((e) => { failures++; usIndexesError.value = toApiError(e) }),
     apiGet<SnapshotResponse>('/api/quotes')
       .then((d) => { quotes.value = d.quotes ?? []; quotesError.value = null; successes++ })
       .catch((e) => { failures++; quotesError.value = toApiError(e) }),
@@ -202,6 +207,47 @@ const severityDot: Record<Signal['severity'], string> = {
         </CardContent>
       </Card>
     </div>
+
+    <!-- 美股指数卡片行 -->
+    <section v-if="usIndexes.length > 0 || usIndexesError" class="space-y-2">
+      <div class="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>🇺🇸 美股</span>
+        <span class="h-px flex-1 bg-border" />
+      </div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Card
+          v-for="idx in usIndexes"
+          :key="idx.code"
+          class="gap-0 py-4"
+        >
+          <CardContent class="px-4">
+            <p class="truncate text-xs text-muted-foreground">{{ idx.name }}</p>
+            <p class="mt-1 font-mono text-lg font-bold tabular-nums">
+              {{ fmtPrice(idx.price) }}
+            </p>
+            <p
+              class="mt-0.5 font-mono text-sm font-semibold tabular-nums"
+              :class="changeClass(idx.change_pct)"
+            >
+              {{ fmtPct(idx.change_pct) }}
+            </p>
+          </CardContent>
+        </Card>
+        <Card v-if="usIndexes.length === 0" class="col-span-full py-4">
+          <CardContent class="px-4">
+            <ErrorState
+              v-if="usIndexesError"
+              compact
+              :message="usIndexesError?.friendly"
+              @retry="loadAll"
+            />
+            <p v-else class="text-center text-sm text-muted-foreground">
+              美股行情加载中…
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
 
     <!-- 主区域：左列(自选股) + 右列(持仓/AI/板块/信号) -->
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">

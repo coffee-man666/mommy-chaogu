@@ -242,6 +242,20 @@ def watch_card(rows: list[dict[str, Any]], theme: str = "dark") -> Static:
     return _card(lines, classes=f"{CARD_CLASS} watch-card")
 
 
+def us_market_card(items: list[dict[str, Any]], theme: str = "dark") -> Static:
+    """美股大盘卡：三大指数 + VIX + 10Y 美债利率。"""
+    lines = ["[bold cyan]🇺🇸 美股大盘[/]", "  [dim]代码     名称          现价       涨跌[/]"]
+    for item in items:
+        code = _text(item.get("code", ""))
+        name = _text(str(item.get("name", code))[:8])
+        price = format_price(item.get("price"))
+        pct = _styled_change(item.get("change_pct"), theme)
+        lines.append(f"  {code:<8}  {name:<10}  {price:>9}  {pct}")
+    if not items:
+        lines.append("  [yellow]美股行情源暂时不可用，请稍后重试[/]")
+    return _card(lines, classes=f"{CARD_CLASS} us-market-card")
+
+
 # ---------------------------------------------------------------------------
 # Portfolio（持仓卡）
 # ---------------------------------------------------------------------------

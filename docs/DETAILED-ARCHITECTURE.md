@@ -249,11 +249,13 @@ mommy flows pull --pool semicon --days 30
 
 | 数据源 | 用途 | 接口 |
 |---|---|---|
-| **东方财富 (efinance)** | 主力数据源（行情 / K 线 / 资金流 / 业绩） | `ef.stock.*` |
-| **腾讯财经 (Tencent)** | 备援（行情） | `qt.gtimg.cn` |
+| **东方财富 (efinance)** | 主力数据源（A 股行情 / K 线 / 资金流 / 业绩） | `ef.stock.*` |
+| **腾讯财经 (Tencent)** | 备援（A 股行情） | `qt.gtimg.cn` |
+| **Massive / Polygon** | 美股行情（报价 / K 线 / 涨跌榜） | `api.massive.com`，需 `MASSIVE_API_KEY` |
+| **Yahoo Finance** | 美股备用（指数 / 利率 / VIX，`^GSPC` / `^TNX` / `^VIX` 等） | `query1.finance.yahoo.com/v8/finance/chart`，无需 key |
 | **巨潮资讯 (cninfo)** | 公告日历 | `hisAnnouncement/query` |
 
-多源 fallback 链：`CachedMarketDataAdapter(FallbackAdapter([EfinanceAdapter, TencentAdapter]))`
+多源 fallback 链：`CachedMarketDataAdapter(FallbackAdapter([MassiveAdapter, YahooAdapter, EfinanceAdapter, TencentAdapter]))`——美股代码 Massive 优先，`^` 前缀指数 Massive 无数据自动落到 Yahoo；A 股代码前两个源快速跳过走 efinance。
 
 ---
 
@@ -262,7 +264,7 @@ mommy flows pull --pool semicon --days 30
 ```
 mommy-chaogu/
 ├── src/mommy_chaogu/
-│   ├── market_data/         # 数据源适配层（efinance + tencent + fallback）
+│   ├── market_data/         # 数据源适配层（massive + yahoo 美股 + efinance + tencent fallback）
 │   ├── cache/               # SQLite 缓存（5 表 + 节流 + freshness）
 │   ├── watchlist/           # 自选股 ORM（SQLAlchemy 2.0）
 │   ├── monitor/             # 实时监控

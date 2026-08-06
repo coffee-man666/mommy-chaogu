@@ -26,8 +26,12 @@ def test_validator_requires_user_prefix_and_known_tool() -> None:
 def test_validator_checks_prior_step_and_regex() -> None:
     spec = _valid(
         steps=[
-            StepSpec("screen_inflow_stocks", "bad", {"codes": ArgSource("step_field", step_index=0)}),
-            StepSpec("check_kline_signal", "bad regex", {"codes": ArgSource("user_regex", pattern="[")}),
+            StepSpec(
+                "screen_inflow_stocks", "bad", {"codes": ArgSource("step_field", step_index=0)}
+            ),
+            StepSpec(
+                "check_kline_signal", "bad regex", {"codes": ArgSource("user_regex", pattern="[")}
+            ),
         ]
     )
     issues = validate_spec(spec)

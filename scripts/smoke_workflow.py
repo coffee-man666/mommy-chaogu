@@ -150,9 +150,21 @@ def main() -> int:
                 print(f"dry-run validation: passed (warnings={len(issues)})")
                 print(json.dumps(result.spec.to_dict(), ensure_ascii=False, indent=2))
             elif result.questions:
-                print(json.dumps({"kind": "questions", "questions": result.questions}, ensure_ascii=False, indent=2))
+                print(
+                    json.dumps(
+                        {"kind": "questions", "questions": result.questions},
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
             else:
-                print(json.dumps({"kind": "error", "errors": result.errors, "guidance": result.guidance}, ensure_ascii=False, indent=2))
+                print(
+                    json.dumps(
+                        {"kind": "error", "errors": result.errors, "guidance": result.guidance},
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
                 exit_code = 2
         return exit_code
     finally:

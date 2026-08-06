@@ -33,11 +33,12 @@ class TestWorkflowDefinitions:
             assert wf.description, f"{wf.id} 没有 description"
 
     def test_workflow_count(self) -> None:
-        assert len(WORKFLOWS) == 9
+        assert len(WORKFLOWS) == 10
 
     @pytest.mark.parametrize(
         "workflow_id",
         [
+            "us_market_brief",
             "morning_brief",
             "market_check",
             "add_watchlist",
@@ -57,13 +58,23 @@ class TestWorkflowDefinitions:
 class TestDefaultRegistry:
     def test_registry_has_all_workflows(self) -> None:
         registry = get_default_registry()
-        assert len(registry.all_workflows()) == 9
+        assert len(registry.all_workflows()) == 10
 
     def test_registry_match_morning_brief(self) -> None:
         registry = get_default_registry()
         wf = registry.match("今天怎么样")
         assert wf is not None
         assert wf.id == "morning_brief"
+
+    def test_registry_match_us_market_brief(self) -> None:
+        """美股相关输入优先命中 us_market_brief，而不是 morning_brief 的"今天.*怎么样"。"""
+        registry = get_default_registry()
+        wf = registry.match("美股今天怎么样")
+        assert wf is not None
+        assert wf.id == "us_market_brief"
+        wf2 = registry.match("纳斯达克和道琼斯表现如何")
+        assert wf2 is not None
+        assert wf2.id == "us_market_brief"
 
     def test_registry_match_stock_analysis(self) -> None:
         registry = get_default_registry()

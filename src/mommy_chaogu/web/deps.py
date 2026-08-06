@@ -20,10 +20,8 @@ from mommy_chaogu.backtest.engine import BacktestEngine
 from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
 from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 from mommy_chaogu.market_data import (
-    EfinanceAdapter,
-    FallbackAdapter,
     MarketDataAdapter,
-    TencentAdapter,
+    create_adapter_chain,
 )
 from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.semicon import SemiconStore
@@ -64,14 +62,14 @@ def get_db_path() -> Path:
 
 @lru_cache(maxsize=1)
 def get_adapter() -> MarketDataAdapter:
-    """全局数据源装饰器链：CachedMarketDataAdapter(Fallback([Efinance, Tencent]))。
+    """全局数据源装饰器链：CachedMarketDataAdapter(create_adapter_chain())。
 
     走项目核心设计（DESIGN §2 P2/P3/P4）：
-    - Fallback：主源挂 → 备源
+    - Fallback：主源挂 → 备源（Massive 美股 → Efinance A 股 → Tencent 兜底）
     - Cache：DB 有就用，没有才拉新，失败 fallback 旧数据
     """
     adapter = CachedMarketDataAdapter(
-        FallbackAdapter([EfinanceAdapter(), TencentAdapter()]),
+        create_adapter_chain(),
         CacheStore(get_market_db()),
     )
     return adapter

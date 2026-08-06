@@ -145,6 +145,9 @@ async function mockApi(page: Page) {
     if (path === '/api/market/indexes') {
       return json([{ code: 'sh000001', name: '上证指数', price: '3388.80', change_pct: '0.65', prev_close: '3366.90' }])
     }
+    if (path === '/api/market/us') {
+      return json([{ code: '^GSPC', name: '标普500', price: '7736.52', change_pct: '1.79', prev_close: '7428.78' }])
+    }
     if (path === '/api/market/gainers' || path === '/api/market/losers' || path === '/api/market/sectors') return json([])
     if (path === '/api/quotes') {
       return json({ timestamp: '2026-07-25T15:00:00Z', quotes: [quote], total_main_net: '120000000', n_codes: 1, n_up: 1, n_down: 0, n_flat: 0 })

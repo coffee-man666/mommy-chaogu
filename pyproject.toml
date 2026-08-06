@@ -99,7 +99,7 @@ ignore_errors = true
 
 # TencentAdapter 用了大量 # type: ignore[override] 实现 Protocol
 [[tool.mypy.overrides]]
-module = ["mommy_chaogu.market_data.tencent_adapter", "mommy_chaogu.market_data.fallback_adapter"]
+module = ["mommy_chaogu.market_data.tencent_adapter", "mommy_chaogu.market_data.fallback_adapter", "mommy_chaogu.market_data.massive_adapter"]
 ignore_errors = true
 
 # web 模块涉及 FastAPI 依赖注入和 Pydantic，类型相对弱

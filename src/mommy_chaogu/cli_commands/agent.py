@@ -46,11 +46,11 @@ def _build_agent_context() -> object:
     from mommy_chaogu.agent.tools import ToolContext
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.market_data import create_adapter_chain
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
 
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    base = create_adapter_chain()
     store = CacheStore(MARKET_DB)
     adapter = CachedMarketDataAdapter(base, store)
 
@@ -105,13 +105,13 @@ def run_verify(db: Path, market_db: Path | None = None) -> dict[str, int]:
     from mommy_chaogu.agent.verify_engine import verify_pending
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import MARKET_DB
-    from mommy_chaogu.market_data import EfinanceAdapter, FallbackAdapter, TencentAdapter
+    from mommy_chaogu.market_data import create_adapter_chain
 
     tracker = PredictionTracker(db)
     episodic = EpisodicMemory(db)
 
     store = CacheStore(market_db or MARKET_DB)
-    base = FallbackAdapter([EfinanceAdapter(), TencentAdapter()])
+    base = create_adapter_chain()
     adapter = CachedMarketDataAdapter(base, store)
 
     return verify_pending(
