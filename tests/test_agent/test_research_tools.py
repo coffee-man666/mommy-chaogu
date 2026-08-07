@@ -38,8 +38,8 @@ def _catalog(
     return catalog, registry
 
 
-def test_profiles_default_to_public_market_data() -> None:
-    assert normalize_mcp_profile(None) == "market-only"
+def test_profiles_default_to_personal_but_keep_public_profile() -> None:
+    assert normalize_mcp_profile(None) == "personal"
     assert "get_portfolio" not in MARKET_ONLY_BASE_TOOLS
     assert "get_memory_context" not in MARKET_ONLY_BASE_TOOLS
     assert allowed_research_tool_names("market-only") == {
@@ -172,3 +172,59 @@ def test_invalid_prediction_does_not_partially_write_event(tmp_path: Path) -> No
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
     assert EpisodicMemory(db_path).query() == []
+
+
+def test_successful_personal_research_records_fact_session(tmp_path: Path) -> None:
+    db_path = tmp_path / "agent.db"
+    catalog, _ = _catalog("personal", agent_db=db_path)
+    result = json.loads(catalog.call("research_stock", {"code": "600519"}))
+
+    assert result["memory_recorded"] is True
+    assert result["research_session_id"]
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    events = EpisodicMemory(db_path).query(code="600519")
+    assert len(events) == 1
+    assert events[0]["event_type"] == "external_research_session"
+    assert events[0]["data"]["research_session_id"] == result["research_session_id"]
+
+
+def test_conclusion_write_is_idempotent(tmp_path: Path) -> None:
+    db_path = tmp_path / "agent.db"
+    catalog, _ = _catalog("personal", agent_db=db_path)
+    args = {
+        "summary": "量价配合",
+        "scope": "stock",
+        "code": "600519",
+        "prediction": "未来 5 日偏强",
+        "direction": "up",
+        "timeframe": "5d",
+        "idempotency_key": "turn-1",
+    }
+    first = json.loads(catalog.call("record_research_conclusion", args))
+    second = json.loads(catalog.call("record_research_conclusion", args))
+
+    assert first["saved"] is True
+    assert second["reused"] is True
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    assert len(EpisodicMemory(db_path).query(code="600519")) == 1
+    assert len(PredictionTracker(db_path).by_code("600519")) == 1
+
+
+def test_structured_context_uses_exact_code_scope_without_embedding(tmp_path: Path) -> None:
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.research_context import ResearchContextService
+
+    db_path = tmp_path / "agent.db"
+    episodic = EpisodicMemory(db_path)
+    episodic.write("analysis_record", "stock:600519", "贵州茅台走势偏强", {}, code="600519")
+    episodic.write(
+        "analysis_record", "stock:000519", "其他股票摘要包含 600519 数字", {}, code="000519"
+    )
+
+    context = ResearchContextService(db_path).get(query="600519")
+
+    assert context["retrieval_mode"] == "exact+keyword"
+    assert [item["code"] for item in context["recent_events"]] == ["600519"]

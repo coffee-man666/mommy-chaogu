@@ -341,6 +341,14 @@ class SemanticMemory(EngineOwner):
             rows = s.execute(text(sql), {"limit": limit}).all()
             return [self._row_to_dict(r) for r in rows]
 
+    def count_active(self) -> int:
+        """返回 active 知识总数，不受展示 limit 影响。"""
+        with self.session() as s:
+            value = s.execute(
+                text("SELECT COUNT(*) FROM semantic_knowledge WHERE status = 'active'")
+            ).scalar()
+            return int(value or 0)
+
     def search(self, query_text: str, top_k: int = 5) -> list[dict[str, Any]]:
         """简单的关键词检索：content LIKE '%query_text%'，仅限 active 条目。"""
         sql = self._query_select_sql()

@@ -13,6 +13,10 @@ Prefer current tool evidence in this order:
 Historical memory is context, not current evidence. A prior prediction's hit rate calibrates
 confidence but does not prove the new thesis.
 
+When personal context is available, keep facts, historical memory, and model inference in
+separate sections. Use the subject-specific context returned by `get_memory_context`; do not
+request the full portfolio for a single-stock question.
+
 ## Money flow
 
 - Compute or use `bp = main net inflow / circulating market cap * 10000`.

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
@@ -81,6 +81,45 @@ class MemoryService:
             except Exception as e:
                 _log.warning("MemoryService.get_context: pipeline.build_prompt failed: %s", e)
         return SYSTEM_PROMPT
+
+    def get_structured_context(
+        self,
+        query: str | None = None,
+        *,
+        tool_context: Any | None = None,
+    ) -> dict[str, Any]:
+        """返回供外部 agent 使用的结构化个人上下文。"""
+        if tool_context is None or tool_context.resolved_agent_db is None:
+            return {
+                "schema_version": 1,
+                "subject": {"type": "query", "query": query or ""},
+                "retrieval_mode": "disabled",
+                "recent_events": [],
+                "predictions": [],
+                "semantic_knowledge": [],
+            }
+        from mommy_chaogu.agent.research_context import ResearchContextService
+
+        service = ResearchContextService.from_context(
+            tool_context,
+            embedding_enabled=getattr(tool_context, "embedding_model", None) is not None,
+        )
+        return service.get(query=query)
+
+    def health(self) -> dict[str, Any]:
+        """返回可机器读取的记忆健康状态。"""
+        if self._pipeline is None:
+            return {"status": "disabled", "retrieval_mode": "disabled"}
+        health = getattr(self._pipeline, "health", None)
+        if callable(health):
+            return cast(dict[str, Any], health())
+        stats = self.stats()
+        mode = (
+            "exact+keyword+vector"
+            if getattr(self._pipeline, "has_vector", False)
+            else "exact+keyword"
+        )
+        return {"status": "degraded", "retrieval_mode": mode, "stats": stats}
 
     def get_recent_messages(self, limit: int = 10) -> list[dict[str, str]]:
         """获取最近的对话历史（用于多轮对话上下文）。

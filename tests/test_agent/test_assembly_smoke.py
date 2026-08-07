@@ -157,7 +157,7 @@ class TestMcpServerSmoke:
         ctx = ToolContext(adapter=None, agent_db=isolated_env / "agent.db")  # type: ignore[arg-type]
         server = create_mcp_server(ctx)
 
-        # 默认隐私边界是 market-only：只发布公共工具和公共研究工作流。
+        # 新连接/直接启动默认是 personal；market-only 需要显式选择。
         assert len(server.request_handlers) > 0
 
         async def _call(name: str, arguments: dict[str, Any]) -> Any:
@@ -175,13 +175,11 @@ class TestMcpServerSmoke:
         names = {tool.name for tool in listed.root.tools}  # type: ignore[union-attr]
         assert "research_stock" in names
         assert "get_quote" in names
-        assert "get_portfolio" not in names
-        assert "get_memory_context" not in names
+        assert "get_portfolio" in names
+        assert "get_memory_context" in names
 
-        # 未发布的个人工具即使被手工请求，也必须在服务端拒绝。
-        result = asyncio.run(_call("get_prediction_history", {"limit": 1}))
-        text = result.root.content[0].text  # type: ignore[union-attr]
-        assert "未在当前 MCP profile 中开放" in text
+        result = asyncio.run(_call("get_memory_health", {}))
+        assert result.root.content[0].text  # type: ignore[union-attr]
 
     def test_personal_profile_lists_private_and_write_tools(self, isolated_env: Path) -> None:
         from mcp.types import ListToolsRequest
@@ -220,4 +218,4 @@ class TestMcpServerSmoke:
         listed = asyncio.run(server.handlers["on_list_tools"](None, None))  # type: ignore[attr-defined]
         names = {tool.name for tool in listed.tools}
         assert "get_quote" in names
-        assert "get_portfolio" not in names
+        assert "get_portfolio" in names

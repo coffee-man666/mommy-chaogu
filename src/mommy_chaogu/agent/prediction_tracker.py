@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS predictions (
     data_coverage_at_creation TEXT,
     data_coverage_at_verify TEXT,
     source_event_id INTEGER,
-    insight_event_id INTEGER
+    insight_event_id INTEGER,
+    idempotency_key TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_pred_status ON predictions(status);
@@ -139,6 +140,14 @@ class PredictionTracker(EngineOwner):
                 stmt = stmt.strip()
                 if stmt:
                     conn.execute(text(stmt))
+            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(predictions)"))}
+            if "idempotency_key" not in columns:
+                conn.execute(text("ALTER TABLE predictions ADD COLUMN idempotency_key TEXT"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_pred_idempotency ON predictions(idempotency_key)"
+                )
+            )
         self._Session = sessionmaker(self.engine, expire_on_commit=False)
 
     @contextmanager
@@ -167,6 +176,7 @@ class PredictionTracker(EngineOwner):
         change_pct_at_creation: float | None = None,
         data_coverage: dict[str, bool] | None = None,
         source_event_id: int | None = None,
+        idempotency_key: str | None = None,
     ) -> int:
         """创建一条预测，返回自增 id。
 
@@ -186,12 +196,14 @@ class PredictionTracker(EngineOwner):
                         rationale, target_price, entry_price, stop_loss,
                         change_pct_at_creation, timeframe, verify_after,
                         status, data_coverage_at_creation, source_event_id
+                        , idempotency_key
                     )
                     VALUES (
                         :created_at, :code, :name, :prediction, :direction,
                         :rationale, :target_price, :entry_price, :stop_loss,
                         :change_pct_at_creation, :timeframe, :verify_after,
-                        'pending', :data_coverage_at_creation, :source_event_id
+                        'pending', :data_coverage_at_creation, :source_event_id,
+                        :idempotency_key
                     )
                 """),
                 {
@@ -209,9 +221,19 @@ class PredictionTracker(EngineOwner):
                     "verify_after": verify_after,
                     "data_coverage_at_creation": coverage_json,
                     "source_event_id": source_event_id,
+                    "idempotency_key": idempotency_key,
                 },
             )
             return result.lastrowid or 0
+
+    def get_by_idempotency_key(self, key: str) -> dict[str, Any] | None:
+        """返回同一外部写回 key 创建的预测。"""
+        with self.session() as s:
+            row = s.execute(
+                text("SELECT * FROM predictions WHERE idempotency_key = :key LIMIT 1"),
+                {"key": key},
+            ).first()
+            return _row_to_dict(row) if row else None
 
     def get_pending(self, verify_before: str) -> list[dict[str, Any]]:
         """返回已到期且仍未验证（``status = 'pending'``）的预测。

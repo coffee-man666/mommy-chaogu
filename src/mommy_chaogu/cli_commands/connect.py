@@ -12,19 +12,24 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, NoReturn
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from mommy_chaogu.agent.research_tools import McpProfile, normalize_mcp_profile
+from mommy_chaogu.agent.research_tools import (
+    DEFAULT_MCP_PROFILE,
+    McpProfile,
+    normalize_mcp_profile,
+)
 from mommy_chaogu.config import default_user_config_dir
 from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 
 SERVER_NAME = "mommy-chaogu"
 STATE_VERSION = 1
+PRIVACY_CONSENT_VERSION = "2026-08-07.personal-v1"
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,7 @@ class ConnectionSpec:
             args=[str(item) for item in value.get("args", [])],
             env={str(key): str(item) for key, item in value.get("env", {}).items()},
             cwd=str(value.get("cwd", "")),
+            # Missing profile means a legacy connection; preserve its safe scope.
             profile=normalize_mcp_profile(str(value.get("profile", "market-only"))),
         )
 
@@ -64,28 +70,28 @@ class ConnectError(RuntimeError):
 def build_connect_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mommy-connect",
-        description="把本地投研能力连接到 Claude Code、Kimi Code 或 Cline",
+        description="把本地投研能力连接到 Claude Code、Kimi Code、Cline 或 Codex",
     )
     action = parser.add_subparsers(dest="action", required=True)
-    for target in ("claude", "kimi", "cline"):
+    for target in ("claude", "kimi", "cline", "codex"):
         connect = action.add_parser(target, help=f"连接 {_display_name(target)}")
         connect.add_argument(
             "--profile",
             choices=("market-only", "personal"),
             default=None,
-            help="隐私权限：market-only 或 personal。不指定时在交互终端会询问（非交互默认 market-only）",
+            help="隐私权限：personal（默认）或 market-only",
         )
         connect.add_argument("--force", action="store_true", help="替换同名的非托管配置或 Skill")
         connect.add_argument("--skip-test", action="store_true", help="安装后跳过 MCP 连通测试")
 
     status = action.add_parser("status", help="查看连接状态")
-    status.add_argument("target", nargs="?", choices=("claude", "kimi", "cline"))
+    status.add_argument("target", nargs="?", choices=("claude", "kimi", "cline", "codex"))
 
     disconnect = action.add_parser("disconnect", help="断开连接并删除托管的 Skill")
-    disconnect.add_argument("target", choices=("claude", "kimi", "cline", "all"))
+    disconnect.add_argument("target", choices=("claude", "kimi", "cline", "codex", "all"))
 
     test = action.add_parser("test", help="启动 MCP 并检查可用工具")
-    test.add_argument("target", choices=("claude", "kimi", "cline"))
+    test.add_argument("target", choices=("claude", "kimi", "cline", "codex"))
     return parser
 
 
@@ -93,6 +99,8 @@ def _display_name(target: str) -> str:
     """Human-readable display name for a connect target."""
     if target == "cline":
         return "Cline"
+    if target == "codex":
+        return "Codex"
     return f"{target.title()} Code"
 
 
@@ -135,6 +143,9 @@ def _agent_home(target: str) -> Path:
         return Path(override).expanduser() if override else Path.home() / ".claude"
     if target == "cline":
         return _cline_settings_dir()
+    if target == "codex":
+        override = os.environ.get("CODEX_HOME", "").strip()
+        return Path(override).expanduser() if override else Path.home() / ".codex"
     override = os.environ.get("KIMI_CODE_HOME", "").strip()
     return Path(override).expanduser() if override else Path.home() / ".kimi-code"
 
@@ -151,6 +162,10 @@ def _cline_config_path() -> Path:
 
 
 def _skill_dir(target: str) -> Path:
+    if target == "codex":
+        override = os.environ.get("CODEX_SKILLS_DIR", "").strip()
+        base = Path(override).expanduser() if override else Path.home() / ".agents" / "skills"
+        return base / "mommy-research"
     return _agent_home(target) / "skills" / "mommy-research"
 
 
@@ -243,6 +258,8 @@ def _current_mcp_entry(target: str) -> dict[str, Any] | None:
     if target == "cline":
         entry = _load_cline_config()["mcpServers"].get(SERVER_NAME)
         return entry if isinstance(entry, dict) else None
+    if target == "codex":
+        return _codex_entry()
     path = _claude_config_path()
     if not path.is_file():
         return None
@@ -279,6 +296,8 @@ def _preflight(target: str, previous: dict[str, Any] | None, *, force: bool) -> 
         exists = _claude_exists(binary)
     elif target == "cline":
         exists = SERVER_NAME in _load_cline_config()["mcpServers"]
+    elif target == "codex":
+        exists = _codex_entry() is not None
     else:
         exists = SERVER_NAME in _load_kimi_config()["mcpServers"]
     if exists and previous is None and not force:
@@ -430,6 +449,54 @@ def _register_cline(
     _save_cline_config(config)
 
 
+def _codex_entry() -> dict[str, Any] | None:
+    """读取 Codex 官方 CLI 管理的 MCP 条目。"""
+    binary = shutil.which("codex")
+    if binary is None:
+        return None
+    result = _run_command([binary, "mcp", "get", SERVER_NAME, "--json"], check=False)
+    if result.returncode != 0:
+        return None
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _register_codex(
+    spec: ConnectionSpec,
+    previous: dict[str, Any] | None,
+    *,
+    force: bool,
+) -> None:
+    binary = shutil.which("codex")
+    if binary is None:
+        raise ConnectError("没有找到 codex，请先安装 Codex CLI。")
+    current = _codex_entry()
+    if current is not None and previous is None and not force:
+        raise ConnectError(f"Codex 中已存在非托管的 {SERVER_NAME}")
+    old_spec = None
+    if previous and isinstance(previous.get("spec"), dict):
+        old_spec = ConnectionSpec.from_dict(previous["spec"])
+    if current is not None:
+        _run_command([binary, "mcp", "remove", SERVER_NAME])
+    command = [binary, "mcp", "add", SERVER_NAME]
+    for key, value in spec.env.items():
+        command.extend(["--env", f"{key}={value}"])
+    command.extend(["--", spec.command, *spec.args])
+    try:
+        _run_command(command)
+    except ConnectError:
+        if old_spec is not None:
+            restore = [binary, "mcp", "add", SERVER_NAME]
+            for key, value in old_spec.env.items():
+                restore.extend(["--env", f"{key}={value}"])
+            restore.extend(["--", old_spec.command, *old_spec.args])
+            _run_command(restore, check=False)
+        raise
+
+
 async def _probe(spec: ConnectionSpec) -> list[str]:
     process_env = dict(os.environ)
     process_env.update(spec.env)
@@ -473,22 +540,21 @@ def _probe_sync(spec: ConnectionSpec) -> list[str]:
 def _resolve_profile(profile: str | None) -> str:
     """Resolve the effective privacy profile.
 
-    An explicit ``--profile`` wins. Otherwise, when stdin is an interactive
-    terminal, ask the user to choose; in non-interactive contexts (scripts, CI,
-    tests) fall back to the safe default ``market-only``.
+    An explicit ``--profile`` wins. New connections default to ``personal``;
+    the user is still shown a clear privacy notice in an interactive terminal.
     """
     if profile:
         return normalize_mcp_profile(profile)
     if sys.stdin.isatty():
         print("选择投研数据范围：")
-        print("  1) market-only（默认）：只看公共行情，不读持仓 / 自选 / 记忆")
-        print("  2) personal：开放本地持仓、自选和历史记忆")
+        print("  1) personal（默认）：开放与任务相关的持仓 / 自选 / 记忆")
+        print("  2) market-only：只看公共行情，不读个人数据")
         try:
             choice = input("请输入 1 或 2 [1]: ").strip() or "1"
         except EOFError:
             choice = "1"
-        return "market-only" if choice == "1" else "personal"
-    return "market-only"
+        return "personal" if choice == "1" else "market-only"
+    return DEFAULT_MCP_PROFILE
 
 
 def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) -> int:
@@ -506,6 +572,8 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
         _register_claude(spec, previous, force=force)
     elif target == "cline":
         _register_cline(spec, previous, force=force)
+    elif target == "codex":
+        _register_codex(spec, previous, force=force)
     else:
         _register_kimi(spec, previous, force=force)
 
@@ -514,6 +582,9 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
         "spec": spec.as_dict(),
         "skill_path": str(skill_path),
         "skill_hash": skill_hash,
+        "privacy_consent_version": PRIVACY_CONSENT_VERSION if spec.profile == "personal" else None,
+        "connected_at": datetime.now(UTC).isoformat(),
+        "personal_capabilities": spec.profile == "personal",
     }
     _save_state(state)
 
@@ -525,7 +596,7 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
         names = _probe_sync(spec)
         print(f"   MCP 连通正常：已发现 {len(names)} 个工具。")
     if spec.profile == "market-only":
-        print("   默认未开放持仓、自选和历史记忆。")
+        print("   当前为 market-only：未开放持仓、自选和历史记忆；可用 --profile personal 重连。")
     else:
         print("   ⚠ personal 模式：被调用的个人数据会进入当前模型上下文。")
     print(f"   重新启动 {_display_name(target)} 后即可使用。")
@@ -535,7 +606,7 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
 def _status(target: str | None) -> int:
     state = _load_state()
     connections: dict[str, Any] = state["connections"]
-    targets = [target] if target else ["claude", "kimi", "cline"]
+    targets = [target] if target else ["claude", "kimi", "cline", "codex"]
     for name in targets:
         item = connections.get(name)
         if not isinstance(item, dict):
@@ -553,7 +624,13 @@ def _status(target: str | None) -> int:
         )
         state_text = "已连接" if configured else ("配置已修改" if current else "配置缺失")
         skill_text = "正常" if skill_ok else "缺失或已修改"
-        print(f"{name}: {state_text} · profile={item.get('profile')} · Skill={skill_text}")
+        profile = item.get("profile", "market-only")
+        personal = "读取/写回开启" if profile == "personal" else "个人数据隔离"
+        upgrade = " · 可用 --profile personal 重连" if profile == "market-only" else ""
+        print(
+            f"{name}: {state_text} · profile={profile} · 记忆/个人数据={personal}"
+            f"{upgrade} · Skill={skill_text}"
+        )
     return 0
 
 
@@ -592,6 +669,20 @@ def _disconnect_one(target: str, state: dict[str, Any]) -> None:
             _save_cline_config(config)
         elif current is not None:
             print("⚠ 保留已被修改的 Cline MCP 配置。")
+    elif target == "codex":
+        binary = shutil.which("codex")
+        current = _codex_entry()
+        raw_spec = item.get("spec")
+        matches = (
+            binary is not None
+            and current is not None
+            and isinstance(raw_spec, dict)
+            and _entry_matches_spec("codex", current, ConnectionSpec.from_dict(raw_spec))
+        )
+        if matches:
+            _run_command([binary, "mcp", "remove", SERVER_NAME])
+        elif current is not None:
+            print("⚠ 保留已被修改的 Codex MCP 配置。")
     else:
         config = _load_kimi_config()
         servers: dict[str, Any] = config["mcpServers"]
@@ -620,7 +711,7 @@ def _disconnect_one(target: str, state: dict[str, Any]) -> None:
 
 def _disconnect(target: str) -> int:
     state = _load_state()
-    targets = ["claude", "kimi", "cline"] if target == "all" else [target]
+    targets = ["claude", "kimi", "cline", "codex"] if target == "all" else [target]
     for name in targets:
         _disconnect_one(name, state)
     _save_state(state)
@@ -634,6 +725,16 @@ def _test(target: str) -> int:
         raise ConnectError(f"{target} 尚未连接")
     spec = ConnectionSpec.from_dict(item["spec"])
     names = _probe_sync(spec)
+    required = {
+        "get_memory_context",
+        "get_portfolio",
+        "research_portfolio",
+        "record_research_conclusion",
+    }
+    if spec.profile == "personal":
+        missing = sorted(required - set(names))
+        if missing:
+            raise ConnectError(f"personal MCP 缺少必需工具：{', '.join(missing)}")
     print(f"✅ {target} MCP 正常：{len(names)} 个工具")
     print("   " + ", ".join(names))
     return 0
@@ -641,7 +742,7 @@ def _test(target: str) -> int:
 
 def cmd_connect(args: argparse.Namespace) -> int:
     try:
-        if args.action in {"claude", "kimi", "cline"}:
+        if args.action in {"claude", "kimi", "cline", "codex"}:
             return _connect(
                 args.action,
                 args.profile,

@@ -15,7 +15,9 @@ from mommy_chaogu.cli_commands.connect import (
     _connection_spec,
     _mcp_read_timeout,
     _probe_sync,
+    _register_codex,
     _resolve_profile,
+    _skill_dir,
     build_connect_parser,
     cmd_connect,
 )
@@ -58,25 +60,25 @@ def test_resolve_profile_honors_explicit() -> None:
     assert _resolve_profile("market-only") == "market-only"
 
 
-def test_resolve_profile_defaults_to_market_only_non_tty() -> None:
+def test_resolve_profile_defaults_to_personal_non_tty() -> None:
     with patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=False):
-        assert _resolve_profile(None) == "market-only"
+        assert _resolve_profile(None) == "personal"
 
 
 def test_resolve_profile_interactive_choice() -> None:
     with (
         patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=True),
-        patch("builtins.input", return_value="2"),
+        patch("builtins.input", return_value="1"),
     ):
         assert _resolve_profile(None) == "personal"
 
 
-def test_resolve_profile_interactive_defaults_to_market_only() -> None:
+def test_resolve_profile_interactive_defaults_to_personal() -> None:
     with (
         patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=True),
         patch("builtins.input", return_value="   "),
     ):
-        assert _resolve_profile(None) == "market-only"
+        assert _resolve_profile(None) == "personal"
 
 
 def test_connection_spec_keeps_virtualenv_python_fallback() -> None:
@@ -113,13 +115,13 @@ def test_kimi_connect_preserves_other_servers_and_installs_skill(
     mcp = json.loads((kimi_home / "mcp.json").read_text(encoding="utf-8"))
     assert "github" in mcp["mcpServers"]
     mommy = mcp["mcpServers"]["mommy-chaogu"]
-    assert mommy["args"][-2:] == ["--profile", "market-only"]
+    assert mommy["args"][-2:] == ["--profile", "personal"]
     assert "MOMMY_AGENT_DB" in mommy["env"]
     assert (kimi_home / "skills" / "mommy-research" / "SKILL.md").is_file()
 
     state = json.loads((config_home / "connections.json").read_text(encoding="utf-8"))
-    assert state["connections"]["kimi"]["profile"] == "market-only"
-    assert "默认未开放持仓" in capsys.readouterr().out
+    assert state["connections"]["kimi"]["profile"] == "personal"
+    assert "personal 模式" in capsys.readouterr().out
 
 
 def test_cline_connect_installs_skill_and_mcp(
@@ -137,12 +139,12 @@ def test_cline_connect_installs_skill_and_mcp(
     assert "mommy-chaogu" in mcp["mcpServers"]
     transport = mcp["mcpServers"]["mommy-chaogu"]["transport"]
     assert transport["type"] == "stdio"
-    assert transport["args"][-2:] == ["--profile", "market-only"]
+    assert transport["args"][-2:] == ["--profile", "personal"]
     assert "MOMMY_AGENT_DB" in transport["env"]
     assert (cline_settings / "skills" / "mommy-research" / "SKILL.md").is_file()
 
     state = json.loads((config_home / "connections.json").read_text(encoding="utf-8"))
-    assert state["connections"]["cline"]["profile"] == "market-only"
+    assert state["connections"]["cline"]["profile"] == "personal"
 
 
 def test_cline_disconnect_removes_managed_entry(isolated_homes: tuple[Path, Path]) -> None:
@@ -237,3 +239,31 @@ def test_probe_lists_profile_scoped_tools(tmp_path: Path) -> None:
     assert "get_quote" in names
     assert "get_portfolio" not in names
     assert "record_research_conclusion" not in names
+
+
+def test_codex_registration_uses_official_mcp_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = ConnectionSpec(
+        command=sys.executable,
+        args=["-m", "mommy_chaogu.agent.mcp_server", "--profile", "personal"],
+        env={"MOMMY_AGENT_DB": "/tmp/agent.db"},
+        cwd=str(Path.cwd()),
+        profile="personal",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr("mommy_chaogu.cli_commands.connect.shutil.which", lambda name: "/bin/codex")
+    monkeypatch.setattr("mommy_chaogu.cli_commands.connect._codex_entry", lambda: None)
+    monkeypatch.setattr(
+        "mommy_chaogu.cli_commands.connect._run_command",
+        lambda command, check=True: calls.append(command),
+    )
+
+    _register_codex(spec, None, force=False)
+
+    assert calls[0][:4] == ["/bin/codex", "mcp", "add", "mommy-chaogu"]
+    assert "--env" in calls[0]
+    assert calls[0][-len(spec.args) :] == spec.args
+
+
+def test_codex_skill_uses_agents_skills(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("CODEX_SKILLS_DIR", str(tmp_path))
+    assert _skill_dir("codex") == tmp_path / "mommy-research"

@@ -1,6 +1,6 @@
 # Mommy Research：Coding Agent 默认个人记忆接入主计划
 
-> 状态：**活跃主计划（Active）**  
+> 状态：**实施中（Phase 1–6 核心链路已落地，Phase 7 收尾）**
 > 创建日期：2026-08-06  
 > 适用范围：Claude Code、Kimi Code、Cline，以及后续 Codex 接入  
 > 历史计划：统一存放于 `docs/archive/`
@@ -124,17 +124,17 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 
 任务：
 
-- [ ] 建立唯一常量 `DEFAULT_MCP_PROFILE = "personal"`，连接器和 MCP Server 共同引用。
-- [ ] 无参数连接和直接运行 `mommy-mcp` 时默认使用 `personal`。
-- [ ] 保留显式 `--profile market-only`。
-- [ ] 在 `connections.json` 中记录 `privacy_consent_version`、连接时间和个人能力状态。
-- [ ] `mommy connect status` 显示 profile、记忆读取、个人数据和写回能力状态。
-- [ ] `mommy connect test` 除了列工具，还验证以下工具存在：
+- [x] 建立唯一常量 `DEFAULT_MCP_PROFILE = "personal"`，连接器和 MCP Server 共同引用。
+- [x] 无参数连接和直接运行 `mommy-mcp` 时默认使用 `personal`。
+- [x] 保留显式 `--profile market-only`。
+- [x] 在 `connections.json` 中记录 `privacy_consent_version`、连接时间和个人能力状态。
+- [x] `mommy connect status` 显示 profile、记忆读取、个人数据和写回能力状态。
+- [x] `mommy connect test` 除了列工具，还验证以下工具存在：
   - `get_memory_context`
   - `get_portfolio`
   - `research_portfolio`
   - `record_research_conclusion`
-- [ ] 为旧连接增加“可升级到完整个人研究能力”的状态提示。
+- [x] 为旧连接增加“可升级到完整个人研究能力”的状态提示。
 
 验收标准：全新连接默认发布个人和记忆工具；显式 `market-only` 仍严格隐藏所有个人工具。
 
@@ -152,8 +152,8 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 
 任务：
 
-- [ ] 新增 `ResearchContextService`，返回结构化个人研究上下文，而不是完整 system prompt 字符串。
-- [ ] 定义稳定、可版本化的返回 schema：
+- [x] 新增 `ResearchContextService`，返回结构化个人研究上下文，而不是完整 system prompt 字符串。
+- [x] 定义稳定、可版本化的返回 schema：
 
 ```json
 {
@@ -170,13 +170,13 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 }
 ```
 
-- [ ] 检索优先级改为：股票代码/`scope` 精确匹配 → 名称/别名 → 关键词 → 可选向量扩展。
-- [ ] 没有本地 LLM Key 或 embedding 模型时仍能完整使用基础记忆。
-- [ ] 股票代码禁止使用两字符数字滑窗模糊匹配。
-- [ ] 每条记忆返回来源、时间、置信度和验证状态。
-- [ ] 修复 MCP `semantic_count` 被默认 limit 截断的问题。
-- [ ] 让 `research_stock`、`research_sector`、`research_money_flow`、`research_market_brief` 和 `research_portfolio` 自动附带任务相关个人上下文。
-- [ ] 保留旧 `get_memory_context` 的兼容层，内部改用新服务。
+- [x] 检索优先级改为：股票代码/`scope` 精确匹配 → 名称/别名 → 关键词 → 可选向量扩展。
+- [x] 没有本地 LLM Key 或 embedding 模型时仍能完整使用基础记忆。
+- [x] 股票代码禁止使用两字符数字滑窗模糊匹配。
+- [x] 每条记忆返回来源、时间、置信度和验证状态。
+- [x] 修复 MCP `semantic_count` 被默认 limit 截断的问题。
+- [x] 让 `research_stock`、`research_sector`、`research_money_flow`、`research_market_brief` 和 `research_portfolio` 自动附带任务相关个人上下文。
+- [x] 保留旧 `get_memory_context` 的兼容层，内部改用新服务。
 
 验收标准：无 embedding 模型时，查询 `600519` 只返回贵州茅台相关记录；不同查询返回不同且相关的上下文。
 
@@ -193,19 +193,19 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 
 任务：
 
-- [ ] 每个成功的高层 `research_*` 调用创建 `research_session_id`。
-- [ ] 服务端自动写入 `external_research_session` 事实事件，记录研究对象、证据源、数据时间和覆盖情况。
-- [ ] 扩展 `record_research_conclusion`，接受：
+- [x] 每个成功的高层 `research_*` 调用创建 `research_session_id`。
+- [x] 服务端自动写入 `external_research_session` 事实事件，记录研究对象、证据源、数据时间和覆盖情况。
+- [x] 扩展 `record_research_conclusion`，接受：
   - `research_session_id`
   - `idempotency_key`
   - `analysis_type`
   - `evidence_as_of`
   - `data_coverage`
-- [ ] 使用现有 `content_hash` 或等价机制实现幂等写入。
-- [ ] 结论事件关联事实研究事件；预测通过 `source_event_id` 关联结论事件。
-- [ ] 返回明确回执：是否保存、事件 ID、预测 ID、是否因幂等而复用。
-- [ ] 普通报价、失败研究和空证据不得自动保存为研究结论。
-- [ ] 用户单轮退出时，允许 `save_conclusion=false`，但研究工具自身的访问审计与事实记录策略按 Phase 0 决议执行。
+- [x] 使用现有 `content_hash` 或等价机制实现幂等写入。
+- [x] 结论事件关联事实研究事件；预测通过 `source_event_id` 关联结论事件。
+- [x] 返回明确回执：是否保存、事件 ID、预测 ID、是否因幂等而复用。
+- [x] 普通报价、失败研究和空证据不得自动保存为研究结论。
+- [x] 用户单轮退出时，允许 `save_conclusion=false`，但研究工具自身的访问审计与事实记录策略按 Phase 0 决议执行。
 
 验收标准：一次实质研究至少产生一个可追踪研究事件；同一写回请求执行两次不产生重复数据。
 
@@ -220,15 +220,15 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 
 任务：
 
-- [ ] 会话首次使用时调用能力/健康检查，确认当前为 `personal` 且记忆数据库可用。
-- [ ] 优先调用带个人上下文的高层 `research_*` 工具。
+- [x] 会话首次使用时调用能力/健康检查，确认当前为 `personal` 且记忆数据库可用。
+- [x] 优先调用带个人上下文的高层 `research_*` 工具。
 - [ ] 将工具事实、历史记忆和模型推断明确分层。
-- [ ] 实质分析完成后默认调用 `record_research_conclusion`。
-- [ ] 只有满足预测标准时附带 direction、timeframe 和 rationale。
-- [ ] 用户说“不要记录”时跳过结论写回。
+- [x] 实质分析完成后默认调用 `record_research_conclusion`。
+- [x] 只有满足预测标准时附带 direction、timeframe 和 rationale。
+- [x] 用户说“不要记录”时跳过结论写回。
 - [ ] 对成功写入显示简短回执，例如“已记入研究记忆”。
 - [ ] 如果连接仍为 `market-only`，停止个人研究流程并提示重新连接为 personal。
-- [ ] 修正文档中“外部 Agent 每轮全自动记忆”的旧描述，说明服务端记录与 Skill 写回的真实边界。
+- [x] 修正文档中“外部 Agent 每轮全自动记忆”的旧描述，说明服务端记录与 Skill 写回的真实边界。
 
 验收标准：Claude、Kimi、Cline 使用相同研究问题时遵循同一套读取、分析、写回顺序。
 
@@ -246,19 +246,19 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 
 任务：
 
-- [ ] 新增统一入口 `mommy memory maintain`。
-- [ ] 维护入口执行到期预测验证、索引补全和知识提炼状态检查。
+- [x] 新增统一入口 `mommy memory maintain`。
+- [x] 维护入口执行到期预测验证、索引补全和知识提炼状态检查。
 - [ ] MCP 每个自然日首次研究时异步检查一次到期预测，并通过维护状态防止重复运行。
 - [ ] 预测验证必须不依赖 LLM。
 - [ ] 有本地 LLM 时运行语义知识提炼；无 LLM 时显式报告“事件和预测正常，知识提炼待运行”。
-- [ ] 新增 `get_memory_health`，至少返回：
+- [x] 新增 `get_memory_health`，至少返回：
   - 最近读取时间
   - 最近写入时间
   - 最近预测验证时间
   - 最近知识提炼时间
   - 当前检索模式
   - 当前降级原因
-- [ ] 维护失败不得阻塞研究，但必须可见，不能只写 debug 日志。
+- [x] 维护失败不得阻塞研究，但必须可见，不能只写 debug 日志。
 
 验收标准：创建一个短期预测后，维护流程能把它从 `pending` 更新到最终状态，并在健康检查中显示最近执行结果。
 
@@ -285,8 +285,8 @@ class CodingAgentAdapter(Protocol):
 ```
 
 - [ ] 将 Claude、Kimi、Cline 的配置逻辑迁移到独立适配器。
-- [ ] 在实施前用最新官方文档验证 Codex 的 MCP、Skill 和持久化配置位置。
-- [ ] 增加 Codex 适配器和 `mommy connect codex`。
+- [x] 在实施前用最新官方文档验证 Codex 的 MCP、Skill 和持久化配置位置。
+- [x] 增加 Codex 适配器和 `mommy connect codex`。
 - [ ] 所有 Agent 共用 profile、隐私提示、健康检查和断开语义。
 - [ ] 不允许 Agent 适配器自行绕过 `market-only` 隔离。
 
@@ -298,18 +298,18 @@ class CodingAgentAdapter(Protocol):
 
 必须新增的自动化覆盖：
 
-- [ ] 新连接默认 `personal`。
-- [ ] 显式 `market-only` 完全隔离个人工具。
-- [ ] 无 LLM Key、无 embedding 的生产装配路径。
-- [ ] 股票代码和 scope 精确召回。
-- [ ] 持仓只按当前研究对象进入上下文。
-- [ ] 高层研究工具自动记录事实事件。
-- [ ] 结论写回和重试幂等。
+- [x] 新连接默认 `personal`。
+- [x] 显式 `market-only` 完全隔离个人工具。
+- [x] 无 LLM Key、无 embedding 的生产装配路径。
+- [x] 股票代码和 scope 精确召回。
+- [x] 持仓只按当前研究对象进入上下文。
+- [x] 高层研究工具自动记录事实事件。
+- [x] 结论写回和重试幂等。
 - [ ] 预测创建、事件关联和到期验证。
 - [ ] MCP stdio 真实进程测试，而不只测试内存组件。
-- [ ] Claude、Kimi、Cline、Codex 配置生成与状态检查。
+- [x] Claude、Kimi、Cline、Codex 配置生成与状态检查。
 - [ ] 存量连接迁移和明确选择保护。
-- [ ] `ruff check`、`mypy --strict src` 和全部非网络测试通过。
+- [x] `ruff check`、`mypy --strict src` 和全部非网络测试通过。
 
 发布顺序：
 

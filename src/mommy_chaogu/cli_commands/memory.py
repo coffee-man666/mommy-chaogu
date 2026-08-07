@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
 from mommy_chaogu.cli_support import *
+from mommy_chaogu.db_paths import MARKET_DB
 
 # ============================================================
 # memory 子命令（记忆系统可见性）
@@ -146,6 +149,40 @@ def cmd_memory_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def _memory_pipeline(db_path: Path):
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+
+    return MemoryPipeline(
+        episodic=EpisodicMemory(db_path),
+        tracker=PredictionTracker(db_path),
+        semantic=SemanticMemory(db_path),
+    )
+
+
+def cmd_memory_maintain(args: argparse.Namespace) -> int:
+    """执行预测验证、索引补全和知识提炼状态检查。"""
+    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.market_data import create_adapter_chain
+
+    db_path = Path(args.db)
+    pipeline = _memory_pipeline(db_path)
+    market_db = Path(args.market_db) if args.market_db else MARKET_DB
+    cache = CacheStore(market_db)
+    adapter = CachedMarketDataAdapter(create_adapter_chain(), cache)
+    result = pipeline.maintain(adapter=adapter, cache_store=cache)
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    return 0 if result.get("status") in {"ok", "deferred"} else 1
+
+
+def cmd_memory_health(args: argparse.Namespace) -> int:
+    pipeline = _memory_pipeline(Path(args.db))
+    print(json.dumps(pipeline.health(), ensure_ascii=False, indent=2, default=str))
+    return 0
+
+
 def build_memory_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mommy-memory",
@@ -189,6 +226,13 @@ def build_memory_parser() -> argparse.ArgumentParser:
     p_hi = sub.add_parser("history", help="最近对话历史")
     p_hi.add_argument("--limit", "-n", type=int, default=20, help="最多显示 N 条 (默认 20)")
     p_hi.set_defaults(func=cmd_memory_history)
+
+    p_maintain = sub.add_parser("maintain", help="执行记忆维护闭环")
+    p_maintain.add_argument("--market-db", default=str(MARKET_DB), help="行情缓存数据库")
+    p_maintain.set_defaults(func=cmd_memory_maintain)
+
+    p_health = sub.add_parser("health", help="查看记忆健康状态")
+    p_health.set_defaults(func=cmd_memory_health)
 
     return p
 

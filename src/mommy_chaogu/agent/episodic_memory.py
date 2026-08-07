@@ -52,6 +52,15 @@ CREATE INDEX IF NOT EXISTS ix_episodic_ts
 
 CREATE INDEX IF NOT EXISTS ix_episodic_code_date
     ON episodic_events(code, trade_date);
+
+CREATE TABLE IF NOT EXISTS memory_maintenance (
+    task TEXT PRIMARY KEY,
+    last_started TEXT,
+    last_completed TEXT,
+    last_status TEXT NOT NULL DEFAULT 'never',
+    last_result TEXT DEFAULT '{}',
+    last_error TEXT
+);
 """
 
 # ALTER TABLE 兼容旧库：content_hash 列可能不存在。
@@ -222,6 +231,13 @@ class EpisodicMemory(EngineOwner):
                 {"scope": scope, "content_hash": content_hash},
             ).first()
             return row is not None
+
+    def get_by_content_hash(self, scope: str, content_hash: str) -> dict[str, Any] | None:
+        """按 scope + content_hash 返回原事件，用于外部写回幂等。"""
+        sql = self._query_select_sql() + " WHERE scope = :scope AND content_hash = :content_hash"
+        with self.session() as s:
+            row = s.execute(text(sql), {"scope": scope, "content_hash": content_hash}).first()
+            return self._row_to_dict(row) if row else None
 
     def query(
         self,
@@ -415,3 +431,59 @@ class EpisodicMemory(EngineOwner):
             "earliest": earliest,
             "latest": latest,
         }
+
+    def maintenance_status(self) -> dict[str, dict[str, Any]]:
+        """返回维护任务最近一次运行状态。"""
+        with self.session() as s:
+            rows = s.execute(
+                text(
+                    "SELECT task, last_started, last_completed, last_status, last_result, last_error FROM memory_maintenance"
+                )
+            ).all()
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            try:
+                parsed = json.loads(row[4] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                parsed = {}
+            result[str(row[0])] = {
+                "last_started": row[1],
+                "last_completed": row[2],
+                "status": row[3],
+                "result": parsed,
+                "error": row[5],
+            }
+        return result
+
+    def record_maintenance(
+        self,
+        task: str,
+        *,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        started_at: str | None = None,
+    ) -> None:
+        now = _utcnow().isoformat()
+        with self.session() as s:
+            s.execute(
+                text("""
+                    INSERT INTO memory_maintenance
+                        (task, last_started, last_completed, last_status, last_result, last_error)
+                    VALUES (:task, :started, :completed, :status, :result, :error)
+                    ON CONFLICT(task) DO UPDATE SET
+                        last_started = excluded.last_started,
+                        last_completed = excluded.last_completed,
+                        last_status = excluded.last_status,
+                        last_result = excluded.last_result,
+                        last_error = excluded.last_error
+                """),
+                {
+                    "task": task,
+                    "started": started_at or now,
+                    "completed": now,
+                    "status": status,
+                    "result": json.dumps(result or {}, ensure_ascii=False),
+                    "error": error,
+                },
+            )

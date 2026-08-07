@@ -1,12 +1,12 @@
 """MCP Server：把 agent 工具暴露为 MCP 协议。
 
 任何支持 MCP 的客户端（🦞 / Claude Desktop / Kimi Code / 等）
-都可以直接连接这个 server。默认 ``market-only`` profile 只开放公共行情；
-``personal`` 才开放本地持仓、记忆和写操作。
+都可以直接连接这个 server。默认 ``personal`` profile 开放按任务读取的
+个人上下文；显式 ``market-only`` 才只开放公共行情。
 
 用法：
     # stdio 模式（最简单，Claude Desktop 等用）
-    uv run mommy-mcp --profile market-only
+    uv run mommy-mcp --profile personal
 
     # 在 Claude Desktop config.json 里配：
     {
@@ -41,6 +41,7 @@ from mcp.types import (
 )
 
 from mommy_chaogu.agent.research_tools import (
+    DEFAULT_MCP_PROFILE,
     WRITE_TOOL_NAMES,
     McpProfile,
     ResearchToolCatalog,
@@ -155,7 +156,7 @@ def _build_memory_service(
 def create_mcp_server(
     ctx: ToolContext | None = None,
     *,
-    profile: McpProfile | str = "market-only",
+    profile: McpProfile | str = DEFAULT_MCP_PROFILE,
 ) -> Server:
     """创建 MCP Server 实例。
 
@@ -253,7 +254,7 @@ def create_mcp_server(
     )  # type: ignore[call-overload]
 
 
-async def run_stdio(profile: McpProfile | str = "market-only") -> None:
+async def run_stdio(profile: McpProfile | str = DEFAULT_MCP_PROFILE) -> None:
     """stdio 模式启动（MCP 标准 transport）。"""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
     selected_profile = normalize_mcp_profile(profile)
@@ -270,8 +271,8 @@ def main_mcp() -> None:
     parser.add_argument(
         "--profile",
         choices=("market-only", "personal"),
-        default=os.environ.get("MOMMY_MCP_PROFILE", "market-only"),
-        help="隐私权限：market-only（默认）或 personal",
+        default=os.environ.get("MOMMY_MCP_PROFILE", DEFAULT_MCP_PROFILE),
+        help="隐私权限：personal（默认）或 market-only",
     )
     args = parser.parse_args()
     asyncio.run(run_stdio(args.profile))

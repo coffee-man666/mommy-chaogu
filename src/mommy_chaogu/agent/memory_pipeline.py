@@ -81,6 +81,10 @@ class MemoryPipeline:
             vector_search=self._vector_search,
         )
 
+    @property
+    def has_vector(self) -> bool:
+        return self._vector_search is not None
+
     # ------------------------------------------------------------------
     # 2. 记录分析（事实抽取）
     # ------------------------------------------------------------------
@@ -219,6 +223,58 @@ class MemoryPipeline:
         # 的定期生产触发点）
         self.embed_pending_events()
 
+    def maintain(
+        self,
+        adapter: MarketDataAdapter | None = None,
+        cache_store: Any | None = None,
+    ) -> dict[str, Any]:
+        """执行一次可观测的记忆维护，不让单个任务阻塞其他任务。"""
+        result: dict[str, Any] = {
+            "verification": None,
+            "embedding": None,
+            "consolidation": "deferred_no_llm",
+        }
+        if self._episodic is None:
+            return {"status": "disabled", **result}
+        if adapter is not None and self._tracker is not None:
+            try:
+                result["verification"] = self.verify_predictions(adapter, cache_store)
+                self._episodic.record_maintenance(
+                    "prediction_verification", status="ok", result=result["verification"]
+                )
+            except Exception as exc:
+                result["verification"] = {"error": str(exc)}
+                self._episodic.record_maintenance(
+                    "prediction_verification", status="failed", result={}, error=str(exc)
+                )
+        if self._vector_search is not None:
+            try:
+                result["embedding"] = self._vector_search.embed_pending(batch_size=50)
+                self._episodic.record_maintenance(
+                    "embedding", status="ok", result=result["embedding"]
+                )
+            except Exception as exc:
+                result["embedding"] = {"error": str(exc)}
+                self._episodic.record_maintenance("embedding", status="failed", error=str(exc))
+        if (
+            self._client is not None
+            and self._model is not None
+            and self._tracker is not None
+            and self._semantic is not None
+        ):
+            try:
+                self.consolidate()
+                result["consolidation"] = "ok"
+                self._episodic.record_maintenance("consolidation", status="ok", result={})
+            except Exception as exc:
+                result["consolidation"] = "failed"
+                self._episodic.record_maintenance("consolidation", status="failed", error=str(exc))
+        else:
+            self._episodic.record_maintenance(
+                "consolidation", status="deferred", result={"reason": "no_llm"}
+            )
+        return {"status": "ok", **result}
+
     # ------------------------------------------------------------------
     # 5. 状态快照
     # ------------------------------------------------------------------
@@ -249,13 +305,26 @@ class MemoryPipeline:
 
         if self._semantic is not None:
             try:
-                active = self._semantic.get_active()
-                snapshot["semantic_count"] = len(active)
+                snapshot["semantic_count"] = self._semantic.count_active()
             except Exception as e:
                 _log.warning("stats: semantic.get_active failed: %s", e)
             snapshot["insight_count"] = self._count_insights()
 
         return snapshot
+
+    def health(self) -> dict[str, Any]:
+        """健康检查：区分正常、降级、未启用和维护失败。"""
+        if self._episodic is None:
+            return {"status": "disabled", "retrieval_mode": "disabled", "maintenance": {}}
+        status = "ok" if self._client is not None else "degraded"
+        reason = None if self._client is not None else "未配置本地 LLM，使用 exact+keyword 基础检索"
+        return {
+            "status": status,
+            "reason": reason,
+            "retrieval_mode": "exact+keyword+vector" if self.has_vector else "exact+keyword",
+            "stats": self.stats(),
+            "maintenance": self._episodic.maintenance_status(),
+        }
 
     def _count_insights(self) -> int:
         """统计 semantic 库里 insight_summary 表的条数（表不存在则返回 0）。"""

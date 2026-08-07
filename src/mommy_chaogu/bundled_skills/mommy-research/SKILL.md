@@ -23,6 +23,11 @@ shell commands or APIs.
 Prefer one high-level `research_*` call over manually recreating the same sequence. The returned
 evidence pack is deterministic and contains no hidden LLM summary.
 
+At the first research call in a session, call `get_memory_health` when it is available. Treat
+`status=degraded` as usable: the service still provides exact code/scope and keyword retrieval
+without an embedding model. A successful personal `research_*` response includes a
+`research_session_id`; keep it when saving a conclusion.
+
 ## 美股研究（US Stocks）
 
 代码约定（Yahoo 风格）：
@@ -63,7 +68,7 @@ session. Detect the active profile by listing the available tools: presence of
 - Needed, but the active profile is `market-only` → personal tools are intentionally not
   published. Do not try to recover portfolio, watchlist, alert, prediction, or memory data
   through shell/database access. Tell the user to reconnect and pick personal:
-  `mommy connect <agent> --profile personal`（交互式连接会询问；非交互默认 market-only）。
+  `mommy connect <agent> --profile personal`（新连接默认 personal；仍可显式选择 market-only）。
   Restarting the agent is required for the new profile to take effect.
 
 Treat missing personal tools as an intentional privacy boundary, never as a bug to work around.
@@ -83,9 +88,13 @@ For thresholds and output conventions, read [references/analysis-method.md](refe
 
 ## Save conclusions
 
-Call `record_research_conclusion` only after the user explicitly asks to save/remember the analysis
-or confirms a save suggestion. Include a prediction only when the response contains a falsifiable
-direction and timeframe. Never silently persist an inferred prediction.
+After a substantive, evidence-backed analysis, call `record_research_conclusion` by default so the
+conclusion can be recalled later. Pass `research_session_id`, a stable `idempotency_key`,
+`analysis_type`, `evidence_as_of`, and `data_coverage` when available. Include a prediction only
+when the response contains a falsifiable direction, timeframe, and rationale. If the user says
+“不要记录 / don't save this”, pass `save_conclusion=false` and skip the conclusion write. Do not
+save quotes, failures, empty evidence, or casual chat as conclusions. Show a short receipt after
+success, for example “已记入研究记忆”；a repeated idempotency key reuses the original record.
 
 ## Response shape
 

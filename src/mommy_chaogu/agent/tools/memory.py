@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
@@ -103,6 +104,11 @@ DEFS: list[ToolDef] = [
             },
         },
     ),
+    ToolDef(
+        name="get_memory_health",
+        description="检查记忆数据库、检索模式和维护任务的最近运行状态。",
+        parameters={"type": "object", "properties": {}},
+    ),
 ]
 
 
@@ -144,22 +150,31 @@ def _handle_search_similar_events(ctx: ToolContext, args: dict[str, Any]) -> str
         except Exception as e:
             _log.warning("search_similar_events: 向量搜索失败，降级关键词搜索: %s", e)
 
-    # 降级：拉最近事件做关键词过滤
+    # 降级：拉最近事件做关键词过滤。股票代码必须完整匹配，禁止数字滑窗。
     events = episodic.recent(days=90, limit=limit * 10)
-    # 中文分词困难，用 2 字滑窗提取关键词
-    cleaned = query.replace("，", " ").strip()
-    tokens = cleaned.split()
-    keywords: list[str] = []
-    for token in tokens:
-        if len(token) >= 2:
-            keywords.extend(token[i : i + 2] for i in range(len(token) - 1))
+    cleaned = re.sub(r"[^\w\u4e00-\u9fff]+", " ", str(query), flags=re.UNICODE).strip()
+    tokens: list[str] = []
+    for token in cleaned.split():
+        if len(token) < 2:
+            continue
+        if token.isdigit():
+            tokens.append(token)
+        elif re.search(r"[\u4e00-\u9fff]", token):
+            tokens.extend(token[i : i + 2] for i in range(len(token) - 1))
         else:
-            keywords.append(token)
-    if keywords:
+            tokens.append(token)
+    if tokens:
         filtered = [
             e
             for e in events
-            if any(kw in (e.get("summary") or "") or kw in (e.get("name") or "") for kw in keywords)
+            if any(
+                (kw.isdigit() and str(e.get("code") or "") == kw)
+                or (
+                    not kw.isdigit()
+                    and (kw in (e.get("summary") or "") or kw in (e.get("name") or ""))
+                )
+                for kw in tokens
+            )
         ]
     else:
         filtered = events
@@ -267,7 +282,11 @@ def _handle_get_memory_context(ctx: ToolContext, args: dict[str, Any]) -> str:
         )
 
     query = args.get("query")
-    context = ms.get_context(query=query)
+    structured = getattr(ms, "get_structured_context", None)
+    if callable(structured):
+        context = structured(query=query, tool_context=ctx)
+    else:
+        context = {"legacy_prompt": ms.get_context(query=query)}
     stats = ms.stats()
 
     return _json(
@@ -279,9 +298,31 @@ def _handle_get_memory_context(ctx: ToolContext, args: dict[str, Any]) -> str:
     )
 
 
+def _handle_get_memory_health(ctx: ToolContext, _args: dict[str, Any]) -> str:
+    """返回健康状态；无 LLM 时明确说明降级而不是报告故障。"""
+    ms = ctx.memory_service
+    if ms is not None and callable(getattr(ms, "health", None)):
+        return _json(ms.health())
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"status": "disabled", "reason": "记忆数据库未配置"})
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    summary = EpisodicMemory(db_path).summary()
+    return _json(
+        {
+            "status": "degraded",
+            "reason": "memory service 未装配",
+            "episodic_count": summary["total"],
+            "retrieval_mode": "exact+keyword",
+        }
+    )
+
+
 HANDLERS: dict[str, ToolHandler] = {
     "search_similar_events": _handle_search_similar_events,
     "get_prediction_history": _handle_get_prediction_history,
     "get_market_narrative": _handle_get_market_narrative,
     "get_memory_context": _handle_get_memory_context,
+    "get_memory_health": _handle_get_memory_health,
 }
