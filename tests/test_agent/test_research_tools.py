@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -31,9 +34,15 @@ def _catalog(
     *,
     results: dict[str, Any] | None = None,
     agent_db: Path | None = None,
+    adapter: Any | None = None,
+    memory_service: Any | None = None,
 ) -> tuple[ResearchToolCatalog, FakeRegistry]:
     registry = FakeRegistry(results)
-    ctx = ToolContext(adapter=None, agent_db=agent_db)  # type: ignore[arg-type]
+    ctx = ToolContext(
+        adapter=adapter,
+        agent_db=agent_db,
+        memory_service=memory_service,
+    )  # type: ignore[arg-type]
     catalog = ResearchToolCatalog(ctx, registry, normalize_mcp_profile(profile))  # type: ignore[arg-type]
     return catalog, registry
 
@@ -96,6 +105,27 @@ def test_personal_stock_research_includes_memory_first() -> None:
     assert registry.calls[0] == ("get_memory_context", {"query": "600519"})
 
 
+def test_personal_stock_research_supports_single_call_opt_out(tmp_path: Path) -> None:
+    db_path = tmp_path / "agent.db"
+    catalog, registry = _catalog("personal", agent_db=db_path)
+    result = json.loads(
+        catalog.call(
+            "research_stock",
+            {
+                "code": "600519",
+                "use_personal_context": False,
+                "record_session": False,
+            },
+        )
+    )
+
+    assert result["memory_recorded"] is False
+    assert all(name != "get_memory_context" for name, _ in registry.calls)
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    assert EpisodicMemory(db_path).query() == []
+
+
 def test_sector_research_chains_board_code() -> None:
     catalog, registry = _catalog(
         results={"search_sector": [{"board_code": "BK0475", "name": "半导体"}]}
@@ -149,6 +179,7 @@ def test_personal_profile_records_conclusion_and_prediction(tmp_path: Path) -> N
     assert events[0]["source"] == "mcp-external-agent"
     assert prediction is not None
     assert prediction["direction"] == "up"
+    assert prediction["source_event_id"] == result["event_id"]
 
 
 def test_invalid_prediction_does_not_partially_write_event(tmp_path: Path) -> None:
@@ -213,6 +244,45 @@ def test_conclusion_write_is_idempotent(tmp_path: Path) -> None:
     assert len(PredictionTracker(db_path).by_code("600519")) == 1
 
 
+def test_idempotent_retry_repairs_missing_prediction(tmp_path: Path) -> None:
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    db_path = tmp_path / "agent.db"
+    key = "turn-after-event-commit"
+    content_hash = hashlib.sha256(f"research-conclusion:{key}".encode()).hexdigest()
+    episodic = EpisodicMemory(db_path)
+    event_id = episodic.write(
+        event_type="external_research",
+        scope="stock:600519",
+        summary="量价配合",
+        data={},
+        code="600519",
+        content_hash=content_hash,
+    )
+    catalog, _ = _catalog("personal", agent_db=db_path)
+
+    result = json.loads(
+        catalog.call(
+            "record_research_conclusion",
+            {
+                "summary": "量价配合",
+                "scope": "stock",
+                "code": "600519",
+                "prediction": "未来 5 日偏强",
+                "direction": "up",
+                "timeframe": "5d",
+                "idempotency_key": key,
+            },
+        )
+    )
+
+    assert result["event_id"] == event_id
+    assert result["prediction_id"] > 0
+    assert len(episodic.query(code="600519")) == 1
+    assert len(PredictionTracker(db_path).by_code("600519")) == 1
+
+
 def test_structured_context_uses_exact_code_scope_without_embedding(tmp_path: Path) -> None:
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
     from mommy_chaogu.agent.research_context import ResearchContextService
@@ -228,3 +298,74 @@ def test_structured_context_uses_exact_code_scope_without_embedding(tmp_path: Pa
 
     assert context["retrieval_mode"] == "exact+keyword"
     assert [item["code"] for item in context["recent_events"]] == ["600519"]
+    assert episodic.maintenance_status()["memory_read"]["status"] == "ok"
+
+
+def test_structured_context_aggregates_current_cost_basis(tmp_path: Path) -> None:
+    from mommy_chaogu.agent.research_context import ResearchContextService
+    from mommy_chaogu.portfolio.store import PortfolioStore
+
+    agent_db = tmp_path / "agent.db"
+    portfolio_db = tmp_path / "portfolio.db"
+    store = PortfolioStore(portfolio_db)
+    first = store.add_position("600519", "贵州茅台", Decimal("100"), 10)
+    store.add_adjustment(first.id, "buy", Decimal("200"), 10)
+    store.add_position("600519", "贵州茅台", Decimal("300"), 10)
+
+    context = ResearchContextService(
+        agent_db,
+        portfolio_store=store,
+        portfolio_db=portfolio_db,
+    ).get(query="600519")
+
+    assert context["position"] == {
+        "code": "600519",
+        "name": "贵州茅台",
+        "shares": 30,
+        "average_cost": "200.0000",
+        "lots": 2,
+    }
+
+
+def test_structured_context_recognizes_us_ticker_position(tmp_path: Path) -> None:
+    from mommy_chaogu.agent.research_context import ResearchContextService
+    from mommy_chaogu.portfolio.store import PortfolioStore
+
+    store = PortfolioStore(tmp_path / "portfolio.db")
+    store.add_position("AAPL", "Apple", Decimal("180"), 5)
+
+    context = ResearchContextService(
+        tmp_path / "agent.db",
+        portfolio_store=store,
+    ).get(query="分析 AAPL")
+
+    assert context["subject"] == {"type": "stock", "code": "AAPL"}
+    assert context["position"]["shares"] == 5
+
+
+def test_personal_research_schedules_daily_maintenance_once(tmp_path: Path) -> None:
+    class FakeMemoryService:
+        def __init__(self) -> None:
+            self.finished = threading.Event()
+            self.calls = 0
+
+        def maintain(self, adapter: Any) -> dict[str, Any]:
+            self.calls += 1
+            self.finished.set()
+            return {"status": "degraded", "consolidation": "deferred_no_llm"}
+
+    memory_service = FakeMemoryService()
+    catalog, _ = _catalog(
+        "personal",
+        agent_db=tmp_path / "agent.db",
+        adapter=object(),
+        memory_service=memory_service,
+    )
+
+    json.loads(catalog.call("research_stock", {"code": "600519"}))
+    assert memory_service.finished.wait(timeout=2)
+    memory_service.finished.clear()
+    json.loads(catalog.call("research_stock", {"code": "600519"}))
+
+    assert memory_service.calls == 1
+    assert not memory_service.finished.wait(timeout=0.05)

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from mommy_chaogu.cli import build_memory_parser, cmd_memory_stats
+from mommy_chaogu.cli_commands.memory import _memory_pipeline
 
 
 def test_build_memory_parser_has_subcommands():
@@ -20,7 +22,15 @@ def test_build_memory_parser_has_subcommands():
             break
     assert sub_action is not None
     choices = set(sub_action.choices.keys())
-    assert {"stats", "events", "predictions", "knowledge", "history"}.issubset(choices)
+    assert {
+        "stats",
+        "events",
+        "predictions",
+        "knowledge",
+        "history",
+        "maintain",
+        "health",
+    }.issubset(choices)
 
 
 def test_memory_parser_default_db_is_agent_db():
@@ -30,6 +40,34 @@ def test_memory_parser_default_db_is_agent_db():
     parser = build_memory_parser()
     args = parser.parse_args(["--db", str(AGENT_DB), "stats"])
     assert Path(args.db) == AGENT_DB
+
+
+def test_memory_pipeline_uses_configured_llm(tmp_path: Path) -> None:
+    client = MagicMock()
+    with patch(
+        "mommy_chaogu.agent.mcp_server._build_llm",
+        return_value=(client, "test-model", None),
+    ):
+        pipeline = _memory_pipeline(tmp_path / "agent.db")
+
+    assert pipeline.health()["status"] == "ok"
+
+
+def test_memory_pipeline_vector_failure_degrades_cleanly(tmp_path: Path) -> None:
+    client = MagicMock()
+    with (
+        patch(
+            "mommy_chaogu.agent.mcp_server._build_llm",
+            return_value=(client, "test-model", "embedding-model"),
+        ),
+        patch(
+            "mommy_chaogu.agent.vector_search.VectorSearch",
+            side_effect=RuntimeError("extension unavailable"),
+        ),
+    ):
+        pipeline = _memory_pipeline(tmp_path / "agent.db")
+
+    assert pipeline.health()["retrieval_mode"] == "exact+keyword"
 
 
 def test_memory_stats_runs_with_empty_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

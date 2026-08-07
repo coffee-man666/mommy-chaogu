@@ -129,13 +129,14 @@ uv run mommy connect status
 uv run mommy connect test claude
 ```
 
-连接命令会注册本地 stdio MCP Server、安装 `mommy-research` Skill，并执行连通测试。默认
-`market-only` 只发布公共行情和研究工具，不读取持仓、自选和历史记忆，也不写入结论。
+连接命令会注册本地 stdio MCP Server、安装 `mommy-research` Skill，并执行连通测试。新连接
+默认 `personal`：按研究对象读取相关持仓、自选和历史记忆，记录事实研究事件，并在实质分析后
+写回结论。
 
-明确需要个人投研闭环时才切换：
+如需完全关闭个人能力，显式切换为公共市场模式：
 
 ```bash
-uv run mommy connect claude --profile personal
+uv run mommy connect claude --profile market-only
 uv run mommy connect test claude
 ```
 

@@ -104,8 +104,8 @@ src/mommy_chaogu/
 2. **底层 CLI 子命令**（向后兼容，高级用户 + CI）
    - `mommy-watchlist` / `mommy-monitor` / `mommy-cache` / `mommy-flows` 等
    - 这些命令保留向后兼容，推荐使用 `mommy <子命令>` 风格
-   - `mommy connect claude|kimi|cline` → 安装投研 Skill + 注册本地 MCP；默认 market-only，
-     显式 `--profile personal` 才开放持仓、记忆和写回
+   - `mommy connect claude|kimi|cline|codex` → 安装投研 Skill + 注册本地 MCP；默认 personal，
+     按任务开放相关持仓、记忆和写回；显式 `--profile market-only` 可完全关闭个人能力
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：
 - `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor

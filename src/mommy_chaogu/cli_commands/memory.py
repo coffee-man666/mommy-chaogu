@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
@@ -151,14 +152,28 @@ def cmd_memory_history(args: argparse.Namespace) -> int:
 
 def _memory_pipeline(db_path: Path):
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.mcp_server import _build_llm
     from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
     from mommy_chaogu.agent.prediction_tracker import PredictionTracker
     from mommy_chaogu.agent.semantic_memory import SemanticMemory
 
+    episodic = EpisodicMemory(db_path)
+    client, model, embedding_model = _build_llm()
+    vector_search = None
+    if client is not None and embedding_model is not None:
+        from mommy_chaogu.agent.vector_search import VectorSearch
+
+        try:
+            vector_search = VectorSearch(episodic, client, model=embedding_model)
+        except Exception as exc:
+            logging.warning("向量检索初始化失败，降级为精确和关键词检索: %s", exc)
     return MemoryPipeline(
-        episodic=EpisodicMemory(db_path),
+        episodic=episodic,
         tracker=PredictionTracker(db_path),
         semantic=SemanticMemory(db_path),
+        vector_search=vector_search,
+        client=client,
+        model=model,
     )
 
 
@@ -174,7 +189,7 @@ def cmd_memory_maintain(args: argparse.Namespace) -> int:
     adapter = CachedMarketDataAdapter(create_adapter_chain(), cache)
     result = pipeline.maintain(adapter=adapter, cache_store=cache)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-    return 0 if result.get("status") in {"ok", "deferred"} else 1
+    return 0 if result.get("status") in {"ok", "degraded", "deferred"} else 1
 
 
 def cmd_memory_health(args: argparse.Namespace) -> int:

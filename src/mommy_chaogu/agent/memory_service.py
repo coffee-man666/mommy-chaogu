@@ -100,11 +100,18 @@ class MemoryService:
             }
         from mommy_chaogu.agent.research_context import ResearchContextService
 
-        service = ResearchContextService.from_context(
-            tool_context,
-            embedding_enabled=getattr(tool_context, "embedding_model", None) is not None,
-        )
+        service = ResearchContextService.from_context(tool_context)
         return service.get(query=query)
+
+    def maintain(
+        self,
+        adapter: MarketDataAdapter | None = None,
+        cache_store: Any | None = None,
+    ) -> dict[str, Any]:
+        """执行一次记忆维护；供 CLI 和 MCP 后台调度共用。"""
+        if self._pipeline is None:
+            return {"status": "disabled"}
+        return self._pipeline.maintain(adapter=adapter, cache_store=cache_store)
 
     def health(self) -> dict[str, Any]:
         """返回可机器读取的记忆健康状态。"""

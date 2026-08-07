@@ -193,7 +193,7 @@ class MemoryPipeline:
     # 4. 提炼（离线知识归纳）
     # ------------------------------------------------------------------
 
-    def consolidate(self) -> None:
+    def consolidate(self) -> bool:
         """从 episodic + tracker 提炼语义知识（板块叙事 / 市场状态 / 规律）。
 
         - ``client`` 为 ``None`` → 跳过（提炼依赖 LLM）；
@@ -202,10 +202,10 @@ class MemoryPipeline:
         """
         if self._client is None or self._model is None:
             _log.debug("consolidate: no LLM client/model, skipping")
-            return
+            return False
         if self._episodic is None or self._tracker is None or self._semantic is None:
             _log.debug("consolidate: memory components missing, skipping")
-            return
+            return False
 
         try:
             consolidator = MemoryConsolidator(
@@ -218,10 +218,12 @@ class MemoryPipeline:
             consolidator.consolidate_all()
         except Exception as e:
             _log.warning("consolidate: failed: %s", e)
+            return False
 
         # 提炼后顺带为存量事件补 embedding（cron consolidate 是向量子系统
         # 的定期生产触发点）
         self.embed_pending_events()
+        return True
 
     def maintain(
         self,
@@ -263,9 +265,14 @@ class MemoryPipeline:
             and self._semantic is not None
         ):
             try:
-                self.consolidate()
-                result["consolidation"] = "ok"
-                self._episodic.record_maintenance("consolidation", status="ok", result={})
+                consolidated = self.consolidate()
+                result["consolidation"] = "ok" if consolidated else "failed"
+                self._episodic.record_maintenance(
+                    "consolidation",
+                    status="ok" if consolidated else "failed",
+                    result={},
+                    error=None if consolidated else "consolidator returned failure",
+                )
             except Exception as exc:
                 result["consolidation"] = "failed"
                 self._episodic.record_maintenance("consolidation", status="failed", error=str(exc))
@@ -273,7 +280,15 @@ class MemoryPipeline:
             self._episodic.record_maintenance(
                 "consolidation", status="deferred", result={"reason": "no_llm"}
             )
-        return {"status": "ok", **result}
+        failed = (
+            (isinstance(result["verification"], dict) and "error" in result["verification"])
+            or (isinstance(result["embedding"], dict) and "error" in result["embedding"])
+            or result["consolidation"] == "failed"
+        )
+        status = "failed" if failed else "ok"
+        if not failed and result["consolidation"] == "deferred_no_llm":
+            status = "degraded"
+        return {"status": status, **result}
 
     # ------------------------------------------------------------------
     # 5. 状态快照
@@ -316,14 +331,28 @@ class MemoryPipeline:
         """健康检查：区分正常、降级、未启用和维护失败。"""
         if self._episodic is None:
             return {"status": "disabled", "retrieval_mode": "disabled", "maintenance": {}}
-        status = "ok" if self._client is not None else "degraded"
-        reason = None if self._client is not None else "未配置本地 LLM，使用 exact+keyword 基础检索"
+        maintenance = self._episodic.maintenance_status()
+        failed_tasks = sorted(
+            task for task, state in maintenance.items() if state.get("status") == "failed"
+        )
+        if failed_tasks:
+            status = "failed"
+            reason = f"记忆维护失败: {', '.join(failed_tasks)}"
+        elif self._client is None:
+            status = "degraded"
+            reason = "未配置本地 LLM，事件和预测可用，知识提炼待运行"
+        else:
+            status = "ok"
+            reason = None
+        latest = self._episodic.summary().get("latest")
         return {
             "status": status,
             "reason": reason,
             "retrieval_mode": "exact+keyword+vector" if self.has_vector else "exact+keyword",
             "stats": self.stats(),
-            "maintenance": self._episodic.maintenance_status(),
+            "last_read_at": maintenance.get("memory_read", {}).get("last_completed"),
+            "last_write_at": latest,
+            "maintenance": maintenance,
         }
 
     def _count_insights(self) -> int:

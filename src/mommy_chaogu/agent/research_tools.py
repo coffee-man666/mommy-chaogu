@@ -13,9 +13,10 @@ import json
 import logging
 import math
 import re
+import threading
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
@@ -51,7 +52,21 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
     {"backfill_history", "manage_watchlist", "manage_alert", "record_research_conclusion"}
 )
 
-_CODE_RE = re.compile(r"^(\^[A-Z]{1,6}|[A-Z]{1,6}|\d{6})$")
+_CODE_RE = re.compile(r"^(\^[A-Z]{1,6}|[A-Z]{1,6}(?:[.-][A-Z])?|\d{6})$")
+
+_RESEARCH_CONTROL_PROPERTIES: dict[str, Any] = {
+    "research_session_id": {"type": "string", "description": "重试同一研究时复用"},
+    "use_personal_context": {
+        "type": "boolean",
+        "default": True,
+        "description": "personal 模式下是否读取相关持仓和记忆",
+    },
+    "record_session": {
+        "type": "boolean",
+        "default": True,
+        "description": "是否记录事实型研究事件",
+    },
+}
 
 
 RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
@@ -71,7 +86,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                     "minimum": 1,
                     "maximum": 30,
                 },
-                "research_session_id": {"type": "string", "description": "重试同一研究时复用"},
+                **_RESEARCH_CONTROL_PROPERTIES,
             },
         },
     ),
@@ -83,7 +98,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         ),
         parameters={
             "type": "object",
-            "properties": {"research_session_id": {"type": "string"}},
+            "properties": {**_RESEARCH_CONTROL_PROPERTIES},
         },
     ),
     ToolDef(
@@ -97,7 +112,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "pattern": "^([A-Z]{1,6}(?:[.-][A-Z])?|\\d{6})$",
                     "description": "股票代码（A 股 6 位数字或美股字母）",
                 },
                 "days": {
@@ -107,7 +122,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                     "minimum": 5,
                     "maximum": 60,
                 },
-                "research_session_id": {"type": "string", "description": "重试同一研究时复用"},
+                **_RESEARCH_CONTROL_PROPERTIES,
             },
             "required": ["code"],
         },
@@ -129,7 +144,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                     "minimum": 1,
                     "maximum": 30,
                 },
-                "research_session_id": {"type": "string", "description": "重试同一研究时复用"},
+                **_RESEARCH_CONTROL_PROPERTIES,
             },
             "required": ["keyword"],
         },
@@ -145,7 +160,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "pattern": "^([A-Z]{1,6}(?:[.-][A-Z])?|\\d{6})$",
                     "description": "股票代码（A 股 6 位数字或美股字母）",
                 },
                 "days": {
@@ -155,7 +170,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                     "minimum": 1,
                     "maximum": 60,
                 },
-                "research_session_id": {"type": "string", "description": "重试同一研究时复用"},
+                **_RESEARCH_CONTROL_PROPERTIES,
             },
             "required": ["code"],
         },
@@ -166,13 +181,13 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
             "PERSONAL 数据：获取本地持仓、实时报价、组合风险和相关历史记忆。"
             "仅 personal profile 发布；结果会进入当前模型上下文。"
         ),
-        parameters={"type": "object", "properties": {}},
+        parameters={"type": "object", "properties": {**_RESEARCH_CONTROL_PROPERTIES}},
     ),
     ToolDef(
         name="record_research_conclusion",
         description=(
             "PERSONAL 写操作：把外部 Agent 的研究结论写入本地记忆，可同时登记待验证预测。"
-            "必须先获得用户明确同意再调用；仅 personal profile 发布。"
+            "实质研究后默认调用；用户可用 save_conclusion=false 明确跳过。仅 personal profile 发布。"
         ),
         parameters={
             "type": "object",
@@ -185,7 +200,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                 },
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "pattern": "^([A-Z]{1,6}(?:[.-][A-Z])?|\\d{6})$",
                     "description": "股票代码（A 股 6 位数字或美股字母）",
                 },
                 "name": {"type": "string", "description": "股票或板块名称"},
@@ -334,6 +349,7 @@ class ResearchToolCatalog:
         *,
         subject: dict[str, Any] | None = None,
         research_session_id: str | None = None,
+        record_session: bool = True,
     ) -> dict[str, Any]:
         session_id = research_session_id or str(uuid.uuid4())
         payload: dict[str, Any] = {
@@ -351,14 +367,50 @@ class ResearchToolCatalog:
             ],
         }
         ok_evidence = [item for item in evidence if item.ok and item.tool != "get_memory_context"]
-        if self.profile == "personal" and ok_evidence:
+        if self.profile == "personal" and ok_evidence and record_session:
             payload["research_session_id"] = session_id
             payload["memory_recorded"] = self._record_research_session(
                 session_id, research_type, subject or {}, evidence
             )
         else:
             payload["memory_recorded"] = False
+        if self.profile == "personal" and ok_evidence:
+            self._schedule_daily_maintenance()
         return payload
+
+    def _schedule_daily_maintenance(self) -> None:
+        """每个自然日首次研究时在后台维护预测与知识，不阻塞工具响应。"""
+        db_path = self._ctx.resolved_agent_db
+        memory_service = self._ctx.memory_service
+        adapter = self._ctx.adapter
+        maintain = getattr(memory_service, "maintain", None)
+        if db_path is None or adapter is None or not callable(maintain):
+            return
+
+        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+        episodic = EpisodicMemory(db_path)
+        local_now = datetime.now().astimezone()
+        local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if not episodic.claim_maintenance(
+            "daily_auto",
+            interval=max(local_now - local_midnight, timedelta(microseconds=1)),
+        ):
+            episodic.close()
+            return
+
+        def _run() -> None:
+            try:
+                result = maintain(adapter=adapter)
+                status = str(result.get("status", "failed"))
+                episodic.record_maintenance("daily_auto", status=status, result=result)
+            except Exception as exc:
+                _log.warning("daily memory maintenance failed: %s", exc)
+                episodic.record_maintenance("daily_auto", status="failed", error=str(exc))
+            finally:
+                episodic.close()
+
+        threading.Thread(target=_run, name="mommy-memory-maintain", daemon=True).start()
 
     def _record_research_session(
         self,
@@ -432,7 +484,7 @@ class ResearchToolCatalog:
     def _market_brief(self, args: dict[str, Any]) -> dict[str, Any]:
         limit = self._int_arg(args, "sector_limit", 10, 1, 30)
         evidence: list[_Evidence] = []
-        if self.profile == "personal":
+        if self.profile == "personal" and _use_personal_context(args):
             evidence.append(self._call("get_memory_context", {"query": "市场"}))
         evidence.extend(
             [
@@ -445,17 +497,23 @@ class ResearchToolCatalog:
             evidence,
             ["判断主要指数方向和市场广度", "识别领涨与领跌板块", "给出下一步观察点"],
             research_session_id=_optional_session_id(args),
+            record_session=_record_session(args),
         )
 
-    def _us_market_brief(self, _args: dict[str, Any]) -> dict[str, Any]:
+    def _us_market_brief(self, args: dict[str, Any]) -> dict[str, Any]:
         """美股市场概览：三大指数 + VIX + 10 年期美债利率。"""
-        evidence = [
-            self._call("get_quote", {"code": "^GSPC"}),
-            self._call("get_quote", {"code": "^IXIC"}),
-            self._call("get_quote", {"code": "^DJI"}),
-            self._call("get_quote", {"code": "^VIX"}),
-            self._call("get_quote", {"code": "^TNX"}),
-        ]
+        evidence: list[_Evidence] = []
+        if self.profile == "personal" and _use_personal_context(args):
+            evidence.append(self._call("get_memory_context", {"query": "美股市场"}))
+        evidence.extend(
+            [
+                self._call("get_quote", {"code": "^GSPC"}),
+                self._call("get_quote", {"code": "^IXIC"}),
+                self._call("get_quote", {"code": "^DJI"}),
+                self._call("get_quote", {"code": "^VIX"}),
+                self._call("get_quote", {"code": "^TNX"}),
+            ]
+        )
         return self._pack(
             "us_market_brief",
             evidence,
@@ -466,14 +524,15 @@ class ResearchToolCatalog:
                 "单日涨跌不能外推为趋势，列出使结论失效的风险条件",
             ],
             subject={"indexes": ["^GSPC", "^IXIC", "^DJI", "^VIX", "^TNX"]},
-            research_session_id=_optional_session_id(_args),
+            research_session_id=_optional_session_id(args),
+            record_session=_record_session(args),
         )
 
     def _stock(self, args: dict[str, Any]) -> dict[str, Any]:
         code = self._code(args)
         days = self._int_arg(args, "days", 20, 5, 60)
         evidence = []
-        if self.profile == "personal":
+        if self.profile == "personal" and _use_personal_context(args):
             evidence.append(self._call("get_memory_context", {"query": code}))
         evidence.extend(
             [
@@ -495,6 +554,7 @@ class ResearchToolCatalog:
             ],
             subject={"code": code, "days": days},
             research_session_id=_optional_session_id(args),
+            record_session=_record_session(args),
         )
 
     def _sector(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -504,7 +564,7 @@ class ResearchToolCatalog:
         limit = self._int_arg(args, "limit", 10, 1, 30)
         search = self._call("search_sector", {"keyword": keyword})
         evidence: list[_Evidence] = []
-        if self.profile == "personal":
+        if self.profile == "personal" and _use_personal_context(args):
             evidence.append(self._call("get_memory_context", {"query": keyword}))
         evidence.extend([search, self._call("get_sector_ranking", {"limit": 20})])
         board_code = _first_board_code(search.data) if search.ok else None
@@ -523,13 +583,14 @@ class ResearchToolCatalog:
             ["判断板块相对大盘强弱", "检查上涨是否由少数龙头驱动", "列出领涨股与分化风险"],
             subject={"keyword": keyword, "board_code": board_code},
             research_session_id=_optional_session_id(args),
+            record_session=_record_session(args),
         )
 
     def _money_flow(self, args: dict[str, Any]) -> dict[str, Any]:
         code = self._code(args)
         days = self._int_arg(args, "days", 10, 1, 60)
         evidence: list[_Evidence] = []
-        if self.profile == "personal":
+        if self.profile == "personal" and _use_personal_context(args):
             evidence.append(self._call("get_memory_context", {"query": code}))
         evidence.extend(
             [
@@ -548,9 +609,12 @@ class ResearchToolCatalog:
             ],
             subject={"code": code, "days": days},
             research_session_id=_optional_session_id(args),
+            record_session=_record_session(args),
         )
 
-    def _portfolio(self, _: dict[str, Any]) -> dict[str, Any]:
+    def _portfolio(self, args: dict[str, Any]) -> dict[str, Any]:
+        if not _use_personal_context(args):
+            raise ValueError("research_portfolio 需要个人数据；请改用公共市场研究工具")
         portfolio = self._call("get_portfolio", {})
         evidence = [self._call("get_memory_context", {"query": "持仓"}), portfolio]
         codes = _portfolio_codes(portfolio.data) if portfolio.ok else []
@@ -566,7 +630,8 @@ class ResearchToolCatalog:
                 "不得在缺少成本价或仓位数据时推断收益",
             ],
             subject={"codes": codes},
-            research_session_id=_optional_session_id(_),
+            research_session_id=_optional_session_id(args),
+            record_session=_record_session(args),
         )
 
     def _record_conclusion(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -580,7 +645,7 @@ class ResearchToolCatalog:
             raise ValueError("scope 必须是 market、sector、stock 或 portfolio")
         code = str(args.get("code", "")).strip() or None
         if code is not None and not _CODE_RE.fullmatch(code):
-            raise ValueError("code 必须是 6 位股票代码")
+            raise ValueError("code 必须是 A 股 6 位代码或有效美股代码")
         confidence = float(args.get("confidence", 0.5))
         if not math.isfinite(confidence):
             raise ValueError("confidence 必须是 0 到 1 之间的有限数字")
@@ -614,37 +679,43 @@ class ResearchToolCatalog:
         content_hash: str | None = None
         idempotency_key = str(args.get("idempotency_key", "")).strip()
         scope_key = f"stock:{code}" if scope == "stock" and code else scope
+        existing_event: dict[str, Any] | None = None
         if idempotency_key:
             content_hash = hashlib.sha256(
                 f"research-conclusion:{idempotency_key}".encode()
             ).hexdigest()
-            existing = episodic.get_by_content_hash(scope_key, content_hash)
-            if existing is not None:
+            existing_event = episodic.get_by_content_hash(scope_key, content_hash)
+            if existing_event is not None and (
+                not prediction or existing_event.get("prediction_id") is not None
+            ):
                 return {
                     "saved": True,
                     "reused": True,
-                    "event_id": existing["id"],
-                    "prediction_id": existing.get("prediction_id"),
+                    "event_id": existing_event["id"],
+                    "prediction_id": existing_event.get("prediction_id"),
                     "message": "研究结论已存在，复用原记录。",
                 }
-        event_id = episodic.write(
-            event_type="external_research",
-            scope=f"stock:{code}" if scope == "stock" and code else scope,
-            summary=summary,
-            data={
-                "rationale": args.get("rationale"),
-                "research_session_id": args.get("research_session_id"),
-                "analysis_type": args.get("analysis_type"),
-                "evidence_as_of": args.get("evidence_as_of"),
-                "data_coverage": args.get("data_coverage") or {},
-            },
-            code=code,
-            name=str(args.get("name", "")).strip() or None,
-            tags=["external-agent", "mcp"],
-            source="mcp-external-agent",
-            confidence=confidence,
-            content_hash=content_hash,
-        )
+        if existing_event is not None:
+            event_id = int(existing_event["id"])
+        else:
+            event_id = episodic.write(
+                event_type="external_research",
+                scope=f"stock:{code}" if scope == "stock" and code else scope,
+                summary=summary,
+                data={
+                    "rationale": args.get("rationale"),
+                    "research_session_id": args.get("research_session_id"),
+                    "analysis_type": args.get("analysis_type"),
+                    "evidence_as_of": args.get("evidence_as_of"),
+                    "data_coverage": args.get("data_coverage") or {},
+                },
+                code=code,
+                name=str(args.get("name", "")).strip() or None,
+                tags=["external-agent", "mcp"],
+                source="mcp-external-agent",
+                confidence=confidence,
+                content_hash=content_hash,
+            )
 
         prediction_id: int | None = None
         if prediction:
@@ -725,6 +796,14 @@ def _optional_decimal(value: Any) -> Decimal | None:
 def _optional_session_id(args: dict[str, Any]) -> str | None:
     value = str(args.get("research_session_id", "")).strip()
     return value or None
+
+
+def _use_personal_context(args: dict[str, Any]) -> bool:
+    return args.get("use_personal_context") is not False
+
+
+def _record_session(args: dict[str, Any]) -> bool:
+    return args.get("record_session") is not False
 
 
 def _evidence_as_of(data: Any) -> str | None:

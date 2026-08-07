@@ -639,15 +639,16 @@ uv run mommy connect status
 uv run mommy connect test kimi
 ```
 
-默认 `market-only` 只开放公共行情、K 线、资金流、基本面、板块和 4 个只读研究工作流。
-如果用户明确同意把持仓、自选和历史记忆提供给当前模型上下文，再执行：
+新连接默认 `personal`：高层研究工具按当前标的或组合最小化读取持仓、自选和历史记忆，
+自动记录事实研究事件，并在实质分析后写回结论。若要完全关闭个人能力，执行：
 
 ```bash
-uv run mommy connect kimi --profile personal
+uv run mommy connect kimi --profile market-only
 ```
 
-personal 会额外开放持仓、记忆、告警以及 `research_portfolio` 和
-`record_research_conclusion`。写回工具必须由用户明确要求或确认后调用。
+用户也可在单轮要求“不使用个人数据”或“不要记录”；Skill 会关闭该轮个人上下文和写回。
+显式 `market-only` 不开放持仓、记忆、告警、`research_portfolio` 或
+`record_research_conclusion`，不得通过文件或数据库访问绕过这一边界。
 
 ```bash
 # 安全断开；不会删除其他 MCP Server，修改过的 Skill 也会保留

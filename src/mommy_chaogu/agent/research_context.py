@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 from mommy_chaogu.agent.semantic_memory import SemanticMemory
 
-_CODE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
+_CODE_RE = re.compile(r"(?<![A-Z0-9])(\^?[A-Z]{1,6}(?:[.-][A-Z])?|\d{6})(?![A-Z0-9])")
 
 
 class ResearchContextService:
@@ -31,19 +32,17 @@ class ResearchContextService:
         portfolio_store: Any | None = None,
         watchlist_store: Any | None = None,
         portfolio_db: Path | None = None,
-        embedding_enabled: bool = False,
     ) -> None:
         self._agent_db = agent_db
         self._portfolio_store = portfolio_store
         self._watchlist_store = watchlist_store
         self._portfolio_db = portfolio_db
-        self._embedding_enabled = embedding_enabled
         self._episodic = EpisodicMemory(agent_db)
         self._tracker = PredictionTracker(agent_db)
         self._semantic = SemanticMemory(agent_db)
 
     @classmethod
-    def from_context(cls, ctx: Any, *, embedding_enabled: bool = False) -> ResearchContextService:
+    def from_context(cls, ctx: Any) -> ResearchContextService:
         db_path = ctx.resolved_agent_db
         if db_path is None:
             raise ValueError("记忆数据库未配置")
@@ -52,7 +51,6 @@ class ResearchContextService:
             portfolio_store=ctx.portfolio_store,
             watchlist_store=ctx.watchlist_store,
             portfolio_db=ctx.resolved_portfolio_db,
-            embedding_enabled=embedding_enabled,
         )
 
     def get(
@@ -84,13 +82,18 @@ class ResearchContextService:
             "recent_events": events,
             "predictions": predictions,
             "semantic_knowledge": knowledge,
-            "retrieval_mode": "exact+keyword" + ("+vector" if self._embedding_enabled else ""),
+            "retrieval_mode": "exact+keyword",
             "freshness": {
                 "retrieved_at": datetime.now(UTC).isoformat(),
                 "events_as_of": events[0].get("timestamp") if events else None,
                 "predictions_as_of": predictions[0].get("created_at") if predictions else None,
             },
         }
+        self._episodic.record_maintenance(
+            "memory_read",
+            status="ok",
+            result={"subject": subject},
+        )
         return result
 
     @staticmethod
@@ -185,15 +188,31 @@ class ResearchContextService:
     def _position(self, code: str | None) -> dict[str, Any]:
         if not code or self._portfolio_store is None:
             return {}
-        for position in self._portfolio_store.list_positions():
-            if position.code == code:
-                return {
-                    "code": position.code,
-                    "name": position.name,
-                    "shares": int(position.shares),
-                    "buy_price": str(position.buy_price),
-                }
-        return {}
+        positions = [
+            position for position in self._portfolio_store.list_positions() if position.code == code
+        ]
+        if not positions:
+            return {}
+
+        total_shares = 0
+        total_cost = Decimal("0")
+        for position in positions:
+            average_cost, shares = self._portfolio_store.cost_basis(position)
+            total_shares += shares
+            total_cost += average_cost * shares
+
+        average_cost = (
+            (total_cost / total_shares).quantize(Decimal("0.0001"))
+            if total_shares > 0
+            else Decimal("0")
+        )
+        return {
+            "code": code,
+            "name": next((position.name for position in positions if position.name), None),
+            "shares": total_shares,
+            "average_cost": str(average_cost),
+            "lots": len(positions),
+        }
 
     def _watchlist(self, code: str | None) -> dict[str, Any]:
         if not code or self._watchlist_store is None:

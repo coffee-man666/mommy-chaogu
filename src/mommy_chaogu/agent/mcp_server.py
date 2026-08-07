@@ -179,7 +179,12 @@ def create_mcp_server(
     allowed_research = {tool.name for tool in research_defs}
 
     def _annotations(name: str) -> ToolAnnotations:
-        is_write = name in WRITE_TOOL_NAMES
+        auto_records_research = (
+            selected_profile == "personal"
+            and name in allowed_research
+            and name != "record_research_conclusion"
+        )
+        is_write = name in WRITE_TOOL_NAMES or auto_records_research
         return ToolAnnotations(
             readOnlyHint=not is_write,
             destructiveHint=False,

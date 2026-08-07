@@ -199,7 +199,22 @@ class TestMcpServerSmoke:
         assert "get_memory_context" in tools
         assert "research_portfolio" in tools
         assert "record_research_conclusion" in tools
+        assert tools["research_stock"].annotations.readOnlyHint is False
+        assert tools["research_stock"].annotations.idempotentHint is False
         assert tools["record_research_conclusion"].annotations.readOnlyHint is False
+
+        public_server = create_mcp_server(ctx, profile="market-only")
+
+        async def _list_public() -> Any:
+            return await public_server.request_handlers[ListToolsRequest](ListToolsRequest())
+
+        public_listed = asyncio.run(_list_public())
+        public_tools = {
+            tool.name: tool
+            for tool in public_listed.root.tools  # type: ignore[union-attr]
+        }
+        assert public_tools["research_stock"].annotations.readOnlyHint is True
+        assert public_tools["research_stock"].annotations.idempotentHint is True
 
     def test_mcp_v2_registers_constructor_callbacks(self, isolated_env: Path) -> None:
         """MCP 2.x 删除装饰器后，工具仍通过构造函数 callback 注册。"""

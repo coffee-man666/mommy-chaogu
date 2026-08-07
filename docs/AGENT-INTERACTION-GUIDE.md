@@ -122,10 +122,12 @@
 | `research_sector` | 板块搜索 + 排行 + 成分股 |
 | `research_money_flow` | 报价 + 当日/历史资金流 |
 | `research_portfolio` | 持仓 + 报价 + 组合风险 + 记忆（仅 personal） |
-| `record_research_conclusion` | 本地保存结论/预测（仅 personal，必须先获用户同意） |
+| `record_research_conclusion` | 本地保存结论/预测（仅 personal，实质研究后默认写回，可单轮退出） |
 
-默认 `market-only` 不发布持仓、自选、告警和记忆工具。缺少这些工具是用户选择的隐私
-边界，不得通过 shell 或直接读数据库绕过。personal 工具结果会进入外部模型上下文。
+新连接默认 `personal`，高层研究工具按当前任务最小化读取持仓、自选、告警和记忆，并自动
+记录事实型研究事件。显式 `market-only` 不发布任何个人工具；不得通过 shell 或直接读数据库
+绕过。用户单轮要求不使用个人数据或不记录时，分别传入 `use_personal_context=false`、
+`record_session=false` / `save_conclusion=false`。personal 工具结果会进入外部模型上下文。
 
 ---
 

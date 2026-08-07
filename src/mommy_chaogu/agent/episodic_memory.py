@@ -487,3 +487,25 @@ class EpisodicMemory(EngineOwner):
                     "error": error,
                 },
             )
+
+    def claim_maintenance(self, task: str, *, interval: timedelta) -> bool:
+        """原子领取周期维护任务；间隔内已领取则返回 False。"""
+        now = _utcnow()
+        now_iso = now.isoformat()
+        cutoff = (now - interval).isoformat()
+        with self.session() as s:
+            result = s.execute(
+                text("""
+                    INSERT INTO memory_maintenance
+                        (task, last_started, last_completed, last_status, last_result, last_error)
+                    VALUES (:task, :started, NULL, 'running', '{}', NULL)
+                    ON CONFLICT(task) DO UPDATE SET
+                        last_started = excluded.last_started,
+                        last_status = 'running',
+                        last_error = NULL
+                    WHERE memory_maintenance.last_started IS NULL
+                       OR memory_maintenance.last_started < :cutoff
+                """),
+                {"task": task, "started": now_iso, "cutoff": cutoff},
+            )
+            return bool(result.rowcount)

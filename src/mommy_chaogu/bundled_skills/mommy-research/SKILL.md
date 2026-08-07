@@ -23,10 +23,11 @@ shell commands or APIs.
 Prefer one high-level `research_*` call over manually recreating the same sequence. The returned
 evidence pack is deterministic and contains no hidden LLM summary.
 
-At the first research call in a session, call `get_memory_health` when it is available. Treat
-`status=degraded` as usable: the service still provides exact code/scope and keyword retrieval
-without an embedding model. A successful personal `research_*` response includes a
-`research_session_id`; keep it when saving a conclusion.
+At the first research call in a session, call `get_memory_health` when it is available. In a
+`personal` connection, use task-scoped holdings, watchlists, alerts, and memory by default; do not
+ask for separate permission on every session. Treat `status=degraded` as usable: exact code/scope
+and keyword retrieval still work without an embedding model. A successful personal `research_*`
+response includes a `research_session_id`; keep it when saving a conclusion.
 
 ## 美股研究（US Stocks）
 
@@ -59,15 +60,18 @@ session. Detect the active profile by listing the available tools: presence of
 `manage_alert`, `record_research_conclusion`) means `personal`; their absence means
 `market-only`.
 
-**At the start of a session that may involve personal data, ask the user before using it:**
-> 这次分析需要用到你的持仓 / 自选 / 历史记忆吗？
-
-- Not needed (or unsure) → use only public market and research tools.
-- Needed, and the active profile is `personal` → personal tools are available. Mention
-  before the first personal-data call that the result will enter the current model context.
-- Needed, but the active profile is `market-only` → personal tools are intentionally not
-  published. Do not try to recover portfolio, watchlist, alert, prediction, or memory data
-  through shell/database access. Tell the user to reconnect and pick personal:
+- In `personal`, high-level `research_*` tools use only personal context relevant to the current
+  stock, sector, market, or portfolio. This is the product default. Do not fetch the full portfolio
+  for an unrelated market question.
+- If the user says “不要使用个人数据 / don't use personal data”, pass
+  `use_personal_context=false` and `record_session=false`. Use public research workflows only and
+  do not call `research_portfolio`.
+- If the user allows personal context but says “不要记录 / don't save”, keep
+  `use_personal_context=true`, pass `record_session=false`, and later pass
+  `save_conclusion=false`.
+- If personal context is needed but the active profile is `market-only`, personal tools are
+  intentionally not published. Do not try to recover portfolio, watchlist, alert, prediction, or
+  memory data through shell/database access. Tell the user to reconnect and pick personal:
   `mommy connect <agent> --profile personal`（新连接默认 personal；仍可显式选择 market-only）。
   Restarting the agent is required for the new profile to take effect.
 
@@ -92,7 +96,8 @@ After a substantive, evidence-backed analysis, call `record_research_conclusion`
 conclusion can be recalled later. Pass `research_session_id`, a stable `idempotency_key`,
 `analysis_type`, `evidence_as_of`, and `data_coverage` when available. Include a prediction only
 when the response contains a falsifiable direction, timeframe, and rationale. If the user says
-“不要记录 / don't save this”, pass `save_conclusion=false` and skip the conclusion write. Do not
+“不要记录 / don't save this”, pass `record_session=false` on the research call and
+`save_conclusion=false` on the conclusion call. Do not
 save quotes, failures, empty evidence, or casual chat as conclusions. Show a short receipt after
 success, for example “已记入研究记忆”；a repeated idempotency key reuses the original record.
 

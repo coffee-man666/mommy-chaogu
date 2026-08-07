@@ -116,8 +116,8 @@ mommy workflow list           # 查看内置和自定义工作流
 - API Key、持仓、记忆和数据库默认保存在本机。
 - 本机 Web 只监听 `127.0.0.1`，不要求访问口令。
 - 局域网访问必须显式配置令牌；不建议把 HTTP 端口直接暴露到公网。
-- Coding Agent 接入默认使用 `market-only`，不开放持仓、记忆和写操作；只有用户主动选择
-  `personal` 才会扩大权限。
+- Coding Agent 新接入默认使用 `personal`，按当前研究任务最小化读取相关持仓和记忆，并把
+  研究沉淀回本地数据库；显式 `--profile market-only` 可完全关闭个人数据和写操作。
 - 微信网关只接受扫码账号私聊，但消息仍会经过微信服务和用户选择的 LLM Provider。
 
 完整配置位置、Provider、权限模式、局域网和 Docker 说明见

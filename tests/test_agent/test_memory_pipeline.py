@@ -204,8 +204,7 @@ class TestConsolidate:
     def test_no_client_skips(self) -> None:
         """无 client 时 consolidate 直接跳过，不抛异常。"""
         pipe = MemoryPipeline(None, None, None, client=None, model=None)
-        # 不抛
-        pipe.consolidate()
+        assert pipe.consolidate() is False
 
     def test_with_client_calls_consolidator(
         self,
@@ -219,7 +218,7 @@ class TestConsolidate:
         with patch("mommy_chaogu.agent.memory_pipeline.MemoryConsolidator") as mock_cons_class:
             mock_instance = mock_cons_class.return_value
             pipe = MemoryPipeline(episodic, tracker, semantic, client=client, model="m")
-            pipe.consolidate()
+            assert pipe.consolidate() is True
 
             mock_cons_class.assert_called_once_with(episodic, semantic, tracker, client, "m")
             mock_instance.consolidate_all.assert_called_once()
@@ -236,8 +235,37 @@ class TestConsolidate:
         with patch("mommy_chaogu.agent.memory_pipeline.MemoryConsolidator") as mock_cons_class:
             mock_cons_class.return_value.consolidate_all.side_effect = Exception("boom")
             pipe = MemoryPipeline(episodic, tracker, semantic, client=client, model="m")
-            # 不抛
-            pipe.consolidate()
+            assert pipe.consolidate() is False
+
+
+class TestMaintainAndHealth:
+    def test_no_llm_reports_degraded_but_keeps_verification_available(
+        self,
+        episodic: EpisodicMemory,
+        tracker: PredictionTracker,
+        semantic: SemanticMemory,
+    ) -> None:
+        pipe = MemoryPipeline(episodic, tracker, semantic)
+        result = pipe.maintain(adapter=MagicMock())
+
+        assert result["status"] == "degraded"
+        assert result["verification"]["total"] == 0
+        assert result["consolidation"] == "deferred_no_llm"
+        assert episodic.maintenance_status()["consolidation"]["status"] == "deferred"
+
+    def test_health_surfaces_maintenance_failure(
+        self,
+        episodic: EpisodicMemory,
+        tracker: PredictionTracker,
+        semantic: SemanticMemory,
+    ) -> None:
+        episodic.record_maintenance("embedding", status="failed", error="embedding down")
+        pipe = MemoryPipeline(episodic, tracker, semantic)
+
+        health = pipe.health()
+
+        assert health["status"] == "failed"
+        assert "embedding" in health["reason"]
 
 
 class TestStats:
