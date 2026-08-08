@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ma-suppression-monitor"
+version = "0.1.0"
+description = "均线压制与趋势通道监控系统: EMA云带/枢轴通道/压制状态机/底部评分/双引擎"
+requires-python = ">=3.10"
+dependencies = ["pandas>=2.0", "numpy>=1.24"]
+
+[tool.setuptools.packages.find]
+include = ["ma_suppression_monitor*"]
