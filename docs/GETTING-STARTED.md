@@ -119,14 +119,14 @@ uv run mommy web --port 8765         # 本机 Web
 本机 Web 默认只监听 `127.0.0.1`，即使配置中保留了公网令牌，也不会要求本机浏览器重复
 输入。打开 `http://127.0.0.1:8765` 即可使用。
 
-## 6. 连接 Claude Code 或 Kimi Code
+## 6. 连接 Claude Code、Kimi Code、Cline 或 Codex
 
 外部 Coding Agent 已经有自己的模型，因此不需要再给 mommy-chaogu 配一套 LLM Key：
 
 ```bash
-uv run mommy connect claude          # 或 kimi
+uv run mommy connect claude          # 也可用 kimi / cline / codex
 uv run mommy connect status
-uv run mommy connect test claude
+uv run mommy connect test claude     # 替换为实际 target
 ```
 
 连接命令会注册本地 stdio MCP Server、安装 `mommy-research` Skill，并执行连通测试。新连接
@@ -143,6 +143,12 @@ uv run mommy connect test claude
 `personal` 工具结果会进入所选 Coding Agent 的模型上下文。MCP 不会把 API Key 作为工具
 结果返回，但 profile 不约束 Coding Agent 自身的文件系统权限；不要在敏感目录开启跳过
 确认或 YOLO 模式。
+
+发布前请对实际安装的外部 Agent 做一次人工 smoke test：分别执行上面的连接、重启 Agent，
+让它调用 `research_stock 600519`，确认能看到 `research_session_id`，再要求保存结论并在
+下一轮调用 `get_memory_context` 验证召回。对 Kimi、Cline、Codex 分别替换 target；自动化
+测试覆盖四个适配器的配置/协议契约和真实 personal MCP stdio，但不伪造外部 Agent 二进制的
+实际执行结果，因此该端到端 DoD 仍需发布前人工验收。
 
 ```bash
 uv run mommy connect disconnect claude

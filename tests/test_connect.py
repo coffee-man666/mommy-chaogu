@@ -46,7 +46,7 @@ def isolated_homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pat
     return config, kimi
 
 
-def test_connect_parser_defaults_to_market_only() -> None:
+def test_connect_parser_uses_personal_when_profile_is_unspecified() -> None:
     parser = build_connect_parser()
     args = parser.parse_args(["kimi", "--skip-test"])
     assert args.action == "kimi"

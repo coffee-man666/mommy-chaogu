@@ -93,7 +93,7 @@ def _score_direction(direction: str, change_pct: float) -> tuple[str, float]:
     Returns:
         (status, score) — status 是 "hit" / "missed" / "unverifiable"
     """
-    if direction == "bullish":
+    if direction in {"bullish", "up"}:
         if change_pct > 2:
             return ("hit", 1.0)
         if change_pct > 0:
@@ -102,7 +102,7 @@ def _score_direction(direction: str, change_pct: float) -> tuple[str, float]:
             return ("missed", 0.3)
         return ("missed", 0.0)
 
-    if direction == "bearish":
+    if direction in {"bearish", "down"}:
         if change_pct < -2:
             return ("hit", 1.0)
         if change_pct < 0:
@@ -136,9 +136,9 @@ def _score_target(
         return ("hit", 0.8)
 
     # 方向对了但没到目标价
-    if direction == "bullish" and entry is not None and actual > entry:
+    if direction in {"bullish", "up"} and entry is not None and actual > entry:
         return ("hit", 0.5)
-    if direction == "bearish" and entry is not None and actual < entry:
+    if direction in {"bearish", "down"} and entry is not None and actual < entry:
         return ("hit", 0.5)
 
     return ("missed", 0.2)

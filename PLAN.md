@@ -103,10 +103,10 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 
 预计：0.5 天
 
-- [ ] 评审并确认本计划第 2 节中的默认、退出、数据最小化和自动写入规则。
-- [ ] 确认新用户默认 `personal`，存量明确选择 `market-only` 的用户不静默升级。
-- [ ] 确认“研究事实服务端保证写入，模型结论由 Skill 写回”的责任边界。
-- [ ] 确认个人数据提示文案和 consent 版本策略。
+- [x] 评审并确认本计划第 2 节中的默认、退出、数据最小化和自动写入规则。
+- [x] 确认新用户默认 `personal`，存量明确选择 `market-only` 的用户不静默升级。
+- [x] 确认“研究事实服务端保证写入，模型结论由 Skill 写回”的责任边界。
+- [x] 确认个人数据提示文案和 consent 版本策略。
 
 验收标准：产品、工程和测试使用同一份行为定义，不再同时存在“默认 market-only”和“默认个人记忆”两套口径。
 
@@ -274,7 +274,7 @@ Skill 只能指导 Agent 行为，不能保证所有 Agent 都执行最后的结
 
 任务：
 
-- [ ] 抽象 `CodingAgentAdapter`：
+- [x] 抽象 `CodingAgentAdapter`：
 
 ```python
 class CodingAgentAdapter(Protocol):
@@ -284,11 +284,11 @@ class CodingAgentAdapter(Protocol):
     def disconnect(self) -> None: ...
 ```
 
-- [ ] 将 Claude、Kimi、Cline 的配置逻辑迁移到独立适配器。
+- [x] 将 Claude、Kimi、Cline 的配置逻辑迁移到独立适配器。
 - [x] 在实施前用最新官方文档验证 Codex 的 MCP、Skill 和持久化配置位置。
 - [x] 增加 Codex 适配器和 `mommy connect codex`。
-- [ ] 所有 Agent 共用 profile、隐私提示、健康检查和断开语义。
-- [ ] 不允许 Agent 适配器自行绕过 `market-only` 隔离。
+- [x] 所有 Agent 共用 profile、隐私提示、健康检查和断开语义。
+- [x] 不允许 Agent 适配器自行绕过 `market-only` 隔离。
 
 验收标准：四种 Coding Agent 都能完成同一条“连接 → 读取相关持仓/记忆 → 研究 → 写回 → 再次召回”的端到端用例。
 
@@ -306,9 +306,9 @@ class CodingAgentAdapter(Protocol):
 - [x] 高层研究工具自动记录事实事件。
 - [x] 结论写回和重试幂等。
 - [x] 预测创建、事件关联和到期验证。
-- [ ] MCP stdio 真实进程测试，而不只测试内存组件。
+- [x] MCP stdio 真实进程测试，而不只测试内存组件。
 - [x] Claude、Kimi、Cline、Codex 配置生成与状态检查。
-- [ ] 存量连接迁移和明确选择保护。
+- [x] 存量连接迁移和明确选择保护。
 - [x] `ruff check`、`mypy --strict src` 和全部非网络测试通过。
 
 发布顺序：
@@ -365,17 +365,24 @@ class CodingAgentAdapter(Protocol):
 
 本计划完成必须同时满足：
 
-- [ ] 新用户无需理解 profile，连接后默认获得完整个人投研能力。
-- [ ] 第一次个股研究就能读取准确的相关持仓、自选、告警和历史判断。
-- [ ] 不配置额外 LLM Key 也能使用基础个人记忆和精确检索。
-- [ ] 每次成功的实质研究都产生可追踪的本地研究事件。
-- [ ] Coding Agent 的结论可写回，并能在下一次相关研究中召回。
-- [ ] 预测能够创建、到期验证并反馈到历史判断中。
-- [ ] 健康检查能区分正常、降级、未启用和维护失败。
-- [ ] `market-only` 仍是严格、可测试的退出选项。
-- [ ] 不再出现股票代码跨标的误召回。
+- [x] 新用户无需理解 profile，连接后默认获得完整个人投研能力。
+- [x] 第一次个股研究就能读取准确的相关持仓、自选、告警和历史判断。
+- [x] 不配置额外 LLM Key 也能使用基础个人记忆和精确检索。
+- [x] 每次成功的实质研究都产生可追踪的本地研究事件。
+- [x] Coding Agent 的结论可写回，并能在下一次相关研究中召回。
+- [x] 预测能够创建、到期验证并反馈到历史判断中。
+- [x] 健康检查能区分正常、降级、未启用和维护失败。
+- [x] `market-only` 仍是严格、可测试的退出选项。
+- [x] 不再出现股票代码跨标的误召回。
 - [ ] Claude Code、Kimi Code、Cline 和 Codex 的端到端测试通过。
-- [ ] 用户文档、Skill 指令和实际生产行为保持一致。
+- [x] 用户文档、Skill 指令和实际生产行为保持一致。
+
+本轮验收证据：
+
+- `tests/test_agent/test_memory_research_acceptance.py` 使用临时 SQLite 的真实持仓、自选、告警、事件、预测、语义知识、研究结论和维护管道，覆盖按股票隔离、幂等召回、预测验证反馈和健康状态矩阵。
+- `tests/test_connect_stdio.py` 启动真实 `python -m mommy_chaogu.agent.mcp_server --profile personal` 子进程，在空 Provider Key 和 `MOMMY_OFFLINE_MARKET_DATA=1` 下完成 initialize、工具清单、研究、写回、召回和健康检查。
+- `tests/test_coding_agent_adapters.py` 是 Claude / Kimi / Cline / Codex 的统一参数化配置/协议契约测试；`tests/test_connect_migration.py` 覆盖无 profile 旧连接的 market-only 保护。
+- DoD 的外部 Agent 端到端项保持未勾选：仓库环境没有可证明的四个外部 Agent 二进制实际执行结果；发布前人工 smoke test 已写入 `docs/GETTING-STARTED.md`，不得用配置生成测试替代该验收。
 
 ## 8. 计划维护规则
 

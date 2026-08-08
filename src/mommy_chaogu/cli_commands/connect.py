@@ -1,17 +1,13 @@
-"""One-command integration with external coding agents."""
+"""CLI orchestration for connecting external Coding Agents."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import importlib.metadata
-import json
 import os
 import shutil
-import subprocess
 import sys
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, NoReturn
@@ -21,46 +17,21 @@ from mcp.client.stdio import stdio_client
 
 from mommy_chaogu.agent.research_tools import (
     DEFAULT_MCP_PROFILE,
-    McpProfile,
     normalize_mcp_profile,
 )
+from mommy_chaogu.coding_agents import adapter_for
+from mommy_chaogu.coding_agents.base import (
+    SERVER_NAME,
+    ConnectionSpec,
+    ConnectionStatus,
+    connection_spec,
+    directory_hash,
+    skill_dir,
+)
 from mommy_chaogu.config import default_user_config_dir
-from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
 
-SERVER_NAME = "mommy-chaogu"
 STATE_VERSION = 1
 PRIVACY_CONSENT_VERSION = "2026-08-07.personal-v1"
-
-
-@dataclass(frozen=True)
-class ConnectionSpec:
-    """Portable stdio MCP process declaration persisted by the connector."""
-
-    command: str
-    args: list[str]
-    env: dict[str, str]
-    cwd: str
-    profile: McpProfile
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "command": self.command,
-            "args": self.args,
-            "env": self.env,
-            "cwd": self.cwd,
-            "profile": self.profile,
-        }
-
-    @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> ConnectionSpec:
-        return cls(
-            command=str(value["command"]),
-            args=[str(item) for item in value.get("args", [])],
-            env={str(key): str(item) for key, item in value.get("env", {}).items()},
-            cwd=str(value.get("cwd", "")),
-            # Missing profile means a legacy connection; preserve its safe scope.
-            profile=normalize_mcp_profile(str(value.get("profile", "market-only"))),
-        )
 
 
 class ConnectError(RuntimeError):
@@ -83,25 +54,19 @@ def build_connect_parser() -> argparse.ArgumentParser:
         )
         connect.add_argument("--force", action="store_true", help="替换同名的非托管配置或 Skill")
         connect.add_argument("--skip-test", action="store_true", help="安装后跳过 MCP 连通测试")
-
     status = action.add_parser("status", help="查看连接状态")
     status.add_argument("target", nargs="?", choices=("claude", "kimi", "cline", "codex"))
-
     disconnect = action.add_parser("disconnect", help="断开连接并删除托管的 Skill")
     disconnect.add_argument("target", choices=("claude", "kimi", "cline", "codex", "all"))
-
     test = action.add_parser("test", help="启动 MCP 并检查可用工具")
     test.add_argument("target", choices=("claude", "kimi", "cline", "codex"))
     return parser
 
 
 def _display_name(target: str) -> str:
-    """Human-readable display name for a connect target."""
-    if target == "cline":
-        return "Cline"
-    if target == "codex":
-        return "Codex"
-    return f"{target.title()} Code"
+    return {"claude": "Claude Code", "kimi": "Kimi Code", "cline": "Cline", "codex": "Codex"}[
+        target
+    ]
 
 
 def _state_path() -> Path:
@@ -113,17 +78,20 @@ def _load_state() -> dict[str, Any]:
     if not path.is_file():
         return {"version": STATE_VERSION, "connections": {}}
     try:
+        import json
+
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         raise ConnectError(f"连接状态文件损坏：{path}（{exc}）") from exc
     if not isinstance(value, dict) or not isinstance(value.get("connections", {}), dict):
         raise ConnectError(f"连接状态文件格式无效：{path}")
     value.setdefault("version", STATE_VERSION)
-    value.setdefault("connections", {})
     return value
 
 
 def _save_state(state: dict[str, Any]) -> None:
+    import json
+
     path = _state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(".tmp")
@@ -137,412 +105,16 @@ def _bundled_skill_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "bundled_skills" / "mommy-research"
 
 
-def _agent_home(target: str) -> Path:
-    if target == "claude":
-        override = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
-        return Path(override).expanduser() if override else Path.home() / ".claude"
-    if target == "cline":
-        return _cline_settings_dir()
-    if target == "codex":
-        override = os.environ.get("CODEX_HOME", "").strip()
-        return Path(override).expanduser() if override else Path.home() / ".codex"
-    override = os.environ.get("KIMI_CODE_HOME", "").strip()
-    return Path(override).expanduser() if override else Path.home() / ".kimi-code"
-
-
-def _cline_settings_dir() -> Path:
-    """Cline global settings dir (skills live under settings/skills)."""
-    override = os.environ.get("CLINE_DATA_DIR", "").strip()
-    base = Path(override).expanduser() if override else Path.home() / ".cline" / "data"
-    return base / "settings"
-
-
-def _cline_config_path() -> Path:
-    return _cline_settings_dir() / "cline_mcp_settings.json"
+# Compatibility helpers retained for callers importing the old connector internals.
+def _connection_spec(profile: str) -> ConnectionSpec:
+    return connection_spec(profile, which=shutil.which)
 
 
 def _skill_dir(target: str) -> Path:
-    if target == "codex":
-        override = os.environ.get("CODEX_SKILLS_DIR", "").strip()
-        base = Path(override).expanduser() if override else Path.home() / ".agents" / "skills"
-        return base / "mommy-research"
-    return _agent_home(target) / "skills" / "mommy-research"
-
-
-def _directory_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    if not path.is_dir():
-        return ""
-    for item in sorted(candidate for candidate in path.rglob("*") if candidate.is_file()):
-        digest.update(item.relative_to(path).as_posix().encode())
-        digest.update(b"\0")
-        digest.update(item.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()
-
-
-def _install_skill(
-    target: str, previous: dict[str, Any] | None, *, force: bool
-) -> tuple[Path, str]:
-    source = _bundled_skill_dir()
-    if not (source / "SKILL.md").is_file():
-        raise ConnectError(f"安装包缺少 mommy-research Skill：{source}")
-    destination = _skill_dir(target)
-    bundled_hash = _directory_hash(source)
-    current_hash = _directory_hash(destination)
-    previous_hash = str((previous or {}).get("skill_hash", ""))
-    if current_hash and current_hash not in {bundled_hash, previous_hash} and not force:
-        raise ConnectError(
-            f"检测到用户修改过的 Skill：{destination}。为避免覆盖，请先备份或加 --force。"
-        )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination, dirs_exist_ok=True)
-    installed_hash = _directory_hash(destination)
-    return destination, installed_hash
-
-
-def _connection_spec(profile: str) -> ConnectionSpec:
-    selected = normalize_mcp_profile(profile)
-    mcp_entry = shutil.which("mommy-mcp")
-    if mcp_entry:
-        command = str(Path(mcp_entry).resolve())
-        args = ["--profile", selected]
-    else:
-        # Keep the virtualenv path. Resolving its Python symlink to the base
-        # interpreter would drop the environment's site-packages.
-        command = sys.executable
-        args = ["-m", "mommy_chaogu.agent.mcp_server", "--profile", selected]
-    cwd = str(Path.cwd().resolve())
-    env = {
-        "MOMMY_CONFIG_DIR": str(default_user_config_dir().resolve()),
-        "MOMMY_MARKET_DB": str(MARKET_DB.resolve()),
-        "MOMMY_PORTFOLIO_DB": str(PORTFOLIO_DB.resolve()),
-        "MOMMY_AGENT_DB": str(AGENT_DB.resolve()),
-        "MOMMY_REFERENCE_DB": str(REFERENCE_DB.resolve()),
-    }
-    return ConnectionSpec(
-        command=command,
-        args=args,
-        env=env,
-        cwd=cwd,
-        profile=selected,
-    )
-
-
-def _run_command(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(command, text=True, capture_output=True, check=check)
-    except FileNotFoundError as exc:
-        raise ConnectError(f"没有找到 {command[0]}，请先安装并登录对应的 Coding Agent。") from exc
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or str(exc)).strip()
-        raise ConnectError(detail) from exc
-
-
-def _claude_exists(binary: str) -> bool:
-    result = _run_command([binary, "mcp", "get", SERVER_NAME], check=False)
-    return result.returncode == 0
-
-
-def _claude_config_path() -> Path:
-    override = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
-    if override:
-        return Path(override).expanduser() / ".claude.json"
-    return Path.home() / ".claude.json"
-
-
-def _current_mcp_entry(target: str) -> dict[str, Any] | None:
-    if target == "kimi":
-        entry = _load_kimi_config()["mcpServers"].get(SERVER_NAME)
-        return entry if isinstance(entry, dict) else None
-    if target == "cline":
-        entry = _load_cline_config()["mcpServers"].get(SERVER_NAME)
-        return entry if isinstance(entry, dict) else None
-    if target == "codex":
-        return _codex_entry()
-    path = _claude_config_path()
-    if not path.is_file():
-        return None
-    try:
-        config = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ConnectError(f"Claude Code 配置损坏：{path}（{exc}）") from exc
-    if not isinstance(config, dict) or not isinstance(config.get("mcpServers", {}), dict):
-        raise ConnectError(f"Claude Code 配置的 mcpServers 格式无效：{path}")
-    entry = config["mcpServers"].get(SERVER_NAME)
-    return entry if isinstance(entry, dict) else None
-
-
-def _transport_of(entry: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a Cline-style nested ``transport`` entry to a flat mapping."""
-    transport = entry.get("transport")
-    return transport if isinstance(transport, dict) else entry
-
-
-def _entry_matches_spec(target: str, entry: dict[str, Any], spec: ConnectionSpec) -> bool:
-    transport = _transport_of(entry)
-    if transport.get("command") != spec.command or transport.get("args", []) != spec.args:
-        return False
-    if transport.get("env", {}) != spec.env:
-        return False
-    return target != "kimi" or entry.get("cwd") == spec.cwd
-
-
-def _preflight(target: str, previous: dict[str, Any] | None, *, force: bool) -> None:
-    binary = shutil.which(target)
-    if binary is None:
-        raise ConnectError(f"没有找到 {target}，请先安装并登录 {_display_name(target)}。")
-    if target == "claude":
-        exists = _claude_exists(binary)
-    elif target == "cline":
-        exists = SERVER_NAME in _load_cline_config()["mcpServers"]
-    elif target == "codex":
-        exists = _codex_entry() is not None
-    else:
-        exists = SERVER_NAME in _load_kimi_config()["mcpServers"]
-    if exists and previous is None and not force:
-        raise ConnectError(
-            f"{_display_name(target)} 中已存在非本工具管理的 {SERVER_NAME}；如需替换请加 --force。"
-        )
-    if exists and previous is not None and not force:
-        raw_spec = previous.get("spec")
-        current = _current_mcp_entry(target)
-        if not isinstance(raw_spec, dict) or current is None:
-            raise ConnectError(f"无法确认现有 {target} 配置仍由 mommy connect 管理；请加 --force。")
-        if not _entry_matches_spec(target, current, ConnectionSpec.from_dict(raw_spec)):
-            raise ConnectError(f"检测到 {target} MCP 配置已被修改；为避免覆盖请加 --force。")
-
-
-def _claude_add_command(binary: str, spec: ConnectionSpec) -> list[str]:
-    command = [binary, "mcp", "add", "--scope", "user", SERVER_NAME]
-    for key, value in spec.env.items():
-        command.extend(["--env", f"{key}={value}"])
-    command.extend(["--", spec.command, *spec.args])
-    return command
-
-
-def _register_claude(
-    spec: ConnectionSpec,
-    previous: dict[str, Any] | None,
-    *,
-    force: bool,
-) -> None:
-    binary = shutil.which("claude")
-    if binary is None:
-        raise ConnectError("没有找到 claude，请先安装并登录 Claude Code。")
-    exists = _claude_exists(binary)
-    if exists and previous is None and not force:
-        raise ConnectError(f"Claude Code 中已存在非托管的 {SERVER_NAME}")
-    old_spec = None
-    if previous and isinstance(previous.get("spec"), dict):
-        old_spec = ConnectionSpec.from_dict(previous["spec"])
-    if exists:
-        _run_command([binary, "mcp", "remove", "--scope", "user", SERVER_NAME])
-    try:
-        _run_command(_claude_add_command(binary, spec))
-    except ConnectError:
-        if old_spec is not None:
-            _run_command(_claude_add_command(binary, old_spec), check=False)
-        raise
-
-
-def _kimi_config_path() -> Path:
-    return _agent_home("kimi") / "mcp.json"
-
-
-def _load_kimi_config() -> dict[str, Any]:
-    path = _kimi_config_path()
-    if not path.is_file():
-        return {"mcpServers": {}}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ConnectError(f"Kimi MCP 配置损坏：{path}（{exc}）") from exc
-    if not isinstance(value, dict):
-        raise ConnectError(f"Kimi MCP 配置格式无效：{path}")
-    servers = value.setdefault("mcpServers", {})
-    if not isinstance(servers, dict):
-        raise ConnectError(f"Kimi MCP 配置的 mcpServers 必须是对象：{path}")
-    return value
-
-
-def _save_kimi_config(config: dict[str, Any]) -> None:
-    path = _kimi_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temp.chmod(0o600)
-    temp.replace(path)
-    path.chmod(0o600)
-
-
-def _load_cline_config() -> dict[str, Any]:
-    path = _cline_config_path()
-    if not path.is_file():
-        return {"mcpServers": {}}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ConnectError(f"Cline MCP 配置损坏：{path}（{exc}）") from exc
-    if not isinstance(value, dict):
-        raise ConnectError(f"Cline MCP 配置格式无效：{path}")
-    servers = value.setdefault("mcpServers", {})
-    if not isinstance(servers, dict):
-        raise ConnectError(f"Cline MCP 配置的 mcpServers 必须是对象：{path}")
-    return value
-
-
-def _save_cline_config(config: dict[str, Any]) -> None:
-    path = _cline_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temp.chmod(0o600)
-    temp.replace(path)
-    path.chmod(0o600)
-
-
-def _register_kimi(
-    spec: ConnectionSpec,
-    previous: dict[str, Any] | None,
-    *,
-    force: bool,
-) -> None:
-    if shutil.which("kimi") is None:
-        raise ConnectError("没有找到 kimi，请先安装并登录 Kimi Code。")
-    config = _load_kimi_config()
-    servers: dict[str, Any] = config["mcpServers"]
-    if SERVER_NAME in servers and previous is None and not force:
-        raise ConnectError(f"Kimi Code 中已存在非托管的 {SERVER_NAME}")
-    servers[SERVER_NAME] = {
-        "command": spec.command,
-        "args": spec.args,
-        "env": spec.env,
-        "cwd": spec.cwd,
-        "enabled": True,
-        "startupTimeoutMs": 30000,
-        "toolTimeoutMs": 60000,
-    }
-    _save_kimi_config(config)
-
-
-def _register_cline(
-    spec: ConnectionSpec,
-    previous: dict[str, Any] | None,
-    *,
-    force: bool,
-) -> None:
-    if shutil.which("cline") is None:
-        raise ConnectError("没有找到 cline，请先安装 Cline CLI。")
-    config = _load_cline_config()
-    servers: dict[str, Any] = config["mcpServers"]
-    if SERVER_NAME in servers and previous is None and not force:
-        raise ConnectError(f"Cline 中已存在非托管的 {SERVER_NAME}")
-    servers[SERVER_NAME] = {
-        "transport": {
-            "type": "stdio",
-            "command": spec.command,
-            "args": spec.args,
-            "env": spec.env,
-        },
-    }
-    _save_cline_config(config)
-
-
-def _codex_entry() -> dict[str, Any] | None:
-    """读取 Codex 官方 CLI 管理的 MCP 条目。"""
-    binary = shutil.which("codex")
-    if binary is None:
-        return None
-    result = _run_command([binary, "mcp", "get", SERVER_NAME, "--json"], check=False)
-    if result.returncode != 0:
-        return None
-    try:
-        value = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
-    return value if isinstance(value, dict) else None
-
-
-def _register_codex(
-    spec: ConnectionSpec,
-    previous: dict[str, Any] | None,
-    *,
-    force: bool,
-) -> None:
-    binary = shutil.which("codex")
-    if binary is None:
-        raise ConnectError("没有找到 codex，请先安装 Codex CLI。")
-    current = _codex_entry()
-    if current is not None and previous is None and not force:
-        raise ConnectError(f"Codex 中已存在非托管的 {SERVER_NAME}")
-    old_spec = None
-    if previous and isinstance(previous.get("spec"), dict):
-        old_spec = ConnectionSpec.from_dict(previous["spec"])
-    if current is not None:
-        _run_command([binary, "mcp", "remove", SERVER_NAME])
-    command = [binary, "mcp", "add", SERVER_NAME]
-    for key, value in spec.env.items():
-        command.extend(["--env", f"{key}={value}"])
-    command.extend(["--", spec.command, *spec.args])
-    try:
-        _run_command(command)
-    except ConnectError:
-        if old_spec is not None:
-            restore = [binary, "mcp", "add", SERVER_NAME]
-            for key, value in old_spec.env.items():
-                restore.extend(["--env", f"{key}={value}"])
-            restore.extend(["--", old_spec.command, *old_spec.args])
-            _run_command(restore, check=False)
-        raise
-
-
-async def _probe(spec: ConnectionSpec) -> list[str]:
-    process_env = dict(os.environ)
-    process_env.update(spec.env)
-    params = StdioServerParameters(
-        command=spec.command,
-        args=spec.args,
-        env=process_env,
-        cwd=spec.cwd,
-    )
-    async with asyncio.timeout(20):
-        async with stdio_client(params) as (read_stream, write_stream):
-            async with ClientSession(
-                read_stream,
-                write_stream,
-                read_timeout_seconds=_mcp_read_timeout(),
-            ) as session:
-                await session.initialize()
-                tools = await session.list_tools()
-                return [tool.name for tool in tools.tools]
-
-
-def _mcp_read_timeout() -> Any:
-    """Return the timeout shape expected by the installed MCP SDK.
-
-    MCP 1.x accepts ``timedelta`` while MCP 2.x changed the same parameter to
-    a numeric seconds value.  ``Any`` is intentional so one source tree can
-    type-check against the locked 1.x SDK and still run in independently
-    resolved uv tool environments using 2.x.
-    """
-    major = int(importlib.metadata.version("mcp").partition(".")[0])
-    return 15.0 if major >= 2 else timedelta(seconds=15)
-
-
-def _probe_sync(spec: ConnectionSpec) -> list[str]:
-    try:
-        return asyncio.run(_probe(spec))
-    except Exception as exc:
-        raise ConnectError(f"MCP 连通测试失败：{exc}") from exc
+    return skill_dir(target)
 
 
 def _resolve_profile(profile: str | None) -> str:
-    """Resolve the effective privacy profile.
-
-    An explicit ``--profile`` wins. New connections default to ``personal``;
-    the user is still shown a clear privacy notice in an interactive terminal.
-    """
     if profile:
         return normalize_mcp_profile(profile)
     if sys.stdin.isatty():
@@ -557,41 +129,79 @@ def _resolve_profile(profile: str | None) -> str:
     return DEFAULT_MCP_PROFILE
 
 
+async def _probe(spec: ConnectionSpec) -> list[str]:
+    process_env = dict(os.environ)
+    process_env.update(spec.env)
+    params = StdioServerParameters(
+        command=spec.command, args=spec.args, env=process_env, cwd=spec.cwd
+    )
+    async with asyncio.timeout(20):
+        async with stdio_client(params) as (read_stream, write_stream):
+            async with ClientSession(
+                read_stream, write_stream, read_timeout_seconds=_mcp_read_timeout()
+            ) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                return [tool.name for tool in tools.tools]
+
+
+def _mcp_read_timeout() -> Any:
+    major = int(importlib.metadata.version("mcp").partition(".")[0])
+    return 15.0 if major >= 2 else timedelta(seconds=15)
+
+
+def _probe_sync(spec: ConnectionSpec) -> list[str]:
+    try:
+        return asyncio.run(_probe(spec))
+    except Exception as exc:
+        raise ConnectError(f"MCP 连通测试失败：{exc}") from exc
+
+
+def _adapter(target: str, previous: dict[str, Any] | None, *, force: bool) -> Any:
+    return adapter_for(target, previous=previous, force=force, which=shutil.which)
+
+
 def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) -> int:
     state = _load_state()
     connections: dict[str, Any] = state["connections"]
     previous = connections.get(target)
     if previous is not None and not isinstance(previous, dict):
         raise ConnectError(f"{target} 的连接状态格式损坏")
+    selected = _resolve_profile(profile)
+    spec = _connection_spec(selected)
+    adapter = _adapter(target, previous, force=force)
+    try:
+        current_status: ConnectionStatus = adapter.inspect_status()
+        if not force and previous is None and current_status.state != "配置缺失":
+            raise ConnectError(
+                f"{_display_name(target)} 中已存在非本工具管理的 {SERVER_NAME}；如需替换请加 --force。"
+            )
+        if not force and previous is not None and current_status.state == "配置已修改":
+            raise ConnectError(f"检测到 {target} MCP 配置已被修改；为避免覆盖请加 --force。")
+        skill_path = adapter.install_skill(_bundled_skill_dir())
+        adapter.register_mcp(spec)
+    except ConnectError:
+        raise
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise ConnectError(str(exc)) from exc
 
-    profile = _resolve_profile(profile)
-    _preflight(target, previous, force=force)
-    spec = _connection_spec(profile)
-    skill_path, skill_hash = _install_skill(target, previous, force=force)
-    if target == "claude":
-        _register_claude(spec, previous, force=force)
-    elif target == "cline":
-        _register_cline(spec, previous, force=force)
-    elif target == "codex":
-        _register_codex(spec, previous, force=force)
-    else:
-        _register_kimi(spec, previous, force=force)
-
-    connections[target] = {
+    item: dict[str, Any] = {
         "profile": spec.profile,
         "spec": spec.as_dict(),
         "skill_path": str(skill_path),
-        "skill_hash": skill_hash,
-        "privacy_consent_version": PRIVACY_CONSENT_VERSION if spec.profile == "personal" else None,
+        "skill_hash": directory_hash(skill_path),
         "connected_at": datetime.now(UTC).isoformat(),
         "personal_capabilities": spec.profile == "personal",
     }
+    if spec.profile == "personal":
+        item["privacy_consent_version"] = PRIVACY_CONSENT_VERSION
+    connections[target] = item
     _save_state(state)
 
     print(f"✅ 已连接 {_display_name(target)}（profile: {spec.profile}）")
     print(f"   投研 Skill：{skill_path}")
     if skip_test:
-        print("   已跳过连通测试；稍后可运行 `mommy connect test " + target + "`。")
+        print(f"   已跳过连通测试；稍后可运行 `mommy connect test {target}`。")
     else:
         names = _probe_sync(spec)
         print(f"   MCP 连通正常：已发现 {len(names)} 个工具。")
@@ -605,115 +215,40 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
 
 def _status(target: str | None) -> int:
     state = _load_state()
-    connections: dict[str, Any] = state["connections"]
     targets = [target] if target else ["claude", "kimi", "cline", "codex"]
     for name in targets:
-        item = connections.get(name)
+        item = state["connections"].get(name)
         if not isinstance(item, dict):
             print(f"{name}: 未连接")
             continue
-        current = _current_mcp_entry(name)
-        raw_spec = item.get("spec")
-        configured = (
-            current is not None
-            and isinstance(raw_spec, dict)
-            and _entry_matches_spec(name, current, ConnectionSpec.from_dict(raw_spec))
-        )
-        skill_ok = _directory_hash(Path(str(item.get("skill_path", "")))) == str(
-            item.get("skill_hash", "")
-        )
-        state_text = "已连接" if configured else ("配置已修改" if current else "配置缺失")
-        skill_text = "正常" if skill_ok else "缺失或已修改"
-        profile = item.get("profile", "market-only")
+        try:
+            status: ConnectionStatus = _adapter(name, item, force=False).inspect_status()
+        except (RuntimeError, OSError, ValueError) as exc:
+            raise ConnectError(str(exc)) from exc
+        profile = status.profile
         personal = "读取/写回开启" if profile == "personal" else "个人数据隔离"
-        upgrade = " · 可用 --profile personal 重连" if profile == "market-only" else ""
+        upgrade = " · 可用 --profile personal 重连" if status.upgrade_hint else ""
+        skill = "正常" if status.skill_ok else "缺失或已修改"
         print(
-            f"{name}: {state_text} · profile={profile} · 记忆/个人数据={personal}"
-            f"{upgrade} · Skill={skill_text}"
+            f"{name}: {status.state} · profile={profile} · 记忆/个人数据={personal}{upgrade} · Skill={skill}"
         )
     return 0
 
 
-def _disconnect_one(target: str, state: dict[str, Any]) -> None:
-    connections: dict[str, Any] = state["connections"]
-    item = connections.get(target)
-    if not isinstance(item, dict):
-        print(f"{target}: 没有由 mommy connect 管理的连接，未修改外部配置。")
-        return
-
-    if target == "claude":
-        binary = shutil.which("claude")
-        current = _current_mcp_entry("claude")
-        raw_spec = item.get("spec")
-        matches = (
-            isinstance(raw_spec, dict)
-            and current is not None
-            and _entry_matches_spec("claude", current, ConnectionSpec.from_dict(raw_spec))
-        )
-        if binary and matches:
-            _run_command([binary, "mcp", "remove", "--scope", "user", SERVER_NAME])
-        elif current is not None:
-            print("⚠ 保留已被修改的 Claude MCP 配置。")
-    elif target == "cline":
-        config = _load_cline_config()
-        servers: dict[str, Any] = config["mcpServers"]
-        current = servers.get(SERVER_NAME)
-        raw_spec = item.get("spec")
-        matches = (
-            isinstance(current, dict)
-            and isinstance(raw_spec, dict)
-            and _entry_matches_spec("cline", current, ConnectionSpec.from_dict(raw_spec))
-        )
-        if matches:
-            del servers[SERVER_NAME]
-            _save_cline_config(config)
-        elif current is not None:
-            print("⚠ 保留已被修改的 Cline MCP 配置。")
-    elif target == "codex":
-        binary = shutil.which("codex")
-        current = _codex_entry()
-        raw_spec = item.get("spec")
-        matches = (
-            binary is not None
-            and current is not None
-            and isinstance(raw_spec, dict)
-            and _entry_matches_spec("codex", current, ConnectionSpec.from_dict(raw_spec))
-        )
-        if matches:
-            _run_command([binary, "mcp", "remove", SERVER_NAME])
-        elif current is not None:
-            print("⚠ 保留已被修改的 Codex MCP 配置。")
-    else:
-        config = _load_kimi_config()
-        servers: dict[str, Any] = config["mcpServers"]
-        current = servers.get(SERVER_NAME)
-        raw_spec = item.get("spec")
-        matches = (
-            isinstance(current, dict)
-            and isinstance(raw_spec, dict)
-            and _entry_matches_spec("kimi", current, ConnectionSpec.from_dict(raw_spec))
-        )
-        if matches:
-            del servers[SERVER_NAME]
-            _save_kimi_config(config)
-        elif current is not None:
-            print("⚠ 保留已被修改的 Kimi MCP 配置。")
-
-    skill = Path(str(item.get("skill_path", "")))
-    expected_hash = str(item.get("skill_hash", ""))
-    if skill.is_dir() and _directory_hash(skill) == expected_hash:
-        shutil.rmtree(skill)
-    elif skill.exists():
-        print(f"⚠ 保留已被修改的 Skill：{skill}")
-    connections.pop(target, None)
-    print(f"✅ 已断开 {_display_name(target)}。")
-
-
 def _disconnect(target: str) -> int:
     state = _load_state()
-    targets = ["claude", "kimi", "cline", "codex"] if target == "all" else [target]
-    for name in targets:
-        _disconnect_one(name, state)
+    names = ["claude", "kimi", "cline", "codex"] if target == "all" else [target]
+    for name in names:
+        item = state["connections"].get(name)
+        if not isinstance(item, dict):
+            print(f"{name}: 没有由 mommy connect 管理的连接，未修改外部配置。")
+            continue
+        try:
+            _adapter(name, item, force=False).disconnect()
+        except (RuntimeError, OSError, ValueError) as exc:
+            raise ConnectError(str(exc)) from exc
+        state["connections"].pop(name, None)
+        print(f"✅ 已断开 {_display_name(name)}。")
     _save_state(state)
     return 0
 
@@ -740,14 +275,54 @@ def _test(target: str) -> int:
     return 0
 
 
+# Compatibility wrapper used by older callers and unit tests.
+def _register_codex(spec: ConnectionSpec, previous: dict[str, Any] | None, *, force: bool) -> None:
+    import shutil
+
+    from mommy_chaogu.coding_agents.codex import CodexAdapter
+
+    CodexAdapter(
+        previous=previous,
+        force=force,
+        which=shutil.which,
+        command_runner=_run_command,
+        entry_reader=_codex_entry,
+    ).register_mcp(spec)
+
+
+def _codex_entry() -> dict[str, Any] | None:
+    import json
+    import shutil
+
+    binary = shutil.which("codex")
+    if binary is None:
+        return None
+    result = _run_command([binary, "mcp", "get", SERVER_NAME, "--json"], check=False)
+    if result.returncode != 0:
+        return None
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _run_command(command: list[str], *, check: bool = True) -> Any:
+    import subprocess
+
+    try:
+        return subprocess.run(command, text=True, capture_output=True, check=check)
+    except FileNotFoundError as exc:
+        raise ConnectError(f"没有找到 {command[0]}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise ConnectError((exc.stderr or exc.stdout or str(exc)).strip()) from exc
+
+
 def cmd_connect(args: argparse.Namespace) -> int:
     try:
         if args.action in {"claude", "kimi", "cline", "codex"}:
             return _connect(
-                args.action,
-                args.profile,
-                force=bool(args.force),
-                skip_test=bool(args.skip_test),
+                args.action, args.profile, force=bool(args.force), skip_test=bool(args.skip_test)
             )
         if args.action == "status":
             return _status(args.target)
@@ -762,14 +337,7 @@ def cmd_connect(args: argparse.Namespace) -> int:
 
 
 def main_connect() -> NoReturn:
-    parser = build_connect_parser()
-    raise SystemExit(cmd_connect(parser.parse_args()))
+    raise SystemExit(cmd_connect(build_connect_parser().parse_args()))
 
 
-__all__ = [
-    "ConnectError",
-    "ConnectionSpec",
-    "build_connect_parser",
-    "cmd_connect",
-    "main_connect",
-]
+__all__ = ["ConnectError", "ConnectionSpec", "build_connect_parser", "cmd_connect", "main_connect"]
