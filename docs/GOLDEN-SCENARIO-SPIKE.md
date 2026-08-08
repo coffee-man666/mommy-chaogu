@@ -18,13 +18,19 @@ RFC §4.1 的观点中有四处歧义，按「至多一次澄清」的要求，�
 | 持有多久 | 固定 20 个交易日，8% 止损 / 15% 止盈提前退出 | 与方法的中期波段属性匹配 |
 
 触发定义：收盘价跌破 SMA20 记为破位日 T0；T0 起 5 个交易日内，某日收盘价
-同时满足「重新站上 SMA20」且「高于 20 日通道下轨」，当日收盘入场（信号价即成交价，
-成本模型另计）。
+同时满足「重新站上 SMA20」且「高于 20 日通道下轨」，信号于当日收盘确认，
+**下一交易日开盘价成交**（对齐 `quant/ma-suppression-monitor` 的核心惯例，
+避免「收盘同时判断并成交」的近似偏差）。
+
+> 待确认：`quant/ma-suppression-monitor` 入库后，「中期均线」存在第二种候选——
+> EMA55/89 云带（作者实盘口径）。Spike 先按 SMA20 出基线，再按云带口径跑
+> 对照实验；两个口径的结果差异写入 ResearchMemo，由作者判断哪个更贴近原意。
 
 ## 2. 代码资产盘点
 
 | 资产 | 状态 | Spike 处置 |
 |---|---|---|
+| `quant/ma-suppression-monitor` | 已入库（PR #41）：EMA55/89 云带、枢轴/回归通道、压制状态机、底部评分、无未来函数回测 | **迁移源与交叉校验基准**；spike 指标内核与其逐指标对账，通道/云带口径差异记录入观察日志 |
 | `backtest/engine.py` | 绑定 flow_in_spike 资金流信号与缓存表，无成本/基准 | 不复用，只参考统计口径 |
 | `backtest/costs.py` | 独立成本模块 | 复用，验证接口是否通用 |
 | `backtest/portfolio.py` | 组合层 | 复用，记录绑定点 |
@@ -33,7 +39,7 @@ RFC §4.1 的观点中有四处歧义，按「至多一次澄清」的要求，�
 | `backtest/scoring.py` | 统一评分 | 复用 |
 | `workflow/spec.py` | 通用编排 spec | 不扩展，ExperimentSpec 独立（本分支 `experiment/spec.py`） |
 | `market_data` 美股源 | Massive/Polygon + Yahoo 兜底 | 数据快照走 Yahoo 兜底（免 key，可复现） |
-| 外部均线/通道实现 | 作者另有实现 | 以移植方式进入 `experiment/indicators.py`，零外部依赖 |
+| `tests/offline_market_adapter.py` | 合成行情的测试桩（无网络） | 运行时单元测试的确定性 fixture |
 
 复用失败的模块必须在「观察记录」中写明原因，这是 RFC §8.1 的硬性要求。
 
@@ -44,7 +50,9 @@ RFC §4.1 的观点中有四处歧义，按「至多一次澄清」的要求，�
 - [ ] 3.3 数据快照：SOXX / SMH / QQQ / SPY，2016-01-01 ~ 2026-07-31 调整后日线，
       落盘 CSV + manifest（source、retrieved_at、sha256），固定数据版本
 - [ ] 3.4 薄运行时：spec → 逐日信号 → 逐笔交易 → 成本/基准 → BacktestRun JSON
-- [ ] 3.5 复用 walk_forward / regime_analysis，记录接口不适配点
+      （成交价=信号日次日开盘，对齐工具箱惯例）
+- [ ] 3.5 复用 walk_forward / regime_analysis，记录接口不适配点；
+      与 `quant/ma-suppression-monitor` 交叉校验 SMA/EMA/ATR/通道口径
 - [ ] 3.6 ResearchMemo 模板（支持证据 / 反面证据 / 失效条件 / 下一个实验）
 - [ ] 3.7 手工模拟 MonitorCandidate（不接调度）
 
@@ -65,7 +73,8 @@ uv run mypy --strict src/mommy_chaogu/experiment
 4. 监控：先复用现有 signals/monitor，写 experiment monitor adapter。
 5. 实验存储：先本地 JSON 文件，稳定后再评估是否入库 agent.db。
 6. 编译入口：Coding Agent + Skill 直接产出 spec，不扩 WorkflowCompiler。
-7. 外部均线/通道代码：移植进指标内核，保持零外部依赖。
+7. 外部均线/通道代码：已入库 `quant/ma-suppression-monitor`，保持独立包形态；
+   spike 以它为交叉校验基准，只有 Golden Scenario 用到的口径才迁入主包指标内核。
 
 以上为 Spike 工作假设，最终以 RFC §8.3 通过标准的验证结果为准。
 
@@ -75,3 +84,8 @@ uv run mypy --strict src/mommy_chaogu/experiment
 
 - 3.1/3.2 完成：spec + 指标内核，29 个单元测试通过。通道采用 shift(1) 口径后，
   「突破当日高点」不再污染通道边界，与外部实现口径一致（待交叉校验）。
+- 合并 main（PR #40：coding agent memory acceptance；PR #42：quant 工具箱）。
+  工具箱的核心惯例（信号收盘确认、次根 bar 开盘成交；一切阈值 ATR 归一化；
+  EMA 用 TradingView 递推口径）与 spike 内核有两处口径差异，待 3.5 对账：
+  ① EMA warm-up：内核以首个 window 的 SMA 为种子，工具箱从首值递推；
+  ② 通道定义：内核为唐奇安通道（shift 1），工具箱为枢轴拟合通道与回归通道。
