@@ -83,17 +83,10 @@ def _build_context() -> ToolContext:
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
     from mommy_chaogu.market_data import create_adapter_chain
-    from mommy_chaogu.market_data.offline_adapter import OfflineMarketDataAdapter
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
 
-    # Explicitly opt-in fixture used by offline subprocess smoke tests.  It is
-    # intentionally environment-gated so production keeps the normal adapter chain.
-    base = (
-        OfflineMarketDataAdapter()
-        if os.environ.get("MOMMY_OFFLINE_MARKET_DATA") == "1"
-        else create_adapter_chain()
-    )
+    base = create_adapter_chain()
     store = CacheStore(MARKET_DB)
     adapter = CachedMarketDataAdapter(base, store)
 

@@ -53,6 +53,30 @@ def test_legacy_connection_without_profile_is_market_only_and_not_rewritten(
     saved = json.loads(_state_path().read_text())
     assert "profile" not in saved["connections"]["kimi"]["spec"]
 
+    reconnect = build_connect_parser().parse_args(["kimi", "--skip-test"])
+    with patch(
+        "mommy_chaogu.cli_commands.connect.shutil.which",
+        side_effect=lambda name: "/bin/kimi" if name == "kimi" else None,
+    ):
+        assert cmd_connect(reconnect) == 0
+    saved = json.loads(_state_path().read_text())
+    item = saved["connections"]["kimi"]
+    assert item["profile"] == "market-only"
+    assert item["spec"]["profile"] == "market-only"
+    assert "privacy_consent_version" not in item
+
+    upgrade = build_connect_parser().parse_args(
+        ["kimi", "--profile", "personal", "--skip-test"]
+    )
+    with patch(
+        "mommy_chaogu.cli_commands.connect.shutil.which",
+        side_effect=lambda name: "/bin/kimi" if name == "kimi" else None,
+    ):
+        assert cmd_connect(upgrade) == 0
+    upgraded = json.loads(_state_path().read_text())["connections"]["kimi"]
+    assert upgraded["profile"] == "personal"
+    assert upgraded["privacy_consent_version"]
+
 
 def test_market_only_connection_does_not_record_personal_consent(
     tmp_path: Path, monkeypatch

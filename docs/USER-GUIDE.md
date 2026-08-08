@@ -646,6 +646,9 @@ uv run mommy connect test kimi
 uv run mommy connect kimi --profile market-only
 ```
 
+已有连接在未传 `--profile` 时会保持原选择；从 `market-only` 切换到个人能力必须显式使用
+`--profile personal`，升级或重连不会静默扩大数据范围。
+
 用户也可在单轮要求“不使用个人数据”或“不要记录”；Skill 会关闭该轮个人上下文和写回。
 显式 `market-only` 不开放持仓、记忆、告警、`research_portfolio` 或
 `record_research_conclusion`，不得通过文件或数据库访问绕过这一边界。

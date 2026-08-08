@@ -26,6 +26,7 @@ from mommy_chaogu.coding_agents.base import (
     ConnectionStatus,
     connection_spec,
     directory_hash,
+    previous_spec,
     skill_dir,
 )
 from mommy_chaogu.config import default_user_config_dir
@@ -114,9 +115,21 @@ def _skill_dir(target: str) -> Path:
     return skill_dir(target)
 
 
-def _resolve_profile(profile: str | None) -> str:
+def _resolve_profile(profile: str | None, current_profile: str | None = None) -> str:
+    """Resolve a profile without silently widening an existing connection.
+
+    New connections still default to ``personal``.  Once a connection exists,
+    omitting ``--profile`` preserves its current scope; changing a prior
+    ``market-only`` choice therefore requires an explicit
+    ``--profile personal``.
+    """
     if profile:
         return normalize_mcp_profile(profile)
+    if current_profile is not None:
+        selected = normalize_mcp_profile(current_profile)
+        if selected == "market-only" and sys.stdin.isatty():
+            print("当前连接保持 market-only；如需个人记忆，请显式使用 --profile personal。")
+        return selected
     if sys.stdin.isatty():
         print("选择投研数据范围：")
         print("  1) personal（默认）：开放与任务相关的持仓 / 自选 / 记忆")
@@ -167,7 +180,11 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
     previous = connections.get(target)
     if previous is not None and not isinstance(previous, dict):
         raise ConnectError(f"{target} 的连接状态格式损坏")
-    selected = _resolve_profile(profile)
+    try:
+        old_spec = previous_spec(previous)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ConnectError(f"{target} 的连接状态格式损坏：{exc}") from exc
+    selected = _resolve_profile(profile, old_spec.profile if old_spec is not None else None)
     spec = _connection_spec(selected)
     adapter = _adapter(target, previous, force=force)
     try:

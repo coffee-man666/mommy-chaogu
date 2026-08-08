@@ -104,13 +104,13 @@ class CodexAdapter:
         )
 
     def disconnect(self) -> None:
-        current, old, binary = self._entry(), previous_spec(self.previous), self._which("codex")
-        if (
-            current is not None
-            and old is not None
-            and binary
-            and entry_matches_spec("codex", current, old)
-        ):
+        binary = self._which("codex")
+        if binary is None:
+            raise RuntimeError(
+                "没有找到 codex，无法确认并删除托管的 MCP 配置；连接状态已保留。"
+            )
+        current, old = self._entry(), previous_spec(self.previous)
+        if current is not None and old is not None and entry_matches_spec("codex", current, old):
             self._run([binary, "mcp", "remove", SERVER_NAME])
         elif current is not None:
             print("⚠ 保留已被修改的 Codex MCP 配置。")

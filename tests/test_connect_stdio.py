@@ -44,8 +44,7 @@ def test_personal_mcp_stdio_full_loop_without_llm_or_network(tmp_path: Path) -> 
             "MOMMY_PORTFOLIO_DB": str(portfolio_db),
             "MOMMY_AGENT_DB": str(agent_db),
             "MOMMY_REFERENCE_DB": str(reference_db),
-            "MOMMY_OFFLINE_MARKET_DATA": "1",
-            "PYTHONPATH": str(Path.cwd() / "src"),
+            "PYTHONPATH": os.pathsep.join((str(Path.cwd()), str(Path.cwd() / "src"))),
         }
     )
     for key in (
@@ -62,7 +61,7 @@ def test_personal_mcp_stdio_full_loop_without_llm_or_network(tmp_path: Path) -> 
     async def exercise() -> None:
         params = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "mommy_chaogu.agent.mcp_server", "--profile", "personal"],
+            args=["-m", "tests.mcp_offline_server", "--profile", "personal"],
             env=env,
             cwd=str(Path.cwd()),
         )

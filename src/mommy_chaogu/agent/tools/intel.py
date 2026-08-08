@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
@@ -118,22 +117,6 @@ def _handle_get_longhuban(_ctx: ToolContext, args: dict[str, Any]) -> str:
 
 def _handle_get_fundamentals(_ctx: ToolContext, args: dict[str, Any]) -> str:
     code = args["code"]
-    if os.environ.get("MOMMY_OFFLINE_MARKET_DATA") == "1":
-        return _json(
-            {
-                "code": code,
-                "name": "离线测试标的",
-                "pe": 20.0,
-                "pb": 3.0,
-                "ps": 5.0,
-                "roe": 15.0,
-                "gross_margin": 40.0,
-                "net_margin": 20.0,
-                "total_market_cap": 1_000_000_000_000,
-                "circulating_market_cap": 800_000_000_000,
-                "industry": "离线测试行业",
-            }
-        )
     result = get_fundamentals(code)
     return _json(result)
 

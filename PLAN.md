@@ -380,7 +380,7 @@ class CodingAgentAdapter(Protocol):
 本轮验收证据：
 
 - `tests/test_agent/test_memory_research_acceptance.py` 使用临时 SQLite 的真实持仓、自选、告警、事件、预测、语义知识、研究结论和维护管道，覆盖按股票隔离、幂等召回、预测验证反馈和健康状态矩阵。
-- `tests/test_connect_stdio.py` 启动真实 `python -m mommy_chaogu.agent.mcp_server --profile personal` 子进程，在空 Provider Key 和 `MOMMY_OFFLINE_MARKET_DATA=1` 下完成 initialize、工具清单、研究、写回、召回和健康检查。
+- `tests/test_connect_stdio.py` 启动测试专用 stdio 子进程，通过依赖注入运行真实 MCP server；离线行情与基本面 fixture 仅存在于 `tests/`，生产装配路径不存在返回假数据的环境开关。该进程在空 Provider Key 下完成 initialize、工具清单、研究、写回、召回和健康检查。
 - `tests/test_coding_agent_adapters.py` 是 Claude / Kimi / Cline / Codex 的统一参数化配置/协议契约测试；`tests/test_connect_migration.py` 覆盖无 profile 旧连接的 market-only 保护。
 - DoD 的外部 Agent 端到端项保持未勾选：仓库环境没有可证明的四个外部 Agent 二进制实际执行结果；发布前人工 smoke test 已写入 `docs/GETTING-STARTED.md`，不得用配置生成测试替代该验收。
 

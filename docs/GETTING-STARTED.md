@@ -140,6 +140,9 @@ uv run mommy connect claude --profile market-only
 uv run mommy connect test claude
 ```
 
+连接会记住已经选择的 profile。再次执行连接命令但不传 `--profile` 时会保持原范围；
+曾选择 `market-only` 的连接只有显式传入 `--profile personal` 才会开放个人数据。
+
 `personal` 工具结果会进入所选 Coding Agent 的模型上下文。MCP 不会把 API Key 作为工具
 结果返回，但 profile 不约束 Coding Agent 自身的文件系统权限；不要在敏感目录开启跳过
 确认或 YOLO 模式。

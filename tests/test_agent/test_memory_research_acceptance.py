@@ -24,15 +24,14 @@ from mommy_chaogu.agent.research_tools import ResearchToolCatalog
 from mommy_chaogu.agent.semantic_memory import SemanticMemory
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-from mommy_chaogu.market_data.offline_adapter import OfflineMarketDataAdapter
 from mommy_chaogu.portfolio.store import PortfolioStore
 from mommy_chaogu.signals.custom_alerts import CustomAlertStore
 from mommy_chaogu.watchlist.store import WatchlistStore
+from tests.offline_market_adapter import OfflineMarketDataAdapter
 
 
 @pytest.fixture
-def stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    monkeypatch.setenv("MOMMY_OFFLINE_MARKET_DATA", "1")
+def stores(tmp_path: Path) -> dict[str, Any]:
     agent_db = tmp_path / "agent.db"
     portfolio_db = tmp_path / "portfolio.db"
     market_db = tmp_path / "market.db"

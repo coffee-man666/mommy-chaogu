@@ -1,4 +1,4 @@
-"""Deterministic no-network adapter for local MCP smoke tests."""
+"""Deterministic no-network adapter used only by tests."""
 
 from __future__ import annotations
 

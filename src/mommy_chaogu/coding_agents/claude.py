@@ -102,13 +102,13 @@ class ClaudeAdapter:
 
     def disconnect(self) -> None:
         current, old = self._entry(), previous_spec(self.previous)
-        if (
-            current is not None
-            and old is not None
-            and entry_matches_spec("claude", current, old)
-            and self._which("claude")
-        ):
-            self._run([self._which("claude"), "mcp", "remove", "--scope", "user", SERVER_NAME])
+        if current is not None and old is not None and entry_matches_spec("claude", current, old):
+            binary = self._which("claude")
+            if binary is None:
+                raise RuntimeError(
+                    "没有找到 claude，无法安全删除托管的 MCP 配置；连接状态已保留。"
+                )
+            self._run([binary, "mcp", "remove", "--scope", "user", SERVER_NAME])
         elif current is not None:
             print("⚠ 保留已被修改的 Claude MCP 配置。")
         path = Path(str((self.previous or {}).get("skill_path", skill_dir("claude"))))

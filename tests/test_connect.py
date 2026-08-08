@@ -65,6 +65,12 @@ def test_resolve_profile_defaults_to_personal_non_tty() -> None:
         assert _resolve_profile(None) == "personal"
 
 
+def test_resolve_profile_preserves_existing_market_only_non_tty() -> None:
+    with patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=False):
+        assert _resolve_profile(None, "market-only") == "market-only"
+        assert _resolve_profile("personal", "market-only") == "personal"
+
+
 def test_resolve_profile_interactive_choice() -> None:
     with (
         patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=True),
@@ -211,6 +217,52 @@ def test_disconnect_preserves_unmanaged_kimi_entry(
     after = json.loads(path.read_text(encoding="utf-8"))
     assert after["mcpServers"]["mommy-chaogu"]["command"] == "custom"
     assert "未修改外部配置" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("target", ["claude", "codex"])
+def test_disconnect_keeps_managed_state_when_cli_is_unavailable(
+    target: str,
+    isolated_homes: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_home, _ = isolated_homes
+    spec = _connection_spec("personal")
+    item = {
+        "profile": "personal",
+        "spec": spec.as_dict(),
+        "skill_path": str(config_home / "missing-skill"),
+        "skill_hash": "",
+    }
+    config_home.mkdir(parents=True, exist_ok=True)
+    state_path = config_home / "connections.json"
+    state_path.write_text(
+        json.dumps({"version": 1, "connections": {target: item}}), encoding="utf-8"
+    )
+    if target == "claude":
+        claude_config = Path(os.environ["CLAUDE_CONFIG_DIR"]) / ".claude.json"
+        claude_config.parent.mkdir(parents=True, exist_ok=True)
+        claude_config.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "mommy-chaogu": {
+                            "command": spec.command,
+                            "args": spec.args,
+                            "env": spec.env,
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    disconnect = build_connect_parser().parse_args(["disconnect", target])
+    with patch("mommy_chaogu.cli_commands.connect.shutil.which", return_value=None):
+        assert cmd_connect(disconnect) == 2
+
+    saved = json.loads(state_path.read_text(encoding="utf-8"))
+    assert target in saved["connections"]
+    assert "连接状态已保留" in capsys.readouterr().err
 
 
 def test_probe_lists_profile_scoped_tools(tmp_path: Path) -> None:
