@@ -63,7 +63,6 @@ struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.appPalette) private var palette
     @State private var config = ServerConfiguration()
-    @State private var voiceProvider = "系统语音 + Agent"
     var body: some View {
         Form {
             Section("妈咪炒股服务") {
@@ -72,8 +71,10 @@ struct SettingsView: View {
                 Text("大模型密钥保留在服务端；App 不直接保存 DeepSeek、OpenAI、Kimi、MiniMax 或 GLM 的密钥。").font(.caption).foregroundStyle(palette.secondary)
             }
             Section("语音指挥") {
-                Picker("语音引擎", selection: $voiceProvider) { Text("系统语音 + Agent").tag("系统语音 + Agent"); Text("MiniMax 实时语音").tag("MiniMax 实时语音") }
-                if voiceProvider == "MiniMax 实时语音" { TextField("后端语音网关 WebSocket", text: $config.voiceGatewayURL).textInputAutocapitalization(.never).keyboardType(.URL); Text("实时语音通过你的后端网关转发，支持打断、连续对话与服务端工具调用，避免把模型密钥放进手机。").font(.caption).foregroundStyle(palette.secondary) }
+                Picker("语音引擎", selection: $store.voiceProvider) {
+                    ForEach(VoiceProvider.allCases) { provider in Text(provider.rawValue).tag(provider) }
+                }
+                if store.voiceProvider == .minimax { TextField("后端语音网关 WebSocket", text: $config.voiceGatewayURL).textInputAutocapitalization(.never).keyboardType(.URL); Text("实时语音通过你的后端网关转发，支持打断、连续对话与服务端工具调用，避免把模型密钥放进手机。").font(.caption).foregroundStyle(palette.secondary) }
             }
             Section("模型") {
                 LabeledContent("当前模型", value: "由服务端配置")

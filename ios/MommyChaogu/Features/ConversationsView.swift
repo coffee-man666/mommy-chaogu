@@ -27,8 +27,8 @@ struct ConversationsView: View {
         .navigationTitle(store.conversations.first(where: { $0.id == store.activeConversationID })?.title ?? "AI")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) { Button { showSessions = true } label: { Image(systemName: "sidebar.left") } }
-            ToolbarItem(placement: .topBarTrailing) { Button { store.createConversation() } label: { Image(systemName: "square.and.pencil") } }
+            ToolbarItem(placement: .topBarLeading) { Button { showSessions = true } label: { Image(systemName: "sidebar.left") }.disabled(store.isResponding) }
+            ToolbarItem(placement: .topBarTrailing) { Button { store.createConversation() } label: { Image(systemName: "square.and.pencil") }.disabled(store.isResponding) }
         }
         .sheet(isPresented: $showSessions) { ConversationLibraryView(isPresented: $showSessions) }
         .onChange(of: voice.transcript) { _, value in draft = value }
@@ -42,7 +42,7 @@ struct ConversationsView: View {
         ScrollView {
             VStack(spacing: 22) {
                 Spacer(minLength: 54)
-                ZStack { Circle().fill(palette.accent.opacity(0.14)).frame(width: 88, height: 88); Image(systemName: "waveform.and.sparkles").font(.system(size: 36)).foregroundStyle(palette.accent) }
+                ZStack { Circle().fill(palette.accent.opacity(0.14)).frame(width: 88, height: 88); Image(systemName: "waveform").font(.system(size: 36)).foregroundStyle(palette.accent) }
                 VStack(spacing: 7) { Text("今天想研究什么？").font(.title.bold()); Text("我能看行情、查持仓、分析篮子，\n也会记住你的判断和偏好。").foregroundStyle(palette.secondary).multilineTextAlignment(.center) }
                 LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 10) {
                     suggestion("复盘全部持仓", "briefcase")
@@ -105,9 +105,9 @@ struct ConversationLibraryView: View {
                 ForEach(store.conversations) { conversation in
                     Button { Task { await store.loadConversation(conversation.id); isPresented = false } } label: {
                         VStack(alignment: .leading, spacing: 5) { HStack { Text(conversation.title).font(.headline).foregroundStyle(palette.text); Spacer(); if conversation.id == store.activeConversationID { Image(systemName: "checkmark.circle.fill").foregroundStyle(palette.accent) } }; Text(conversation.preview.isEmpty ? "开始一段新的研究" : conversation.preview).font(.caption).foregroundStyle(palette.secondary).lineLimit(1) }
-                    }
+                    }.disabled(store.isResponding)
                 }.onDelete(perform: store.deleteConversations)
-            }.scrollContentBackground(.hidden).background(palette.background).navigationTitle("全部对话").toolbar { ToolbarItem(placement: .topBarTrailing) { Button { store.createConversation(); isPresented = false } label: { Image(systemName: "square.and.pencil") } } }
+            }.scrollContentBackground(.hidden).background(palette.background).navigationTitle("全部对话").toolbar { ToolbarItem(placement: .topBarTrailing) { Button { store.createConversation(); isPresented = false } label: { Image(systemName: "square.and.pencil") }.disabled(store.isResponding) } }
         }
     }
 }

@@ -165,4 +165,11 @@ struct Prediction: Decodable, Identifiable {
 
 struct WSTicket: Decodable { let ticket: String }
 
+enum VoiceProvider: String, CaseIterable, Codable, Identifiable {
+    case system = "系统语音 + Agent"
+    case minimax = "MiniMax 实时语音"
+
+    var id: String { rawValue }
+}
+
 enum ConnectionState: Equatable { case idle, loading, online, failed(String) }

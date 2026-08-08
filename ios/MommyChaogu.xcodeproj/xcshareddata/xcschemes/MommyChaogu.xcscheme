@@ -39,6 +39,17 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F57AB59982494E688690A54F"
+               BuildableName = "MommyChaoguTests.xctest"
+               BlueprintName = "MommyChaoguTests"
+               ReferencedContainer = "container:MommyChaogu.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

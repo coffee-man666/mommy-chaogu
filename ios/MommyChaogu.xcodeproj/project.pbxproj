@@ -9,29 +9,46 @@
 /* Begin PBXBuildFile section */
 		0BC28526D86908C1918CCCD9 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = F125A5EDE5542216921B4B26 /* Components.swift */; };
 		11704FB935BF9A63FE59B7F6 /* MarketView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 410CF41B292632F4322C9675 /* MarketView.swift */; };
+		22827933B33C2272AAC78337 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 88B3CF2599BE95E823AE7536 /* Assets.xcassets */; };
 		312DE0AA68074457D4814A9D /* PortfolioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D00F3DF5F8398508BAE0E8B /* PortfolioView.swift */; };
 		5429A322C6E42860E665323D /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5C0CFB9B150AF0E63720FA /* Theme.swift */; };
 		60AFE34B9D557E1C93E737EF /* ConversationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0783E0A5AA737AE037D2B5F /* ConversationsView.swift */; };
 		62E7BD7C69A0F0DAA916844B /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B925CF03D767C2DE83B864B2 /* AppStore.swift */; };
 		680501B6260D6C03C5092EBD /* VoiceCommandController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA79A55A0630C1AF30E1695 /* VoiceCommandController.swift */; };
+		6A59A074BF7C546DFB822050 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3B53AE0AE7D939B2AEC092 /* APIClientTests.swift */; };
 		986EBC7E22489966475178B0 /* BasketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59D697FFFF40846216A9B15 /* BasketsView.swift */; };
 		AB20D627ADF36A7C0B4A05F5 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855FA505376EA84A2991EF18 /* DashboardView.swift */; };
 		ABCDAB480237C9025DF22F6B /* MommyChaoguApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9229AFDEC809B43440A823E /* MommyChaoguApp.swift */; };
 		C7A16EEBE51AEB9E68CEF25F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB0E5F2BA4F429238B1D1BD /* APIClient.swift */; };
+		CC23740B1EFE7A9F9CBCAF9B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 6CD4CD8EA6B8F0D231219AD9 /* PrivacyInfo.xcprivacy */; };
 		D116417EF4318A7C42772152 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A626BC4626440DBDC5BDDC89 /* ProfileView.swift */; };
 		D921A127FBBDEAA126531089 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A2F59F7ECC5302EA86AED /* Models.swift */; };
 		FD999F7AA67DBCBD0244F258 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D4A22979C6AF18558F7EE3 /* RootView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		6D27D9866C53227A1CA42153 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 87E9C8CECFA33D989CCA4F4F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8DAC183015040D11A45D170C;
+			remoteInfo = MommyChaogu;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		032A2F59F7ECC5302EA86AED /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		0A5C0CFB9B150AF0E63720FA /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		1133C0BBA3DDA0BDD76E5AFB /* MommyChaogu.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MommyChaogu.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B3B53AE0AE7D939B2AEC092 /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
 		31D4A22979C6AF18558F7EE3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		410CF41B292632F4322C9675 /* MarketView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketView.swift; sourceTree = "<group>"; };
+		6CD4CD8EA6B8F0D231219AD9 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7FB0E5F2BA4F429238B1D1BD /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		855FA505376EA84A2991EF18 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		88B3CF2599BE95E823AE7536 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9D00F3DF5F8398508BAE0E8B /* PortfolioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioView.swift; sourceTree = "<group>"; };
+		9D4D9408C90AA5AFF7726A0B /* MommyChaoguTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MommyChaoguTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A626BC4626440DBDC5BDDC89 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		B9229AFDEC809B43440A823E /* MommyChaoguApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MommyChaoguApp.swift; sourceTree = "<group>"; };
 		B925CF03D767C2DE83B864B2 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
@@ -50,6 +67,14 @@
 			path = UI;
 			sourceTree = "<group>";
 		};
+		3825839219A84BC7498CC616 /* MommyChaoguTests */ = {
+			isa = PBXGroup;
+			children = (
+				1B3B53AE0AE7D939B2AEC092 /* APIClientTests.swift */,
+			);
+			path = MommyChaoguTests;
+			sourceTree = "<group>";
+		};
 		3B94AD5F64CFB6E7611DBB8F /* Core */ = {
 			isa = PBXGroup;
 			children = (
@@ -61,10 +86,20 @@
 			path = Core;
 			sourceTree = "<group>";
 		};
+		4BFD2F4555B8355DDADEB0DC /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				88B3CF2599BE95E823AE7536 /* Assets.xcassets */,
+				6CD4CD8EA6B8F0D231219AD9 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		527C6BB5521E6C1BC6A9DC24 = {
 			isa = PBXGroup;
 			children = (
 				629C7134349274D8C78AAE35 /* MommyChaogu */,
+				3825839219A84BC7498CC616 /* MommyChaoguTests */,
 				C04B667576203C3792042DD0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -75,6 +110,7 @@
 				B9229AFDEC809B43440A823E /* MommyChaoguApp.swift */,
 				3B94AD5F64CFB6E7611DBB8F /* Core */,
 				98923B7B1E337558FA6C3763 /* Features */,
+				4BFD2F4555B8355DDADEB0DC /* Resources */,
 				137847CC7F5548757E9BCE95 /* UI */,
 			);
 			path = MommyChaogu;
@@ -99,6 +135,7 @@
 			isa = PBXGroup;
 			children = (
 				1133C0BBA3DDA0BDD76E5AFB /* MommyChaogu.app */,
+				9D4D9408C90AA5AFF7726A0B /* MommyChaoguTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -111,6 +148,7 @@
 			buildConfigurationList = 82C7C79E9A631CD7623A6A40 /* Build configuration list for PBXNativeTarget "MommyChaogu" */;
 			buildPhases = (
 				41359060D0CDBEC61923209A /* Sources */,
+				221109550F1296539ACBF650 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -123,6 +161,24 @@
 			productReference = 1133C0BBA3DDA0BDD76E5AFB /* MommyChaogu.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F57AB59982494E688690A54F /* MommyChaoguTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D45EFF40B21D6FF4C837D616 /* Build configuration list for PBXNativeTarget "MommyChaoguTests" */;
+			buildPhases = (
+				AA359F893C5D11D5795DBDE6 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E9A614EE071B943800A56CDE /* PBXTargetDependency */,
+			);
+			name = MommyChaoguTests;
+			packageProductDependencies = (
+			);
+			productName = MommyChaoguTests;
+			productReference = 9D4D9408C90AA5AFF7726A0B /* MommyChaoguTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -133,6 +189,9 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					8DAC183015040D11A45D170C = {
+						DevelopmentTeam = "";
+					};
+					F57AB59982494E688690A54F = {
 						DevelopmentTeam = "";
 					};
 				};
@@ -152,9 +211,22 @@
 			projectRoot = "";
 			targets = (
 				8DAC183015040D11A45D170C /* MommyChaogu */,
+				F57AB59982494E688690A54F /* MommyChaoguTests */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		221109550F1296539ACBF650 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				22827933B33C2272AAC78337 /* Assets.xcassets in Resources */,
+				CC23740B1EFE7A9F9CBCAF9B /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		41359060D0CDBEC61923209A /* Sources */ = {
@@ -178,7 +250,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA359F893C5D11D5795DBDE6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6A59A074BF7C546DFB822050 /* APIClientTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E9A614EE071B943800A56CDE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8DAC183015040D11A45D170C /* MommyChaogu */;
+			targetProxy = 6D27D9866C53227A1CA42153 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		34C7A252BCD09D456116E91C /* Release */ = {
@@ -189,7 +277,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "妈咪炒股";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "连接你的妈咪炒股数据服务与实时行情。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于语音指挥 AI 助手。";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "将你的语音指令转成文字并交给 AI 助手。";
@@ -214,7 +302,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "妈咪炒股";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "连接你的妈咪炒股数据服务与实时行情。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于语音指挥 AI 助手。";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "将你的语音指令转成文字并交给 AI 助手。";
@@ -230,6 +318,40 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		7EE15788A14CF2F6914D7B62 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.coffeeman.mommychaogu.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MommyChaogu.app/MommyChaogu";
+			};
+			name = Debug;
+		};
+		993B5AF855DC5C71D23CCC53 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.coffeeman.mommychaogu.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MommyChaogu.app/MommyChaogu";
+			};
+			name = Release;
 		};
 		B0BA0B77681A42C136F04663 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -373,6 +495,15 @@
 			buildConfigurations = (
 				44FD17FAF4240BCA962C0304 /* Debug */,
 				34C7A252BCD09D456116E91C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D45EFF40B21D6FF4C837D616 /* Build configuration list for PBXNativeTarget "MommyChaoguTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7EE15788A14CF2F6914D7B62 /* Debug */,
+				993B5AF855DC5C71D23CCC53 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -6,11 +6,12 @@ struct ServerConfiguration: Codable, Equatable {
     var voiceGatewayURL = ""
 }
 enum APIError: LocalizedError {
-    case invalidURL, badResponse(Int, String), transport(String)
+    case invalidURL, badResponse(Int, String), decoding(String), transport(String)
     var errorDescription: String? {
         switch self {
         case .invalidURL: "服务地址不正确"
         case let .badResponse(code, detail): "服务返回错误（\(code)）：\(detail)"
+        case let .decoding(message): "服务数据格式不兼容：\(message)"
         case let .transport(message): "连接失败：\(message)"
         }
     }
@@ -20,9 +21,9 @@ final class APIClient {
     private let session: URLSession
     var configuration: ServerConfiguration
 
-    init(configuration: ServerConfiguration) {
+    init(configuration: ServerConfiguration, sessionConfiguration: URLSessionConfiguration = .default) {
         self.configuration = configuration
-        let config = URLSessionConfiguration.default
+        let config = sessionConfiguration
         config.timeoutIntervalForRequest = 20
         config.waitsForConnectivity = true
         self.session = URLSession(configuration: config)
@@ -54,7 +55,18 @@ final class APIClient {
             }
             return try JSONDecoder().decode(T.self, from: data)
         } catch let error as APIError { throw error }
+        catch let error as DecodingError { throw APIError.decoding(Self.describe(error)) }
         catch { throw APIError.transport(error.localizedDescription) }
+    }
+
+    private static func describe(_ error: DecodingError) -> String {
+        switch error {
+        case let .keyNotFound(key, context): "缺少字段 \(key.stringValue)（\(context.codingPath.map(\.stringValue).joined(separator: "."))）"
+        case let .typeMismatch(_, context): "字段类型错误（\(context.codingPath.map(\.stringValue).joined(separator: "."))）"
+        case let .valueNotFound(_, context): "字段值为空（\(context.codingPath.map(\.stringValue).joined(separator: "."))）"
+        case let .dataCorrupted(context): "JSON 数据损坏（\(context.codingPath.map(\.stringValue).joined(separator: "."))）"
+        @unknown default: error.localizedDescription
+        }
     }
 
     func streamAgent(message: String, sessionID: String, onEvent: @escaping @MainActor ([String: Any]) -> Void) async throws {

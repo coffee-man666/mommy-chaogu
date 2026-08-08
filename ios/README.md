@@ -47,8 +47,10 @@ open MommyChaogu.xcodeproj
 xcodebuild \
   -project MommyChaogu.xcodeproj \
   -scheme MommyChaogu \
-  -sdk iphonesimulator \
-  -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
   -derivedDataPath /tmp/mommy-chaogu-ios-derived \
-  CODE_SIGNING_ALLOWED=NO build
+  CODE_SIGNING_ALLOWED=NO test
 ```
+
+GitHub Actions 会在每次涉及 `ios/` 的推送和 PR 中重新生成工程，检查
+`project.yml` 与 `xcodeproj` 是否一致，并在可用的 iPhone 模拟器上运行同一套测试。

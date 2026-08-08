@@ -64,14 +64,33 @@ final class VoiceCommandController: NSObject, ObservableObject, AVSpeechSynthesi
     }
 
     func speak(_ text: String) {
+        if isListening { stopListening() }
         synthesizer.stopSpeaking(at: .immediate)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            isSpeaking = false
+            return
+        }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
         utterance.rate = 0.5
         synthesizer.speak(utterance)
     }
 
-    func stopSpeaking() { synthesizer.stopSpeaking(at: .immediate); isSpeaking = false }
+    func stopSpeaking() {
+        synthesizer.stopSpeaking(at: .immediate); isSpeaking = false
+        deactivateAudioSessionIfIdle()
+    }
+
+    private func deactivateAudioSessionIfIdle() {
+        guard !synthesizer.isSpeaking, !isListening else { return }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) { Task { @MainActor in self.isSpeaking = true } }
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { Task { @MainActor in self.isSpeaking = false } }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { Task { @MainActor in self.isSpeaking = false; self.deactivateAudioSessionIfIdle() } }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { Task { @MainActor in self.isSpeaking = false; self.deactivateAudioSessionIfIdle() } }
 }
