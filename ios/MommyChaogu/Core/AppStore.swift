@@ -8,6 +8,7 @@ final class AppStore: ObservableObject {
     @Published var voiceProvider: VoiceProvider
     @Published var configuration: ServerConfiguration
     @Published var connection: ConnectionState = .idle
+    @Published var marketState: MarketDataState = .idle
     @Published var quotes: [Quote] = []
     @Published var bars: [Bar] = []
     @Published var selectedQuote: Quote?
@@ -22,6 +23,7 @@ final class AppStore: ObservableObject {
     @Published var toast: String?
 
     private var client: APIClient
+    private var basketDetailCache: [String: BasketDetail] = [:]
     private let defaults = UserDefaults.standard
 
     init() {
@@ -55,32 +57,55 @@ final class AppStore: ObservableObject {
     }
 
     func loadMarket() async {
+        marketState = .loading
         do {
             let snapshot: QuoteSnapshot = try await client.get("/api/quotes")
             quotes = snapshot.quotes
             if selectedQuote == nil { selectedQuote = quotes.first }
-        } catch { connection = .failed(error.localizedDescription) }
+            marketState = quotes.isEmpty ? .empty("服务已连接，但当前没有自选股行情。") : .ready
+        } catch {
+            let message = client.userMessage(for: error)
+            if case let APIError.badResponse(code, _) = error, code == 503 {
+                marketState = .empty(message)
+            } else {
+                marketState = .failed(message)
+                connection = .failed(message)
+            }
+        }
     }
 
     func selectQuote(_ quote: Quote) async {
         selectedQuote = quote
-        do { bars = try await client.get("/api/quotes/\(quote.code)/bars", query: [.init(name: "limit", value: "60")]) }
-        catch { toast = error.localizedDescription }
+        do { bars = try await loadBars(quote.code) }
+        catch { toast = client.userMessage(for: error) }
+    }
+
+    func loadQuote(_ code: String) async throws -> Quote {
+        let encoded = code.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? code
+        return try await client.get("/api/quotes/\(encoded)")
+    }
+
+    func loadBars(_ code: String) async throws -> [Bar] {
+        let encoded = code.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? code
+        return try await client.get("/api/quotes/\(encoded)/bars", query: [.init(name: "limit", value: "60")])
     }
 
     func loadPortfolio() async {
         do { portfolio = try await client.get("/api/portfolio") }
-        catch { connection = .failed(error.localizedDescription) }
+        catch { connection = .failed(client.userMessage(for: error)) }
     }
 
     func loadBaskets() async {
         do { baskets = try await client.get("/api/baskets") }
-        catch { connection = .failed(error.localizedDescription) }
+        catch { connection = .failed(client.userMessage(for: error)) }
     }
 
     func basketDetail(_ basket: Basket) async throws -> BasketDetail {
+        if let cached = basketDetailCache[basket.id] { return cached }
         let encoded = basket.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? basket.id
-        return try await client.get("/api/baskets/\(encoded)")
+        let detail: BasketDetail = try await client.get("/api/baskets/\(encoded)")
+        basketDetailCache[basket.id] = detail
+        return detail
     }
 
     func loadPredictions() async {
@@ -113,7 +138,7 @@ final class AppStore: ObservableObject {
                 guard let role = ChatMessage.Role(rawValue: row.role) else { return nil }
                 return ChatMessage(role: role, content: row.content)
             }
-        } catch { toast = error.localizedDescription }
+        } catch { toast = client.userMessage(for: error) }
     }
 
     func send(_ raw: String) async {
@@ -138,7 +163,9 @@ final class AppStore: ObservableObject {
                 }
             }
         } catch {
-            updateResponse(responseID, in: conversationID) { $0.content = error.localizedDescription }
+            let message = client.userMessage(for: error)
+            updateResponse(responseID, in: conversationID) { $0.content = message }
+            connection = .failed(message)
         }
         isResponding = false; activeTools = []
         updateResponse(responseID, in: conversationID) { message in

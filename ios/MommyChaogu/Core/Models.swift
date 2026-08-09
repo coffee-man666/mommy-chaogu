@@ -95,20 +95,52 @@ struct Basket: Decodable, Identifiable {
     let id, name, kind: String
     let description: String
     let totalStocks: Int
+    let members: [BasketMember]
     let followed, hidden: Bool
     let reason: String
-    enum CodingKeys: String, CodingKey { case id, name, kind, description, followed, hidden, reason; case totalStocks = "total_stocks" }
+    enum CodingKeys: String, CodingKey { case id, name, kind, description, members, followed, hidden, reason; case totalStocks = "total_stocks" }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        kind = try c.decode(String.self, forKey: .kind)
+        description = (try? c.decode(String.self, forKey: .description)) ?? ""
+        totalStocks = (try? c.decode(Int.self, forKey: .totalStocks)) ?? 0
+        members = (try? c.decodeIfPresent([BasketMember].self, forKey: .members)) ?? []
+        followed = (try? c.decode(Bool.self, forKey: .followed)) ?? true
+        hidden = (try? c.decode(Bool.self, forKey: .hidden)) ?? false
+        reason = (try? c.decode(String.self, forKey: .reason)) ?? ""
+    }
 }
 
 struct BasketMember: Decodable, Identifiable {
     let code, name: String
     let weight: Double?
+    let price: Double?
+    let changePct: Double?
+    let note: String
     var id: String { code }
-    enum CodingKeys: String, CodingKey { case code, name, weight }
+    enum CodingKeys: String, CodingKey { case code, name, weight, price, note; case changePct = "change_pct" }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         code = try c.decode(String.self, forKey: .code); name = try c.decode(String.self, forKey: .name)
         weight = c.optionalFlexibleDouble(forKey: .weight)
+        price = c.optionalFlexibleDouble(forKey: .price)
+        changePct = c.optionalFlexibleDouble(forKey: .changePct)
+        note = (try? c.decode(String.self, forKey: .note)) ?? ""
+    }
+}
+
+struct BasketMover: Decodable {
+    let code, name: String
+    let changePct: Double
+    enum CodingKeys: String, CodingKey { case code, name; case changePct = "change_pct" }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        code = try c.decode(String.self, forKey: .code)
+        name = try c.decode(String.self, forKey: .name)
+        changePct = try c.flexibleDouble(forKey: .changePct)
     }
 }
 
@@ -116,12 +148,19 @@ struct BasketDetail: Decodable {
     let id, name, kind, description: String
     let members: [BasketMember]
     let changePct: Double?
-    enum CodingKeys: String, CodingKey { case id, name, kind, description, members; case changePct = "change_pct" }
+    let leader, laggard: BasketMover?
+    let status: String
+    let message: String?
+    enum CodingKeys: String, CodingKey { case id, name, kind, description, members, leader, laggard, status, message; case changePct = "change_pct" }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); name = try c.decode(String.self, forKey: .name)
         kind = try c.decode(String.self, forKey: .kind); description = (try? c.decode(String.self, forKey: .description)) ?? ""
         members = try c.decode([BasketMember].self, forKey: .members); changePct = c.optionalFlexibleDouble(forKey: .changePct)
+        leader = try? c.decodeIfPresent(BasketMover.self, forKey: .leader)
+        laggard = try? c.decodeIfPresent(BasketMover.self, forKey: .laggard)
+        status = (try? c.decode(String.self, forKey: .status)) ?? "unavailable"
+        message = try? c.decodeIfPresent(String.self, forKey: .message)
     }
 }
 
@@ -173,3 +212,11 @@ enum VoiceProvider: String, CaseIterable, Codable, Identifiable {
 }
 
 enum ConnectionState: Equatable { case idle, loading, online, failed(String) }
+
+enum MarketDataState: Equatable {
+    case idle
+    case loading
+    case ready
+    case empty(String)
+    case failed(String)
+}
