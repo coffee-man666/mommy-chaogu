@@ -1,5 +1,7 @@
 # mommy-chaogu
 
+> 原生 iOS MVP 已加入：[iOS 运行与架构说明](ios/README.md)。
+
 <div align="center">
 
 **本地优先的 A 股 / 美股投研助手。用一句话看行情、查资金、分析持仓，并把判断变成可验证的投研记录。**

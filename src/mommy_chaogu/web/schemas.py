@@ -482,6 +482,8 @@ class BasketMemberOut(BaseModel):
     name: str
     weight: Decimal | None = None
     note: str = ""
+    price: Decimal | None = None
+    change_pct: Decimal | None = None
 
 
 class BasketOut(BaseModel):
@@ -491,6 +493,7 @@ class BasketOut(BaseModel):
     name: str
     description: str = ""
     total_stocks: int = 0
+    members: list[BasketMemberOut] = Field(default_factory=list)
     followed: bool = True
     hidden: bool = False
     sort_order: int = 0
