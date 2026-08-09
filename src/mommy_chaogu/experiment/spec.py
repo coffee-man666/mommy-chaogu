@@ -11,6 +11,9 @@
 规则（entry_rule / exit_rule）采用结构化 condition + params，
 不发明自由表达式 DSL：condition 必须是运行时认识的预定义类型，
 保证 spec 可由另一个 Coding Agent 无歧义重放。
+
+均线类特征（ema_cloud / ema / atr）以 quant/ma-suppression-monitor 的口径为准；
+linreg_channel 由运行时直接调用该工具箱计算，内核不重复实现。
 """
 
 from __future__ import annotations
@@ -25,12 +28,15 @@ SPEC_VERSION = 1
 Market = Literal["US", "CN"]
 Frequency = Literal["1d"]
 
-# 第一版认识的特征类型（确定性指标内核，见 indicators.py）
+# 第一版认识的特征类型（确定性指标内核见 indicators.py；
+# linreg_channel 由 quant/ma-suppression-monitor 提供）
 FEATURE_TYPES = frozenset(
     {
         "sma",
         "ema",
+        "ema_cloud",
         "price_channel",
+        "linreg_channel",
         "atr",
         "rsi",
         "volume_sma",
@@ -69,7 +75,7 @@ class DateRange:
 
 @dataclass(frozen=True)
 class FeatureSpec:
-    """一个确定性特征，如 20 日 SMA 或 20 日价格通道。"""
+    """一个确定性特征，如 EMA55/89 云带或 60 日回归通道。"""
 
     type: str
     window: int

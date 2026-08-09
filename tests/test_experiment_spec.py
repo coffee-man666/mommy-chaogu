@@ -16,7 +16,7 @@ def _golden_payload() -> dict:
             "type": "user_viewpoint",
             "text": "半导体 ETF 跌破中期均线后，如果在几个交易日内收复均线并重新进入通道，往往是假跌破。",
         },
-        "hypothesis": "收盘价跌破 SMA20 后 5 个交易日内收复 SMA20 且回到 20 日通道内，"
+        "hypothesis": "收盘价跌破 EMA55/89 云带下沿后 5 个交易日内收复云带上沿并回到回归通道内，"
         "随后 20 个交易日的收益显著优于基准。",
         "market": "US",
         "universe": ["SOXX", "SMH", "QQQ"],
@@ -24,13 +24,14 @@ def _golden_payload() -> dict:
         "date_range": {"start": "2016-01-01", "end": "2026-07-31"},
         "data_requirements": ["adjusted_ohlcv"],
         "features": [
-            {"type": "sma", "window": 20},
-            {"type": "price_channel", "window": 20},
+            {"type": "ema_cloud", "window": 89, "params": {"fast": 55, "slow": 89}},
+            {"type": "linreg_channel", "window": 60, "params": {"k": 2.0}},
         ],
         "entry_rule": {
             "condition": "false_breakdown_reclaim",
-            "params": {"ma_window": 20, "channel_window": 20, "max_days_below": 5},
-            "note": "收盘跌破 SMA20 → 5 个交易日内收盘重新站上 SMA20 且收盘回到 20 日通道下轨之上。",
+            "params": {"cloud_fast": 55, "cloud_slow": 89, "channel_window": 60, "max_days_below": 5},
+            "note": "收盘跌破 EMA55/89 云带下沿 → 5 个交易日内收盘重新站上云带上沿，"
+            "且收盘回到 60 日回归通道（k=2σ）下轨之上。",
         },
         "exit_rule": {
             "condition": "composite_exit",
@@ -41,9 +42,9 @@ def _golden_payload() -> dict:
         "cost_model": "us_equity_default",
         "validation": {"walk_forward": True, "regime_analysis": True, "benchmark": "SPY"},
         "assumptions": [
-            "「中期均线」解释为 SMA20（约一个交易月）。",
+            "「中期均线」解释为 EMA55/89 云带：收盘低于云带下沿视为跌破，收盘高于云带上沿视为收复。",
             "「几个交易日」解释为 5 个交易日。",
-            "「重新进入通道」解释为收盘价回到 20 日通道下轨之上。",
+            "「重新进入通道」解释为收盘价回到 60 日回归通道（k=2σ）下轨之上。",
         ],
     }
 
@@ -60,6 +61,8 @@ class TestGoldenRoundTrip:
         assert len(spec.assumptions) == 3
         assert spec.validation.benchmark == "SPY"
         assert spec.entry_rule.condition == "false_breakdown_reclaim"
+        assert spec.features[0].type == "ema_cloud"
+        assert spec.features[1].type == "linreg_channel"
 
 
 class TestValidation:

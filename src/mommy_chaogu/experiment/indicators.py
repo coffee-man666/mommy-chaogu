@@ -3,7 +3,10 @@
 设计约束（RFC §6.2）：
 - 只基于本地 OHLCV 统一计算，不依赖上游供应商口径；
 - 纯函数、无 IO、无随机性，同一输入永远得到同一输出；
-- 所有序列与输入等长，warm-up 期间为 None，绝不向前填充；
+- 均线类指标（EMA / EMA 云带 / ATR）与 quant/ma-suppression-monitor 同口径：
+  EMA 用 TradingView 递推式（从首值起有定义），ATR 用 TR 的简单滚动均值，
+  均有 pandas 交叉校验测试锁定；
+- 其余序列 warm-up 期间为 None，绝不向前填充；
 - 任何「当天是否触发」的判断只允许使用截至前一天已确认的数据，
   通道类指标默认按 shift(1) 处理，避免用当日高点定义当日突破（look-ahead）。
 """
@@ -34,23 +37,42 @@ def sma(values: list[float], window: int) -> list[float | None]:
     return out
 
 
-def ema(values: list[float], window: int) -> list[float | None]:
-    """指数移动平均，以前 window 个值的 SMA 作为种子（与主流口径一致）。
+def ema(values: list[float], window: int) -> list[float]:
+    """指数移动平均，TradingView `ta.ema` 口径（k = 2/(window+1)，从首值递推）。
 
-    种子之前为 None；从第 window 个值起按 k = 2 / (window + 1) 递推。
+    与 quant/ma-suppression-monitor 的 `ema()`（pandas `ewm(adjust=False)`）完全等价，
+    由 TestEma 用 pandas 交叉校验锁定。从首根 bar 起有定义；
+    前 window 根为统计意义上的 warm-up，是否采信由调用方决定。
     """
     _check_window(window)
-    out: list[float | None] = [None] * len(values)
-    if len(values) < window:
-        return out
+    if not values:
+        return []
     k = 2.0 / (window + 1)
-    seed = sum(values[:window]) / window
-    out[window - 1] = seed
-    prev = seed
-    for i in range(window, len(values)):
-        prev = values[i] * k + prev * (1 - k)
-        out[i] = prev
+    out: list[float] = [values[0]]
+    prev = values[0]
+    for v in values[1:]:
+        prev = v * k + prev * (1 - k)
+        out.append(prev)
     return out
+
+
+def ema_cloud(
+    values: list[float], fast: int = 55, slow: int = 89
+) -> dict[str, list[float] | list[bool]]:
+    """EMA 云带（斐波那契对 55/89），口径与 ma-suppression-monitor 一致。
+
+    返回 {fast, slow, cloud_lo, cloud_hi, bull}，均与输入等长：
+    - cloud_lo / cloud_hi：快慢线的小者 / 大者；
+    - bull：fast > slow（多头排列）。
+    """
+    _check_window(fast)
+    _check_window(slow)
+    f = ema(values, fast)
+    s = ema(values, slow)
+    cloud_lo = [min(a, b) for a, b in zip(f, s, strict=True)]
+    cloud_hi = [max(a, b) for a, b in zip(f, s, strict=True)]
+    bull = [a > b for a, b in zip(f, s, strict=True)]
+    return {"fast": f, "slow": s, "cloud_lo": cloud_lo, "cloud_hi": cloud_hi, "bull": bull}
 
 
 def price_channel(
@@ -90,29 +112,33 @@ def price_channel(
 def atr(
     highs: list[float], lows: list[float], closes: list[float], window: int
 ) -> list[float | None]:
-    """平均真实波幅（Wilder 平滑）。前 window 个位置为 None。"""
+    """平均真实波幅：TR 的简单滚动均值，与 ma-suppression-monitor 的 `atr()` 完全同口径
+    （`tr.rolling(n).mean()`，非 Wilder 平滑），由 pandas 交叉校验锁定。
+
+    TR[0] 退化为 high - low（首根 bar 无 prev_close，与 pandas `max(skipna=True)` 一致）。
+    前 window - 1 个位置为 None。
+    """
     _check_window(window)
     n = len(highs)
     if not (len(lows) == len(closes) == n):
         raise ValueError("highs/lows/closes 长度必须一致")
     out: list[float | None] = [None] * n
-    if n <= window:
+    if n < window:
         return out
-    trs: list[float] = []
+    trs: list[float] = [highs[0] - lows[0]]
     for i in range(1, n):
-        tr = max(
-            highs[i] - lows[i],
-            abs(highs[i] - closes[i - 1]),
-            abs(lows[i] - closes[i - 1]),
+        trs.append(
+            max(
+                highs[i] - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i] - closes[i - 1]),
+            )
         )
-        trs.append(tr)
-    # trs[k] 对应原序列第 k + 1 根 bar
-    seed = sum(trs[:window]) / window
-    out[window] = seed
-    prev = seed
-    for k in range(window, len(trs)):
-        prev = (prev * (window - 1) + trs[k]) / window
-        out[k + 1] = prev
+    acc = sum(trs[:window])
+    out[window - 1] = acc / window
+    for i in range(window, n):
+        acc += trs[i] - trs[i - window]
+        out[i] = acc / window
     return out
 
 
