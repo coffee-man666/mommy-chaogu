@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 
 import pytest
 
+from mommy_chaogu.agent.llm import SUPPORTED_PROVIDERS
 from mommy_chaogu.config import (
     AppConfig,
     create_default_config,
     load_config,
+    load_runtime_env,
 )
 
 # 所有可能影响测试的 env var
@@ -30,10 +34,9 @@ _ENV_KEYS = (
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch):
-    """每个测试前清除所有相关 env var，mock 掉 load_dotenv 防止 .env 泄漏。"""
+    """每个测试前用空 shell 覆盖隔离本机配置文件。"""
     for key in _ENV_KEYS:
         monkeypatch.setenv(key, "")
-    monkeypatch.setattr("mommy_chaogu.config.load_dotenv", lambda *a, **kw: False)
 
 
 # ---------- 默认值 ----------
@@ -142,10 +145,6 @@ def test_user_env_is_fallback_when_project_env_missing(
     monkeypatch.delenv("AGENT_MODEL")
     monkeypatch.delenv("ZAI_API_KEY")
 
-    # Exercise the real dotenv loader for this integration case.
-    from dotenv import load_dotenv as real_load_dotenv
-
-    monkeypatch.setattr("mommy_chaogu.config.load_dotenv", real_load_dotenv)
     monkeypatch.chdir(tmp_path)
     cfg = load_config(tmp_path / "missing.toml")
 
@@ -169,15 +168,121 @@ def test_project_env_overrides_user_env(monkeypatch: pytest.MonkeyPatch, tmp_pat
     for key in ("AGENT_PROVIDER", "AGENT_MODEL", "ZAI_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(key)
 
-    from dotenv import load_dotenv as real_load_dotenv
-
-    monkeypatch.setattr("mommy_chaogu.config.load_dotenv", real_load_dotenv)
     monkeypatch.chdir(tmp_path)
     cfg = load_config(tmp_path / "missing.toml")
 
     assert cfg.agent.provider == "openai"
     assert cfg.agent.model == "gpt-5-mini"
     assert cfg.agent.api_key == "project-key"
+
+
+def test_project_provider_without_model_uses_its_default_instead_of_user_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A project provider selection is an atomic profile boundary.
+
+    A lower-priority user model belongs to the user's provider and must not be
+    combined with the project provider.  Missing project models resolve to the
+    selected provider's default instead.
+    """
+    user_config = tmp_path / "user-config"
+    user_config.mkdir()
+    (user_config / ".env").write_text(
+        "AGENT_PROVIDER=deepseek\nAGENT_MODEL=deepseek-v4-flash\nDEEPSEEK_API_KEY=user-key\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        "AGENT_PROVIDER=zai\nZAI_API_KEY=project-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MOMMY_CONFIG_DIR", str(user_config))
+    for key in (
+        "AGENT_PROVIDER",
+        "AGENT_MODEL",
+        "DEEPSEEK_API_KEY",
+        "ZAI_API_KEY",
+    ):
+        monkeypatch.delenv(key)
+
+    monkeypatch.chdir(tmp_path)
+    cfg = load_config(tmp_path / "missing.toml")
+
+    assert cfg.agent.provider == "zai"
+    assert cfg.agent.model == "glm-4.7"
+    assert cfg.agent.api_key == "project-key"
+
+
+def test_runtime_env_reload_replaces_values_injected_by_previous_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Reconfiguration takes effect in a long-running process."""
+    user_config = tmp_path / "user-config"
+    user_config.mkdir()
+    env_file = user_config / ".env"
+    env_file.write_text(
+        "AGENT_PROVIDER=deepseek\nAGENT_MODEL=deepseek-chat\nDEEPSEEK_API_KEY=old-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MOMMY_CONFIG_DIR", str(user_config))
+    for key in (
+        "AGENT_PROVIDER",
+        "AGENT_MODEL",
+        "DEEPSEEK_API_KEY",
+        "ZAI_API_KEY",
+    ):
+        monkeypatch.delenv(key)
+
+    monkeypatch.chdir(tmp_path)
+    load_runtime_env()
+    assert os.environ["AGENT_PROVIDER"] == "deepseek"
+
+    env_file.write_text(
+        "AGENT_PROVIDER=zai\nZAI_API_KEY=new-key\n",
+        encoding="utf-8",
+    )
+    load_runtime_env()
+
+    assert os.environ["AGENT_PROVIDER"] == "zai"
+    assert os.environ["AGENT_MODEL"] == "glm-4.7"
+    assert os.environ["ZAI_API_KEY"] == "new-key"
+
+
+def test_inactive_saved_provider_key_stays_out_of_process_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    (tmp_path / ".env").write_text(
+        "AGENT_PROVIDER=deepseek\nDEEPSEEK_API_KEY=active-key\nOPENAI_API_KEY=dormant-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    for key in (
+        "AGENT_PROVIDER",
+        "AGENT_MODEL",
+        "DEEPSEEK_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(key)
+
+    cfg = load_config(tmp_path / "missing.toml")
+
+    assert cfg.agent.api_key == "active-key"
+    assert os.environ["DEEPSEEK_API_KEY"] == "active-key"
+    assert "OPENAI_API_KEY" not in os.environ
+
+
+def test_shell_model_override_is_reported_with_default_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AGENT_PROVIDER")
+    monkeypatch.setenv("AGENT_MODEL", "deepseek-reasoner")
+
+    status = load_runtime_env()
+
+    assert status.provider == "deepseek"
+    assert status.model == "deepseek-reasoner"
+    assert status.provider_source == "代码默认"
+    assert status.model_source == "Shell 环境变量"
 
 
 def test_minimax_env_override_when_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -212,11 +317,18 @@ def test_create_default_config(tmp_path: Path):
     p = create_default_config(target)
     assert p == target
     assert target.exists()
+    content = target.read_text(encoding="utf-8")
+    assert "[agent]" not in content
+    assert "[cache]" not in content
+    assert "[monitor]" not in content
+    assert "[push]" not in content
+    assert "db_path" not in content
+    assert "[web]" in content
 
     cfg = load_config(target)
-    # 模板里的值和默认值一致
+    # 高级模板未设置的部分继续使用代码默认值。
     assert cfg.agent.provider == "deepseek"
-    assert cfg.agent.model == "deepseek-chat"
+    assert cfg.agent.model is None
     assert cfg.agent.max_tool_calls == 10
     assert cfg.cache.quote_fetch_interval_seconds == 300
 
@@ -226,3 +338,17 @@ def test_create_default_config_creates_parent_dirs(tmp_path: Path):
     target = tmp_path / "deep" / "nested" / "config.toml"
     create_default_config(target)
     assert target.exists()
+
+
+def test_env_example_matches_supported_llm_profiles():
+    """The manual-install template cannot advertise stale providers."""
+    root = Path(__file__).resolve().parent.parent
+    content = (root / ".env.example").read_text(encoding="utf-8")
+    keys = set(re.findall(r"^#?([A-Z][A-Z0-9_]*API_KEY)=", content, re.MULTILINE))
+    expected = {str(info["env_key"]) for info in SUPPORTED_PROVIDERS.values()}
+
+    assert keys == expected
+    assert "NOVA" not in content
+    assert "AGENT_PROVIDER=" in content
+    assert "AGENT_MODEL=" in content
+    assert "mommy setup" in content

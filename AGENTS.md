@@ -15,15 +15,16 @@ uv run mypy --strict src # type check
 
 推荐运行 `uv run mommy setup`，交互式选择 Provider / 模型、隐藏输入并验证 Key，
 还可继续扫码连接微信。安装用户的配置默认保存到
-`~/.config/mommy-chaogu/.env`（`0600`，不入仓）；若当前 mommy-chaogu 仓库已存在
-项目 `.env`，重新配置时会就地更新它：
+`~/.config/mommy-chaogu/.env`（`0600`，不入仓）；只有当前仓库的项目 `.env` 已包含
+有效 Provider 或 API key 时才会就地更新。可用 `--local` / `--user` 显式选择作用域，
+用 `--check` 脱敏检查生效来源：
 
 ```bash
 cp .env.example .env       # 复制模板
 # 编辑 .env，填入需要的 key
 ```
 
-支持的 key（根据 `config.toml` 里的 `agent.provider` 自动读取对应的）：
+支持的 key（根据生效的 `AGENT_PROVIDER` 自动读取对应的一项）：
 
 | Provider | 环境变量 | 说明 |
 |---|---|---|
@@ -36,7 +37,8 @@ cp .env.example .env       # 复制模板
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
 | — | `AGENT_MODEL` | 覆盖聊天模型名 |
 
-优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > `config.toml`。provider 配置表
+优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > 代码默认值。Provider 与 model
+按来源成组解析，禁止跨层拼接；`config.toml` 仅用于可选高级 Web 参数。provider 配置表
 （base_url / 默认模型 / env key / 温度 / embedding 模型）的单一真相源是
 `src/mommy_chaogu/agent/llm.py`——改 provider 只动它，不要另起表。
 
