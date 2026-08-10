@@ -61,6 +61,6 @@ data/flows_report_*.md
 
 # frontend/ (废弃的 Taro 目录，保留作 mini program 参考)
 frontend/dist/
-frontend/node_modules/
+node_modules/
 frontend/.swc/
 *.swc

@@ -307,21 +307,22 @@ class CachedMarketDataAdapter:
                 self.last_source = "cache"
                 return []
 
-            # 写入缓存（每根 K 线一天一条记录）
+            # 底层 adapter 可能违反 list 契约返回 None → 当作无数据
+            if fresh is None:
+                self.last_source = "cache"
+                return []
+
+            # 写入缓存（每根 K 线一天条记录）
             for bar in fresh:
                 trade_date = bar.timestamp.strftime("%Y-%m-%d")
                 from dataclasses import asdict
 
                 bar_dict = asdict(bar)
-                # 转换 datetime/Decimal/enum
+                # 递归转换 datetime/Decimal（含嵌套 Money→dict 后的 amount）
                 bar_dict["timestamp"] = bar.timestamp.isoformat()
                 bar_dict["interval"] = interval_str
                 bar_dict["adjustment"] = adj_str
-                from decimal import Decimal
-
-                for k, v in list(bar_dict.items()):
-                    if isinstance(v, Decimal):
-                        bar_dict[k] = str(v)
+                bar_dict = _recursive_safe(bar_dict)
                 try:
                     self.store.set_bar(code, interval_str, adj_str, trade_date, bar_dict)
                 except Exception as e:
@@ -343,6 +344,8 @@ class CachedMarketDataAdapter:
                     limit=limit,
                 )
                 self.stats_counters["fetch_ok"] += 1
+                if fresh is None:
+                    raise RuntimeError("inner adapter returned None for get_bars")
                 for bar in fresh:
                     trade_date = bar.timestamp.strftime("%Y-%m-%d")
                     from dataclasses import asdict
@@ -351,11 +354,7 @@ class CachedMarketDataAdapter:
                     bar_dict["timestamp"] = bar.timestamp.isoformat()
                     bar_dict["interval"] = interval_str
                     bar_dict["adjustment"] = adj_str
-                    from decimal import Decimal
-
-                    for k, v in list(bar_dict.items()):
-                        if isinstance(v, Decimal):
-                            bar_dict[k] = str(v)
+                    bar_dict = _recursive_safe(bar_dict)
                     self.store.set_bar(code, interval_str, adj_str, trade_date, bar_dict)
             except Exception as e:
                 _log.warning("refetch bars(%s) failed (using cache): %s", code, e)
@@ -363,7 +362,7 @@ class CachedMarketDataAdapter:
         # 从缓存构造 Bar 列表
         self.stats_counters["hits"] += 1
         self.last_source = "cache"
-        from mommy_chaogu.market_data.types import Bar, Money
+        from mommy_chaogu.market_data.types import Bar
 
         bars: list[Bar] = []
         for bar_dict in cached_bars:
@@ -384,7 +383,7 @@ class CachedMarketDataAdapter:
                     low=Decimal(bar_dict["low"]),
                     close=Decimal(bar_dict["close"]),
                     volume=bar_dict["volume"],
-                    turnover=Money(Decimal(str(bar_dict["turnover"])), "CNY"),
+                    turnover=_bar_turnover(bar_dict.get("turnover")),
                     change_pct=Decimal(bar_dict["change_pct"])
                     if bar_dict.get("change_pct")
                     else None,
@@ -598,6 +597,22 @@ def _recursive_safe(obj: object) -> object:
     if isinstance(obj, (list, tuple)):
         return [_recursive_safe(v) for v in obj]
     return obj
+
+
+def _bar_turnover(v: object) -> Any:
+    """把缓存里的 turnover 字段还原为 Money。
+
+    兼容三种历史形态：Money dataclass、``{amount, currency}`` dict、标量。
+    """
+    from decimal import Decimal
+
+    from mommy_chaogu.market_data.types import Money
+
+    if isinstance(v, dict):
+        return Money(Decimal(str(v["amount"])), v.get("currency", "CNY"))
+    if hasattr(v, "amount") and not isinstance(v, dict):
+        return Money(Decimal(str(v.amount)), getattr(v, "currency", "CNY"))
+    return Money(Decimal(str(v)), "CNY")
 
 
 def _money_flow_from_dict(d: dict) -> MoneyFlow:
