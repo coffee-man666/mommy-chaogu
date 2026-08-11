@@ -59,9 +59,7 @@ def get_basket(
     else:
         snapshot = background.latest_snapshot
         quote_overrides = (
-            {row.entry.code: row.quote for row in snapshot.rows}
-            if snapshot is not None
-            else {}
+            {row.entry.code: row.quote for row in snapshot.rows} if snapshot is not None else {}
         )
         service = BasketService(store, quote_overrides=quote_overrides)
     item = service.get_basket(basket_id)
