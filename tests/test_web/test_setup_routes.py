@@ -336,6 +336,7 @@ class TestSave:
         tmp_path: Path,
     ) -> None:
         client = _make_client(local_setup_enabled=True, loopback=True)
+        monkeypatch.setenv("OPENAI_API_KEY", "stale-openai-key")
 
         written: dict[str, object] = {}
 
@@ -371,6 +372,7 @@ class TestSave:
         assert os.environ.get("DEEPSEEK_API_KEY") == "sk-real"
         assert os.environ.get("AGENT_PROVIDER") == "deepseek"
         assert os.environ.get("AGENT_MODEL") == "deepseek-chat"
+        assert "OPENAI_API_KEY" not in os.environ
 
         # cache invalidation triggered
         assert cleared == ["called"]

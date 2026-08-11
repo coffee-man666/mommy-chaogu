@@ -750,12 +750,11 @@ mommy report render             # HTML 报告
 # 临时切换（环境变量）
 AGENT_PROVIDER=zai uv run mommy "今天怎么样"
 
-# 永久切换（.env 文件）
-# 编辑 .env: AGENT_PROVIDER=zai
-# 确保对应的 key 已填入: ZAI_API_KEY=xxx
-
-# 重新运行配置向导
+# 永久切换：重新运行配置向导（同时更新 Provider、model 和对应 key）
 uv run mommy setup
+
+# 排查当前到底读取了哪一层配置（不会显示 key 内容）
+uv run mommy setup --check
 ```
 
 ### 数据库位置

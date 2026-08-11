@@ -62,7 +62,12 @@ mommy setup
 
 向导会让你选择 Provider 和模型、隐藏输入并验证 API Key，然后询问是否连接微信。当前支持
 DeepSeek、OpenAI、Kimi、z.ai 和 MiniMax。配置默认以 `0600` 权限保存到
-`~/.config/mommy-chaogu/.env`；如果项目已有 `.env`，则更新项目配置。
+`~/.config/mommy-chaogu/.env`。只有项目 `.env` 已包含有效模型配置时才会继续更新它；
+空白模板不会改变配置作用域。可用 `mommy setup --local` 强制写项目配置，或用
+`mommy setup --user` 强制写用户级配置。
+
+排查配置时运行 `mommy setup --check`。它会显示实际生效的 Provider、模型、密钥变量
+及来源和文件权限，但绝不显示密钥内容。
 
 如果首次配置时跳过了微信，之后可以单独扫码连接：
 

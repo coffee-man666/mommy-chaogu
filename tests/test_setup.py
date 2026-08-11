@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,7 @@ from mommy_chaogu.setup import (
     choose_interface,
     configured_interface,
     has_env_file,
+    main_setup,
     preferred_setup_env_path,
     run_setup_wizard,
 )
@@ -80,6 +82,12 @@ def test_has_env_file_with_different_provider(tmp_path: Path):
     assert has_env_file(env) is True
 
 
+def test_has_env_file_ignores_deprecated_provider_key(tmp_path: Path):
+    env = tmp_path / ".env"
+    env.write_text("NOVA_API_KEY=legacy-placeholder\n", encoding="utf-8")
+    assert has_env_file(env) is False
+
+
 # ---------- run_setup_wizard ----------
 
 
@@ -99,10 +107,10 @@ def test_wizard_writes_env_deepseek(tmp_path: Path):
     assert "AGENT_PROVIDER=deepseek" in content
     assert "AGENT_MODEL=deepseek-chat" in content
 
-    # 其余 provider 保持注释
-    assert "#OPENAI_API_KEY=" in content
-    assert "#MOONSHOT_API_KEY=" in content
-    assert "#ZAI_API_KEY=" in content
+    # 未配置的 provider 不写空占位，避免看起来像待办项。
+    assert "OPENAI_API_KEY" not in content
+    assert "MOONSHOT_API_KEY" not in content
+    assert "ZAI_API_KEY" not in content
     assert content.count("sk-my-deepseek-key") == 1
 
     assert "SERVER_CHAN_KEY" not in content
@@ -119,7 +127,7 @@ def test_wizard_writes_env_zai(tmp_path: Path):
     assert result is True
     content = env.read_text(encoding="utf-8")
     assert "ZAI_API_KEY=zai-token-xyz" in content
-    assert "#DEEPSEEK_API_KEY=" in content
+    assert "DEEPSEEK_API_KEY" not in content
     assert "AGENT_PROVIDER=zai" in content
     assert "AGENT_MODEL=glm-5" in content
 
@@ -216,20 +224,19 @@ def test_wizard_keyboard_interrupt(tmp_path: Path):
 # ---------- _write_env_file 单独测试 ----------
 
 
-def test_write_env_file_all_providers_present(tmp_path: Path):
+def test_write_env_file_contains_only_configured_provider_keys(tmp_path: Path):
     env = tmp_path / ".env"
     _write_env_file(env, "kimi", "moonshot-key")
     content = env.read_text(encoding="utf-8")
 
-    # 所有 provider 的 env key 都应出现（选中或注释）
-    for info in _PROVIDERS.values():
-        assert info["env_key"] in content
-
-    # 恰好一行无注释（选中的），其余 provider 只保留空占位，不复制 key
+    # 新配置只包含选中的 key，不生成其他 provider 的空占位。
     moonshot_lines = [ln for ln in content.splitlines() if "MOONSHOT_API_KEY" in ln]
     assert len(moonshot_lines) == 1
     assert moonshot_lines[0].startswith("MOONSHOT_API_KEY=")
     assert content.count("moonshot-key") == 1
+    for name, info in _PROVIDERS.items():
+        if name != "kimi":
+            assert info["env_key"] not in content
 
 
 def test_write_env_file_creates_parents(tmp_path: Path):
@@ -239,7 +246,9 @@ def test_write_env_file_creates_parents(tmp_path: Path):
     assert env.stat().st_mode & 0o777 == 0o600
 
 
-def test_write_env_file_preserves_unmanaged_and_existing_provider_keys(tmp_path: Path):
+def test_write_env_file_preserves_unmanaged_and_supported_provider_keys(
+    tmp_path: Path,
+):
     env = tmp_path / ".env"
     env.write_text(
         "CUSTOM_SETTING=keep\nOPENAI_API_KEY=existing-openai\nSERVER_CHAN_KEY=legacy\n",
@@ -253,7 +262,6 @@ def test_write_env_file_preserves_unmanaged_and_existing_provider_keys(tmp_path:
     assert "OPENAI_API_KEY=existing-openai" in content
     assert "ZAI_API_KEY=new-zai" in content
     assert "SERVER_CHAN_KEY=legacy" in content
-    assert content.count("OPENAI_API_KEY=") == 1
 
     _write_env_file(env, "zai", "newer-zai", model="glm-5")
     rewritten = env.read_text(encoding="utf-8")
@@ -263,17 +271,79 @@ def test_write_env_file_preserves_unmanaged_and_existing_provider_keys(tmp_path:
     assert "new-zai" not in rewritten
 
 
+def test_reconfiguration_removes_deprecated_secrets_and_versions_profile(tmp_path: Path):
+    """Migration keeps supported credentials but drops obsolete providers."""
+    env = tmp_path / ".env"
+    env.write_text(
+        "DEEPSEEK_API_KEY=old-deepseek-secret\n"
+        "NOVA_API_KEY=obsolete-secret\n"
+        "AGENT_PROVIDER=deepseek\n"
+        "AGENT_MODEL=deepseek-chat\n",
+        encoding="utf-8",
+    )
+
+    _write_env_file(env, "zai", "new-zai-secret", model="glm-4.7")
+    content = env.read_text(encoding="utf-8")
+
+    assert "ZAI_API_KEY=new-zai-secret" in content
+    assert "DEEPSEEK_API_KEY=old-deepseek-secret" in content
+    assert "obsolete-secret" not in content
+    assert "NOVA_API_KEY" not in content
+    assert "MOMMY_CONFIG_VERSION=2" in content
+    assert "AGENT_PROVIDER=zai" in content
+    assert "AGENT_MODEL=glm-4.7" in content
+
+
 def test_setup_parser_and_preferred_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
     args = build_setup_parser().parse_args(["--local", "--no-verify", "--no-weixin"])
     assert args.local is True
     assert args.no_verify is True
     assert args.no_weixin is True
+    user_args = build_setup_parser().parse_args(["--user"])
+    assert user_args.user is True
+    with pytest.raises(SystemExit):
+        build_setup_parser().parse_args(["--local", "--user"])
     assert preferred_setup_env_path() != Path(".env")
 
     Path(".env.example").write_text("", encoding="utf-8")
     Path(".env").write_text("", encoding="utf-8")
+    # A copied/blank template is not an intentional project-scoped profile.
+    assert preferred_setup_env_path() != Path(".env")
+
+    Path(".env").write_text("AGENT_PROVIDER=zai\n", encoding="utf-8")
     assert preferred_setup_env_path() == Path(".env")
+
+
+def test_setup_check_reports_effective_sources_without_exposing_secret(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    user_config = tmp_path / "user-config"
+    user_config.mkdir()
+    secret = "never-print-this-secret"
+    (user_config / ".env").write_text(
+        f"AGENT_PROVIDER=zai\nZAI_API_KEY={secret}\n",
+        encoding="utf-8",
+    )
+    (user_config / ".env").chmod(0o600)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MOMMY_CONFIG_DIR", str(user_config))
+    for key in ("AGENT_PROVIDER", "AGENT_MODEL", "ZAI_API_KEY"):
+        monkeypatch.delenv(key)
+    monkeypatch.setattr(sys, "argv", ["mommy-setup", "--check"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_setup()
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "配置状态：可用" in output
+    assert "Provider：zai（用户级配置）" in output
+    assert "Model：glm-4.7（Provider 默认）" in output
+    assert "API key：ZAI_API_KEY（用户级配置，已设置）" in output
+    assert secret not in output
 
 
 def test_wizard_can_pair_weixin_in_same_flow(tmp_path: Path):
@@ -338,6 +408,8 @@ def test_check_and_run_setup_skips_when_env_exists(tmp_path: Path, monkeypatch: 
     env = tmp_path / ".env"
     env.write_text("DEEPSEEK_API_KEY=sk-present\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
+    for key in ("DEEPSEEK_API_KEY", "AGENT_PROVIDER", "AGENT_MODEL"):
+        monkeypatch.delenv(key)
 
     from mommy_chaogu import setup
 
@@ -356,6 +428,28 @@ def test_check_and_run_setup_runs_wizard(tmp_path: Path, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(setup, "run_setup_wizard", lambda *a, **kw: True)
     assert setup.check_and_run_setup() is True
+
+
+def test_check_and_run_setup_repairs_provider_key_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / ".env").write_text(
+        "AGENT_PROVIDER=zai\nDEEPSEEK_API_KEY=wrong-provider-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    from mommy_chaogu import setup
+
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        setup,
+        "run_setup_wizard",
+        lambda *a, **kw: calls.append(True) or True,
+    )
+
+    assert setup.check_and_run_setup() is True
+    assert calls == [True]
 
 
 def test_check_and_run_setup_accepts_shell_configuration(

@@ -62,11 +62,13 @@ uv run mommy setup
 4. 以 `0600` 权限保存配置。
 5. 可选显示微信二维码，扫码后启动本地微信网关。
 
-如果当前仓库已有 `.env`，向导会更新它；否则默认写入
-`~/.config/mommy-chaogu/.env`。常用选项：
+默认写入 `~/.config/mommy-chaogu/.env`。如果当前仓库的 `.env` 已包含有效 Provider
+或 API key，向导会继续更新该项目配置；仅复制了空白模板不会改变作用域。常用选项：
 
 ```bash
 uv run mommy setup --local       # 强制写入当前项目 .env
+uv run mommy setup --user        # 强制写入用户级私有配置
+uv run mommy setup --check       # 脱敏检查生效值、来源和文件权限
 uv run mommy setup --no-weixin   # 不询问微信连接
 uv run mommy setup --no-verify   # 暂时无法联网时跳过验证
 ```
@@ -81,7 +83,7 @@ uv run mommy setup --no-verify   # 暂时无法联网时跳过验证
 | z.ai | `ZAI_API_KEY` | `glm-4.7` | GLM Coding API |
 | MiniMax | `MINIMAX_API_KEY` | `MiniMax-M3` | 开放平台按量 API，非 Coding Plan |
 
-也可以复制 `.env.example` 手动配置：
+CI、容器或无法运行向导时，也可以参考 `.env.example` 手动配置：
 
 ```dotenv
 DEEPSEEK_API_KEY=sk-xxxxxxxx
@@ -89,8 +91,11 @@ AGENT_PROVIDER=deepseek
 AGENT_MODEL=deepseek-chat
 ```
 
-配置优先级为：shell 环境变量 → 项目 `.env` → 用户级 `.env` → `config.toml` / 默认值。
-不要提交包含真实密钥的 `.env`。
+配置优先级为：shell 环境变量 → 项目 `.env` → 用户级 `.env` → 代码默认值。
+Provider 和 model 按同一来源成组解析：某层只设置 Provider 时使用该 Provider 的默认
+模型，绝不会拼接下一层的 model。可选 `config.toml` 仅用于高级 Web 参数，不再配置
+Provider、模型或密钥。不要提交包含真实密钥的 `.env`；手动创建后应执行
+`chmod 600 .env`。
 
 ## 4. 不配置 LLM
 
@@ -207,11 +212,12 @@ docker compose up -d
 # 打开 http://127.0.0.1:8000
 ```
 
-没有 Key 时仍可使用数据页面。AI 对话需要项目 `.env`：
+没有 Key 时仍可使用数据页面。AI 对话需要容器读取项目 `.env`：
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填写 Provider Key、AGENT_PROVIDER 和 AGENT_MODEL
+# 编辑 .env，只填写一个 Provider profile 和对应 key
+chmod 600 .env
 docker compose up -d --build
 ```
 

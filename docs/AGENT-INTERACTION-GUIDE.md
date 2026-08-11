@@ -326,6 +326,8 @@
 | `OPENAI_API_KEY` | OpenAI LLM | — |
 | `MOONSHOT_API_KEY` | Moonshot / Kimi LLM | — |
 | `AGENT_PROVIDER` | 覆盖 LLM provider | `deepseek` |
+| `AGENT_MODEL` | 覆盖所选 provider 的默认模型 | provider 默认 |
 | `SERVER_CHAN_KEY` | Server酱微信推送 | — |
 
-Provider 配置优先级：shell 环境变量 > `.env` 文件 > `config.toml`。
+配置优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > 代码默认值。
+Provider 与 model 在文件层按 profile 成组解析；`config.toml` 不再用于模型配置。
