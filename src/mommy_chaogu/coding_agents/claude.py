@@ -105,9 +105,7 @@ class ClaudeAdapter:
         if current is not None and old is not None and entry_matches_spec("claude", current, old):
             binary = self._which("claude")
             if binary is None:
-                raise RuntimeError(
-                    "没有找到 claude，无法安全删除托管的 MCP 配置；连接状态已保留。"
-                )
+                raise RuntimeError("没有找到 claude，无法安全删除托管的 MCP 配置；连接状态已保留。")
             self._run([binary, "mcp", "remove", "--scope", "user", SERVER_NAME])
         elif current is not None:
             print("⚠ 保留已被修改的 Claude MCP 配置。")

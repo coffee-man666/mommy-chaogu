@@ -65,9 +65,7 @@ def test_legacy_connection_without_profile_is_market_only_and_not_rewritten(
     assert item["spec"]["profile"] == "market-only"
     assert "privacy_consent_version" not in item
 
-    upgrade = build_connect_parser().parse_args(
-        ["kimi", "--profile", "personal", "--skip-test"]
-    )
+    upgrade = build_connect_parser().parse_args(["kimi", "--profile", "personal", "--skip-test"])
     with patch(
         "mommy_chaogu.cli_commands.connect.shutil.which",
         side_effect=lambda name: "/bin/kimi" if name == "kimi" else None,
