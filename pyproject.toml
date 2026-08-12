@@ -69,6 +69,7 @@ build-backend = "hatchling.build"
 exclude = [
     "/output/**",
     "/src/mommy_chaogu/bundled_skills/market-monitoring-test/**",
+    "/src/mommy_chaogu/bundled_skills/market-watch-loop/**",
 ]
 
 [tool.hatch.build.targets.wheel]
