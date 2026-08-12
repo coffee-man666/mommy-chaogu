@@ -53,11 +53,18 @@ from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 _log = logging.getLogger(__name__)
 
 MCP_INSTRUCTIONS = """
-mommy-chaogu is an Agent-managed local investment research application. The host Agent is the only
-reasoner: prefer high-level research_* tools for current evidence and do not invoke a second project
-LLM. Clearly separate tool facts, Agent inference, stale or missing data, and user-provided beliefs.
-Respect the active privacy profile and never bypass MCP by reading personal SQLite databases.
-Do not record a research session or conclusion unless the user explicitly asks to keep it.
+mommy-chaogu is an Agent-first local investing toolbox. The host Agent is the only reasoner and
+orchestrator: translate the user's goal into the smallest supported workflow across market data,
+research tools, Strategy Cards, and monitoring. Prefer high-level research_* tools for current
+evidence and do not invoke a second project LLM. Clearly separate tool facts, Agent inference, stale
+or missing data, and user-provided beliefs. Respect the active privacy profile and never bypass MCP
+by reading personal SQLite databases. Do not record a research session or conclusion unless the
+user explicitly asks to keep it.
+
+When the user defines an indicator or workflow, preserve its exact formula, inputs, time semantics,
+and intent. Claim support only when published tools can compute every required part. Mark the rest
+manual or unavailable; never replace it with a convenient proxy or claim that a generated spec,
+backtest, or technical check proves profitability.
 
 For Strategy Distillation, show a human-readable card before any write. Call strategy_save only
 after the user explicitly asks to save the final card. Applying a card requires fresh research

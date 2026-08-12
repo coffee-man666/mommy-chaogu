@@ -1,13 +1,47 @@
 ---
 name: mommy-onboard
-description: Safely install or connect mommy-chaogu to a host Agent, explain planned file and privacy changes, run an honest MCP doctor probe, repair an unchanged managed connection, and guide the user to their first interpreted evidence-backed research result. Use when the user asks to install, set up, connect, diagnose, repair, or start using mommy-chaogu with Claude Code, Kimi Code, Cline, Codex, or another MCP-capable Agent.
+description: Explain, safely install, connect, diagnose, or repair the mommy-chaogu Agent-first investing toolbox, then help the user complete a first chosen research, Strategy Card, indicator check, or monitoring workflow. Use for mommy-chaogu setup or onboarding with Claude Code, Kimi Code, Cline, or Codex, and to assess unsupported MCP hosts without pretending they have a managed adapter.
 ---
 
 # Mommy Onboard
 
-Manage the machine lifecycle, then hand research interpretation to `mommy-research`. A configured
-MCP entry or a green doctor is not onboarding completion. Completion means the user has received
-and understood one useful research answer about a target they chose.
+Explain the toolbox, manage the machine lifecycle, then hand the chosen outcome to
+`mommy-research` or `mommy-strategy`. A configured MCP entry or a green doctor is not onboarding
+completion. Completion means the user has received and understood one useful result from a workflow
+they chose.
+
+## Explain and choose the first outcome
+
+Before discussing installation, explain in the user's language:
+
+- mommy-chaogu is a local toolbox that the current host Agent composes; it is not another LLM or a
+  dashboard the user must learn;
+- the toolbox covers A-share/US market data, supported calculations and signals, Strategy Cards,
+  and consent-gated local monitoring;
+- the user can describe an investing or trading-observation workflow in natural language, while the
+  Agent maps it to capabilities that actually exist;
+- it does not execute trades, prove profitability, or run arbitrary custom indicators.
+
+Ask one open question and retain the answer through installation:
+
+> 你最想先让它帮你完成什么：看一次行情或研究、整理一套投资方法、定义一个指标/观察条件，
+> 还是搭一条持续监测流程？
+
+For a custom indicator or workflow, preserve the exact formula and intent. Do not substitute a
+similar supported indicator. Anything the available data and tools cannot implement must remain
+manual or unavailable.
+
+## Check managed-host compatibility
+
+The managed lifecycle supports only `claude`, `kimi`, `cline`, and `codex`. Run
+`mommy agent detect --json` only to detect those hosts. OpenClaw, Hermes, and other MCP hosts are not
+valid `--host` values today.
+
+For an unsupported host, do not invent detection, configuration paths, Skill destinations, doctor
+success, or an installation command. Explain that mommy-chaogu exposes a portable stdio MCP server
+but this host is not automated by `mommy agent` yet. Prepare a manual host-specific plan only after
+verifying the host's current documentation and listing exact changes; otherwise stop before host
+modification. The user may separately approve installing only the base CLI.
 
 ## Establish the executable
 
@@ -21,6 +55,10 @@ If `mommy` is missing, present an installation plan before changing the machine.
 - the isolated tool location managed by `uv`;
 - that the Agent-managed external mode does not need a second LLM API key;
 - which command will run and whether `uv` also needs installation.
+
+Explain the real data boundary: keys and mommy-chaogu databases stay on the device by default;
+public market requests reach external data providers, and the current host Agent/model processes
+the conversation and returned tool data. Do not summarize this as “all data stays local.”
 
 For an unreleased Git install, resolve the current commit, then pin the archive URL to that SHA.
 Download an installer before running it; do not hide remote execution in a pipe. If a stable release
@@ -68,8 +106,8 @@ word “connected”:
 - all three Skills must have `status=ok`;
 - `mcp_initialize_and_list_tools` must say it actually ran initialize and tools/list;
 - `privacy_boundary` must match the selected profile;
-- `live_market_data=not_checked` is honest and expected until the user chooses a first research
-  target.
+- `live_market_data=not_checked` is honest and expected until the user's chosen workflow actually
+  needs and calls a market-data tool.
 
 If any blocking check fails, do not claim success. Run
 `mommy agent repair --host HOST --json` to show a repair proposal. Apply only a
@@ -81,27 +119,22 @@ restart.
 
 ## Complete first value
 
-Ask one concrete, open question instead of running a fixed demo:
+Return to the first outcome chosen before installation:
 
-> 第一次你想研究哪只股票、哪个市场问题，或哪段投资观点？
+- For a market question, use `mommy-research` and the matching high-level `research_*` tool. Explain
+  the answer, strongest evidence and timestamp, missing/stale data, fact versus inference, and one
+  useful next step.
+- For a method, use `mommy-strategy` and show a faithful, readable Strategy Card. Let the user revise
+  it. Confirming meaning and granting permission to save are separate.
+- For an indicator or composed workflow, restate its formula, inputs, universe, schedule, and output.
+  Map every step to published tools, run one supported pass, and mark manual/unavailable parts. Do
+  not claim the flow was saved unless a real persistence path was used.
+- For monitoring, show the exact supported trigger and a current check first. Personal scope and
+  monitor activation each require their own approval; a prepared candidate is not active.
 
-Then use `mommy-research` and the matching high-level tool:
-
-- one stock: `research_stock`;
-- A-share market question: `research_market_brief`;
-- US market question: `research_us_market`;
-- sector or money flow: the corresponding research tool.
-
-Do not expose raw tool JSON as the result. Explain in the user's language:
-
-1. the direct answer;
-2. the strongest successful evidence and its timestamp;
-3. failed, missing, or stale data;
-4. what is fact versus Agent inference;
-5. one useful next step.
-
-Only after that answer is visible and the user has had a chance to react may you say onboarding is
-complete. Do not write a metadata flag to manufacture completion.
+Do not expose raw tool JSON, a generated spec, or a tool count as the result. Only after the chosen
+result is visible and the user has had a chance to react may you say onboarding is complete. Do not
+write a metadata flag to manufacture completion.
 
 ## Progressive permissions
 
@@ -119,8 +152,7 @@ Keep the final receipt user-facing:
 
 - connected host and privacy scope;
 - doctor result and any honest degraded/not-checked item;
-- the research question the user chose;
-- a one-sentence summary of the useful result;
+- the first workflow the user chose and a one-sentence summary of its useful result;
 - where to continue (`mommy-research` or `mommy-strategy`).
 
 Do not celebrate installation artifacts, schema validation, or tool count as the product outcome.

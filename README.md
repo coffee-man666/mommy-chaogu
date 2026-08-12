@@ -4,7 +4,7 @@
 
 <div align="center">
 
-**可以被你现有 Agent 接管的本地 A 股 / 美股投研能力。你表达目标，Agent 负责安装、研究、记录和维护。**
+**一套边界明确、可由 Agent 接管和编排的本地投研工具箱：行情、指标、监测、策略蒸馏，都按你的方法组合。**
 
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
@@ -13,26 +13,36 @@
 
 </div>
 
-mommy-chaogu 把实时行情、资金流、持仓、信号、记忆和策略卡做成本地能力，同时覆盖 A 股与
-美股。它首先是一套 Agent-managed product：Claude Code、Kimi Code、Cline、Codex 或其他
-MCP Agent 负责理解用户，后端提供确定性数据、保存和监控；CLI / TUI / Web 继续作为可选入口。
+mommy-chaogu 不是要求用户先学习复杂界面的“又一个投研软件”，而是给现有 Agent 使用的本地
+能力层。你用自然语言说明目标、规则和流程，Agent 负责组合行情获取、研究工具、技术信号、策略卡
+和自动监测；后端负责确定性计算、本地保存和权限边界。CLI / TUI / Web 仍是可选入口，不是产品
+成立的前提。
+
+当前版本已经能抓取 A 股 / 美股行情与证据、运行已支持的研究和信号积木、把文章或个人方法蒸馏成
+可修改的策略卡，并把系统确实支持的条件转成监控候选。用户也可以让 Agent 编排适合自己的投研与
+交易观察流程，或者用自然语言说明自己的指标公式。Agent 会先核对现有数据和计算积木，能精确实现
+的就运行，暂时不能实现的就标为需人工判断或当前不可用。它不是任意代码执行器，也不承诺自动下单
+或“策略一定有效”，更不会为了显得可用而把用户的定义偷换成相似指标。
 
 ## 让你的 Agent 接管
 
 把下面这句话发给你的 Agent：
 
 > 请阅读
-> `https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/agent-start.md`，先向我展示安装、
-> 文件修改和权限计划；得到我同意后安装并做真实检查，再问我第一次想研究什么，直到给出一份有
-> 证据、说明数据缺口的研究结果。
+> `https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/agent-start.md`。先用几句话告诉我
+> mommy-chaogu 是什么、能怎样把行情、指标、策略和监测组合成我的流程，并问我第一件想完成的事。
+> 先确认你这个 Agent 有真实受支持的接入路径；如果没有，不要假装支持。确认后再展示安装、文件修改
+> 和权限计划，得到我同意后执行并做真实检查，直到让我看到所选流程的第一次有用结果。
 
 Agent 会先以公共市场数据开始，不要求再配置一套项目内 LLM Key。安装成功或 MCP 工具可见不算
-完成；用户拿到并理解第一次真实研究结果才算。
+完成；用户看到并理解自己所选研究、策略整理、指标检查或监测流程的第一次真实结果才算。
 
 ## 为什么是 mommy-chaogu
 
-- **一句话开始研究**：从市场概览到个股、板块、资金流和持仓，不用先学习一套命令。
-- **不只生成一段答案**：保存研究结论和预测，持续验证判断是否成立。
+- **Agent 负责编排**：说清目标、规则和频率，Agent 用当前能力拼出最短可行流程，不要求用户先学命令。
+- **行情与证据是积木**：从市场概览到个股、板块、资金流和持仓，可组合使用并说明时间与数据缺口。
+- **方法可以沉淀复用**：研究结论、预测和策略卡保存在本机；以后可以继续修正并按同一方法观察。
+- **支持的条件可以持续监测**：先展示准确触发条件，用户另行确认后才启用；不支持的规则不会伪装成自动化。
 - **一个内核，多种入口**：终端、Web、微信和外部 Coding Agent 使用同一套投研工具。
 - **A 股 + 美股一个入口**：Massive/Polygon 美股主源、Yahoo Finance 免 key 兜底，
   `^` 前缀指数（`^GSPC` / `^VIX` / `^TNX`）和美股大盘简报同样一句话可查。
@@ -105,6 +115,10 @@ mommy channel weixin stop      # 停止网关，但保留本机授权
 | Cline | `mommy agent plan --host cline --json` | 计划确认后写入本地 MCP 配置 |
 | Codex | `mommy agent plan --host codex --json` | 复用 Codex 登录，不再配置一套 LLM Key |
 | 微信远程对话 | `mommy channel weixin connect` | 扫码连接本地网关，不开放公网端口 |
+
+Agent-managed 自动连接目前只覆盖表中的 Claude Code、Kimi Code、Cline 和 Codex。其他支持
+stdio MCP 的宿主可以使用同一个 MCP Server，但它们的配置与 Skill 安装尚未纳入这套自动计划；
+入口 Agent 必须先说明这一点，不能把 OpenClaw、Hermes 等宿主伪装成已被自动检测和验证。
 
 开发者如果不想安装全局命令，可以在源码仓库中把 `mommy` 替换为 `uv run mommy`。
 

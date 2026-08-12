@@ -150,6 +150,11 @@ uv run mommy connect test claude
 曾选择 `market-only` 的连接只有显式传入 `--profile personal` 才会开放个人数据。personal
 权限本身不等于保存确认：研究结论、策略卡和监控分别遵守工具中的明确确认边界。
 
+这套自动发现、plan、connect 和 doctor 当前只管理 Claude Code、Kimi Code、Cline 与 Codex。
+OpenClaw、Hermes 或其他 stdio MCP 宿主仍可从协议层接入 `mommy-mcp`，但本版本不知道它们的
+配置文件和 Skill 目录，不能使用虚构的 `--host openclaw`，也不能把手动注册报告成 doctor 已通过。
+接入其他宿主前，应先按该宿主的当前文档列出准确修改并由用户确认。
+
 `personal` 工具结果会进入所选 Coding Agent 的模型上下文。MCP 不会把 API Key 作为工具
 结果返回，但 profile 不约束 Coding Agent 自身的文件系统权限；不要在敏感目录开启跳过
 确认或 YOLO 模式。

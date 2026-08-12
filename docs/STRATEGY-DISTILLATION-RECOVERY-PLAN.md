@@ -145,8 +145,9 @@ Gate：一次真实或 fixture 触发能让用户理解“为什么提醒我”�
 
 ### Phase 5 — Agent-managed 超级入口
 
-用户产物：把一段话发给现有 Agent；Agent 先展示计划和权限，再连接、真实诊断，并围绕用户自己
-选择的问题完成第一次研究。
+用户产物：把一段话发给现有 Agent；Agent 先解释这是可编排的本地投研工具箱，让用户选择第一条
+研究、策略整理、指标检查或监测流程，再展示计划和权限、连接、真实诊断，并完成该流程的第一次
+有用结果。
 
 - [x] 根目录提供 `agent-start.md`，README 第一入口改为“把这句话发给 Agent”。
 - [x] 提供精简的 `agent detect/plan/connect/doctor/repair --json`，不引入通用 capability runtime。
@@ -156,10 +157,11 @@ Gate：一次真实或 fixture 触发能让用户理解“为什么提醒我”�
 - [x] 新连接默认 `market-only`；个人上下文、研究写回、策略保存和监控逐层授权。
 - [x] doctor 真实执行 MCP initialize/tools-list；失败时不推断 privacy 正常，`--timeout` 真正生效。
 - [x] MCP discovery 延迟数据库/数据源初始化，诊断探针不靠创建个人数据证明成功。
-- [x] onboarding 不再由状态写回完成；必须询问用户目标并解释一次真实 `research_*` 结果。
+- [x] onboarding 不再由状态写回完成；必须询问用户目标并展示一次所选流程的真实结果与能力缺口。
+- [x] 未适配宿主必须明确停止自动接入；portable MCP 存在不等于其配置、Skills 和 doctor 已受支持。
 
-Gate：安装/连接状态永远不能单独宣称成功体验；至少一条用户指定研究的事实、推断、时间戳和数据
-缺口被自然语言解释后，才允许给出 onboarding 完成回执。
+Gate：安装/连接状态永远不能单独宣称成功体验；用户必须看到所选流程的可用结果、事实/推断边界
+和能力缺口，且能用自然语言修正后，才允许给出 onboarding 完成回执。
 
 ## 6. 资源门禁与停止规则
 

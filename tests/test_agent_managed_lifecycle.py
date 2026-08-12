@@ -9,6 +9,7 @@ import pytest
 
 from mommy_chaogu.cli_commands.agent_managed import (
     connect_payload,
+    detect_payload,
     doctor_payload,
     plan_payload,
     repair_payload,
@@ -57,6 +58,31 @@ def _skill_checks() -> list[dict[str, object]]:
         {"name": name, "status": "ok", "path": f"/skills/{name}", "managed": True}
         for name in ("mommy-onboard", "mommy-research", "mommy-strategy")
     ]
+
+
+def test_detect_explains_the_toolbox_without_claiming_generic_managed_support() -> None:
+    with (
+        patch(
+            "mommy_chaogu.cli_commands.agent_managed._state_connections",
+            return_value={},
+        ),
+        patch(
+            "mommy_chaogu.cli_commands.agent_managed._host_status",
+            side_effect=lambda host, _connections: {
+                "host": host,
+                "installed": False,
+                "configured": False,
+            },
+        ),
+    ):
+        result = detect_payload()
+
+    assert result["product"]["positioning"] == "可由宿主 Agent 编排的本地投研工具箱"
+    assert result["managed_connection_hosts"] == ["claude", "kimi", "cline", "codex"]
+    assert result["generic_mcp_available"] is False
+    assert result["portable_stdio_mcp_available"] is True
+    assert result["auto_candidates"] == []
+    assert "不会把其他 MCP Agent 伪装成已支持" in result["message"]
 
 
 def test_plan_is_read_only_and_shows_every_change(
@@ -122,6 +148,7 @@ def test_doctor_runs_real_probe_and_enforces_requested_timeout() -> None:
     assert checks["mcp_initialize_and_list_tools"]["status"] == "ok"
     assert checks["live_market_data"]["status"] == "not_checked"
     assert result["onboarding_complete"] is False
+    assert "自定义指标或组合流程的一次受支持执行" in result["first_value_options"]
 
 
 def test_doctor_never_infers_mcp_health_from_configuration_only() -> None:

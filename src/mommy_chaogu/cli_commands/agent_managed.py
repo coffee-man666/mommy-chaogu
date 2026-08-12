@@ -2,7 +2,7 @@
 
 This module intentionally reuses the established connector and MCP server.  It
 does not introduce a second capability runtime or declare onboarding complete:
-the first interpreted, evidence-backed research result remains a host-Agent and
+the first useful result from a user-chosen workflow remains a host-Agent and
 user interaction.
 """
 
@@ -175,11 +175,33 @@ def detect_payload() -> dict[str, Any]:
         auto_candidates=candidates,
         auto_selected=candidates[0] if len(candidates) == 1 else None,
         selection_required=len(candidates) != 1,
-        generic_mcp_available=True,
+        product={
+            "positioning": "可由宿主 Agent 编排的本地投研工具箱",
+            "capabilities": [
+                "A 股与美股行情和研究证据",
+                "当前已支持的技术信号与研究积木",
+                "可修改、确认和复用的策略卡",
+                "需单独确认的本地行情监测",
+            ],
+            "custom_capability_rule": (
+                "自定义指标或流程必须逐项映射到当前工具；无法精确实现的部分标为人工或不可用。"
+            ),
+        },
+        managed_connection_hosts=list(SUPPORTED_HOSTS),
+        generic_mcp_available=False,
+        portable_stdio_mcp_available=True,
+        unsupported_host_message=(
+            "其他 MCP 宿主可使用 portable stdio server，但 mommy agent 尚不能替它管理配置、"
+            "Skills 或 doctor 状态；不得伪装成自动支持。"
+        ),
         message=(
             "检测到唯一宿主，可使用 --host auto。"
             if len(candidates) == 1
-            else "请从 auto_candidates 中明确选择宿主；不会猜测要修改哪个 Agent。"
+            else (
+                "没有检测到受支持的自动接入宿主；不会把其他 MCP Agent 伪装成已支持。"
+                if not candidates
+                else "请从 auto_candidates 中明确选择宿主；不会猜测要修改哪个 Agent。"
+            )
         ),
     )
 
@@ -195,7 +217,11 @@ def _resolve_host(requested: str) -> str:
     if not candidates:
         raise AgentManagedError(
             "host_not_found",
-            "没有检测到受支持的 Agent CLI；仍可手动把 mommy-mcp 注册到任意 MCP host。",
+            (
+                "没有检测到受支持的 Agent CLI。portable stdio MCP server 可供其他宿主手动接入，"
+                "但 mommy agent 不会假装知道其配置和 Skill 目录。"
+            ),
+            details={"managed_connection_hosts": list(SUPPORTED_HOSTS)},
         )
     raise AgentManagedError(
         "host_ambiguous",
@@ -381,8 +407,8 @@ def doctor_payload(host: str, timeout_seconds: float) -> dict[str, Any]:
             "name": "live_market_data",
             "status": "not_checked",
             "message": (
-                "doctor 不用固定标的伪装用户价值。请先询问用户想研究的股票或观点，"
-                "再调用对应 research_* 工具并解释结果。"
+                "doctor 不替用户选择目标，也不把固定探针伪装成产品价值。请先询问用户想完成的"
+                "研究、策略整理、指标检查或监测流程，再执行对应能力并解释结果。"
             ),
         }
     )
@@ -398,16 +424,22 @@ def doctor_payload(host: str, timeout_seconds: float) -> dict[str, Any]:
         discovered_tools=tool_names,
         onboarding_complete=False,
         onboarding_completion_rule=(
-            "连接和 doctor 不是完成事件；宿主 Agent 必须询问用户的真实目标，调用相关 "
-            "research_*，解释证据与缺口，并让用户确认结果有用。"
+            "连接和 doctor 不是完成事件；宿主 Agent 必须询问用户的真实目标，完成一条最小"
+            "可行流程，展示结果与能力缺口，并让用户有机会修正。"
         ),
+        first_value_options=[
+            "行情或研究",
+            "策略蒸馏与可修改策略卡",
+            "自定义指标或组合流程的一次受支持执行",
+            "准确条件的监测候选与当前检查",
+        ],
         next_actions=(
             [f"运行 `mommy agent repair --host {selected} --json` 查看安全修复建议。"]
             if blocking
             else [
-                "询问用户：第一次想研究哪只股票、哪个市场问题或哪段投资观点？",
-                "调用与目标匹配的 research_stock / research_market_brief / research_us_market。",
-                "用自然语言解释事实、推断、时间戳和数据缺口；不要只展示工具 JSON。",
+                "询问用户最想先完成哪条投研或交易观察流程。",
+                "把目标逐项映射到当前工具；不得用相似指标替换未支持的定义。",
+                "执行最小可行的一次流程，并解释结果、时间戳、推断和能力缺口。",
             ]
         ),
     )
@@ -430,7 +462,7 @@ def connect_payload(host: str, profile: str, timeout_seconds: float) -> dict[str
         doctor=diagnosed,
         restart_required=True,
         message=(
-            "连接与真实 MCP 探针已完成；重启宿主 Agent 后，继续第一次用户指定的研究。"
+            "连接与真实 MCP 探针已完成；重启宿主 Agent 后，继续用户选择的第一条流程。"
             if diagnosed["ok"]
             else "配置已写入，但真实 MCP 探针未通过；请按 doctor 结果修复，不能宣称连接成功。"
         ),

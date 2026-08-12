@@ -1,8 +1,48 @@
 # Give your Agent mommy-chaogu
 
-Use this guide when a user asks you to install and take over mommy-chaogu. The goal is not a green
-connection status. The goal is one useful, interpreted research result about something the user
-actually cares about.
+## Explain the product before the installation
+
+mommy-chaogu is a **bounded, Agent-first local investing toolbox**. It is not another chat model and
+it is not primarily a dashboard the user must learn. The current host Agent understands the user's
+goal and composes the toolbox; mommy-chaogu supplies market data, deterministic calculations, local
+records, and supported monitoring. Its value comes from composing reliable building blocks, not
+from pretending every possible trading idea is already implemented.
+
+The toolbox is meant to help the user:
+
+- fetch and interpret A-share and US market data;
+- combine currently supported indicators, signals, and research tools into a repeatable workflow;
+- describe a custom indicator or observation rule in ordinary language, preserve its exact formula,
+  and determine which parts the current toolbox can calculate;
+- distill an article, report, conversation, or personal method into a readable Strategy Card;
+- turn exactly supported price or change conditions into local monitoring after separate consent.
+
+Do not describe it as a broker, automatic trading system, arbitrary indicator runtime, or proof
+that a strategy is profitable. A user may define a custom indicator or workflow in ordinary
+language, but first map its exact definition to capabilities that really exist. If the current
+toolbox cannot calculate or persist part of it, label that part manual or unavailable. Never replace
+it with a technically convenient proxy.
+
+Before discussing commands, explain this in the user's language and ask:
+
+> 你最想先让它帮你完成什么：看一次行情或研究、整理一套投资方法、定义一个指标/观察条件，
+> 还是搭一条持续监测流程？
+
+Keep that answer as the first-value goal. The goal is not a green connection status; onboarding is
+complete only when the user receives and understands a useful result from the workflow they chose.
+
+## Confirm that this host has a real connection path
+
+The managed lifecycle currently knows how to modify **Claude Code, Kimi Code, Cline, and Codex**.
+`mommy agent detect --json` only detects those hosts. OpenClaw, Hermes, and other MCP hosts are not
+valid values for `--host` today.
+
+If the current host is not one of the four managed hosts, do not invent a host value, configuration
+path, Skill destination, successful probe, or claim that the managed setup supports it. Tell the
+user that the portable stdio MCP server exists but this host's installation is not automated yet.
+Only prepare a manual host-specific plan after verifying that host's current documentation and
+listing its exact configuration and Skill changes; otherwise stop before modifying the host. A
+separately approved base CLI installation is still allowed.
 
 ## Safety contract
 
@@ -12,6 +52,8 @@ Before changing the machine, show the user:
 - which Agent configuration and Skill directories will change;
 - the chosen privacy scope in ordinary language;
 - that external-Agent mode does not require a second LLM API key;
+- that secrets and product databases stay on the local device, while public market requests reach
+  external data providers and tool results are processed by the current host Agent/model;
 - the exact next command.
 
 Do not install, connect, widen privacy, save personal material, or enable monitoring before the
@@ -66,9 +108,10 @@ Run:
 mommy agent detect --json
 ```
 
-If more than one host is detected, ask which Agent the user wants to modify. Then ask whether to
-start with public market data only or also allow task-relevant local holdings, memory, and Strategy
-Cards. Default to public market data (`market-only`).
+If no managed host is detected, follow the compatibility rule above. If more than one is detected,
+ask which Agent the user wants to modify. Then ask whether to start with public market data only or
+also allow task-relevant local holdings, memory, and Strategy Cards. Default to public market data
+(`market-only`).
 
 Create a read-only plan:
 
@@ -96,18 +139,21 @@ mommy agent repair --host <HOST> --json
 
 Do not force-overwrite user-modified configuration or Skills. Restart the host Agent when requested.
 
-## 4. Finish with the user's first research
+## 4. Complete the user's chosen first workflow
 
-Ask:
+Return to the first-value goal captured before installation:
 
-> 第一次你想研究哪只股票、哪个市场问题，或哪段投资观点？
+- **行情或研究**: use `mommy-research` and the matching high-level `research_*` tool. Give a direct
+  answer, successful evidence with timestamps, missing/stale data, fact-versus-inference boundaries,
+  and one useful next step.
+- **投资方法或策略蒸馏**: use `mommy-strategy` to show a faithful, readable Strategy Card the user
+  can correct. Confirmation of meaning and permission to save are separate questions.
+- **自定义指标或流程**: restate the exact formula, inputs, schedule, universe, and desired output;
+  map each part to current tools; run one supported pass. Clearly mark anything manual or
+  unavailable, and do not claim persistence unless a real saved workflow exists.
+- **持续监测**: first show the exact supported trigger and run a current check. Preparing a monitor
+  is not activation; personal access and activation each require their own plan or consent.
 
-Use the matching high-level `research_*` tool. Give the user a direct answer, successful evidence
-with timestamps, missing/stale data, fact-versus-inference boundaries, and one useful next step.
-Raw JSON, tool count, installation, or doctor status alone never completes onboarding.
-
-After the first useful answer, offer—but do not automatically perform—one of these next actions:
-
-- use `mommy-strategy` to turn a method into an approved local Strategy Card;
-- reconnect with `personal` after a new privacy plan if relevant personal context is wanted;
-- prepare a supported monitor candidate and ask for separate activation consent.
+Raw JSON, tool count, installation, a workflow spec, or doctor status alone never completes
+onboarding. Finish by showing the user what their chosen workflow produced, what remains unsupported,
+and how they can ask the Agent to run or refine it again.
