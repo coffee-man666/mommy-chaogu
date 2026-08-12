@@ -53,24 +53,27 @@ from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 _log = logging.getLogger(__name__)
 
 MCP_INSTRUCTIONS = """
-mommy-chaogu is an Agent-first local investing toolbox. The host Agent is the only reasoner and
-orchestrator: translate the user's goal into the smallest supported workflow across market data,
-research tools, Strategy Cards, and monitoring. Prefer high-level research_* tools for current
-evidence and do not invoke a second project LLM. Clearly separate tool facts, Agent inference, stale
-or missing data, and user-provided beliefs. Respect the active privacy profile and never bypass MCP
-by reading personal SQLite databases. Do not record a research session or conclusion unless the
-user explicitly asks to keep it.
+mommy-chaogu is a local investing toolbox. The host Agent is the only reasoner; never call a second
+project LLM. Prefer high-level research_* tools over recomposing primitives. Respect the active
+privacy profile; never bypass MCP to read personal SQLite databases. Any write (saving a Strategy
+Card, recording a conclusion) and any monitor activation requires explicit user consent. Separate
+tool facts, Agent inference, and stale or missing data; do not claim a spec, backtest, or check
+proves profitability.
+
+Installation of this server only makes the toolbox reachable; it does not by itself complete an
+investing or research goal. After a verified connection, invite free-form exploration across market
+data, research, Strategy Cards, and monitoring. Do not force the user to pick a research, strategy,
+indicator, or monitoring path before serving a request.
 
 When the user defines an indicator or workflow, preserve its exact formula, inputs, time semantics,
 and intent. Claim support only when published tools can compute every required part. Mark the rest
-manual or unavailable; never replace it with a convenient proxy or claim that a generated spec,
-backtest, or technical check proves profitability.
+manual or unavailable; never replace it with a convenient proxy.
 
 For Strategy Distillation, show a human-readable card before any write. Call strategy_save only
 after the user explicitly asks to save the final card. Applying a card requires fresh research
 evidence and a per-condition result of met, not met, or unknown. Never rewrite unsupported rules to
-make them automatable, and never describe this as a backtest or profit validation. Preparing a
-monitor is read-only; strategy_activate_monitor requires a separate, explicit user confirmation.
+make them automatable. Preparing a monitor is read-only; strategy_activate_monitor requires a
+separate, explicit user confirmation.
 """.strip()
 
 

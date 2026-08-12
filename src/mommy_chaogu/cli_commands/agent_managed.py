@@ -1,9 +1,12 @@
 """Lean, machine-readable lifecycle commands for an external host Agent.
 
 This module intentionally reuses the established connector and MCP server.  It
-does not introduce a second capability runtime or declare onboarding complete:
-the first useful result from a user-chosen workflow remains a host-Agent and
-user interaction.
+does not introduce a second capability runtime.  Completion is reported in two
+layers: ``integration_available`` is true once configuration, the three Skills,
+a real MCP initialize/tools-list, and the privacy boundary all pass, leaving the
+toolbox open for free exploration; ``investing_goal_complete`` stays false here,
+because a useful result from a user-chosen workflow remains a host-Agent and
+user interaction that this CLI never performs.
 """
 
 from __future__ import annotations
@@ -407,27 +410,33 @@ def doctor_payload(host: str, timeout_seconds: float) -> dict[str, Any]:
             "name": "live_market_data",
             "status": "not_checked",
             "message": (
-                "doctor 不替用户选择目标，也不把固定探针伪装成产品价值。请先询问用户想完成的"
-                "研究、策略整理、指标检查或监测流程，再执行对应能力并解释结果。"
+                "doctor 故意不拉取实时行情，也不替用户挑选目标；宿主 Agent 在用户自由探索时按需调用"
+                "行情工具并解释结果、时间戳与能力缺口。"
             ),
         }
     )
     blocking = [item["name"] for item in checks if item["status"] == "failed"]
+    integration_available = not blocking
     return _envelope(
         "doctor",
-        ok=not blocking,
+        ok=integration_available,
         host=selected,
         profile=spec.profile if spec else None,
         timeout_seconds=timeout_seconds,
         checks=checks,
         blocking_checks=blocking,
         discovered_tools=tool_names,
-        onboarding_complete=False,
-        onboarding_completion_rule=(
-            "连接和 doctor 不是完成事件；宿主 Agent 必须询问用户的真实目标，完成一条最小"
-            "可行流程，展示结果与能力缺口，并让用户有机会修正。"
+        integration_available=integration_available,
+        integration_completion_rule=(
+            "配置、三个 Skill、真实 MCP initialize/tools-list 与权限边界全部通过即代表集成可用；"
+            "此时工具箱对宿主 Agent 开放，用户可自由探索，不必先选择或运行某条流程。"
         ),
-        first_value_options=[
+        investing_goal_complete=False,
+        investing_goal_completion_rule=(
+            "安装与 doctor 不是投研价值的完成；某条投研目标只有当用户实际发起、看到并理解有用结果、"
+            "且能继续修正或复用时才算完成。不得把这条目标当成安装前置条件强制询问。"
+        ),
+        exploration_examples=[
             "行情或研究",
             "策略蒸馏与可修改策略卡",
             "自定义指标或组合流程的一次受支持执行",
@@ -437,8 +446,8 @@ def doctor_payload(host: str, timeout_seconds: float) -> dict[str, Any]:
             [f"运行 `mommy agent repair --host {selected} --json` 查看安全修复建议。"]
             if blocking
             else [
-                "询问用户最想先完成哪条投研或交易观察流程。",
-                "把目标逐项映射到当前工具；不得用相似指标替换未支持的定义。",
+                "告诉用户工具箱已可用，可自由探索行情、研究、策略或监测。",
+                "用户发起请求后，把目标逐项映射到当前工具；不得用相似指标替换未支持的定义。",
                 "执行最小可行的一次流程，并解释结果、时间戳、推断和能力缺口。",
             ]
         ),
@@ -462,7 +471,7 @@ def connect_payload(host: str, profile: str, timeout_seconds: float) -> dict[str
         doctor=diagnosed,
         restart_required=True,
         message=(
-            "连接与真实 MCP 探针已完成；重启宿主 Agent 后，继续用户选择的第一条流程。"
+            "连接与真实 MCP 探针已完成；重启宿主 Agent 后，工具箱即可自由探索。"
             if diagnosed["ok"]
             else "配置已写入，但真实 MCP 探针未通过；请按 doctor 结果修复，不能宣称连接成功。"
         ),

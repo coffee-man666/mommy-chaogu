@@ -23,13 +23,20 @@ language, but first map its exact definition to capabilities that really exist. 
 toolbox cannot calculate or persist part of it, label that part manual or unavailable. Never replace
 it with a technically convenient proxy.
 
-Before discussing commands, explain this in the user's language and ask:
+Explain this in the user's language, then move straight to the installation plan. **Do not require
+the user to choose a research / strategy / indicator / monitoring path before installation.** The
+toolbox is designed for free-form exploration once the connection is verified; the user can decide
+what to ask for at any time, change direction, or just look around.
 
-> 你最想先让它帮你完成什么：看一次行情或研究、整理一套投资方法、定义一个指标/观察条件，
-> 还是搭一条持续监测流程？
+Keep two senses of "complete" separate:
 
-Keep that answer as the first-value goal. The goal is not a green connection status; onboarding is
-complete only when the user receives and understands a useful result from the workflow they chose.
+- **Integration is available** once configuration, all three Skills, a real MCP initialize/tools-list,
+  and the privacy boundary check all pass. At that point the toolbox is reachable and the user can
+  explore freely; you should not force a workflow to run.
+- **An investing or research goal is complete** only when the user sees and understands a useful
+  result from a flow they actually asked for, and can refine or reuse it. Installation artifacts,
+  tool counts, or a green doctor never satisfy this — but neither is this a reason to block
+  exploration behind a mandatory first-task question.
 
 ## Confirm that this host has a real connection path
 
@@ -108,9 +115,15 @@ Run:
 mommy agent detect --json
 ```
 
-If no managed host is detected, follow the compatibility rule above. If more than one is detected,
-ask which Agent the user wants to modify. Then ask whether to start with public market data only or
-also allow task-relevant local holdings, memory, and Strategy Cards. Default to public market data
+If no managed host is detected, follow the compatibility rule above. If the user is clearly running
+inside one host (for example they are talking to you through Codex), pass that host directly with
+`--host codex` (or the matching value) and treat any other detected CLI only as diagnostic context.
+Do not list every detected host as a new selection question, and never modify a host the user did
+not ask to connect.
+
+Only when detection is genuinely ambiguous and the user has not indicated a host should you ask
+which one to modify. Then ask whether to start with public market data only or also allow
+task-relevant local holdings, memory, and Strategy Cards. Default to public market data
 (`market-only`).
 
 Create a read-only plan:
@@ -119,7 +132,9 @@ Create a read-only plan:
 mommy agent plan --host <HOST> --profile <market-only|personal> --json
 ```
 
-Translate its `changes` and `privacy` fields for the user. Wait for approval.
+Translate its `changes` and `privacy` fields for the user. Wait for approval. Avoid re-confirming
+when the read-only plan matches a scope the user already approved; pause again only if command,
+paths, host, or privacy materially change.
 
 ## 3. Connect and run a real probe
 
@@ -139,9 +154,15 @@ mommy agent repair --host <HOST> --json
 
 Do not force-overwrite user-modified configuration or Skills. Restart the host Agent when requested.
 
-## 4. Complete the user's chosen first workflow
+When every blocking check passes, **the integration is available**: configuration is written, the
+three Skills are installed, MCP initialize and tools/list really ran, and the privacy boundary
+matches the chosen profile. Say this plainly and stop. Do not imply an investing or research goal is
+already done, and do not push the user to run a workflow before they have asked for one.
 
-Return to the first-value goal captured before installation:
+## 4. Invite free exploration
+
+The toolbox is now reachable. Offer optional directions the user can take whenever they like — these
+are examples, not a mandatory menu, and the user may ask for something else entirely:
 
 - **行情或研究**: use `mommy-research` and the matching high-level `research_*` tool. Give a direct
   answer, successful evidence with timestamps, missing/stale data, fact-versus-inference boundaries,
@@ -154,6 +175,7 @@ Return to the first-value goal captured before installation:
 - **持续监测**: first show the exact supported trigger and run a current check. Preparing a monitor
   is not activation; personal access and activation each require their own plan or consent.
 
-Raw JSON, tool count, installation, a workflow spec, or doctor status alone never completes
-onboarding. Finish by showing the user what their chosen workflow produced, what remains unsupported,
-and how they can ask the Agent to run or refine it again.
+When the user does pick a direction, finish by showing what it produced, what remains unsupported,
+and how they can ask you to run or refine it again. Raw JSON, tool count, installation, a workflow
+spec, or doctor status alone is never the product outcome — but you should not withhold exploration
+until the user commits to one of these paths.
