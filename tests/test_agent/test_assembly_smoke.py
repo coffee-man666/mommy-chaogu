@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -157,7 +157,7 @@ class TestMcpServerSmoke:
         ctx = ToolContext(adapter=None, agent_db=isolated_env / "agent.db")  # type: ignore[arg-type]
         server = create_mcp_server(ctx)
 
-        # 新连接/直接启动默认是 personal；market-only 需要显式选择。
+        # 新连接/直接启动默认是 market-only；个人数据需要显式选择。
         assert len(server.request_handlers) > 0
 
         async def _call(name: str, arguments: dict[str, Any]) -> Any:
@@ -175,8 +175,14 @@ class TestMcpServerSmoke:
         names = {tool.name for tool in listed.root.tools}  # type: ignore[union-attr]
         assert "research_stock" in names
         assert "get_quote" in names
-        assert "get_portfolio" in names
-        assert "get_memory_context" in names
+        assert "get_portfolio" not in names
+        assert "get_memory_context" not in names
+        assert "strategy_save" not in names
+        assert "strategy_prepare_application" not in names
+
+        options = server.create_initialization_options()
+        assert options.instructions is not None
+        assert "human-readable card" in options.instructions
 
         result = asyncio.run(_call("get_memory_health", {}))
         assert result.root.content[0].text  # type: ignore[union-attr]
@@ -199,9 +205,13 @@ class TestMcpServerSmoke:
         assert "get_memory_context" in tools
         assert "research_portfolio" in tools
         assert "record_research_conclusion" in tools
+        assert "strategy_save" in tools
+        assert "strategy_prepare_monitor" in tools
         assert tools["research_stock"].annotations.readOnlyHint is False
         assert tools["research_stock"].annotations.idempotentHint is False
         assert tools["record_research_conclusion"].annotations.readOnlyHint is False
+        assert tools["strategy_save"].annotations.readOnlyHint is False
+        assert tools["strategy_prepare_monitor"].annotations.readOnlyHint is True
 
         public_server = create_mcp_server(ctx, profile="market-only")
 
@@ -213,8 +223,37 @@ class TestMcpServerSmoke:
             tool.name: tool
             for tool in public_listed.root.tools  # type: ignore[union-attr]
         }
+        assert "strategy_save" not in public_tools
+        assert "strategy_get" not in public_tools
         assert public_tools["research_stock"].annotations.readOnlyHint is True
         assert public_tools["research_stock"].annotations.idempotentHint is True
+
+    def test_discovery_is_read_only_and_context_build_is_lazy(self, isolated_env: Path) -> None:
+        from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
+
+        from mommy_chaogu.agent.mcp_server import create_mcp_server
+        from mommy_chaogu.agent.tools.base import ToolContext
+
+        lazy_ctx = ToolContext(adapter=MagicMock(), agent_db=isolated_env / "agent.db")
+        with patch("mommy_chaogu.agent.mcp_server._build_context", return_value=lazy_ctx) as build:
+            server = create_mcp_server(profile="market-only")
+
+            async def _list() -> Any:
+                return await server.request_handlers[ListToolsRequest](ListToolsRequest())
+
+            asyncio.run(_list())
+            build.assert_not_called()
+            assert not (isolated_env / "agent.db").exists()
+
+            async def _call() -> Any:
+                request = CallToolRequest(
+                    method="tools/call",
+                    params=CallToolRequestParams(name="get_quote", arguments={"code": "600519"}),
+                )
+                return await server.request_handlers[CallToolRequest](request)
+
+            asyncio.run(_call())
+            build.assert_called_once_with()
 
     def test_mcp_v2_registers_constructor_callbacks(self, isolated_env: Path) -> None:
         """MCP 2.x 删除装饰器后，工具仍通过构造函数 callback 注册。"""
@@ -230,7 +269,8 @@ class TestMcpServerSmoke:
         with patch("mommy_chaogu.agent.mcp_server.Server", FakeMcp2Server):
             server = create_mcp_server(ctx)
 
+        assert "instructions" in server.handlers  # type: ignore[attr-defined]
         listed = asyncio.run(server.handlers["on_list_tools"](None, None))  # type: ignore[attr-defined]
         names = {tool.name for tool in listed.tools}
         assert "get_quote" in names
-        assert "get_portfolio" in names
+        assert "get_portfolio" not in names

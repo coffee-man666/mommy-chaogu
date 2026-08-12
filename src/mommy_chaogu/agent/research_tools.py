@@ -26,7 +26,7 @@ from mommy_chaogu.agent.tools.base import ToolDef, _json
 _log = logging.getLogger(__name__)
 
 McpProfile = Literal["market-only", "personal"]
-DEFAULT_MCP_PROFILE: McpProfile = "personal"
+DEFAULT_MCP_PROFILE: McpProfile = "market-only"
 
 MARKET_ONLY_BASE_TOOLS: frozenset[str] = frozenset(
     {
@@ -49,7 +49,15 @@ MARKET_ONLY_BASE_TOOLS: frozenset[str] = frozenset(
 )
 
 WRITE_TOOL_NAMES: frozenset[str] = frozenset(
-    {"backfill_history", "manage_watchlist", "manage_alert", "record_research_conclusion"}
+    {
+        "backfill_history",
+        "manage_watchlist",
+        "manage_alert",
+        "record_research_conclusion",
+        "strategy_save",
+        "strategy_archive",
+        "strategy_activate_monitor",
+    }
 )
 
 _CODE_RE = re.compile(r"^(\^[A-Z]{1,6}|[A-Z]{1,6}(?:[.-][A-Z])?|\d{6})$")
@@ -63,8 +71,8 @@ _RESEARCH_CONTROL_PROPERTIES: dict[str, Any] = {
     },
     "record_session": {
         "type": "boolean",
-        "default": True,
-        "description": "是否记录事实型研究事件",
+        "default": False,
+        "description": "用户明确同意记录本次研究过程时才设为 true",
     },
 }
 
@@ -187,7 +195,7 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
         name="record_research_conclusion",
         description=(
             "PERSONAL 写操作：把外部 Agent 的研究结论写入本地记忆，可同时登记待验证预测。"
-            "实质研究后默认调用；用户可用 save_conclusion=false 明确跳过。仅 personal profile 发布。"
+            "必须先展示结论并取得用户明确保存确认。仅 personal profile 发布。"
         ),
         parameters={
             "type": "object",
@@ -235,8 +243,16 @@ RESEARCH_TOOL_DEFS: tuple[ToolDef, ...] = (
                 "evidence_as_of": {"type": "string", "description": "证据截止时间"},
                 "data_coverage": {"type": "object", "description": "证据覆盖情况"},
                 "save_conclusion": {"type": "boolean", "default": True},
+                "user_confirmed": {
+                    "type": "boolean",
+                    "description": "只有用户看过结论并明确要求保存后才能为 true",
+                },
+                "confirmation_note": {
+                    "type": "string",
+                    "description": "简要记录用户如何确认本次保存",
+                },
             },
-            "required": ["summary", "scope"],
+            "required": ["summary", "scope", "user_confirmed", "confirmation_note"],
         },
     ),
 )
@@ -308,7 +324,10 @@ class ResearchToolCatalog:
             return _json(
                 {
                     "error": f"工具 {name} 未在 {self.profile} profile 中开放",
-                    "hint": "如确需使用个人数据，请由用户运行 mommy connect <agent> --profile personal",
+                    "hint": (
+                        "如确需使用个人数据，先运行 mommy agent plan --host <agent> "
+                        "--profile personal --json，展示权限变化并取得用户同意。"
+                    ),
                 }
             )
         handlers = {
@@ -349,7 +368,7 @@ class ResearchToolCatalog:
         *,
         subject: dict[str, Any] | None = None,
         research_session_id: str | None = None,
-        record_session: bool = True,
+        record_session: bool = False,
     ) -> dict[str, Any]:
         session_id = research_session_id or str(uuid.uuid4())
         payload: dict[str, Any] = {
@@ -374,7 +393,7 @@ class ResearchToolCatalog:
             )
         else:
             payload["memory_recorded"] = False
-        if self.profile == "personal" and ok_evidence:
+        if self.profile == "personal" and ok_evidence and record_session:
             self._schedule_daily_maintenance()
         return payload
 
@@ -641,6 +660,15 @@ class ResearchToolCatalog:
             raise ValueError("summary 不能为空")
         if args.get("save_conclusion") is False:
             return {"saved": False, "skipped": True, "message": "按请求未写入研究结论。"}
+        if args.get("user_confirmed") is not True:
+            return {
+                "saved": False,
+                "confirmation_required": True,
+                "message": "尚未保存：请先把结论展示给用户并取得明确保存确认。",
+            }
+        confirmation_note = str(args.get("confirmation_note", "")).strip()
+        if not confirmation_note:
+            raise ValueError("保存研究结论需要记录用户的明确确认")
         if scope not in {"market", "sector", "stock", "portfolio"}:
             raise ValueError("scope 必须是 market、sector、stock 或 portfolio")
         code = str(args.get("code", "")).strip() or None
@@ -708,6 +736,7 @@ class ResearchToolCatalog:
                     "analysis_type": args.get("analysis_type"),
                     "evidence_as_of": args.get("evidence_as_of"),
                     "data_coverage": args.get("data_coverage") or {},
+                    "confirmation_note": confirmation_note,
                 },
                 code=code,
                 name=str(args.get("name", "")).strip() or None,
@@ -803,7 +832,7 @@ def _use_personal_context(args: dict[str, Any]) -> bool:
 
 
 def _record_session(args: dict[str, Any]) -> bool:
-    return args.get("record_session") is not False
+    return args.get("record_session") is True
 
 
 def _evidence_as_of(data: Any) -> str | None:

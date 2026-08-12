@@ -11,12 +11,12 @@ from mommy_chaogu.coding_agents.base import (
     ConnectionSpec,
     ConnectionStatus,
     agent_home,
-    directory_hash,
     entry_matches_spec,
     install_skill,
+    managed_skills_ok,
     previous_spec,
+    remove_managed_skills,
     run_command,
-    skill_dir,
 )
 
 
@@ -92,10 +92,7 @@ class KimiAdapter:
         configured = (
             old is not None and current is not None and entry_matches_spec("kimi", current, old)
         )
-        skill_path = Path(str((self.previous or {}).get("skill_path", skill_dir("kimi"))))
-        skill_ok = bool(self.previous) and directory_hash(skill_path) == str(
-            (self.previous or {}).get("skill_hash", "")
-        )
+        skill_ok = managed_skills_ok("kimi", self.previous)
         profile = old.profile if old else "market-only"
         return ConnectionStatus(
             "kimi",
@@ -118,8 +115,4 @@ class KimiAdapter:
             save_json(self._path, config)
         elif current is not None:
             print("⚠ 保留已被修改的 Kimi MCP 配置。")
-        skill_path = Path(str((self.previous or {}).get("skill_path", skill_dir("kimi"))))
-        if skill_path.is_dir() and directory_hash(skill_path) == str(
-            (self.previous or {}).get("skill_hash", "")
-        ):
-            shutil.rmtree(skill_path)
+        remove_managed_skills("kimi", self.previous)

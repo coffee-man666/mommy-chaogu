@@ -11,12 +11,12 @@ from mommy_chaogu.coding_agents.base import (
     SERVER_NAME,
     ConnectionSpec,
     ConnectionStatus,
-    directory_hash,
     entry_matches_spec,
     install_skill,
+    managed_skills_ok,
     previous_spec,
+    remove_managed_skills,
     run_command,
-    skill_dir,
 )
 
 
@@ -88,10 +88,7 @@ class CodexAdapter:
         configured = (
             old is not None and current is not None and entry_matches_spec("codex", current, old)
         )
-        path = Path(str((self.previous or {}).get("skill_path", skill_dir("codex"))))
-        skill_ok = bool(self.previous) and directory_hash(path) == str(
-            (self.previous or {}).get("skill_hash", "")
-        )
+        skill_ok = managed_skills_ok("codex", self.previous)
         profile = old.profile if old else "market-only"
         return ConnectionStatus(
             "codex",
@@ -112,8 +109,4 @@ class CodexAdapter:
             self._run([binary, "mcp", "remove", SERVER_NAME])
         elif current is not None:
             print("⚠ 保留已被修改的 Codex MCP 配置。")
-        path = Path(str((self.previous or {}).get("skill_path", skill_dir("codex"))))
-        if path.is_dir() and directory_hash(path) == str(
-            (self.previous or {}).get("skill_hash", "")
-        ):
-            shutil.rmtree(path)
+        remove_managed_skills("codex", self.previous)

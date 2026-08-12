@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -39,3 +40,12 @@ def test_bundled_themes_work_outside_source_checkout(
 
     assert len(themes) >= 5
     assert {item["id"] for item in themes} >= {"semiconductor", "earnings_watch"}
+
+
+def test_release_artifacts_exclude_runtime_output_and_local_test_skills() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    excluded = set(config["tool"]["hatch"]["build"]["exclude"])
+
+    assert "/output/**" in excluded
+    assert "/src/mommy_chaogu/bundled_skills/market-monitoring-test/**" in excluded

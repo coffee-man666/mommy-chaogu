@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,570 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（2,082 个离线用例，另有 14 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -57,7 +57,7 @@ uv run python scripts/migrate_db_layout.py            # 执行迁移
 |---|---|---|
 | `data/market.db` | 行情数据（缓存 + 历史 K 线 + 资金流） | quote_cache, bar_cache, klines, flows |
 | `data/portfolio.db` | 用户数据（自选股 + 持仓 + 告警） | groups, stock_entries, positions |
-| `data/agent.db` | 记忆系统（对话 + 事件 + 预测 + 知识 + 向量） | agent_memory, episodic_events, predictions, semantic_knowledge |
+| `data/agent.db` | Agent 个人数据（记忆 + 策略卡） | agent_memory, episodic_events, predictions, semantic_knowledge, strategy_cards |
 | `data/reference.db` | 参考库（半导体产业链 + 业绩） | semicon_stocks, earnings_* |
 
 数据根目录可通过 `MOMMY_DATA_DIR` 覆盖，单库路径可通过环境变量覆盖：
@@ -77,7 +77,8 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 25 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
+├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 36 工具 + MCP + 记忆系统 5 层 + Strategy Cards）
+├── strategy/        # 用户确认的策略卡校验、版本、来源与监控关联
 ├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
@@ -106,8 +107,10 @@ src/mommy_chaogu/
 2. **底层 CLI 子命令**（向后兼容，高级用户 + CI）
    - `mommy-watchlist` / `mommy-monitor` / `mommy-cache` / `mommy-flows` 等
    - 这些命令保留向后兼容，推荐使用 `mommy <子命令>` 风格
-   - `mommy connect claude|kimi|cline|codex` → 安装投研 Skill + 注册本地 MCP；默认 personal，
-     按任务开放相关持仓、记忆和写回；显式 `--profile market-only` 可完全关闭个人能力
+   - `mommy agent detect|plan|connect|doctor|repair --json` → Agent-managed 安装/诊断契约；plan
+     先展示文件和权限，真实 MCP 探针通过也不等于首次价值完成
+   - `mommy connect claude|kimi|cline|codex` → 兼容入口，安装 onboard/research/strategy 三个
+     Skill + 注册本地 MCP；新连接默认 market-only，显式 `--profile personal` 才开放个人能力
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：
 - `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor
@@ -147,6 +150,29 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 - shadcn 组件（reka-ui）+ lucide 图标
 - A 股配色（红涨绿跌）+ 深色/浅色模式
 - klinecharts K 线图 + WebSocket 实时推送
+
+## 产品交付原则（高于工程偏好）
+
+mommy-chaogu 是直接服务最终用户的应用，不是为其他应用提供抽象能力的平台。工程正确性用于
+支撑用户结果，不能取代用户结果。规划、实现和评审时遵守以下顺序：
+
+1. **先定义用户可感知的完成事件**：写清目标用户、当前问题、最短使用路径，以及用户最终能
+   看到、理解或完成什么。代码存在、schema 完整、测试通过、hash 可复现都不能单独算功能完成。
+2. **先做最小纵向闭环**：优先交付一条用户能实际走通的路径，再补通用 runtime、抽象层、发布
+   矩阵和广泛兼容性。每个技术任务必须说明它直接解锁哪一个用户步骤；说不清则默认延后。
+3. **先盘点现实资源**：立项前核实现有数据覆盖与时间语义、可复用算法、存储/监控入口、外部
+   依赖稳定性和维护成本。缺少关键前提时缩小目标或明确降级，不用未来能力假装当前可交付。
+4. **最小必要工程与验证**：复用现有服务和入口，只建设当前闭环必需的支持；验证力度与实际风险
+   和项目成熟度相称。不得用额外框架、通用编译器、复杂 gate 或大规模工程加固替代用户验收。
+5. **产品来源不得倒置**：当前用户确认的意图和已批准产品文档高于 Draft RFC、示例、测试夹具和
+   临时 spike。后者只能验证产品，不能自行定义产品。发现实现开始围绕夹具或技术指标优化时，
+   立即停止并回到原始用户旅程复核。
+6. **研究能力诚实命名**：没有确认的数据复权/时间语义、样本覆盖、信号定义、组合构造和评价方法
+   时，不得承诺或宣称“真实回测”。可将结果标为示例计算、探索性观察或当前状态评估；如果它不
+   改善当前用户体验，就不进入本阶段。
+
+计划中的每个阶段至少包含一个用户可观察的产物或行为及其验收方式。评审优先询问“用户现在多了
+什么能力、能否亲自感受到”，再检查支撑它的工程是否足够正确；不要反过来以工程完成度推导产品完成。
 
 ## 开发规范
 

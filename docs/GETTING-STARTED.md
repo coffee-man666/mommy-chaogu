@@ -134,19 +134,21 @@ uv run mommy connect status
 uv run mommy connect test claude     # 替换为实际 target
 ```
 
-连接命令会注册本地 stdio MCP Server、安装 `mommy-research` Skill，并执行连通测试。新连接
-默认 `personal`：按研究对象读取相关持仓、自选和历史记忆，记录事实研究事件，并在实质分析后
-写回结论。
+推荐先让 Agent 运行 `mommy agent detect --json` 和 `mommy agent plan --host ... --json`，把
+配置文件、三个 Skills 与权限范围展示给用户，再执行连接。兼容的 `mommy connect` 命令会注册
+本地 stdio MCP Server、安装 `mommy-onboard` / `mommy-research` / `mommy-strategy`，并执行
+连通测试。新连接默认 `market-only`，不读取个人数据，也不写研究记录。
 
-如需完全关闭个人能力，显式切换为公共市场模式：
+用户明确需要相关持仓、记忆和策略卡后，再展示新的权限计划并切换为 personal：
 
 ```bash
-uv run mommy connect claude --profile market-only
+uv run mommy connect claude --profile personal
 uv run mommy connect test claude
 ```
 
 连接会记住已经选择的 profile。再次执行连接命令但不传 `--profile` 时会保持原范围；
-曾选择 `market-only` 的连接只有显式传入 `--profile personal` 才会开放个人数据。
+曾选择 `market-only` 的连接只有显式传入 `--profile personal` 才会开放个人数据。personal
+权限本身不等于保存确认：研究结论、策略卡和监控分别遵守工具中的明确确认边界。
 
 `personal` 工具结果会进入所选 Coding Agent 的模型上下文。MCP 不会把 API Key 作为工具
 结果返回，但 profile 不约束 Coding Agent 自身的文件系统权限；不要在敏感目录开启跳过

@@ -204,7 +204,11 @@ def main_agent() -> NoReturn:
     # 维护子命令在 chat 解析前拦截——否则 "verify"/"consolidate"
     # 会被当成提问内容发给 LLM。
     argv = sys.argv[1:]
-    if argv and argv[0] == "verify":
+    if argv and argv[0] in {"detect", "plan", "connect", "doctor", "status", "repair"}:
+        from mommy_chaogu.cli_commands.agent_managed import main_agent_managed
+
+        main_agent_managed(argv)
+    elif argv and argv[0] == "verify":
         _run_verify(argv[1:])
     elif argv and argv[0] == "consolidate":
         _run_consolidate(argv[1:])

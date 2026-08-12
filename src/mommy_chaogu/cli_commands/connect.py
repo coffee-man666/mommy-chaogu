@@ -31,7 +31,7 @@ from mommy_chaogu.coding_agents.base import (
 )
 from mommy_chaogu.config import default_user_config_dir
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 PRIVACY_CONSENT_VERSION = "2026-08-07.personal-v1"
 
 
@@ -51,7 +51,7 @@ def build_connect_parser() -> argparse.ArgumentParser:
             "--profile",
             choices=("market-only", "personal"),
             default=None,
-            help="隐私权限：personal（默认）或 market-only",
+            help="隐私权限：market-only（默认）或 personal",
         )
         connect.add_argument("--force", action="store_true", help="替换同名的非托管配置或 Skill")
         connect.add_argument("--skip-test", action="store_true", help="安装后跳过 MCP 连通测试")
@@ -93,6 +93,7 @@ def _load_state() -> dict[str, Any]:
 def _save_state(state: dict[str, Any]) -> None:
     import json
 
+    state["version"] = STATE_VERSION
     path = _state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(".tmp")
@@ -102,7 +103,13 @@ def _save_state(state: dict[str, Any]) -> None:
     path.chmod(0o600)
 
 
+def _bundled_skill_dirs() -> tuple[Path, ...]:
+    root = Path(__file__).resolve().parents[1] / "bundled_skills"
+    return tuple(root / name for name in ("mommy-onboard", "mommy-research", "mommy-strategy"))
+
+
 def _bundled_skill_dir() -> Path:
+    """Compatibility helper for callers that expect the research Skill path."""
     return Path(__file__).resolve().parents[1] / "bundled_skills" / "mommy-research"
 
 
@@ -118,7 +125,7 @@ def _skill_dir(target: str) -> Path:
 def _resolve_profile(profile: str | None, current_profile: str | None = None) -> str:
     """Resolve a profile without silently widening an existing connection.
 
-    New connections still default to ``personal``.  Once a connection exists,
+    New connections default to ``market-only``.  Once a connection exists,
     omitting ``--profile`` preserves its current scope; changing a prior
     ``market-only`` choice therefore requires an explicit
     ``--profile personal``.
@@ -132,23 +139,25 @@ def _resolve_profile(profile: str | None, current_profile: str | None = None) ->
         return selected
     if sys.stdin.isatty():
         print("选择投研数据范围：")
-        print("  1) personal（默认）：开放与任务相关的持仓 / 自选 / 记忆")
-        print("  2) market-only：只看公共行情，不读个人数据")
+        print("  1) market-only（默认）：只看公共行情，不读个人数据")
+        print("  2) personal：开放与任务相关的持仓 / 自选 / 记忆")
         try:
             choice = input("请输入 1 或 2 [1]: ").strip() or "1"
         except EOFError:
             choice = "1"
-        return "personal" if choice == "1" else "market-only"
+        return "personal" if choice == "2" else "market-only"
     return DEFAULT_MCP_PROFILE
 
 
-async def _probe(spec: ConnectionSpec) -> list[str]:
+async def _probe(spec: ConnectionSpec, *, timeout_seconds: float = 20.0) -> list[str]:
     process_env = dict(os.environ)
     process_env.update(spec.env)
     params = StdioServerParameters(
         command=spec.command, args=spec.args, env=process_env, cwd=spec.cwd
     )
-    async with asyncio.timeout(20):
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds 必须大于 0")
+    async with asyncio.timeout(timeout_seconds):
         async with stdio_client(params) as (read_stream, write_stream):
             async with ClientSession(
                 read_stream, write_stream, read_timeout_seconds=_mcp_read_timeout()
@@ -163,9 +172,9 @@ def _mcp_read_timeout() -> Any:
     return 15.0 if major >= 2 else timedelta(seconds=15)
 
 
-def _probe_sync(spec: ConnectionSpec) -> list[str]:
+def _probe_sync(spec: ConnectionSpec, *, timeout_seconds: float = 20.0) -> list[str]:
     try:
-        return asyncio.run(_probe(spec))
+        return asyncio.run(_probe(spec, timeout_seconds=timeout_seconds))
     except Exception as exc:
         raise ConnectError(f"MCP 连通测试失败：{exc}") from exc
 
@@ -195,18 +204,23 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
             )
         if not force and previous is not None and current_status.state == "配置已修改":
             raise ConnectError(f"检测到 {target} MCP 配置已被修改；为避免覆盖请加 --force。")
-        skill_path = adapter.install_skill(_bundled_skill_dir())
+        skill_paths = [adapter.install_skill(source) for source in _bundled_skill_dirs()]
         adapter.register_mcp(spec)
     except ConnectError:
         raise
     except (RuntimeError, OSError, ValueError) as exc:
         raise ConnectError(str(exc)) from exc
 
+    research_skill = next(path for path in skill_paths if path.name == "mommy-research")
     item: dict[str, Any] = {
         "profile": spec.profile,
         "spec": spec.as_dict(),
-        "skill_path": str(skill_path),
-        "skill_hash": directory_hash(skill_path),
+        # Keep the v1 fields for older readers while v2 tracks every managed Skill.
+        "skill_path": str(research_skill),
+        "skill_hash": directory_hash(research_skill),
+        "skills": {
+            path.name: {"path": str(path), "hash": directory_hash(path)} for path in skill_paths
+        },
         "connected_at": datetime.now(UTC).isoformat(),
         "personal_capabilities": spec.profile == "personal",
     }
@@ -216,7 +230,7 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
     _save_state(state)
 
     print(f"✅ 已连接 {_display_name(target)}（profile: {spec.profile}）")
-    print(f"   投研 Skill：{skill_path}")
+    print("   已安装 Skill：" + "、".join(path.name for path in skill_paths))
     if skip_test:
         print(f"   已跳过连通测试；稍后可运行 `mommy connect test {target}`。")
     else:
@@ -282,6 +296,13 @@ def _test(target: str) -> int:
         "get_portfolio",
         "research_portfolio",
         "record_research_conclusion",
+        "strategy_save",
+        "strategy_list",
+        "strategy_get",
+        "strategy_archive",
+        "strategy_prepare_application",
+        "strategy_prepare_monitor",
+        "strategy_activate_monitor",
     }
     if spec.profile == "personal":
         missing = sorted(required - set(names))

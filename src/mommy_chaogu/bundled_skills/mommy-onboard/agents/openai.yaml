@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mommy Onboard"
+  short_description: "Connect an Agent and reach first research value"
+  default_prompt: "Use $mommy-onboard to safely connect mommy-chaogu and help me complete my first evidence-backed research."
