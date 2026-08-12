@@ -142,7 +142,11 @@ def test_first_stock_research_returns_complete_scoped_personal_context(
     assert context["retrieval_mode"] == "exact+keyword"
 
     # Exercise the high-level workflow against the same real stores and fixture adapter.
-    payload = json.loads(_catalog(stores).call("research_stock", {"code": "600519", "days": 5}))
+    payload = json.loads(
+        _catalog(stores).call(
+            "research_stock", {"code": "600519", "days": 5, "record_session": True}
+        )
+    )
     assert payload["research_session_id"]
     personal_evidence = next(
         item for item in payload["evidence"] if item["tool"] == "get_memory_context"
@@ -161,6 +165,8 @@ def test_conclusion_writeback_is_idempotent_and_recalled(stores: dict[str, Any])
         "research_session_id": "session-acceptance-1",
         "idempotency_key": "acceptance-conclusion-1",
         "analysis_type": "stock-research",
+        "user_confirmed": True,
+        "confirmation_note": "用户看过结论并明确要求保存。",
     }
     first = json.loads(catalog.call("record_research_conclusion", args))
     second = json.loads(catalog.call("record_research_conclusion", args))
@@ -190,6 +196,8 @@ def test_prediction_creation_verification_and_feedback_loop(stores: dict[str, An
                 "rationale": "离线确定性证据显示价格高于入场价",
                 "entry_price": 1700,
                 "idempotency_key": "acceptance-prediction-1",
+                "user_confirmed": True,
+                "confirmation_note": "用户看过预测并明确要求保存。",
             },
         )
     )

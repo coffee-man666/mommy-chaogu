@@ -47,8 +47,8 @@ def _catalog(
     return catalog, registry
 
 
-def test_profiles_default_to_personal_but_keep_public_profile() -> None:
-    assert normalize_mcp_profile(None) == "personal"
+def test_profiles_default_to_market_only_and_keep_public_profile() -> None:
+    assert normalize_mcp_profile(None) == "market-only"
     assert "get_portfolio" not in MARKET_ONLY_BASE_TOOLS
     assert "get_memory_context" not in MARKET_ONLY_BASE_TOOLS
     assert allowed_research_tool_names("market-only") == {
@@ -126,6 +126,19 @@ def test_personal_stock_research_supports_single_call_opt_out(tmp_path: Path) ->
     assert EpisodicMemory(db_path).query() == []
 
 
+def test_personal_research_does_not_write_by_default(tmp_path: Path) -> None:
+    db_path = tmp_path / "agent.db"
+    catalog, _ = _catalog("personal", agent_db=db_path)
+
+    result = json.loads(catalog.call("research_stock", {"code": "600519"}))
+
+    assert result["memory_recorded"] is False
+    assert "research_session_id" not in result
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    assert EpisodicMemory(db_path).query() == []
+
+
 def test_sector_research_chains_board_code() -> None:
     catalog, registry = _catalog(
         results={"search_sector": [{"board_code": "BK0475", "name": "半导体"}]}
@@ -163,6 +176,8 @@ def test_personal_profile_records_conclusion_and_prediction(tmp_path: Path) -> N
                 "timeframe": "5d",
                 "rationale": "放量上涨",
                 "entry_price": 1680,
+                "user_confirmed": True,
+                "confirmation_note": "用户看过结论并明确要求保存。",
             },
         )
     )
@@ -182,6 +197,24 @@ def test_personal_profile_records_conclusion_and_prediction(tmp_path: Path) -> N
     assert prediction["source_event_id"] == result["event_id"]
 
 
+def test_conclusion_requires_explicit_save_confirmation(tmp_path: Path) -> None:
+    db_path = tmp_path / "agent.db"
+    catalog, _ = _catalog("personal", agent_db=db_path)
+
+    result = json.loads(
+        catalog.call(
+            "record_research_conclusion",
+            {"summary": "先展示，不保存", "scope": "stock", "code": "600519"},
+        )
+    )
+
+    assert result["saved"] is False
+    assert result["confirmation_required"] is True
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    assert EpisodicMemory(db_path).query() == []
+
+
 def test_invalid_prediction_does_not_partially_write_event(tmp_path: Path) -> None:
     db_path = tmp_path / "agent.db"
     catalog, _ = _catalog("personal", agent_db=db_path)
@@ -195,6 +228,8 @@ def test_invalid_prediction_does_not_partially_write_event(tmp_path: Path) -> No
                 "prediction": "偏强",
                 "direction": "up",
                 "timeframe": "forever",
+                "user_confirmed": True,
+                "confirmation_note": "用户明确要求保存。",
             },
         )
     )
@@ -208,7 +243,7 @@ def test_invalid_prediction_does_not_partially_write_event(tmp_path: Path) -> No
 def test_successful_personal_research_records_fact_session(tmp_path: Path) -> None:
     db_path = tmp_path / "agent.db"
     catalog, _ = _catalog("personal", agent_db=db_path)
-    result = json.loads(catalog.call("research_stock", {"code": "600519"}))
+    result = json.loads(catalog.call("research_stock", {"code": "600519", "record_session": True}))
 
     assert result["memory_recorded"] is True
     assert result["research_session_id"]
@@ -231,6 +266,8 @@ def test_conclusion_write_is_idempotent(tmp_path: Path) -> None:
         "direction": "up",
         "timeframe": "5d",
         "idempotency_key": "turn-1",
+        "user_confirmed": True,
+        "confirmation_note": "用户明确要求保存。",
     }
     first = json.loads(catalog.call("record_research_conclusion", args))
     second = json.loads(catalog.call("record_research_conclusion", args))
@@ -273,6 +310,8 @@ def test_idempotent_retry_repairs_missing_prediction(tmp_path: Path) -> None:
                 "direction": "up",
                 "timeframe": "5d",
                 "idempotency_key": key,
+                "user_confirmed": True,
+                "confirmation_note": "用户明确要求保存。",
             },
         )
     )
@@ -362,10 +401,10 @@ def test_personal_research_schedules_daily_maintenance_once(tmp_path: Path) -> N
         memory_service=memory_service,
     )
 
-    json.loads(catalog.call("research_stock", {"code": "600519"}))
+    json.loads(catalog.call("research_stock", {"code": "600519", "record_session": True}))
     assert memory_service.finished.wait(timeout=2)
     memory_service.finished.clear()
-    json.loads(catalog.call("research_stock", {"code": "600519"}))
+    json.loads(catalog.call("research_stock", {"code": "600519", "record_session": True}))
 
     assert memory_service.calls == 1
     assert not memory_service.finished.wait(timeout=0.05)

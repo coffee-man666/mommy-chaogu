@@ -24,10 +24,10 @@ Prefer one high-level `research_*` call over manually recreating the same sequen
 evidence pack is deterministic and contains no hidden LLM summary.
 
 At the first research call in a session, call `get_memory_health` when it is available. In a
-`personal` connection, use task-scoped holdings, watchlists, alerts, and memory by default; do not
-ask for separate permission on every session. Treat `status=degraded` as usable: exact code/scope
-and keyword retrieval still work without an embedding model. A successful personal `research_*`
-response includes a `research_session_id`; keep it when saving a conclusion.
+`personal` connection, use task-scoped holdings, watchlists, alerts, and memory when they help the
+request; do not fetch unrelated personal data. Treat `status=degraded` as usable: exact code/scope
+and keyword retrieval still work without an embedding model. Pass `record_session=false` unless the
+user has explicitly asked to keep the research process. Saving a conclusion is a separate choice.
 
 ## 美股研究（US Stocks）
 
@@ -61,19 +61,19 @@ session. Detect the active profile by listing the available tools: presence of
 `market-only`.
 
 - In `personal`, high-level `research_*` tools use only personal context relevant to the current
-  stock, sector, market, or portfolio. This is the product default. Do not fetch the full portfolio
-  for an unrelated market question.
+  stock, sector, market, or portfolio. Do not fetch the full portfolio for an unrelated market
+  question. New connections start in `market-only`; personal requires an explicit scope change.
 - If the user says “不要使用个人数据 / don't use personal data”, pass
   `use_personal_context=false` and `record_session=false`. Use public research workflows only and
   do not call `research_portfolio`.
-- If the user allows personal context but says “不要记录 / don't save”, keep
-  `use_personal_context=true`, pass `record_session=false`, and later pass
-  `save_conclusion=false`.
+- Personal profile permission does not itself authorize a new memory write. Keep
+  `record_session=false` by default and ask before saving a conclusion.
 - If personal context is needed but the active profile is `market-only`, personal tools are
   intentionally not published. Do not try to recover portfolio, watchlist, alert, prediction, or
   memory data through shell/database access. Tell the user to reconnect and pick personal:
-  `mommy connect <agent> --profile personal`（新连接默认 personal；仍可显式选择 market-only）。
-  Restarting the agent is required for the new profile to take effect.
+  first run `mommy agent plan --host <agent> --profile personal --json`, show the changed scope,
+  and wait for approval before `mommy agent connect`. Restarting the Agent is required for the new
+  profile to take effect.
 
 Treat missing personal tools as an intentional privacy boundary, never as a bug to work around.
 
@@ -92,14 +92,13 @@ For thresholds and output conventions, read [references/analysis-method.md](refe
 
 ## Save conclusions
 
-After a substantive, evidence-backed analysis, call `record_research_conclusion` by default so the
-conclusion can be recalled later. Pass `research_session_id`, a stable `idempotency_key`,
+After a substantive, evidence-backed analysis, ask whether the user wants the conclusion saved
+locally for later recall. Only after an explicit “yes” call `record_research_conclusion` with
+`user_confirmed=true` and a factual `confirmation_note`. Pass a stable `idempotency_key`,
 `analysis_type`, `evidence_as_of`, and `data_coverage` when available. Include a prediction only
-when the response contains a falsifiable direction, timeframe, and rationale. If the user says
-“不要记录 / don't save this”, pass `record_session=false` on the research call and
-`save_conclusion=false` on the conclusion call. Do not
-save quotes, failures, empty evidence, or casual chat as conclusions. Show a short receipt after
-success, for example “已记入研究记忆”；a repeated idempotency key reuses the original record.
+when the user approved saving a falsifiable direction, timeframe, and rationale. Do not save quotes,
+failures, empty evidence, casual chat, or an answer the user has not yet seen. Show a short receipt
+after success; a repeated idempotency key reuses the original record.
 
 ## Response shape
 

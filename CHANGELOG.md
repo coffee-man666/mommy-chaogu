@@ -5,6 +5,34 @@
 
 ---
 
+## [Unreleased]
+
+### 新增
+
+- **Strategy Distillation 用户闭环**——新增 `mommy-strategy` Skill 与本地策略卡
+  `save/list/get/archive`，保留来源、用户修订和版本；可为“按这套方法看 X”准备当前证据清单，
+  并只把现有系统真实支持的价格/涨跌幅规则转成监控候选。
+- **Agent-managed 安装入口**——新增 `agent-start.md`、`mommy agent detect/plan/connect/doctor/repair
+  --json` 和 `mommy-onboard` Skill；安装计划先展示文件与权限，doctor 执行真实 MCP
+  initialize/tools-list，连接状态不再冒充首次用户价值。
+- **MCP 最低行为指令**——即使宿主未加载 Skill，也会收到事实/推断、隐私、策略卡保存和监控二次
+  确认边界。
+
+### 变更
+
+- 新 Agent/MCP 连接默认改为 `market-only`；个人数据、研究记录、策略卡保存和监控按阶段明确授权。
+- 研究过程默认不写入记忆；研究结论只有在展示给用户并得到明确保存确认后才写入。
+- MCP 配置固定到运行当前 `mommy` 的 Python 环境，避免新 Skill 配到旧版全局 server。
+- 策略沉淀不再以 Golden Scenario、回测、DSL、Walk-forward 或收益指标作为交付门槛；未接入的
+  EMA/ATR/通道能力诚实标记为人工或当前不可用。
+
+### 修复
+
+- doctor 不再把“配置文件存在”报告为 MCP 正常；探针失败时 privacy 状态为 `not_checked`。
+- Agent-managed `--timeout` 现在真实限制 MCP 探针执行时间。
+- MCP discovery 延迟初始化数据库和数据源，initialize/tools-list 保持只读。
+- 发行物显式排除本地运行输出和实验性测试 Skill，避免从脏工作树构建时泄露用户文件。
+
 ## [1.4.0] - 2026-08-06
 
 ### 新增

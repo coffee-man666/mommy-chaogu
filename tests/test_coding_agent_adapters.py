@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 
 from mommy_chaogu.agent.research_tools import allowed_base_tool_names, allowed_research_tool_names
-from mommy_chaogu.cli_commands.connect import _bundled_skill_dir
+from mommy_chaogu.cli_commands.connect import _bundled_skill_dir, _bundled_skill_dirs
 from mommy_chaogu.coding_agents import adapter_for
-from mommy_chaogu.coding_agents.base import ConnectionSpec, directory_hash
+from mommy_chaogu.coding_agents.base import ConnectionSpec, directory_hash, install_skill
 
 TARGETS = ("claude", "kimi", "cline", "codex")
 
@@ -105,7 +105,8 @@ def adapter_case(
 def test_unified_adapter_connection_contract(adapter_case: dict[str, Any]) -> None:
     adapter = adapter_case["adapter"]
     spec: ConnectionSpec = adapter_case["spec"]
-    skill = adapter.install_skill(_bundled_skill_dir())
+    skills = [adapter.install_skill(source) for source in _bundled_skill_dirs()]
+    skill = next(item for item in skills if item.name == "mommy-research")
     adapter.register_mcp(spec)
     assert skill.is_dir()
     assert spec.profile == "personal"
@@ -117,6 +118,7 @@ def test_unified_adapter_connection_contract(adapter_case: dict[str, Any]) -> No
         "spec": spec.as_dict(),
         "skill_path": str(skill),
         "skill_hash": directory_hash(skill),
+        "skills": {item.name: {"path": str(item), "hash": directory_hash(item)} for item in skills},
     }
     connected = adapter_for(
         adapter_case["target"],
@@ -140,6 +142,33 @@ def test_unified_adapter_connection_contract(adapter_case: dict[str, Any]) -> No
         entry_reader=lambda: adapter_case["codex_state"] or None,
     ).inspect_status()
     assert modified.skill_ok is False
+
+
+def test_managed_skill_upgrade_removes_obsolete_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "kimi"))
+    source = tmp_path / "source" / "mommy-research"
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text("version one", encoding="utf-8")
+    (source / "obsolete.md").write_text("old instruction", encoding="utf-8")
+
+    installed = install_skill("kimi", source, None, force=False)
+    previous = {
+        "skills": {
+            "mommy-research": {
+                "path": str(installed),
+                "hash": directory_hash(installed),
+            }
+        }
+    }
+    (source / "SKILL.md").write_text("version two", encoding="utf-8")
+    (source / "obsolete.md").unlink()
+
+    upgraded = install_skill("kimi", source, previous, force=False)
+
+    assert (upgraded / "SKILL.md").read_text(encoding="utf-8") == "version two"
+    assert not (upgraded / "obsolete.md").exists()
 
 
 def test_disconnect_preserves_modified_skill_and_external_servers(

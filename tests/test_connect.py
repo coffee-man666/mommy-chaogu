@@ -46,7 +46,7 @@ def isolated_homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pat
     return config, kimi
 
 
-def test_connect_parser_uses_personal_when_profile_is_unspecified() -> None:
+def test_connect_parser_defers_unspecified_profile_to_safe_resolver() -> None:
     parser = build_connect_parser()
     args = parser.parse_args(["kimi", "--skip-test"])
     assert args.action == "kimi"
@@ -60,9 +60,9 @@ def test_resolve_profile_honors_explicit() -> None:
     assert _resolve_profile("market-only") == "market-only"
 
 
-def test_resolve_profile_defaults_to_personal_non_tty() -> None:
+def test_resolve_profile_defaults_to_market_only_non_tty() -> None:
     with patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=False):
-        assert _resolve_profile(None) == "personal"
+        assert _resolve_profile(None) == "market-only"
 
 
 def test_resolve_profile_preserves_existing_market_only_non_tty() -> None:
@@ -74,21 +74,24 @@ def test_resolve_profile_preserves_existing_market_only_non_tty() -> None:
 def test_resolve_profile_interactive_choice() -> None:
     with (
         patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=True),
-        patch("builtins.input", return_value="1"),
+        patch("builtins.input", return_value="2"),
     ):
         assert _resolve_profile(None) == "personal"
 
 
-def test_resolve_profile_interactive_defaults_to_personal() -> None:
+def test_resolve_profile_interactive_defaults_to_market_only() -> None:
     with (
         patch("mommy_chaogu.cli_commands.connect.sys.stdin.isatty", return_value=True),
         patch("builtins.input", return_value="   "),
     ):
-        assert _resolve_profile(None) == "personal"
+        assert _resolve_profile(None) == "market-only"
 
 
-def test_connection_spec_keeps_virtualenv_python_fallback() -> None:
-    with patch("mommy_chaogu.cli_commands.connect.shutil.which", return_value=None):
+def test_connection_spec_pins_current_python_even_when_other_mcp_is_on_path() -> None:
+    with patch(
+        "mommy_chaogu.cli_commands.connect.shutil.which",
+        return_value="/some/older/global/mommy-mcp",
+    ):
         spec = _connection_spec("market-only")
     assert spec.command == sys.executable
     assert spec.args[:2] == ["-m", "mommy_chaogu.agent.mcp_server"]
@@ -121,13 +124,21 @@ def test_kimi_connect_preserves_other_servers_and_installs_skill(
     mcp = json.loads((kimi_home / "mcp.json").read_text(encoding="utf-8"))
     assert "github" in mcp["mcpServers"]
     mommy = mcp["mcpServers"]["mommy-chaogu"]
-    assert mommy["args"][-2:] == ["--profile", "personal"]
+    assert mommy["args"][-2:] == ["--profile", "market-only"]
     assert "MOMMY_AGENT_DB" in mommy["env"]
     assert (kimi_home / "skills" / "mommy-research" / "SKILL.md").is_file()
+    assert (kimi_home / "skills" / "mommy-onboard" / "SKILL.md").is_file()
+    assert (kimi_home / "skills" / "mommy-strategy" / "SKILL.md").is_file()
 
     state = json.loads((config_home / "connections.json").read_text(encoding="utf-8"))
-    assert state["connections"]["kimi"]["profile"] == "personal"
-    assert "personal 模式" in capsys.readouterr().out
+    assert state["version"] == 2
+    assert state["connections"]["kimi"]["profile"] == "market-only"
+    assert set(state["connections"]["kimi"]["skills"]) == {
+        "mommy-onboard",
+        "mommy-research",
+        "mommy-strategy",
+    }
+    assert "当前为 market-only" in capsys.readouterr().out
 
 
 def test_cline_connect_installs_skill_and_mcp(
@@ -145,12 +156,12 @@ def test_cline_connect_installs_skill_and_mcp(
     assert "mommy-chaogu" in mcp["mcpServers"]
     transport = mcp["mcpServers"]["mommy-chaogu"]["transport"]
     assert transport["type"] == "stdio"
-    assert transport["args"][-2:] == ["--profile", "personal"]
+    assert transport["args"][-2:] == ["--profile", "market-only"]
     assert "MOMMY_AGENT_DB" in transport["env"]
     assert (cline_settings / "skills" / "mommy-research" / "SKILL.md").is_file()
 
     state = json.loads((config_home / "connections.json").read_text(encoding="utf-8"))
-    assert state["connections"]["cline"]["profile"] == "personal"
+    assert state["connections"]["cline"]["profile"] == "market-only"
 
 
 def test_cline_disconnect_removes_managed_entry(isolated_homes: tuple[Path, Path]) -> None:

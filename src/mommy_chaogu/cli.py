@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 # The facade intentionally re-exports the established command API.
 from mommy_chaogu.cli_support import *
 from mommy_chaogu.cli_commands.agent import *
+from mommy_chaogu.cli_commands.agent_managed import main_doctor
 from mommy_chaogu.cli_commands.cache import *
 from mommy_chaogu.cli_commands.channel import *
 from mommy_chaogu.cli_commands.connect import *
@@ -525,6 +526,7 @@ def main_mommy() -> NoReturn:
         "web": ("mommy-web", main_web),
         "tui": ("mommy-tui", None),
         "workflow": ("mommy-workflow", main_workflow),
+        "doctor": ("mommy-doctor", main_doctor),
     }
 
     # 直接子命令模式：mommy watchlist list
@@ -576,7 +578,7 @@ def main_mommy() -> NoReturn:
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
-            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui, workflow"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui, workflow, doctor"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
