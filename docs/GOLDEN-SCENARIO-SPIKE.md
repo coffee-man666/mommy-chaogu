@@ -1,8 +1,13 @@
 # Golden Scenario Spike：半导体 ETF 均线假跌破
 
-> 状态：进行中
+> ⚠️ **状态：已封存（Superseded）**。2026-08-12 main 完成 Strategy Distillation 纠偏，
+> 本文描述的 Golden Scenario / ExperimentSpec / 回测轨道不再是产品交付方向。
+> 当前有效方向见 `docs/STRATEGY-DISTILLATION-RFC.md`，本分支的新使命见
+> `docs/STRATEGY-CONDITION-CHECKER-PLAN.md`。本文保留仅作历史记录，不再更新。
+
+> 原状态：进行中（封存前）
 > 分支：`feat/experiment-engine-spike`
-> 依据：docs/AGENT-FIRST-RESEARCH-LAB-RFC.md §8
+> 依据：docs/AGENT-FIRST-RESEARCH-LAB-RFC.md §8（该 RFC 已从 main 删除，见 git 历史）
 > 性质：可丢弃的薄原型。目标是回答 RFC §8.2 的问题，不是建设通用引擎。
 
 ## 1. 规则澄清（默认值）

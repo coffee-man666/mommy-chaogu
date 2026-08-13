@@ -1,9 +1,14 @@
 # Golden Scenario Spike — K3 Max Execution Plan
 
-> 状态：执行中（3.3 就绪，未开始）
+> ⚠️ **状态：已封存（Superseded）**。2026-08-12 main 完成 Strategy Distillation 纠偏，
+> 本文描述的 Golden Scenario / ExperimentSpec / 回测轨道不再是产品交付方向。
+> 当前有效方向见 `docs/STRATEGY-DISTILLATION-RFC.md`，本分支的新使命见
+> `docs/STRATEGY-CONDITION-CHECKER-PLAN.md`。本文保留仅作历史记录，不再更新。
+
+> 原状态：执行中（封存前）
 > 分支：`feat/experiment-engine-spike`
 > companion 文档：docs/GOLDEN-SCENARIO-SPIKE.md（规则默认值、资产盘点、观察记录）
-> 依据：docs/AGENT-FIRST-RESEARCH-LAB-RFC.md §8
+> 依据：docs/AGENT-FIRST-RESEARCH-LAB-RFC.md §8（该 RFC 已从 main 删除，见 git 历史）
 > 作者：K3（Coding Agent）
 > 目的：让任意 Coding Agent 只读本文件 + Spike 文档即可接续执行，无需口头上下文。
 
