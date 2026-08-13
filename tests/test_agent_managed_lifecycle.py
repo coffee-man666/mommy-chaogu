@@ -147,8 +147,11 @@ def test_doctor_runs_real_probe_and_enforces_requested_timeout() -> None:
     assert result["ok"] is True
     assert checks["mcp_initialize_and_list_tools"]["status"] == "ok"
     assert checks["live_market_data"]["status"] == "not_checked"
-    assert result["onboarding_complete"] is False
-    assert "自定义指标或组合流程的一次受支持执行" in result["first_value_options"]
+    # Two-layer completion: installation is available, an investing goal is not.
+    assert result["integration_available"] is True
+    assert result["investing_goal_complete"] is False
+    assert "不得把这条目标当成安装前置条件强制询问" in result["investing_goal_completion_rule"]
+    assert "自定义指标或组合流程的一次受支持执行" in result["exploration_examples"]
 
 
 def test_doctor_never_infers_mcp_health_from_configuration_only() -> None:
@@ -206,6 +209,7 @@ def test_market_only_doctor_fails_on_private_tool_leak() -> None:
 
     checks = {item["name"]: item for item in result["checks"]}
     assert result["ok"] is False
+    assert result["integration_available"] is False
     assert checks["privacy_boundary"]["status"] == "failed"
     assert checks["privacy_boundary"]["unexpected_private_tools"] == ["strategy_save"]
 

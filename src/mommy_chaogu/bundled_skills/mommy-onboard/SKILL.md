@@ -1,16 +1,18 @@
 ---
 name: mommy-onboard
-description: Explain, safely install, connect, diagnose, or repair the mommy-chaogu Agent-first investing toolbox, then help the user complete a first chosen research, Strategy Card, indicator check, or monitoring workflow. Use for mommy-chaogu setup or onboarding with Claude Code, Kimi Code, Cline, or Codex, and to assess unsupported MCP hosts without pretending they have a managed adapter.
+description: Explain, safely install, connect, diagnose, or repair the mommy-chaogu Agent-first investing toolbox, then leave it open for free-form research, Strategy Card, indicator, or monitoring exploration. Use for mommy-chaogu setup or onboarding with Claude Code, Kimi Code, Cline, or Codex, and to assess unsupported MCP hosts without pretending they have a managed adapter.
 ---
 
 # Mommy Onboard
 
-Explain the toolbox, manage the machine lifecycle, then hand the chosen outcome to
-`mommy-research` or `mommy-strategy`. A configured MCP entry or a green doctor is not onboarding
-completion. Completion means the user has received and understood one useful result from a workflow
-they chose.
+Explain the toolbox and manage the machine lifecycle. Keep two senses of "complete" separate:
+configuration + three Skills + a real MCP initialize/tools-list + the privacy boundary passing means
+the **integration is available** and the user can explore freely; an **investing or research goal** is
+complete only when the user sees and understands a useful result from a flow they actually asked for.
+A green doctor is a legitimate end of installation, not a reason to force a workflow before the user
+asks for one.
 
-## Explain and choose the first outcome
+## Explain the toolbox
 
 Before discussing installation, explain in the user's language:
 
@@ -22,14 +24,13 @@ Before discussing installation, explain in the user's language:
   Agent maps it to capabilities that actually exist;
 - it does not execute trades, prove profitability, or run arbitrary custom indicators.
 
-Ask one open question and retain the answer through installation:
+Do **not** require the user to choose a research / strategy / indicator / monitoring path before
+installation. Move from the explanation to the install/permission plan, and let the user decide what
+to ask for once the connection is verified.
 
-> 你最想先让它帮你完成什么：看一次行情或研究、整理一套投资方法、定义一个指标/观察条件，
-> 还是搭一条持续监测流程？
-
-For a custom indicator or workflow, preserve the exact formula and intent. Do not substitute a
-similar supported indicator. Anything the available data and tools cannot implement must remain
-manual or unavailable.
+For a custom indicator or workflow the user mentions in passing, preserve the exact formula and
+intent. Do not substitute a similar supported indicator. Anything the available data and tools cannot
+implement must remain manual or unavailable.
 
 ## Check managed-host compatibility
 
@@ -75,10 +76,14 @@ version from being mistaken for this commit.
 ## Detect and plan
 
 1. Run `mommy agent detect --json`.
-2. If `selection_required=true`, show the detected hosts and ask the user which one to modify. Never
-   guess when multiple hosts are present.
-3. Ask in ordinary language whether the first experience should use only public market data or may
-   also access relevant local holdings, memory, and Strategy Cards. Use `market-only` unless the user
+2. If the user is clearly inside one host (for example you are talking to them through Codex), pass
+   that host directly with `--host codex` (or the matching value) and treat any other detected CLI
+   only as diagnostic context. Do not list every detected host as a fresh selection question, and
+   never modify a host the user did not ask to connect. Only when detection is genuinely ambiguous
+   and the user has not indicated a host should you show `auto_candidates` and ask which one to
+   modify.
+3. Ask in ordinary language whether the experience should use only public market data or may also
+   access relevant local holdings, memory, and Strategy Cards. Use `market-only` unless the user
    explicitly chooses personal data.
 4. Run:
 
@@ -88,6 +93,8 @@ version from being mistaken for this commit.
 
 5. Translate the plan into a compact human summary: configuration target, three Skills, local MCP
    command, privacy scope, and restart requirement. Ask for permission to make exactly those changes.
+   If the read-only plan matches a scope the user already approved, do not re-confirm; pause again
+   only if command, paths, host, or privacy materially change.
 
 The plan is read-only. Do not treat a plan as authorization.
 
@@ -114,12 +121,14 @@ If any blocking check fails, do not claim success. Run
 `safe_to_apply=true` proposal after the user sees it, using `--apply`. If doctor reports modified
 user configuration or a modified Skill, stop and preserve it; do not use force automatically.
 
-Tell the user to restart the host Agent when `restart_required=true`. Resume the value loop after
-restart.
+Tell the user to restart the host Agent when `restart_required=true`. When every blocking check
+passes, say plainly that the integration is available and stop. Do not imply an investing goal is
+already complete, and do not push a workflow before the user asks for one.
 
-## Complete first value
+## Invite free exploration
 
-Return to the first outcome chosen before installation:
+The toolbox is now reachable. Offer the directions below as optional examples — not a mandatory
+menu — and let the user ask for something else or simply look around:
 
 - For a market question, use `mommy-research` and the matching high-level `research_*` tool. Explain
   the answer, strongest evidence and timestamp, missing/stale data, fact versus inference, and one
@@ -132,8 +141,8 @@ Return to the first outcome chosen before installation:
 - For monitoring, show the exact supported trigger and a current check first. Personal scope and
   monitor activation each require their own approval; a prepared candidate is not active.
 
-Do not expose raw tool JSON, a generated spec, or a tool count as the result. Only after the chosen
-result is visible and the user has had a chance to react may you say onboarding is complete. Do not
+When the user does pick a direction, finish by showing what it produced and what remains
+unsupported. Do not expose raw tool JSON, a generated spec, or a tool count as the result. Do not
 write a metadata flag to manufacture completion.
 
 ## Progressive permissions
@@ -148,11 +157,14 @@ write a metadata flag to manufacture completion.
 
 ## Completion receipt
 
-Keep the final receipt user-facing:
+Keep the receipt user-facing and split the two senses of "complete":
 
-- connected host and privacy scope;
-- doctor result and any honest degraded/not-checked item;
-- the first workflow the user chose and a one-sentence summary of its useful result;
-- where to continue (`mommy-research` or `mommy-strategy`).
+- **Integration available** (say this once the connection is verified): connected host, privacy
+  scope, doctor result, and any honest degraded/not-checked item (for example
+  `live_market_data=not_checked` is expected until a market tool is actually called).
+- **Investing result** (only when the user actually ran a flow): the workflow they chose and a
+  one-sentence summary of its useful result, plus where to continue (`mommy-research` or
+  `mommy-strategy`).
 
-Do not celebrate installation artifacts, schema validation, or tool count as the product outcome.
+Do not celebrate installation artifacts, schema validation, or tool count as the product outcome,
+and do not block free exploration behind a forced first-task question.

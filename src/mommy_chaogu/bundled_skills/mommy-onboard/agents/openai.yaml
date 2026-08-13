@@ -1,4 +1,4 @@
 interface:
   display_name: "Mommy Toolbox Onboard"
-  short_description: "Connect the toolbox and complete a first workflow"
-  default_prompt: "Use $mommy-onboard to explain and safely connect the mommy-chaogu toolbox, then help me complete my first chosen workflow."
+  short_description: "Connect the toolbox, then explore freely"
+  default_prompt: "Use $mommy-onboard to explain and safely connect the mommy-chaogu toolbox. Once the connection is verified, leave it open so I can ask about market data, research, a Strategy Card, an indicator, or monitoring whenever I like."
