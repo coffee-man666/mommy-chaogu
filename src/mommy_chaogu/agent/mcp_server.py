@@ -1,8 +1,8 @@
 """MCP Server：把 agent 工具暴露为 MCP 协议。
 
 任何支持 MCP 的客户端（🦞 / Claude Desktop / Kimi Code / 等）
-都可以直接连接这个 server。默认 ``personal`` profile 开放按任务读取的
-个人上下文；显式 ``market-only`` 才只开放公共行情。
+都可以直接连接这个 server。默认 ``market-only`` 只开放公共行情；用户明确
+选择 ``personal`` 后才开放按任务读取的个人上下文与写操作。
 
 用法：
     # stdio 模式（最简单，Claude Desktop 等用）
@@ -51,6 +51,35 @@ from mommy_chaogu.agent.research_tools import (
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
 _log = logging.getLogger(__name__)
+
+MCP_INSTRUCTIONS = """
+mommy-chaogu is an Agent-first local investing toolbox. The host Agent is the only reasoner and
+orchestrator: translate the user's goal into the smallest supported workflow across market data,
+research tools, Strategy Cards, and monitoring. Prefer high-level research_* tools for current
+evidence and do not invoke a second project LLM. Clearly separate tool facts, Agent inference, stale
+or missing data, and user-provided beliefs. Respect the active privacy profile and never bypass MCP
+by reading personal SQLite databases. Do not record a research session or conclusion unless the
+user explicitly asks to keep it.
+
+When the user defines an indicator or workflow, preserve its exact formula, inputs, time semantics,
+and intent. Claim support only when published tools can compute every required part. Mark the rest
+manual or unavailable; never replace it with a convenient proxy or claim that a generated spec,
+backtest, or technical check proves profitability.
+
+For Strategy Distillation, show a human-readable card before any write. Call strategy_save only
+after the user explicitly asks to save the final card. Applying a card requires fresh research
+evidence and a per-condition result of met, not met, or unknown. Never rewrite unsupported rules to
+make them automatable, and never describe this as a backtest or profit validation. Preparing a
+monitor is read-only; strategy_activate_monitor requires a separate, explicit user confirmation.
+""".strip()
+
+
+def _new_server(**callbacks: Any) -> Server:
+    """Create a server with workflow instructions when the installed SDK supports them."""
+    try:
+        return Server("mommy-chaogu", instructions=MCP_INSTRUCTIONS, **callbacks)
+    except TypeError:  # pragma: no cover - compatibility with older MCP 1.x builds
+        return Server("mommy-chaogu", **callbacks)
 
 
 def _build_llm() -> tuple[Any | None, str | None, str | None]:
@@ -165,12 +194,13 @@ def create_mcp_server(
         profile: ``market-only`` 只开放公共行情；``personal`` 额外开放
             持仓、记忆和写操作。
     """
-    if ctx is None:
-        ctx = _build_context()
-
     selected_profile = normalize_mcp_profile(profile)
-    registry = ToolRegistry(ctx)
-    research = ResearchToolCatalog(ctx, registry, selected_profile)
+    # Discovery must be cheap and read-only. Build database/data-source services
+    # only when a tool is actually called, not during initialize/tools-list.
+    runtime_ctx = ctx
+    definition_ctx = ctx or ToolContext(adapter=None)  # type: ignore[arg-type]
+    registry = ToolRegistry(definition_ctx)
+    research = ResearchToolCatalog(definition_ctx, registry, selected_profile)
     allowed_base = allowed_base_tool_names(selected_profile)
     base_defs = [
         item for item in registry.definitions() if item["function"]["name"] in allowed_base
@@ -216,12 +246,17 @@ def create_mcp_server(
         return tools
 
     async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
+        nonlocal runtime_ctx, registry, research
         if name not in allowed_base and name not in allowed_research:
             result = (
                 '{"error":"该工具未在当前 MCP profile 中开放。'
                 '如确需个人数据，请由用户重新连接并选择 personal。"}'
             )
             return [TextContent(type="text", text=result)]
+        if runtime_ctx is None:
+            runtime_ctx = _build_context()
+            registry = ToolRegistry(runtime_ctx)
+            research = ResearchToolCatalog(runtime_ctx, registry, selected_profile)
         # registry.call 里是同步阻塞网络 IO（行情拉取等），直接跑会把
         # 整个 MCP 会话的 event loop 卡死——挪到线程池执行。
         if name in allowed_base:
@@ -235,7 +270,7 @@ def create_mcp_server(
     # resolve dependencies independently: existing lockfiles can still use
     # MCP 1.x while a fresh ``uv tool install`` may resolve MCP 2.x.
     if hasattr(Server, "list_tools"):
-        server = Server("mommy-chaogu")
+        server = _new_server()
         server.list_tools()(list_tools)  # type: ignore[attr-defined]
         server.call_tool()(call_tool)  # type: ignore[attr-defined]
         return server
@@ -252,19 +287,17 @@ def create_mcp_server(
     ) -> CallToolResult:
         return CallToolResult(content=await call_tool(params.name, params.arguments))
 
-    return Server(
-        "mommy-chaogu",
+    return _new_server(
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,
-    )  # type: ignore[call-overload]
+    )
 
 
 async def run_stdio(profile: McpProfile | str = DEFAULT_MCP_PROFILE) -> None:
     """stdio 模式启动（MCP 标准 transport）。"""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
     selected_profile = normalize_mcp_profile(profile)
-    ctx = _build_context()
-    server = create_mcp_server(ctx, profile=selected_profile)
+    server = create_mcp_server(profile=selected_profile)
     async with stdio_server() as (read_stream, write_stream):
         _log.info("mommy-chaogu MCP server started (profile=%s)", selected_profile)
         await server.run(read_stream, write_stream, server.create_initialization_options())
@@ -277,7 +310,7 @@ def main_mcp() -> None:
         "--profile",
         choices=("market-only", "personal"),
         default=os.environ.get("MOMMY_MCP_PROFILE", DEFAULT_MCP_PROFILE),
-        help="隐私权限：personal（默认）或 market-only",
+        help="隐私权限：market-only（默认）或 personal",
     )
     args = parser.parse_args()
     asyncio.run(run_stdio(args.profile))

@@ -11,12 +11,12 @@ from mommy_chaogu.coding_agents.base import (
     ConnectionSpec,
     ConnectionStatus,
     agent_home,
-    directory_hash,
     entry_matches_spec,
     install_skill,
+    managed_skills_ok,
     previous_spec,
+    remove_managed_skills,
     run_command,
-    skill_dir,
 )
 
 
@@ -82,10 +82,7 @@ class ClineAdapter:
         configured = (
             old is not None and current is not None and entry_matches_spec("cline", current, old)
         )
-        path = Path(str((self.previous or {}).get("skill_path", skill_dir("cline"))))
-        skill_ok = bool(self.previous) and directory_hash(path) == str(
-            (self.previous or {}).get("skill_hash", "")
-        )
+        skill_ok = managed_skills_ok("cline", self.previous)
         profile = old.profile if old else "market-only"
         return ConnectionStatus(
             "cline",
@@ -106,8 +103,4 @@ class ClineAdapter:
             save_json(self._path, config)
         elif current is not None:
             print("⚠ 保留已被修改的 Cline MCP 配置。")
-        path = Path(str((self.previous or {}).get("skill_path", skill_dir("cline"))))
-        if path.is_dir() and directory_hash(path) == str(
-            (self.previous or {}).get("skill_hash", "")
-        ):
-            shutil.rmtree(path)
+        remove_managed_skills("cline", self.previous)

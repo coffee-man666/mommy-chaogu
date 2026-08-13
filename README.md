@@ -1,8 +1,10 @@
 # mommy-chaogu
 
+> 原生 iOS MVP 已加入：[iOS 运行与架构说明](ios/README.md)。
+
 <div align="center">
 
-**本地优先的 A 股 / 美股投研助手。用一句话看行情、查资金、分析持仓，并把判断变成可验证的投研记录。**
+**一套边界明确、可由 Agent 接管和编排的本地投研工具箱：行情、指标、监测、策略蒸馏，都按你的方法组合。**
 
 [![CI](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml/badge.svg)](https://github.com/coffee-man666/mommy-chaogu/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
@@ -11,22 +13,44 @@
 
 </div>
 
-mommy-chaogu 把实时行情、资金流、持仓、信号、记忆和 AI Agent 放进同一条对话，
-同时覆盖 A 股与美股（Massive/Polygon + Yahoo Finance 双数据源）。它可以作为独立
-CLI / TUI / Web App 使用，也可以把投研能力接入 Claude Code、Kimi Code 或微信。
+mommy-chaogu 不是要求用户先学习复杂界面的“又一个投研软件”，而是给现有 Agent 使用的本地
+能力层。你用自然语言说明目标、规则和流程，Agent 负责组合行情获取、研究工具、技术信号、策略卡
+和自动监测；后端负责确定性计算、本地保存和权限边界。CLI / TUI / Web 仍是可选入口，不是产品
+成立的前提。
+
+当前版本已经能抓取 A 股 / 美股行情与证据、运行已支持的研究和信号积木、把文章或个人方法蒸馏成
+可修改的策略卡，并把系统确实支持的条件转成监控候选。用户也可以让 Agent 编排适合自己的投研与
+交易观察流程，或者用自然语言说明自己的指标公式。Agent 会先核对现有数据和计算积木，能精确实现
+的就运行，暂时不能实现的就标为需人工判断或当前不可用。它不是任意代码执行器，也不承诺自动下单
+或“策略一定有效”，更不会为了显得可用而把用户的定义偷换成相似指标。
+
+## 让你的 Agent 接管
+
+把下面这句话发给你的 Agent：
+
+> 请阅读
+> `https://raw.githubusercontent.com/coffee-man666/mommy-chaogu/main/agent-start.md`。先用几句话告诉我
+> mommy-chaogu 是什么、能怎样把行情、指标、策略和监测组合成我的流程，并问我第一件想完成的事。
+> 先确认你这个 Agent 有真实受支持的接入路径；如果没有，不要假装支持。确认后再展示安装、文件修改
+> 和权限计划，得到我同意后执行并做真实检查，直到让我看到所选流程的第一次有用结果。
+
+Agent 会先以公共市场数据开始，不要求再配置一套项目内 LLM Key。安装成功或 MCP 工具可见不算
+完成；用户看到并理解自己所选研究、策略整理、指标检查或监测流程的第一次真实结果才算。
 
 ## 为什么是 mommy-chaogu
 
-- **一句话开始研究**：从市场概览到个股、板块、资金流和持仓，不用先学习一套命令。
-- **不只生成一段答案**：保存研究结论和预测，持续验证判断是否成立。
+- **Agent 负责编排**：说清目标、规则和频率，Agent 用当前能力拼出最短可行流程，不要求用户先学命令。
+- **行情与证据是积木**：从市场概览到个股、板块、资金流和持仓，可组合使用并说明时间与数据缺口。
+- **方法可以沉淀复用**：研究结论、预测和策略卡保存在本机；以后可以继续修正并按同一方法观察。
+- **支持的条件可以持续监测**：先展示准确触发条件，用户另行确认后才启用；不支持的规则不会伪装成自动化。
 - **一个内核，多种入口**：终端、Web、微信和外部 Coding Agent 使用同一套投研工具。
 - **A 股 + 美股一个入口**：Massive/Polygon 美股主源、Yahoo Finance 免 key 兜底，
   `^` 前缀指数（`^GSPC` / `^VIX` / `^TNX`）和美股大盘简报同样一句话可查。
-- **把观点变成可执行工作流**：用自然语言描述交易观点，自动编译成可复现、可校验的
-  结构化工作流，持久化后随时重跑。
+- **把方法沉淀成策略卡**：文章、研报或个人方法先由 Agent 忠实整理；用户修正、确认后才保存，
+  以后可以说“按这套方法看 X”。不能自动判断的条件会明确标为人工或当前不可用。
 - **本地优先**：密钥、持仓、记忆和数据库由用户自己的设备保存。
 
-## 30 秒启动
+## 独立 App 启动
 
 macOS / Linux：
 
@@ -60,7 +84,12 @@ mommy setup
 
 向导会让你选择 Provider 和模型、隐藏输入并验证 API Key，然后询问是否连接微信。当前支持
 DeepSeek、OpenAI、Kimi、z.ai 和 MiniMax。配置默认以 `0600` 权限保存到
-`~/.config/mommy-chaogu/.env`；如果项目已有 `.env`，则更新项目配置。
+`~/.config/mommy-chaogu/.env`。只有项目 `.env` 已包含有效模型配置时才会继续更新它；
+空白模板不会改变配置作用域。可用 `mommy setup --local` 强制写项目配置，或用
+`mommy setup --user` 强制写用户级配置。
+
+排查配置时运行 `mommy setup --check`。它会显示实际生效的 Provider、模型、密钥变量
+及来源和文件权限，但绝不显示密钥内容。
 
 如果首次配置时跳过了微信，之后可以单独扫码连接：
 
@@ -81,10 +110,15 @@ mommy channel weixin stop      # 停止网关，但保留本机授权
 | 连续自然语言对话 | `mommy` | 最轻量的交互式入口 |
 | Coding Agent 风格终端 | `mommy tui` | 富卡片、slash 命令、`@` 股票联想、流式状态 |
 | 本机网页 | `mommy web` | 打开 `http://127.0.0.1:8000`，本机默认免登录 |
-| Claude Code | `mommy connect claude` | 复用 Claude 登录，不再配置一套 LLM Key |
-| Kimi Code | `mommy connect kimi` | 安装本地 MCP 和 `mommy-research` Skill |
-| Cline | `mommy connect cline` | 安装本地 MCP 和 `mommy-research` Skill，写入 `~/.cline` |
+| Claude Code | `mommy agent plan --host claude --json` | 先看修改与权限计划，再由 Agent 连接 |
+| Kimi Code | `mommy agent plan --host kimi --json` | 安装 onboarding / research / strategy 三层 Skill |
+| Cline | `mommy agent plan --host cline --json` | 计划确认后写入本地 MCP 配置 |
+| Codex | `mommy agent plan --host codex --json` | 复用 Codex 登录，不再配置一套 LLM Key |
 | 微信远程对话 | `mommy channel weixin connect` | 扫码连接本地网关，不开放公网端口 |
+
+Agent-managed 自动连接目前只覆盖表中的 Claude Code、Kimi Code、Cline 和 Codex。其他支持
+stdio MCP 的宿主可以使用同一个 MCP Server，但它们的配置与 Skill 安装尚未纳入这套自动计划；
+入口 Agent 必须先说明这一点，不能把 OpenClaw、Hermes 等宿主伪装成已被自动检测和验证。
 
 开发者如果不想安装全局命令，可以在源码仓库中把 `mommy` 替换为 `uv run mommy`。
 
@@ -103,21 +137,25 @@ mommy -v "分析 600519"       # 展开路由和工具调用
 命中固定工作流时，mommy 会直接获取结构化数据；需要开放式判断时，再交给 LLM Agent
 自主选择工具。事实、工具结果和模型推断保持可区分。
 
-更复杂的交易观点可以编译成可执行工作流：
+连接 Agent 后，可以直接说：
 
-```bash
-mommy workflow create "开盘 30 分钟后，如果创业板主力资金净流入超过 50bp 就提醒我"
-mommy workflow run <id>       # 随时重跑
-mommy workflow list           # 查看内置和自定义工作流
+```text
+“把这篇研报的方法整理成一张我能修改的策略卡，先不要保存。”
+“我确认这版忠于原意，保存在本机。”
+“按上次那套方法看看 600519 今天，不能判断的条件直接告诉我。”
+“把其中真正支持的价格条件准备成监控，启用前再问我。”
 ```
+
+策略沉淀不是回测或收益验证。第一版不把自然语言编译成任意策略代码，也不为提高自动化率而偷偷
+替换用户原规则。
 
 ## 本地优先
 
 - API Key、持仓、记忆和数据库默认保存在本机。
 - 本机 Web 只监听 `127.0.0.1`，不要求访问口令。
 - 局域网访问必须显式配置令牌；不建议把 HTTP 端口直接暴露到公网。
-- Coding Agent 新接入默认使用 `personal`，按当前研究任务最小化读取相关持仓和记忆，并把
-  研究沉淀回本地数据库；显式 `--profile market-only` 可完全关闭个人数据和写操作。
+- Coding Agent 新接入默认使用 `market-only`，不读取持仓、记忆和策略卡。用户看到新的权限计划并
+  明确同意后才切换到 `personal`；保存策略卡和启用监控仍分别需要明确确认。
 - 微信网关只接受扫码账号私聊，但消息仍会经过微信服务和用户选择的 LLM Provider。
 
 完整配置位置、Provider、权限模式、局域网和 Docker 说明见
@@ -153,6 +191,7 @@ mommy workflow list           # 查看内置和自定义工作流
 - [场景化使用指南](docs/USER-GUIDE.md) — 盘前、个股、资金流、持仓和记忆实战
 - [微信本地频道](docs/WEIXIN-CHANNEL.md) — 扫码、后台网关与隐私边界
 - [Agent 交互指南](docs/AGENT-INTERACTION-GUIDE.md) — 工作流、工具和 MCP 接入
+- [Strategy Distillation RFC](docs/STRATEGY-DISTILLATION-RFC.md) — 策略卡、授权与当前能力边界
 - [Railway 部署](docs/RAILWAY-DEPLOYMENT.md) — 云端部署与持久化
 - [详细架构](docs/DETAILED-ARCHITECTURE.md) — 数据库、记忆系统、回测和 CLI 参考
 

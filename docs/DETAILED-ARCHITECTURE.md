@@ -298,9 +298,11 @@ git clone https://github.com/coffee-man666/mommy-chaogu.git
 cd mommy-chaogu
 uv sync --extra dev
 
-# 配置密钥
-cp .env.example .env
-# 编辑 .env，填入 LLM API key
+# 配置并验证模型（默认写用户级私有配置）
+uv run mommy setup
+
+# 如需项目隔离
+uv run mommy setup --local
 
 # 跑测试确认环境正常
 uv run pytest -m "not network"

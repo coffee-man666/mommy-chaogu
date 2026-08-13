@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mommy Toolbox Onboard"
+  short_description: "Connect the toolbox and complete a first workflow"
+  default_prompt: "Use $mommy-onboard to explain and safely connect the mommy-chaogu toolbox, then help me complete my first chosen workflow."

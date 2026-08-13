@@ -122,12 +122,14 @@
 | `research_sector` | 板块搜索 + 排行 + 成分股 |
 | `research_money_flow` | 报价 + 当日/历史资金流 |
 | `research_portfolio` | 持仓 + 报价 + 组合风险 + 记忆（仅 personal） |
-| `record_research_conclusion` | 本地保存结论/预测（仅 personal，实质研究后默认写回，可单轮退出） |
+| `record_research_conclusion` | 用户明确确认后本地保存结论/预测（仅 personal） |
+| `strategy_save/list/get/archive` | 用户确认的策略卡保存、找回、版本和归档（仅 personal） |
+| `strategy_prepare_application` | 准备“按这套方法看 X”的当前证据请求和逐条件清单 |
+| `strategy_prepare/activate_monitor` | 先展示受支持监控候选，用户二次确认后启用 |
 
-新连接默认 `personal`，高层研究工具按当前任务最小化读取持仓、自选、告警和记忆，并自动
-记录事实型研究事件。显式 `market-only` 不发布任何个人工具；不得通过 shell 或直接读数据库
-绕过。用户单轮要求不使用个人数据或不记录时，分别传入 `use_personal_context=false`、
-`record_session=false` / `save_conclusion=false`。personal 工具结果会进入外部模型上下文。
+新连接默认 `market-only`，不发布任何个人工具；不得通过 shell 或直接读数据库绕过。用户看到
+权限计划并明确同意后才切换 `personal`。研究调用默认 `record_session=false`；保存研究结论、
+保存策略卡和启用监控都需要各自明确确认。personal 工具结果会进入外部模型上下文。
 
 ---
 
@@ -326,6 +328,8 @@
 | `OPENAI_API_KEY` | OpenAI LLM | — |
 | `MOONSHOT_API_KEY` | Moonshot / Kimi LLM | — |
 | `AGENT_PROVIDER` | 覆盖 LLM provider | `deepseek` |
+| `AGENT_MODEL` | 覆盖所选 provider 的默认模型 | provider 默认 |
 | `SERVER_CHAN_KEY` | Server酱微信推送 | — |
 
-Provider 配置优先级：shell 环境变量 > `.env` 文件 > `config.toml`。
+配置优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > 代码默认值。
+Provider 与 model 在文件层按 profile 成组解析；`config.toml` 不再用于模型配置。

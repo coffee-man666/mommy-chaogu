@@ -166,15 +166,25 @@ class BasketService:
     ) -> dict[str, Any]:
         rows: list[tuple[BasketMember, Quote]] = []
         missing = 0
+        member_rows: list[dict[str, Any]] = []
         for member in basket["members"]:
             quote = quote_map.get(member["code"])
             if quote is None:
                 missing += 1
+                member_rows.append({**member, "price": None, "change_pct": None})
                 continue
             rows.append((member, quote))
+            member_rows.append(
+                {
+                    **member,
+                    "price": getattr(quote, "price", None),
+                    "change_pct": getattr(quote, "change_pct", None),
+                }
+            )
 
         if not rows:
             return {
+                "members": member_rows,
                 "change_pct": None,
                 "leader": None,
                 "laggard": None,
@@ -236,6 +246,7 @@ class BasketService:
             message = "行情数据较旧"
 
         return {
+            "members": member_rows,
             "change_pct": change_pct.quantize(Decimal("0.01")),
             "leader": {
                 "code": leader_member["code"],

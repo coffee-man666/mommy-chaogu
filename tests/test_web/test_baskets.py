@@ -19,6 +19,7 @@ from mommy_chaogu.watchlist import WatchlistStore
 def basket_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     from mommy_chaogu.web.app import create_app
     from mommy_chaogu.web.deps import get_adapter, get_watchlist_store
+    from mommy_chaogu.web.routes import baskets as basket_routes
 
     store = WatchlistStore(tmp_path / "portfolio.db")
     group = store.add_group("我的组合", "自定义关注")
@@ -53,6 +54,14 @@ def basket_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient
         )
 
     adapter.get_quotes.side_effect = lambda codes: [item for code in codes if (item := quote(code))]
+
+    def no_background_service() -> object:
+        # Other Web test modules may have started a process-global background
+        # service. This app intentionally exercises the documented no-lifespan
+        # fallback through its injected adapter.
+        raise RuntimeError("background service not started for this app")
+
+    monkeypatch.setattr(basket_routes, "get_service", no_background_service)
     app = create_app()
     app.dependency_overrides[get_watchlist_store] = lambda: store
     app.dependency_overrides[get_adapter] = lambda: adapter

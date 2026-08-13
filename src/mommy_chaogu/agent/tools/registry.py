@@ -25,6 +25,7 @@ from mommy_chaogu.agent.tools import (
     memory,
     quote,
     sector,
+    strategies,
     themes,
 )
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
@@ -32,7 +33,19 @@ from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _js
 _log = logging.getLogger(__name__)
 
 # 域模块聚合顺序即 definitions() 的输出顺序
-_MODULES = (quote, sector, flows, bars, holdings, intel, analysis, alerts, memory, themes)
+_MODULES = (
+    quote,
+    sector,
+    flows,
+    bars,
+    holdings,
+    intel,
+    analysis,
+    alerts,
+    memory,
+    themes,
+    strategies,
+)
 
 _TOOL_DEFINITIONS: list[ToolDef] = [td for m in _MODULES for td in m.DEFS]
 

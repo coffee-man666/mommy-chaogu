@@ -20,6 +20,8 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import dotenv_values
+
 from mommy_chaogu.agent.llm import SUPPORTED_PROVIDERS
 from mommy_chaogu.config import default_user_env_path, load_runtime_env
 
@@ -31,8 +33,10 @@ WeixinRefresher = Callable[[], bool]
 
 _MANAGED_BEGIN = "# >>> mommy-chaogu managed configuration >>>"
 _MANAGED_END = "# <<< mommy-chaogu managed configuration <<<"
+CONFIG_VERSION_ENV_KEY = "MOMMY_CONFIG_VERSION"
 INTERFACE_ENV_KEY = "MOMMY_INTERFACE"
 VALID_INTERFACES = frozenset({"tui", "web", "cli"})
+_LEGACY_MANAGED_KEYS = frozenset({"NOVA_API_KEY"})
 
 _PROVIDER_DETAILS: dict[str, dict[str, str]] = {
     "deepseek": {
@@ -71,27 +75,31 @@ _PROVIDERS: dict[str, dict[str, str]] = {
 
 
 def preferred_setup_env_path() -> Path:
-    """Update an existing project config; otherwise use the user-level config."""
+    """Update an intentional project profile; otherwise use user config.
+
+    A blank or comments-only ``.env`` copied from the repository template does
+    not opt a checkout into project-scoped credentials.  This keeps source and
+    installed-package onboarding consistent unless the user has actually
+    configured the project (or explicitly passes ``--local``).
+    """
     local_env = Path(".env")
     if local_env.is_file() and Path(".env.example").is_file():
-        return local_env
+        values = dotenv_values(local_env)
+        provider = str(values.get("AGENT_PROVIDER") or "").strip().lower()
+        has_provider_key = any(
+            str(values.get(info["env_key"]) or "").strip() for info in _PROVIDERS.values()
+        )
+        if provider in _PROVIDERS or has_provider_key:
+            return local_env
     return default_user_env_path()
 
 
 def has_env_file(env_path: Path) -> bool:
-    """检查 .env 是否存在且至少含一行非注释的 API key。"""
+    """检查文件是否含当前支持 Provider 的非空 API key。"""
     if not env_path.is_file():
         return False
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if "=" not in stripped:
-            continue
-        key = stripped.split("=", 1)[0].strip()
-        if "API_KEY" in key:
-            return True
-    return False
+    values = dotenv_values(env_path)
+    return any(str(values.get(info["env_key"]) or "").strip() for info in _PROVIDERS.values())
 
 
 def _safe_input(input_func: InputFunc, prompt: str) -> str | None:
@@ -167,6 +175,20 @@ def validate_llm_connection(provider: str, model: str, api_key: str) -> tuple[bo
         if "rate" in message or "429" in message:
             return False, "模型服务限流，请稍后重试"
         return False, f"连接失败（{type(exc).__name__}）"
+
+
+def activate_runtime_llm_profile(provider: str, model: str, api_key: str) -> None:
+    """Hot-activate exactly one provider profile in the current process."""
+    selected_env_key = _PROVIDERS[provider]["env_key"]
+    for info in _PROVIDERS.values():
+        env_key = info["env_key"]
+        if env_key != selected_env_key:
+            os.environ.pop(env_key, None)
+    for legacy_key in _LEGACY_MANAGED_KEYS:
+        os.environ.pop(legacy_key, None)
+    os.environ[selected_env_key] = api_key
+    os.environ["AGENT_PROVIDER"] = provider
+    os.environ["AGENT_MODEL"] = model
 
 
 def connect_weixin() -> bool:
@@ -280,9 +302,7 @@ def run_setup_wizard(
 
     # --- 4. 私密写入配置并让当前进程立即可用 ---
     _write_env_file(env_path, provider, api_key, model=model)
-    os.environ[str(info["env_key"])] = api_key
-    os.environ["AGENT_PROVIDER"] = provider
-    os.environ["AGENT_MODEL"] = model
+    activate_runtime_llm_profile(provider, model, api_key)
     print(f"\n✅ AI 配置已保存：{provider} / {model}")
     print(f"   私有配置文件：{env_path.resolve()}")
 
@@ -339,8 +359,10 @@ def _write_env_file(
 
     managed_keys = {
         *(info["env_key"] for info in _PROVIDERS.values()),
+        *_LEGACY_MANAGED_KEYS,
         "AGENT_PROVIDER",
         "AGENT_MODEL",
+        CONFIG_VERSION_ENV_KEY,
         INTERFACE_ENV_KEY,
         "SERVER_CHAN_KEY",
     }
@@ -358,7 +380,7 @@ def _write_env_file(
         candidate = stripped[1:].strip() if stripped.startswith("#") else stripped
         key = candidate.split("=", 1)[0].strip() if "=" in candidate else ""
         if key in managed_keys:
-            if not stripped.startswith("#") and "=" in stripped:
+            if key not in _LEGACY_MANAGED_KEYS and not stripped.startswith("#") and "=" in stripped:
                 active_values[key] = stripped.split("=", 1)[1]
             continue
         if in_managed_block:
@@ -380,6 +402,7 @@ def _write_env_file(
             _MANAGED_BEGIN,
             "# mommy-chaogu 密钥配置（由首次启动向导生成）",
             f"# 生成时间: {now}",
+            f"{CONFIG_VERSION_ENV_KEY}=2",
             "",
             "# LLM Provider",
         ]
@@ -387,7 +410,8 @@ def _write_env_file(
     for info in _PROVIDERS.values():
         env_key = info["env_key"]
         value = active_values.get(env_key, "")
-        lines.append(f"{env_key}={value}" if value else f"#{env_key}=")
+        if value:
+            lines.append(f"{env_key}={value}")
 
     lines.append("")
     lines.append(f"AGENT_PROVIDER={provider}")
@@ -431,10 +455,6 @@ def check_and_run_setup(*, offer_interface: bool = False) -> bool:
     except ValueError:
         # An invalid provider is recoverable through onboarding.
         pass
-    env_paths = (Path(".env"), default_user_env_path())
-
-    if any(has_env_file(path) for path in env_paths):
-        return True
 
     print("\n⚠️ 未检测到可用的 AI 配置，将启动首次配置向导。")
     print("   稍后也可运行 `mommy setup` 重新配置。\n")
@@ -448,16 +468,44 @@ def check_and_run_setup(*, offer_interface: bool = False) -> bool:
     return False
 
 
+def print_config_status() -> int:
+    """Print a redacted configuration diagnosis suitable for support."""
+    status = load_runtime_env()
+    state = "可用" if status.configured else "未配置"
+    print(f"配置状态：{state}")
+    print(f"Provider：{status.provider}（{status.provider_source}）")
+    print(f"Model：{status.model}（{status.model_source}）")
+    if status.api_key_env:
+        if status.configured:
+            print(f"API key：{status.api_key_env}（{status.api_key_source}，已设置）")
+        else:
+            print(f"API key：{status.api_key_env}（未设置）")
+    for warning in status.warnings:
+        print(f"⚠️ {warning}")
+    return 0 if status.configured and not status.warnings else 1
+
+
 def build_setup_parser() -> argparse.ArgumentParser:
     """Build the standalone onboarding command parser."""
     parser = argparse.ArgumentParser(
         prog="mommy-setup",
         description="配置 AI Provider、模型、API key 和微信连接",
     )
-    parser.add_argument(
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
         "--local",
         action="store_true",
         help="写入当前目录 .env，而不是用户级私有配置",
+    )
+    scope.add_argument(
+        "--user",
+        action="store_true",
+        help="强制写入用户级私有配置，即使当前项目已有配置",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="仅检查生效配置、来源和文件权限，不显示密钥",
     )
     parser.add_argument("--no-verify", action="store_true", help="跳过 LLM 连通性验证")
     parser.add_argument("--no-weixin", action="store_true", help="跳过微信扫码步骤")
@@ -467,7 +515,14 @@ def build_setup_parser() -> argparse.ArgumentParser:
 def main_setup() -> None:
     """Standalone ``mommy setup`` / ``mommy-setup`` entry point."""
     args = build_setup_parser().parse_args()
-    env_path = Path(".env") if args.local else preferred_setup_env_path()
+    if args.check:
+        raise SystemExit(print_config_status())
+    if args.local:
+        env_path = Path(".env")
+    elif args.user:
+        env_path = default_user_env_path()
+    else:
+        env_path = preferred_setup_env_path()
     completed = run_setup_wizard(
         env_path,
         verify_llm=not args.no_verify,

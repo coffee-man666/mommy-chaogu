@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（1,570 个离线用例，另有 13 个网络探针）
+uv run pytest -m "not network"   # 跑测试（2,082 个离线用例，另有 14 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -15,15 +15,16 @@ uv run mypy --strict src # type check
 
 推荐运行 `uv run mommy setup`，交互式选择 Provider / 模型、隐藏输入并验证 Key，
 还可继续扫码连接微信。安装用户的配置默认保存到
-`~/.config/mommy-chaogu/.env`（`0600`，不入仓）；若当前 mommy-chaogu 仓库已存在
-项目 `.env`，重新配置时会就地更新它：
+`~/.config/mommy-chaogu/.env`（`0600`，不入仓）；只有当前仓库的项目 `.env` 已包含
+有效 Provider 或 API key 时才会就地更新。可用 `--local` / `--user` 显式选择作用域，
+用 `--check` 脱敏检查生效来源：
 
 ```bash
 cp .env.example .env       # 复制模板
 # 编辑 .env，填入需要的 key
 ```
 
-支持的 key（根据 `config.toml` 里的 `agent.provider` 自动读取对应的）：
+支持的 key（根据生效的 `AGENT_PROVIDER` 自动读取对应的一项）：
 
 | Provider | 环境变量 | 说明 |
 |---|---|---|
@@ -36,7 +37,8 @@ cp .env.example .env       # 复制模板
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
 | — | `AGENT_MODEL` | 覆盖聊天模型名 |
 
-优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > `config.toml`。provider 配置表
+优先级：shell 环境变量 > 项目 `.env` > 用户级 `.env` > 代码默认值。Provider 与 model
+按来源成组解析，禁止跨层拼接；`config.toml` 仅用于可选高级 Web 参数。provider 配置表
 （base_url / 默认模型 / env key / 温度 / embedding 模型）的单一真相源是
 `src/mommy_chaogu/agent/llm.py`——改 provider 只动它，不要另起表。
 
@@ -55,7 +57,7 @@ uv run python scripts/migrate_db_layout.py            # 执行迁移
 |---|---|---|
 | `data/market.db` | 行情数据（缓存 + 历史 K 线 + 资金流） | quote_cache, bar_cache, klines, flows |
 | `data/portfolio.db` | 用户数据（自选股 + 持仓 + 告警） | groups, stock_entries, positions |
-| `data/agent.db` | 记忆系统（对话 + 事件 + 预测 + 知识 + 向量） | agent_memory, episodic_events, predictions, semantic_knowledge |
+| `data/agent.db` | Agent 个人数据（记忆 + 策略卡） | agent_memory, episodic_events, predictions, semantic_knowledge, strategy_cards |
 | `data/reference.db` | 参考库（半导体产业链 + 业绩） | semicon_stocks, earnings_* |
 
 数据根目录可通过 `MOMMY_DATA_DIR` 覆盖，单库路径可通过环境变量覆盖：
@@ -75,7 +77,8 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 25 工具 + MCP + 记忆系统 5 层 + MemoryService 独立服务）
+├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 36 工具 + MCP + 记忆系统 5 层 + Strategy Cards）
+├── strategy/        # 用户确认的策略卡校验、版本、来源与监控关联
 ├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
@@ -104,8 +107,10 @@ src/mommy_chaogu/
 2. **底层 CLI 子命令**（向后兼容，高级用户 + CI）
    - `mommy-watchlist` / `mommy-monitor` / `mommy-cache` / `mommy-flows` 等
    - 这些命令保留向后兼容，推荐使用 `mommy <子命令>` 风格
-   - `mommy connect claude|kimi|cline|codex` → 安装投研 Skill + 注册本地 MCP；默认 personal，
-     按任务开放相关持仓、记忆和写回；显式 `--profile market-only` 可完全关闭个人能力
+   - `mommy agent detect|plan|connect|doctor|repair --json` → Agent-managed 安装/诊断契约；plan
+     先展示文件和权限，真实 MCP 探针通过也不等于首次价值完成
+   - `mommy connect claude|kimi|cline|codex` → 兼容入口，安装 onboard/research/strategy 三个
+     Skill + 注册本地 MCP；新连接默认 market-only，显式 `--profile personal` 才开放个人能力
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：
 - `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor
@@ -145,6 +150,67 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 - shadcn 组件（reka-ui）+ lucide 图标
 - A 股配色（红涨绿跌）+ 深色/浅色模式
 - klinecharts K 线图 + WebSocket 实时推送
+
+## 产品定位（所有 Agent 的主事实）
+
+mommy-chaogu 是一套**边界明确、可由 Agent 接管和编排的本地投研工具箱**。用户不需要先学习
+复杂界面或命令，而是用自然语言表达目标、指标、规则、频率和流程；宿主 Agent 负责理解与编排，
+mommy-chaogu 提供行情数据、确定性计算、本地记录、策略蒸馏和受支持的自动监测。CLI / TUI /
+Web 是可选入口，不是产品本体；本项目也不是面向其他应用建设的通用后端平台。
+
+产品能力按以下方式理解和交付：
+
+- **行情与证据**：获取 A 股 / 美股行情、K 线、资金流、板块、基本面等当前真实可用的数据，并
+  说明来源、时间、新鲜度和缺口。
+- **自定义指标与流程**：用户可以用自然语言定义自己的技术指标、观察条件和交易观察流程。Agent
+  必须保留准确公式、参数、复权/周期/时点语义、标的范围和输出意图，再逐项映射到现有数据与计算
+  积木；能精确实现的才可称为自动支持，不能实现的标为“需人工判断”或“当前不可用”。不得为了
+  提高自动化率偷换成相似指标、方便实现的代理规则或任意代码执行。
+- **策略蒸馏**：把文章、研报、对话或个人方法整理成用户看得懂、改得动、确认后可保存和复用的
+  策略卡。策略卡忠于原意优先于技术可执行率；确认含义、保存和启用监控是三次独立授权。
+- **持续监测**：只把当前监控系统能够准确表达的条件变成候选，先展示触发规则和当前检查，用户
+  另行确认后才启用；无法自动化的部分继续保留在人工流程中。
+
+外部 Agent 模式下，宿主 Agent 是唯一推理者和用户体验前端，不要求用户再给 mommy-chaogu 配置
+第二套 LLM Key。Agent 超级入口必须先解释产品、询问用户第一件想完成的事，再展示安装、文件与
+权限计划；安装完成、MCP 工具可见或 doctor 通过都不算 onboarding 完成。只有用户看到并理解自己
+所选流程的第一次有用结果，且能继续修正或复用，才算完成。
+
+能力边界必须诚实：
+
+- 自动管理的宿主范围以 `src/mommy_chaogu/cli_commands/agent_managed.py` 中
+  `SUPPORTED_HOSTS` 与实际 adapter registry 为准。portable stdio MCP Server 存在，不代表某个
+  宿主的配置、Skill 安装和 doctor 已被自动支持；未适配宿主不得伪造 host、路径或成功状态。
+- “本地优先”指密钥和产品数据库默认保存在用户设备；公共行情仍会请求外部数据源，对话与工具
+  结果仍会由当前宿主 Agent / 模型处理。不得笼统承诺“所有数据都不离开本机”。
+- 本产品不是券商、自动下单系统或收益保证工具。没有满足数据与方法前提时，不得把技术计算包装成
+  策略有效性，也不得把示例计算或当前状态观察宣称为真实回测。
+
+若其他计划、Draft RFC、示例或测试夹具与本节冲突，以当前用户确认的意图和本节为准；先纠正
+产品体验，再调整支撑工程。
+
+## 产品交付原则（高于工程偏好）
+
+mommy-chaogu 是直接服务最终用户的应用，不是为其他应用提供抽象能力的平台。工程正确性用于
+支撑用户结果，不能取代用户结果。规划、实现和评审时遵守以下顺序：
+
+1. **先定义用户可感知的完成事件**：写清目标用户、当前问题、最短使用路径，以及用户最终能
+   看到、理解或完成什么。代码存在、schema 完整、测试通过、hash 可复现都不能单独算功能完成。
+2. **先做最小纵向闭环**：优先交付一条用户能实际走通的路径，再补通用 runtime、抽象层、发布
+   矩阵和广泛兼容性。每个技术任务必须说明它直接解锁哪一个用户步骤；说不清则默认延后。
+3. **先盘点现实资源**：立项前核实现有数据覆盖与时间语义、可复用算法、存储/监控入口、外部
+   依赖稳定性和维护成本。缺少关键前提时缩小目标或明确降级，不用未来能力假装当前可交付。
+4. **最小必要工程与验证**：复用现有服务和入口，只建设当前闭环必需的支持；验证力度与实际风险
+   和项目成熟度相称。不得用额外框架、通用编译器、复杂 gate 或大规模工程加固替代用户验收。
+5. **产品来源不得倒置**：当前用户确认的意图和已批准产品文档高于 Draft RFC、示例、测试夹具和
+   临时 spike。后者只能验证产品，不能自行定义产品。发现实现开始围绕夹具或技术指标优化时，
+   立即停止并回到原始用户旅程复核。
+6. **研究能力诚实命名**：没有确认的数据复权/时间语义、样本覆盖、信号定义、组合构造和评价方法
+   时，不得承诺或宣称“真实回测”。可将结果标为示例计算、探索性观察或当前状态评估；如果它不
+   改善当前用户体验，就不进入本阶段。
+
+计划中的每个阶段至少包含一个用户可观察的产物或行为及其验收方式。评审优先询问“用户现在多了
+什么能力、能否亲自感受到”，再检查支撑它的工程是否足够正确；不要反过来以工程完成度推导产品完成。
 
 ## 开发规范
 

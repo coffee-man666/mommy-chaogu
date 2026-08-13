@@ -77,10 +77,15 @@ def test_personal_mcp_stdio_full_loop_without_llm_or_network(tmp_path: Path) -> 
                 "record_research_conclusion",
                 "get_memory_context",
                 "get_memory_health",
+                "strategy_save",
+                "strategy_prepare_application",
+                "strategy_activate_monitor",
             } <= names
 
             research = _text(
-                await session.call_tool("research_stock", {"code": "600519", "days": 5})
+                await session.call_tool(
+                    "research_stock", {"code": "600519", "days": 5, "record_session": True}
+                )
             )
             assert research["research_session_id"]
             assert research["memory_recorded"] is True
@@ -99,6 +104,8 @@ def test_personal_mcp_stdio_full_loop_without_llm_or_network(tmp_path: Path) -> 
                         "name": "贵州茅台",
                         "research_session_id": research["research_session_id"],
                         "idempotency_key": "stdio-conclusion-1",
+                        "user_confirmed": True,
+                        "confirmation_note": "用户看过 stdio 结论并要求保存。",
                     },
                 )
             )

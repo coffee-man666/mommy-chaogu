@@ -69,7 +69,12 @@ def get_bars(
     adjustment: Annotated[AdjustmentType, Query(description="复权方式")] = AdjustmentType.FORWARD,
 ) -> list[BarOut]:
     """K 线数据。"""
-    bars = adapter.get_bars(code, interval=interval, limit=limit, adjustment=adjustment)  # type: ignore[arg-type]
+    try:
+        bars = adapter.get_bars(code, interval=interval, limit=limit, adjustment=adjustment)  # type: ignore[arg-type]
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="当前没有可用 K 线数据") from exc
+    if not bars:
+        raise HTTPException(status_code=503, detail="当前没有可用 K 线数据")
     return [bar_to_out(b) for b in bars]
 
 

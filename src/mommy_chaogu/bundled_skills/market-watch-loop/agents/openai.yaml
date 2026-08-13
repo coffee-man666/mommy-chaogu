@@ -1,0 +1,4 @@
+interface:
+  display_name: "Market Watch Loop"
+  short_description: "可配置频率与信息覆盖范围的 A 股/美股循环盯盘流程"
+  default_prompt: "Use $market-watch-loop to run a configurable A-share or US-stock monitoring loop with source-aware updates and a final report."

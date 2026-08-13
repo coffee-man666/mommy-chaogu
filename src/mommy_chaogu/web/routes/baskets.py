@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from mommy_chaogu.market_data import MarketDataAdapter
 from mommy_chaogu.services.basket_service import BasketDefinition, BasketService
 from mommy_chaogu.watchlist import WatchlistStore
+from mommy_chaogu.web.background import get_service
 from mommy_chaogu.web.deps import get_adapter, get_watchlist_store
 from mommy_chaogu.web.schemas import (
     BasketDetailOut,
@@ -22,7 +23,11 @@ router = APIRouter(prefix="/api/baskets", tags=["baskets"])
 
 
 def _catalog_item(item: BasketDefinition) -> dict[str, Any]:
-    return {key: value for key, value in item.items() if key != "members"}
+    # Members are deliberately included in the catalog response.  The iOS
+    # client can render the basket immediately from this static directory and
+    # hydrate live quote fields separately, instead of blocking the first
+    # screen on a large quote request.
+    return dict(item)
 
 
 @router.get("", response_model=list[BasketOut])
@@ -39,7 +44,24 @@ def get_basket(
     store: Annotated[WatchlistStore, Depends(get_watchlist_store)],
     adapter: Annotated[MarketDataAdapter, Depends(get_adapter)],
 ) -> dict[str, Any]:
-    service = BasketService(store, adapter)
+    # The background poller is the single owner of live quote fetching in a
+    # running server.  Reusing its snapshot keeps this endpoint fast and
+    # prevents opening a 100+ member basket from triggering a new network
+    # batch.  Test clients without a lifespan fall back to the injected
+    # adapter so the endpoint remains easy to exercise in isolation.
+    try:
+        background = get_service()
+    except RuntimeError:
+        background = None
+
+    if background is None:
+        service = BasketService(store, adapter)
+    else:
+        snapshot = background.latest_snapshot
+        quote_overrides = (
+            {row.entry.code: row.quote for row in snapshot.rows} if snapshot is not None else {}
+        )
+        service = BasketService(store, quote_overrides=quote_overrides)
     item = service.get_basket(basket_id)
     if item is None:
         raise HTTPException(status_code=404, detail="篮子不存在")

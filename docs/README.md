@@ -21,6 +21,8 @@
 - [KLINE-SPEC.md](KLINE-SPEC.md) — K 线模块技术规格
 - [DATABASE-LIFECYCLE.md](DATABASE-LIFECYCLE.md) — 数据库句柄所有权与生命周期规则
 - [AGENT-INTERACTION-GUIDE.md](AGENT-INTERACTION-GUIDE.md) — Agent 交互指南（工作流 + 工具边界）
+- [STRATEGY-DISTILLATION-RFC.md](STRATEGY-DISTILLATION-RFC.md) — Agent-managed Strategy Distillation 产品合同
+- [STRATEGY-DISTILLATION-RECOVERY-PLAN.md](STRATEGY-DISTILLATION-RECOVERY-PLAN.md) — 用户优先的阶段与执行 checklist
 - [AGENT-INTERFACE-EVOLUTION.md](AGENT-INTERFACE-EVOLUTION.md) — Agent 接口演进与设计教训
 - [adr/](adr/) — 架构决策记录（ADR，编号自 0001 起）
 

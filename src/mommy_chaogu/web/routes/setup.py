@@ -19,8 +19,6 @@
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, HTTPException, Request
 
 from mommy_chaogu.agent.llm import SUPPORTED_PROVIDERS
@@ -28,6 +26,7 @@ from mommy_chaogu.config import load_config
 from mommy_chaogu.setup import (
     _PROVIDERS,
     _write_env_file,
+    activate_runtime_llm_profile,
     preferred_setup_env_path,
     validate_llm_connection,
 )
@@ -157,7 +156,7 @@ async def setup_validate(req: SetupValidateIn) -> SetupResultOut:
 async def setup_save(req: SetupSaveIn) -> SetupResultOut:
     """保存 provider/model/key 到私有 .env（0600 原子写）并热更新当前进程。
 
-    复用 setup._write_env_file；随后更新 os.environ 与 AGENT_PROVIDER/AGENT_MODEL，
+    复用 setup._write_env_file；随后热更新当前进程的单一 LLM profile，
     再调用 deps.reload_agent_caches() 让新配置在当前进程内立即生效（无需重启）。
     响应从不回显 key。
     """
@@ -166,7 +165,6 @@ async def setup_save(req: SetupSaveIn) -> SetupResultOut:
     provider = _validate_provider(req.provider)
     model, api_key = _validate_model_key(req.model, req.api_key)
 
-    env_key = str(SUPPORTED_PROVIDERS[provider]["env_key"])
     env_path = preferred_setup_env_path()
 
     # 先在 threadpool 中校验，避免在请求线程里阻塞；校验失败则不写盘。
@@ -177,10 +175,8 @@ async def setup_save(req: SetupSaveIn) -> SetupResultOut:
     # 文件系统写也在 threadpool 中执行，避免阻塞事件循环。
     await asyncio.to_thread(_write_env_file, env_path, provider, api_key, model=model)
 
-    # 让当前进程立即生效（镜像 setup.run_setup_wizard 的 env 设置）。
-    os.environ[env_key] = api_key
-    os.environ["AGENT_PROVIDER"] = provider
-    os.environ["AGENT_MODEL"] = model
+    # 让当前进程立即生效，同时清除其他 provider 的旧密钥。
+    activate_runtime_llm_profile(provider, model, api_key)
 
     # 仅失效 LLM 相关缓存（agent / memory / workflow router），不动共享的
     # market/background/alerter 资源。

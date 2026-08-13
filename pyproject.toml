@@ -1,7 +1,7 @@
 [project]
 name = "mommy-chaogu"
 dynamic = ["version"]
-description = "妈妈炒股 - 给妈妈用的行情监控和投资陪伴工具"
+description = "可由现有 Agent 接管的本地 A 股 / 美股投研与监控应用"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -46,6 +46,7 @@ mommy = "mommy_chaogu.cli:main_mommy"
 mommy-tui = "mommy_chaogu.tui.app:main"
 mommy-channel = "mommy_chaogu.cli:main_channel"
 mommy-connect = "mommy_chaogu.cli:main_connect"
+mommy-doctor = "mommy_chaogu.cli:main_doctor"
 mommy-setup = "mommy_chaogu.setup:main_setup"
 
 [project.optional-dependencies]
@@ -61,6 +62,15 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build]
+# Runtime output and local experimental Skills must never enter a release
+# artifact, even when a maintainer builds from a dirty working tree.
+exclude = [
+    "/output/**",
+    "/src/mommy_chaogu/bundled_skills/market-monitoring-test/**",
+    "/src/mommy_chaogu/bundled_skills/market-watch-loop/**",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mommy_chaogu"]
