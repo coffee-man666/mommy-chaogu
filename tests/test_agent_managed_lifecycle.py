@@ -112,6 +112,7 @@ def test_plan_is_read_only_and_shows_every_change(
         "mommy-onboard",
         "mommy-research",
         "mommy-strategy",
+        "market-watch-loop",
     ]
     privacy = result["privacy"]
     assert isinstance(privacy, dict)

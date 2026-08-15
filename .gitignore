@@ -64,3 +64,7 @@ frontend/dist/
 node_modules/
 frontend/.swc/
 *.swc
+
+# ZCode 本机配置（含个人绝对路径 / 软链，不入仓）
+.zcode/config.json
+.agents/skills/market-watch-loop

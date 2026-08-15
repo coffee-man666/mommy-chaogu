@@ -105,7 +105,10 @@ def _save_state(state: dict[str, Any]) -> None:
 
 def _bundled_skill_dirs() -> tuple[Path, ...]:
     root = Path(__file__).resolve().parents[1] / "bundled_skills"
-    return tuple(root / name for name in ("mommy-onboard", "mommy-research", "mommy-strategy"))
+    return tuple(
+        root / name
+        for name in ("mommy-onboard", "mommy-research", "mommy-strategy", "market-watch-loop")
+    )
 
 
 def _bundled_skill_dir() -> Path:
