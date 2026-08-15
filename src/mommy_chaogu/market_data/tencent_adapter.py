@@ -21,6 +21,7 @@ import contextlib
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -34,6 +35,9 @@ from mommy_chaogu.market_data.types import (
 )
 
 _log = logging.getLogger(__name__)
+
+# 腾讯接口返回的墙时间为北京时间
+_TZ_BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 # 腾讯接口前缀映射
@@ -80,12 +84,12 @@ def _dec(v: str | None) -> Decimal | None:
 
 
 def _ts_from_str(s: str) -> datetime | None:
-    """解析 '20260626161408' → datetime。"""
+    """解析 '20260626161408'（北京墙时间）→ aware UTC datetime。"""
     if not s or len(s) < 14:
         return None
     try:
         dt = datetime.strptime(s, "%Y%m%d%H%M%S")
-        return dt.replace(tzinfo=UTC).astimezone()
+        return dt.replace(tzinfo=_TZ_BEIJING).astimezone(UTC)
     except ValueError:
         return None
 
@@ -234,7 +238,7 @@ class TencentAdapter:
 
         volume_ratio = _dec(f(49))
 
-        ts = _ts_from_str(f(30)) or datetime.now()
+        ts = _ts_from_str(f(30)) or datetime.now(UTC)
 
         return Quote(
             code=code,
@@ -291,7 +295,8 @@ class TencentAdapter:
         if not bids and not asks:
             return None
 
-        ts = _ts_from_str(fields[29] if len(fields) > 29 else "") or datetime.now()
+        # 时间戳与行情解析同一字段（索引 30），之前误读 29（空字段）
+        ts = _ts_from_str(fields[30] if len(fields) > 30 else "") or datetime.now(UTC)
         return OrderBook(
             code=code,
             name=fields[1] if len(fields) > 1 else "",
