@@ -87,11 +87,29 @@ class TestListMarketQuotes:
 # ---------- get_quotes ----------
 
 
+@dataclass
+class _Item:
+    code: str
+
+
+@dataclass
+class _ByCodeAdapter:
+    """按 code 应答的 mock：只返回自己认识的代码（模拟 Massive 只认美股）。"""
+
+    name: str
+    by_code: dict[str, _Item]
+    seen_codes: list[list[str]] = field(default_factory=list)
+
+    def get_quotes(self, codes: list[str]):
+        self.seen_codes.append(list(codes))
+        return [self.by_code[c] for c in codes if c in self.by_code]
+
+
 class TestGetQuotes:
     def test_primary_success(self):
-        primary = _MockAdapter("primary", get_quotes_ret=["q1"])
+        primary = _MockAdapter("primary", get_quotes_ret=[_Item("600519")])
         fb = FallbackAdapter([primary])
-        assert fb.get_quotes(["600519"]) == ["q1"]
+        assert [q.code for q in fb.get_quotes(["600519"])] == ["600519"]
 
     def test_all_fail_returns_empty_list_not_none(self):
         """issue #3：get_quotes 同理。"""
@@ -108,6 +126,35 @@ class TestGetQuotes:
         result = fb.get_quotes(["600519"])
         assert result is not None
         assert result == []
+
+    def test_partial_primary_fills_gap_from_next_adapter(self):
+        """混合市场批量：主源只返回美股，缺失的 A 股必须落到下一个源补齐。"""
+        aapl = _Item("AAPL")
+        wuliangye = _Item("000858")
+        primary = _ByCodeAdapter("massive", {"AAPL": aapl})
+        backup = _ByCodeAdapter("efinance", {"600519": _Item("600519"), "000858": wuliangye})
+        fb = FallbackAdapter([primary, backup])
+        result = fb.get_quotes(["600519", "AAPL", "000858"])
+        assert [q.code for q in result] == ["600519", "AAPL", "000858"]
+        # 第二个源只收到缺口，不重复请求已成功的 AAPL
+        assert backup.seen_codes == [["600519", "000858"]]
+
+    def test_uncoverable_code_does_not_block_others(self):
+        """没人认识的 code 直接缺失，不影响其他 code 的结果。"""
+        primary = _ByCodeAdapter("massive", {"AAPL": _Item("AAPL")})
+        backup = _ByCodeAdapter("efinance", {})
+        fb = FallbackAdapter([primary, backup])
+        result = fb.get_quotes(["AAPL", "999999"])
+        assert [q.code for q in result] == ["AAPL"]
+
+    def test_all_partial_fail_returns_empty(self):
+        """两个源都只返回空 → 语义与全失败一致（[]，all_fail +1）。"""
+        primary = _ByCodeAdapter("massive", {})
+        backup = _ByCodeAdapter("efinance", {})
+        fb = FallbackAdapter([primary, backup])
+        result = fb.get_quotes(["600519"])
+        assert result == []
+        assert fb.stats()["__total__"]["all_fail"] == 1
 
 
 # ---------- get_quote (单股，已有 None 处理，回归保护) ----------

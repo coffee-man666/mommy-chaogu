@@ -112,13 +112,71 @@ class FallbackAdapter:
             )
         return None
 
+    def _try_call_batch(self, method_name: str, codes: list):
+        """批量接口：按 code 缺口在 adapter 链上续拉合并。
+
+        单个 adapter 可能只覆盖部分市场（如 Massive 只认美股代码），
+        返回非空不等于全部请求都成功——继续把缺失的 codes 交给下一个
+        源，直到补齐或链尽。全部源都没贡献任何结果才返回 None（保持
+        _try_call 的失败语义，缓存层据此保留旧数据）。
+        """
+        requested = list(dict.fromkeys(codes))
+        remaining = list(requested)
+        merged: dict = {}
+        any_ok = False
+        for idx, adapter in enumerate(self.adapters):
+            if not remaining:
+                break
+            self._stats[adapter.name]["calls"] += 1
+            method = getattr(adapter, method_name)
+            try:
+                result = method(remaining)
+            except Exception as e:
+                self._stats[adapter.name]["fail"] += 1
+                _log.warning(
+                    "fallback: %s.%s(%s) raised %s: %s",
+                    adapter.name,
+                    method_name,
+                    remaining,
+                    type(e).__name__,
+                    e,
+                )
+                continue
+            if not result:
+                self._stats[adapter.name]["fail"] += 1
+                continue
+            self._stats[adapter.name]["ok"] += 1
+            any_ok = True
+            if idx == 0:
+                self._stats["__total__"]["primary_hits"] += 1
+            else:
+                self._stats["__total__"]["fallback_hits"] += 1
+                _log.info(
+                    "fallback: %s used for %d/%d codes (primary %s.%s partial)",
+                    adapter.name,
+                    len(result),
+                    len(remaining),
+                    self.adapters[0].name,
+                    method_name,
+                )
+            got = set()
+            for item in result:
+                merged[item.code] = item
+                got.add(item.code)
+            remaining = [c for c in remaining if c not in got]
+        if not any_ok:
+            self._stats["__total__"]["all_fail"] += 1
+            return None
+        # 保持调用方的 code 顺序
+        return [merged[c] for c in requested if c in merged]
+
     # ---------- MarketDataAdapter 接口实现 ----------
 
     def get_quote(self, code: str):
         return self._try_call("get_quote", code)
 
     def get_quotes(self, codes: list[str]):
-        result = self._try_call("get_quotes", codes)
+        result = self._try_call_batch("get_quotes", codes)
         return result if result is not None else []
 
     def list_market_quotes(self):
