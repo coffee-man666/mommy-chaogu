@@ -634,18 +634,14 @@ def main_mommy() -> NoReturn:
             return
 
     # 构建工具链
-    from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+    from mommy_chaogu.agent.tools import ToolContext
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
     from mommy_chaogu.market_data import create_adapter_chain
     from mommy_chaogu.portfolio.store import PortfolioStore
     from mommy_chaogu.watchlist.store import WatchlistStore
-    from mommy_chaogu.workflow.engine import WorkflowExecutor, WorkflowRegistry
-    from mommy_chaogu.workflow.definitions import get_default_registry
-    from mommy_chaogu.workflow.router import NLRouter
-    from mommy_chaogu.workflow.spec_runtime import spec_to_workflow
+    from mommy_chaogu.workflow.assembly import build_nl_runtime
     from mommy_chaogu.workflow.store import WorkflowStore
-    from mommy_chaogu.workflow.validator import blocking_issues, validate_spec
 
     base = create_adapter_chain()
     store = CacheStore(MARKET_DB)
@@ -658,59 +654,14 @@ def main_mommy() -> NoReturn:
         market_db=MARKET_DB,
         portfolio_db=PORTFOLIO_DB,
     )
-    tool_registry = ToolRegistry(ctx)
 
-    # 构建 LLM summarizer adapter（如果 API key 可用）
-    llm_summarizer = None
-    agent: object | None = None
-    try:
-        from mommy_chaogu.agent.episodic_memory import EpisodicMemory
-        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
-        from mommy_chaogu.agent.semantic_memory import SemanticMemory
-        from mommy_chaogu.agent.service import AgentService
-
-        episodic = EpisodicMemory(AGENT_DB)
-        agent = AgentService(
-            ctx,
-            episodic=episodic,
-            tracker=PredictionTracker(AGENT_DB),
-            semantic=SemanticMemory(AGENT_DB),
-            # vector_search 不显式传：AgentService 在 provider 有 embedding
-            # 接口时自动装配，无接口时保持关键词降级
-        )
-
-        # Adapter: 让 AgentService 兼容 LLMSummarizer Protocol
-        class _AgentSummarizer:
-            def __init__(self, svc: AgentService) -> None:
-                self._svc = svc
-
-            def summarize(self, template: str, context: str) -> str:
-                prompt = template.format(context=context)
-                resp = self._svc.chat_raw(
-                    [{"role": "user", "content": prompt}],
-                )
-                return resp.text
-
-        llm_summarizer = _AgentSummarizer(agent)
-    except (ValueError, OSError):
-        # 没有配置 API key — 工作流仍可执行（没有 LLM 总结）
-        pass
-
-    executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)  # type: ignore[arg-type]
-    merged_registry = WorkflowRegistry()
-    for builtin in get_default_registry().all_workflows():
-        merged_registry.register(builtin)
+    # 三入口共享装配工厂（builtin + 自定义工作流 merge + 共享 summarizer），
+    # 本入口持有 WorkflowStore 以便 increment_hit / 退出 close
     workflow_store = WorkflowStore(AGENT_DB)
-    for custom_spec, _meta in workflow_store.load_all():
-        try:
-            issues = validate_spec(custom_spec, existing_workflows=merged_registry.all_workflows())
-            if blocking_issues(issues):
-                continue
-            if merged_registry.get(custom_spec.id) is None:
-                merged_registry.register(spec_to_workflow(custom_spec))
-        except (TypeError, ValueError):
-            continue
-    router = NLRouter(merged_registry, executor=executor)
+    runtime = build_nl_runtime(context=ctx, workflow_store=workflow_store)
+    agent = runtime.agent_service
+    executor = runtime.executor
+    router = runtime.router
 
     # 单次查询模式
     query = " ".join(args.query).strip() if args.query else ""

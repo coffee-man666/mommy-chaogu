@@ -75,12 +75,17 @@ class RouteResponse(BaseModel):
 
 @lru_cache(maxsize=1)
 def _get_router() -> Any:
-    """Build the process-wide router from explicit application dependencies."""
-    from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+    """Build the process-wide router from explicit application dependencies.
+
+    共享装配工厂（builtin + 自定义工作流 merge + 共享 summarizer），
+    单例缓存由 lru_cache 提供；setup 写入新配置后
+    reload_agent_caches() 会 cache_clear 触发热重建。
+    """
+    from typing import cast
+
+    from mommy_chaogu.agent.tools import ToolContext
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-    from mommy_chaogu.workflow.definitions import get_default_registry
-    from mommy_chaogu.workflow.engine import WorkflowExecutor
-    from mommy_chaogu.workflow.router import NLRouter
+    from mommy_chaogu.workflow.assembly import build_nl_runtime
 
     ctx = ToolContext(
         adapter=get_adapter(),
@@ -90,25 +95,12 @@ def _get_router() -> Any:
         market_db=MARKET_DB,
         portfolio_db=PORTFOLIO_DB,
     )
-    tool_registry = ToolRegistry(ctx)
-
-    llm_summarizer = None
-    agent = get_agent_service()
-    if agent is not None:
-
-        class _AgentSummarizer:
-            def __init__(self, svc: Any) -> None:
-                self._svc = svc
-
-            def summarize(self, template: str, context: str) -> str:
-                prompt = template.format(context=context)
-                resp = self._svc.chat_raw([{"role": "user", "content": prompt}])
-                return resp.text
-
-        llm_summarizer = _AgentSummarizer(agent)
-
-    executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
-    return NLRouter(get_default_registry(), executor=executor)
+    runtime = build_nl_runtime(
+        context=ctx,
+        # deps 单例 agent；未配置 key 时为 None（路由仍可用，仅无 LLM 总结）
+        agent_service=cast("Any", get_agent_service()),
+    )
+    return runtime.router
 
 
 @router.post("/route", response_model=RouteResponse)
