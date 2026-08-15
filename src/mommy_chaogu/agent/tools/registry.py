@@ -13,6 +13,7 @@ HANDLERS 中各加一项，无需改动本文件。
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from mommy_chaogu.agent.tools import (
@@ -82,6 +83,20 @@ def _truncate_result(result: str, max_bytes: int = MAX_RESULT_BYTES) -> str:
     omitted = len(encoded) - max_bytes
     _log.info("tool result truncated: %d bytes omitted", omitted)
     return f'{cut}... "[truncated, {omitted} bytes omitted]"'
+
+
+# ``call()`` 的返回值是字符串，消费方无法从类型上区分完整与截断结果；
+# 用截断标记本身判定（尾部锚定，避免正文偶然出现同形文本误报）。
+_TRUNCATION_SUFFIX_RE = re.compile(r'\.\.\. "\[truncated, \d+ bytes omitted\]"$')
+
+
+def is_truncated_result(result: str) -> bool:
+    """判断 ``call()`` 返回的工具结果是否被 ``_truncate_result`` 截断过。
+
+    供 research_tools 等结构化消费方使用：截断结果不再是合法 JSON，
+    解析失败 fallback 原始字符串时应据此把证据标为数据不完整。
+    """
+    return _TRUNCATION_SUFFIX_RE.search(result) is not None
 
 
 class ToolRegistry:

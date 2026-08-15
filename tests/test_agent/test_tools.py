@@ -218,6 +218,18 @@ class TestUnknownTool:
         assert "error" in data
 
 
+class TestTruncationDetection:
+    def test_is_truncated_result_matches_registry_marker(self) -> None:
+        from mommy_chaogu.agent.tools.registry import _truncate_result, is_truncated_result
+
+        long_json = json.dumps({"bars": [{"close": i} for i in range(500)]})
+        truncated = _truncate_result(long_json, max_bytes=256)
+        assert is_truncated_result(truncated)
+        assert not is_truncated_result(long_json)
+        # 正文偶然包含同形文本但不在尾部，不算截断
+        assert not is_truncated_result('{"note": "... \\"[truncated, 10 bytes omitted]\\""}')
+
+
 # ---------- 记忆查询工具测试 ----------
 
 

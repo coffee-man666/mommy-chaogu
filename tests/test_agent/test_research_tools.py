@@ -26,6 +26,8 @@ class FakeRegistry:
     def call(self, name: str, args: dict[str, Any]) -> str:
         self.calls.append((name, args))
         value = self.results.get(name, {"source": name})
+        if isinstance(value, str):
+            return value
         return json.dumps(value, ensure_ascii=False)
 
 
@@ -380,6 +382,50 @@ def test_structured_context_recognizes_us_ticker_position(tmp_path: Path) -> Non
 
     assert context["subject"] == {"type": "stock", "code": "AAPL"}
     assert context["position"]["shares"] == 5
+
+
+def test_truncated_evidence_is_ok_with_truncated_flag_and_instructions() -> None:
+    truncated_json = '{"bars": [{"close": 1}, {"close": 2}... "[truncated, 4096 bytes omitted]"'
+    catalog, _ = _catalog(results={"get_bars": truncated_json})
+    result = json.loads(catalog.call("research_stock", {"code": "600519"}))
+
+    truncated = [item for item in result["evidence"] if item["tool"] == "get_bars"]
+    assert len(truncated) == 1
+    assert truncated[0]["ok"] is True
+    assert truncated[0]["truncated"] is True
+    assert truncated[0]["data"] == truncated_json
+    assert any("truncated=true" in line for line in result["instructions"])
+    assert all(
+        item["truncated"] is False for item in result["evidence"] if item["tool"] != "get_bars"
+    )
+
+
+def test_normal_evidence_is_not_truncated() -> None:
+    catalog, _ = _catalog()
+    result = json.loads(catalog.call("research_stock", {"code": "600519"}))
+
+    assert result["evidence"]
+    assert all(item["ok"] is True and item["truncated"] is False for item in result["evidence"])
+
+
+def test_market_only_whitelist_adds_deterministic_analysis_tools() -> None:
+    for name in ("check_kline_signal", "screen_inflow_stocks", "check_earnings_catalyst"):
+        assert name in MARKET_ONLY_BASE_TOOLS
+    assert not any(
+        name.startswith("strategy_") or name.startswith("record_")
+        for name in MARKET_ONLY_BASE_TOOLS
+    )
+
+
+def test_market_only_doctor_allows_new_tools_without_private_leak() -> None:
+    """新工具进白名单后，doctor 的 market-only 泄漏检查不应把它们当泄漏。"""
+    from mommy_chaogu.cli_commands.agent_managed import _MARKET_ONLY_ALLOWED_TOOLS
+
+    assert "check_kline_signal" in _MARKET_ONLY_ALLOWED_TOOLS
+    assert "screen_inflow_stocks" in _MARKET_ONLY_ALLOWED_TOOLS
+    assert "check_earnings_catalyst" in _MARKET_ONLY_ALLOWED_TOOLS
+    assert "strategy_save" not in _MARKET_ONLY_ALLOWED_TOOLS
+    assert "record_research_conclusion" not in _MARKET_ONLY_ALLOWED_TOOLS
 
 
 def test_personal_research_schedules_daily_maintenance_once(tmp_path: Path) -> None:
