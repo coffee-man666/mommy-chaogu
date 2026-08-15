@@ -64,12 +64,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-# Runtime output and local experimental Skills must never enter a release
-# artifact, even when a maintainer builds from a dirty working tree.
+# Runtime output must never enter a release artifact; market-monitoring-test is a
+# local experimental Skill, not a bundled product Skill.
 exclude = [
     "/output/**",
     "/src/mommy_chaogu/bundled_skills/market-monitoring-test/**",
-    "/src/mommy_chaogu/bundled_skills/market-watch-loop/**",
 ]
 
 [tool.hatch.build.targets.wheel]
