@@ -12,8 +12,8 @@ from mommy_chaogu.coding_agents.base import (
     ConnectionSpec,
     ConnectionStatus,
     entry_matches_spec,
+    inspect_status,
     install_skill,
-    managed_skills_ok,
     previous_spec,
     remove_managed_skills,
     run_command,
@@ -84,21 +84,7 @@ class CodexAdapter:
         return install_skill("codex", source, self.previous, force=self.force)
 
     def inspect_status(self) -> ConnectionStatus:
-        old, current = previous_spec(self.previous), self._entry()
-        configured = (
-            old is not None and current is not None and entry_matches_spec("codex", current, old)
-        )
-        skill_ok = managed_skills_ok("codex", self.previous)
-        profile = old.profile if old else "market-only"
-        return ConnectionStatus(
-            "codex",
-            "已连接" if configured else ("配置已修改" if current else "配置缺失"),
-            profile,
-            configured,
-            skill_ok,
-            self.previous is not None,
-            profile == "market-only",
-        )
+        return inspect_status("codex", self.previous, self._entry())
 
     def disconnect(self) -> None:
         binary = self._which("codex")

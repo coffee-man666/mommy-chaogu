@@ -304,6 +304,35 @@ def previous_spec(previous: dict[str, Any] | None) -> ConnectionSpec | None:
     return ConnectionSpec.from_dict(raw) if isinstance(raw, dict) else None
 
 
+def inspect_status(
+    target: str,
+    previous: dict[str, Any] | None,
+    current_entry: dict[str, Any] | None,
+) -> ConnectionStatus:
+    """四家宿主共用的 inspect_status 骨架。
+
+    configured 要求"有托管记录 + 宿主当前配置与记录一致"；
+    skill_ok 校验全部捆绑 Skill 的目录 hash。
+    """
+    old = previous_spec(previous)
+    configured = (
+        old is not None
+        and current_entry is not None
+        and entry_matches_spec(target, current_entry, old)
+    )
+    skill_ok = managed_skills_ok(target, previous)
+    profile = old.profile if old else "market-only"
+    return ConnectionStatus(
+        target,
+        "已连接" if configured else ("配置已修改" if current_entry else "配置缺失"),
+        profile,
+        configured,
+        skill_ok,
+        previous is not None,
+        profile == "market-only",
+    )
+
+
 __all__ = [
     "BUNDLED_SKILL_NAMES",
     "SERVER_NAME",
@@ -314,6 +343,7 @@ __all__ = [
     "connection_spec",
     "directory_hash",
     "entry_matches_spec",
+    "inspect_status",
     "install_skill",
     "managed_skill_records",
     "managed_skills_ok",

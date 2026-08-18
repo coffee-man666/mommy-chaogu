@@ -13,8 +13,8 @@ from mommy_chaogu.coding_agents.base import (
     ConnectionSpec,
     ConnectionStatus,
     entry_matches_spec,
+    inspect_status,
     install_skill,
-    managed_skills_ok,
     previous_spec,
     remove_managed_skills,
     run_command,
@@ -81,21 +81,7 @@ class ClaudeAdapter:
         return install_skill("claude", source, self.previous, force=self.force)
 
     def inspect_status(self) -> ConnectionStatus:
-        old, current = previous_spec(self.previous), self._entry()
-        configured = (
-            old is not None and current is not None and entry_matches_spec("claude", current, old)
-        )
-        skill_ok = managed_skills_ok("claude", self.previous)
-        profile = old.profile if old else "market-only"
-        return ConnectionStatus(
-            "claude",
-            "已连接" if configured else ("配置已修改" if current else "配置缺失"),
-            profile,
-            configured,
-            skill_ok,
-            self.previous is not None,
-            profile == "market-only",
-        )
+        return inspect_status("claude", self.previous, self._entry())
 
     def disconnect(self) -> None:
         current, old = self._entry(), previous_spec(self.previous)
