@@ -231,7 +231,6 @@ def _patch_session(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
     def patched_init(self: TencentAdapter, timeout: float = 10.0) -> None:
         self.timeout = timeout
         self._session = sess
-        self._last_call_ts = 0.0
 
     monkeypatch.setattr(TencentAdapter, "__init__", patched_init)
 

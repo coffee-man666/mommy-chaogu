@@ -120,7 +120,7 @@ class TencentAdapter:
                 "Referer": "https://stockapp.finance.qq.com/",
             }
         )
-        self._last_call_ts: float = 0.0  # 简单节流，避免打爆腾讯
+        # 拉新频率控制由缓存层节流窗口统一承担（cache/config.py），本层不做节流
 
     # ---------- 内部：HTTP 请求 ----------
 
