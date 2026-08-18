@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -15,6 +15,7 @@ from mommy_chaogu.cache import (
 )
 from mommy_chaogu.market_data import (
     AdjustmentType,
+    Bar,
     BarInterval,
     MarketDataAdapter,
     MarketType,
@@ -37,6 +38,8 @@ class MockAdapter:
         self.fail_count = 0
         self.fail_until_attempt = 0  # 拉新前 N 次失败
         self._attempt = 0
+        self.bars: list[Bar] = []
+        self.bars_calls: list[dict] = []
 
     def get_quote(self, code: str) -> Quote | None:
         self._attempt += 1
@@ -57,7 +60,8 @@ class MockAdapter:
         return None
 
     def get_bars(self, code: str, **kw):
-        return []
+        self.bars_calls.append({"code": code, **kw})
+        return list(self.bars)
 
     def get_ticks(self, code: str, limit=None):
         return []
@@ -253,6 +257,42 @@ def test_list_market_quotes_failure_uses_cached(store: CacheStore, mock_adp: Moc
     assert len(quotes) >= 1  # 用旧快照
 
 
+def _make_bar(timestamp: datetime, close: str = "100") -> Bar:
+    return Bar(
+        code="600519",
+        name="贵州茅台",
+        interval=BarInterval.D1,
+        adjustment=AdjustmentType.FORWARD,
+        timestamp=timestamp,
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal(close),
+        volume=1000,
+        turnover=Money.from_yuan(100000),
+        change_pct=None,
+        turnover_rate=None,
+        amplitude=None,
+    )
+
+
+def _bar_dict(timestamp: datetime, close: str = "100") -> dict:
+    return {
+        "code": "600519",
+        "name": "贵州茅台",
+        "timestamp": timestamp.isoformat(),
+        "open": "100",
+        "high": "101",
+        "low": "99",
+        "close": close,
+        "volume": 1000,
+        "turnover": "100000",
+        "change_pct": None,
+        "turnover_rate": None,
+        "amplitude": None,
+    }
+
+
 def test_get_bars_cached_result_respects_limit(
     cached: CachedMarketDataAdapter, store: CacheStore
 ) -> None:
@@ -264,20 +304,7 @@ def test_get_bars_cached_result_respects_limit(
             BarInterval.D1.value,
             AdjustmentType.FORWARD.value,
             timestamp.strftime("%Y-%m-%d"),
-            {
-                "code": "600519",
-                "name": "贵州茅台",
-                "timestamp": timestamp.isoformat(),
-                "open": str(100 + index),
-                "high": str(101 + index),
-                "low": str(99 + index),
-                "close": str(100 + index),
-                "volume": 1000 + index,
-                "turnover": "100000",
-                "change_pct": None,
-                "turnover_rate": None,
-                "amplitude": None,
-            },
+            _bar_dict(timestamp),
         )
 
     bars = cached.get_bars(
@@ -286,6 +313,80 @@ def test_get_bars_cached_result_respects_limit(
 
     assert len(bars) == 2
     assert [bar.timestamp.day for bar in bars] == [4, 5]
+
+
+def test_get_bars_cache_path_filters_by_start_end(
+    cached: CachedMarketDataAdapter, store: CacheStore
+) -> None:
+    """带 start/end 的调用走缓存时按闭区间过滤，而不是返回全量历史再截尾。"""
+    for index in range(5):
+        timestamp = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)
+        store.set_bar(
+            "600519",
+            BarInterval.D1.value,
+            AdjustmentType.FORWARD.value,
+            timestamp.strftime("%Y-%m-%d"),
+            _bar_dict(timestamp),
+        )
+    # 进入节流窗口：验证纯缓存路径，不触发拉新
+    key = f"bar:600519:{BarInterval.D1.value}:{AdjustmentType.FORWARD.value}"
+    cached._last_fetch_attempt[key] = datetime.now(UTC)
+
+    bars = cached.get_bars(
+        "600519",
+        interval=BarInterval.D1,
+        adjustment=AdjustmentType.FORWARD,
+        start=date(2026, 1, 2),
+        end=date(2026, 1, 3),
+    )
+
+    assert [bar.timestamp.day for bar in bars] == [2, 3]
+
+
+def test_get_bars_refetch_visible_in_same_call(
+    cached: CachedMarketDataAdapter, store: CacheStore, mock_adp: MockAdapter
+) -> None:
+    """节流到期拉新成功后，当次调用返回包含新写入缓存的数据（不再延迟一轮）。"""
+    old_ts = datetime(2026, 1, 1, tzinfo=UTC)
+    store.set_bar(
+        "600519",
+        BarInterval.D1.value,
+        AdjustmentType.FORWARD.value,
+        "2026-01-01",
+        _bar_dict(old_ts),
+    )
+    new_ts = datetime(2026, 1, 2, tzinfo=UTC)
+    mock_adp.bars = [_make_bar(old_ts), _make_bar(new_ts, close="105")]
+
+    bars = cached.get_bars(
+        "600519", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD
+    )
+
+    assert [bar.timestamp.day for bar in bars] == [1, 2]
+    assert bars[-1].close == Decimal("105")
+
+
+def test_get_bars_persists_beijing_trade_date(
+    cached: CachedMarketDataAdapter, store: CacheStore, mock_adp: MockAdapter
+) -> None:
+    """北京午夜 K 线（UTC 前一天 16:00）的 trade_date 必须按北京日历落库。"""
+    # 北京 2026-01-02 00:00 = UTC 2026-01-01 16:00；按 UTC strftime 会错误得到 01-01
+    mock_adp.bars = [_make_bar(datetime(2026, 1, 1, 16, 0, tzinfo=UTC))]
+
+    bars = cached.get_bars(
+        "600519", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD
+    )
+
+    assert len(bars) == 1
+    in_range = store.get_bars(
+        "600519",
+        BarInterval.D1.value,
+        AdjustmentType.FORWARD.value,
+        start_date="2026-01-02",
+        end_date="2026-01-02",
+    )
+    assert in_range is not None
+    assert len(in_range) == 1
 
 
 # ---------- 持久化 ----------
