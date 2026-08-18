@@ -329,6 +329,40 @@ class TestGetPredictionHistory:
         assert len(data) == 1
         assert data[0]["code"] == "600519"
 
+    def test_code_filter_pushdown_reaches_records_beyond_limit_window(
+        self, tmp_path
+    ) -> None:  # type: ignore[no-untyped-def]
+        """冷门股记录不在最近 N 条内时，按 code 查询仍能查到（SQL 层下推）。"""
+        import time
+
+        from pathlib import Path
+
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        db = tmp_path / "agent.db"
+        tracker = PredictionTracker(Path(db))
+        # 先建冷门股记录，再用 5 条新记录把它挤出 limit=3 的窗口
+        tracker.create(
+            code="300750", name="宁德时代", prediction="横盘", direction="flat", timeframe="5d"
+        )
+        time.sleep(0.02)
+        for index in range(5):
+            tracker.create(
+                code="600519",
+                name="贵州茅台",
+                prediction=f"看涨 #{index}",
+                direction="up",
+                timeframe="5d",
+            )
+            time.sleep(0.02)
+
+        ctx = ToolContext(adapter=MagicMock(), db_path=Path(db))
+        reg = ToolRegistry(ctx)
+        result = reg.call("get_prediction_history", {"code": "300750", "limit": 3})
+        data = json.loads(result)
+        assert len(data) == 1
+        assert data[0]["code"] == "300750"
+
 
 class TestSearchSimilarEvents:
     def test_no_db_returns_error(self, registry: ToolRegistry) -> None:
