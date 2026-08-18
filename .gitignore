@@ -67,4 +67,8 @@ frontend/.swc/
 
 # ZCode 本机配置（含个人绝对路径 / 软链，不入仓）
 .zcode/config.json
+# 仓库内 dev 副本：market-watch-loop 以 gitignore 排除（同步进 bundled_skills/ 发布）；
+# market-monitoring-test 是纯实验目录，走 pyproject.toml 的 wheel exclude
+# （见 tests/test_release_consistency.py 的 _EXCLUDED_SKILL_WHITELIST 白名单）——
+# 两套机制分工不同，新增本地 Skill 副本时参照此说明选择。
 .agents/skills/market-watch-loop
