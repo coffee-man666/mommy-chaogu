@@ -174,6 +174,7 @@ class CachedMarketDataAdapter:
 
         # 2. 未命中的 codes 一次性批量拉（关键：走 inner.get_quotes 而非逐个 get_quote）
         fresh_map: dict[str, Quote] = {}
+        batch_fetch_failed = False
         if miss_codes:
             for code in miss_codes:
                 self._mark_fetched(f"quote:{code}")
@@ -184,6 +185,7 @@ class CachedMarketDataAdapter:
                 self.stats_counters["fetch_fail"] += 1
                 _log.warning("fetch get_quotes(%s) failed: %s", miss_codes, e)
                 fresh_list = []
+                batch_fetch_failed = True
             if fresh_list:
                 self.stats_counters["fetch_ok"] += 1
                 for q in fresh_list:
@@ -197,6 +199,8 @@ class CachedMarketDataAdapter:
         out: list[Quote] = []
         used_network = False
         used_cache = False
+        used_stale = False
+        stale_candidates = set(miss_codes) if batch_fetch_failed else set()
         for code in unique_codes:
             q = fresh_map.get(code)
             if q is not None:
@@ -208,7 +212,13 @@ class CachedMarketDataAdapter:
                 out.append(entry.quote)  # type: ignore[arg-type]
                 self.stats_counters["hits"] += 1
                 used_cache = True
-        if used_network:
+                if code in stale_candidates:
+                    used_stale = True
+        # 标注优先级：stale_cache > network > cache —— 只要有一条数据来自
+        # "拉新失败后翻出的旧缓存"，就必须让下游看见（与单股路径一致）
+        if used_stale:
+            self.last_source = "stale_cache"
+        elif used_network:
             self.last_source = "network"
         elif used_cache:
             self.last_source = "cache"
@@ -565,8 +575,11 @@ class CachedMarketDataAdapter:
             elif "Tencent" in inner_name:
                 return "腾讯财经 实时"
             return "实时数据"
-        if self.last_source in ("cache", "stale_cache", "stale_snapshot"):
+        if self.last_source == "cache":
             return "本地缓存"
+        if self.last_source in ("stale_cache", "stale_snapshot"):
+            # 拉新失败后翻出的旧数据——与"刚缓存"区分，妈妈看得见可能过期
+            return "本地缓存（拉新失败，可能过期）"
         return self.last_source
 
 

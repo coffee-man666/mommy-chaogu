@@ -40,6 +40,7 @@ class MockAdapter:
         self._attempt = 0
         self.bars: list[Bar] = []
         self.bars_calls: list[dict] = []
+        self.fail_get_quotes = False
 
     def get_quote(self, code: str) -> Quote | None:
         self._attempt += 1
@@ -50,6 +51,8 @@ class MockAdapter:
         return self._quotes.get(code)
 
     def get_quotes(self, codes: list[str]) -> list[Quote]:
+        if self.fail_get_quotes:
+            raise ConnectionError("simulated batch fetch fail")
         return [q for c in codes if (q := self._quotes.get(c)) is not None]
 
     def list_market_quotes(self) -> list[Quote]:
@@ -700,6 +703,39 @@ def test_get_quotes_partial_cache_partial_fresh(
     assert len(result) == 2
     codes = {q.code for q in result}
     assert codes == {"600519", "000001"}
+
+
+def test_get_quotes_fetch_failure_marks_stale_cache(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """批量拉新失败后翻出旧缓存 → last_source 必须是 stale_cache（与单股路径一致）。"""
+    cached.get_quote("600519")  # 写缓存
+    mock_adp.fail_get_quotes = True
+    # 让 600519 重新进入待拉新窗口
+    cached._last_fetch_attempt["quote:600519"] = datetime.now(UTC) - timedelta(seconds=120)
+
+    result = cached.get_quotes(["600519"])
+
+    assert len(result) == 1
+    assert cached.last_source == "stale_cache"
+    assert "可能过期" in cached.format_source_label()
+
+
+def test_get_quotes_stale_label_wins_over_plain_cache(
+    cached: CachedMarketDataAdapter, mock_adp: MockAdapter
+) -> None:
+    """同一次调用里"节流窗内缓存"与"拉新失败的旧缓存"并存 → 按最差情况标 stale。"""
+    mock_adp._quotes["000001"] = _make_quote("000001")
+    cached.get_quote("600519")  # 600519 缓存且在节流窗内
+    cached.get_quote("000001")  # 000001 也入缓存
+    # 仅 000001 出窗 → 批量拉新只会因它发起，且失败
+    cached._last_fetch_attempt["quote:000001"] = datetime.now(UTC) - timedelta(seconds=120)
+    mock_adp.fail_get_quotes = True
+
+    result = cached.get_quotes(["600519", "000001"])
+
+    assert {q.code for q in result} == {"600519", "000001"}
+    assert cached.last_source == "stale_cache"
 
 
 def test_get_quotes_inner_failure_falls_back_to_cache(
