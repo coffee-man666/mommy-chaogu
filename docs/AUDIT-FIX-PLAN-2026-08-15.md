@@ -119,3 +119,106 @@
 2. 修复项完成后必须跑：定向测试 + `uv run ruff check .` + `uv run mypy --strict`（改动文件）。
 3. 台账在每次 commit 后同步更新（本文件即台账，随代码同仓提交）。
 4. 并行修复使用 subagent swarm：按"文件集互不相交"分组，agent 只改自己的文件、只跑定向测试、不 commit；集成验证与提交由主会话统一做。
+
+---
+
+# 第二批修复（2026-08-18，接续设计评审）
+
+> 输入：2026-08-18 全库设计/实现评审（数据层 / Agent 子系统 / 入口层三路深评 + 主会话抽查验证）。
+> 第一批 F1–F8 已覆盖评审的 P0 项；本批收尾评审中剩余的 P1/P2 代码级问题。
+> 纪律同上：每项独立 commit、定向测试 + ruff + mypy 通过才勾选。
+
+## 修复项总览
+
+| 编号 | 主题 | 严重度 | 来源 |
+|---|---|---|---|
+| F9 | get_bars 缓存路径：start/end 透传 + 拉新后当次可见 + 北京日历 trade_date | P1 | 数据层评审 |
+| F10 | get_prediction_history：code 过滤下推 SQL（冷门股查空 bug） | P2 | Agent 评审 |
+| F11 | strategy store LIKE 通配符转义 | P2 | Agent 评审 |
+| F12 | 批量 get_quotes 拉新失败 stale 标注（cache → stale_cache） | P2 | 数据层评审 |
+| F13 | tencent 死节流字段移除 | P3 | 数据层评审 |
+| F14 | coding_agents 四份 inspect_status 骨架上移 base | P2 | Agent 评审 |
+| F15 | 东财直连三 API（fundamentals/sector/news）金额 Decimal 化 | P1-P2 | 数据层评审 |
+| F16 | main_mommy 拆分 + CLI 入口补测试 | P1 | 入口层评审 |
+| F17 | web create_app 对 deps 的 monkeypatch 参数化（评估后定） | P2 | 入口层评审 |
+
+## 各项明细
+
+### F9 get_bars 缓存路径（三项合一，同一代码路径）
+
+- **问题**：
+  1. 缓存读取不透传 start/end（`cache/adapter.py` 旧 `store.get_bars(code, interval, adj)` 三参调用），带区间的调用走缓存时返回全量历史再 `[-limit:]`，违反 Protocol"闭区间过滤"契约；
+  2. 节流到期拉新成功后仍用拉新前读到的 `cached_bars` 构造返回值——当次调用永远看不到刚拉的新 K 线，盘中增量每次延迟一轮；
+  3. F2 把时间戳统一 aware UTC 后，`bar.timestamp.strftime("%Y-%m-%d")` 把北京午夜（UTC 前一天 16:00）落到错误日期，缓存 trade_date 系统性差一天（efinance 内部已按北京日历，`efinance_adapter.py:370`，缓存层漏改）。
+- **修复**：区间参数透传到 store；拉新成功后重读缓存再构造返回值；trade_date 按 `Asia/Shanghai` 取；无缓存分支补节流检查（防止失败风暴打上游）；成功拉新 last_source 从"cache"改标"network"。
+- **验收**：新增 3 用例（区间过滤 / 拉新当次可见 / 北京日历落库）+ 既有 limit 用例不回归。
+
+### F10 get_prediction_history code 过滤下推
+
+- **问题**：`agent/tools/memory.py` 旧逻辑 `tracker.all(limit=N)` 后在 Python 层按 code 过滤——先截断后过滤，冷门股票的记录若不在最近 N 条内会查空。
+- **修复**：`PredictionTracker` 查询支持 code 过滤（SQL WHERE + 截断），工具层去掉 Python 过滤。
+- **验收**：新增用例：同一 code 记录多于 limit 条时，按 code 查询仍返回该 code 最近的记录。
+
+### F11 strategy store LIKE 通配符转义
+
+- **问题**：`strategy/store.py` 搜索用 `LIKE :query`，`%`/`_` 未转义——搜索含 `%` 的关键词会误匹配任意串。
+- **修复**：ESCAPE 子句 + 参数化转义。
+- **验收**：新增用例：搜索字面 `%` 只匹配标题真含 `%` 的卡。
+
+### F12 批量 get_quotes stale 标注
+
+- **问题**：批量路径拉新失败后用旧缓存，last_source 标 "cache" 而非 "stale_cache"（单股路径是 stale_cache），下游无法区分"刚缓存"与"拉新失败翻出的旧数据"。
+- **修复**：批量路径区分 network / cache / stale_cache（任一 code 来自拉新失败的旧缓存即标 stale_cache）。
+- **验收**：新增用例断言批量失败路径 last_source == "stale_cache"。
+
+### F13 tencent 死节流字段移除
+
+- **问题**：`tencent_adapter.py` `_last_call_ts` 注释承诺"简单节流"但全仓库无使用点——死代码 + 虚假承诺。
+- **修复**：删除字段；节流实际由缓存层节流窗口承担（注释说明）。
+- **验收**：现有 tencent 测试不回归。
+
+### F14 coding_agents inspect_status 骨架上移
+
+- **问题**：claude/kimi/cline/codex 四份 `inspect_status` 几乎逐字相同（仅 target 字符串不同），约 110 行 × 4 复制。
+- **修复**：base 提供模板实现（读 spec → 存在性/一致性判断 → skill 目录状态），子类只提供差异点；`agent_home`/`skill_dir` 的 if-chain 收敛为 adapter 属性。
+- **验收**：`tests/test_coding_agent_adapters.py` 参数化四家用例全过。
+
+### F15 东财直连三 API Decimal 化
+
+- **问题**：`fundamentals_api.py`（总市值/流通市值）、`sector_api.py`（price/amount/main_net/total_market_cap）、`news_api.py`（net_buy_amount）全用 float——绕过 adapter 体系也绕过了项目"金额一律 Decimal"约定。
+- **修复**：金额/估值字段改 Decimal（安全转换函数），边界序列化处 str()；非金额的纯比率字段（PE/PB/ROE/涨跌幅）随源语义保留 float 或一并 Decimal，以调用方序列化需求为准。
+- **验收**：各 API 现有测试更新后通过；类型断言 Decimal。
+
+### F16 main_mommy 拆分 + CLI 入口测试
+
+- **问题**：`cli.py` 旧 `main_mommy` 305 行巨型函数（env 加载 + dispatch + argparse + onboarding + 80 行装配 + 单发/REPL 双模式混杂）；CLI 入口仅 4 个测试（覆盖率 19.3%）。
+- **修复**：拆出 `_resolve_command` / `_run_single_query` / 装配（F4 工厂已收走大半）等私有函数；为 dispatch 表、`--raw` 透传、单次查询模式补集成测试。
+- **验收**：新增 CLI 入口测试 ≥ 5 个；`main_mommy` 主体降至 ~100 行以内。
+
+### F17 web create_app monkeypatch（评估后定）
+
+- **问题**：`web/app.py` create_app 用 `deps.get_db_path = _custom_db_path` 自改模块属性模拟测试框架行为，并发多 app 会互相踩。
+- **修复**（若可行）：改为显式参数/依赖注入。若改动面过大（牵连 deps 全部入口）则记录设计结论延期。
+
+## 新增延期项
+
+| 编号 | 主题 | 理由 |
+|---|---|---|
+| D6 | 跨进程拉新节流 | freshness 窗口本身以 DB `fetched_at` 为准（别的进程拉过即视为新鲜），`_last_fetch_attempt` 只防同进程失败风暴；改 DB 级节流引入写放大与锁竞争，收益不成比例 |
+| D7 | Massive Basic-tier close-only 报价 degraded 标记 | change/change_pct 恒 0 无标记的问题需先定下游展示策略（extra 字段如何呈现），属产品决策 |
+| D8 | cache health_check 语义 / signal_events 库归属 | 前者是语义之争（缓存有数据≠源健康），后者涉及 DB 迁移，均不在本轮批准范围 |
+
+## 执行台账（第二批）
+
+| 编号 | 状态 | Commit | 验证记录 |
+|---|---|---|---|
+| 计划 | ✅ | （本 commit） | 第二批计划入台账 |
+| F9 | ◐ | — | — |
+| F10 | ☐ | — | — |
+| F11 | ☐ | — | — |
+| F12 | ☐ | — | — |
+| F13 | ☐ | — | — |
+| F14 | ☐ | — | — |
+| F15 | ☐ | — | — |
+| F16 | ☐ | — | — |
+| F17 | ☐ | — | — |
