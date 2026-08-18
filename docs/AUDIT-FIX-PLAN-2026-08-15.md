@@ -220,5 +220,5 @@
 | F13 | ✅ | aceeb27 | tencent+timestamp 28 passed |
 | F14 | ✅ | 9d5527d | coding_agents 全家 45 passed；净 -27 行 |
 | F15 | ✅ | 729761f | test_agent 全套 542 passed / 0 failures；ruff+mypy（8 文件）无错 |
-| F16 | ◐ | — | — |
-| F17 | ☐ | — | — |
+| F16 | ✅ | c8fabbd | test_cli_repl 12 新用例全过；main_mommy 258→109 行；ruff+mypy 无错 |
+| F17 | ✅ | （本 commit） | 评估中升级为真 bug：--db 只替换 get_db_path 属性，store 重建仍读默认路径。改为 deps.set_portfolio_db_override 走解析链 + 重建单例；test_web 369 passed（新增 2 用例） |
