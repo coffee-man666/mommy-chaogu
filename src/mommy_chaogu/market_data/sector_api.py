@@ -1,16 +1,18 @@
 """板块成分股行情（东财 push2 直连）。
 
 rankings.py 拉的是板块自身的涨跌幅排行，
-本模块拉的是某个板块内部的成分股行情。
+本模块拉的是某个板块内部的成分股行情。数值字段一律 Decimal
+（成交额/主力净流入/总市值是金额，更不得用 float），工具层
+序列化时再转 float。
 
 使用场景：
-    - agent 问"创新药板块成分股有哪些"
-    - Web 路由 /api/market/sector-stocks
+    - agent 问"创新药板块成分股有哪些"（Web 的板块排行走 rankings.py）
 """
 
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Any
 
 import requests
@@ -86,16 +88,16 @@ def fetch_sector_stocks(
                 {
                     "code": str(code),
                     "name": str(name),
-                    "price": _to_float(d.get("f2")),
-                    "change_pct": _to_float(d.get("f3")),
-                    "change": _to_float(d.get("f4")),
+                    "price": _to_dec(d.get("f2")),
+                    "change_pct": _to_dec(d.get("f3")),
+                    "change": _to_dec(d.get("f4")),
                     "volume": int(d.get("f5", 0) or 0),
-                    "amount": float(d.get("f6", 0) or 0),
-                    "turnover_rate": _to_float(d.get("f8")),
-                    "volume_ratio": _to_float(d.get("f10")),
-                    "pe": _to_float(d.get("f9")),
-                    "total_market_cap": float(d.get("f20", 0) or 0),
-                    "main_net": float(d.get("f62", 0) or 0),
+                    "amount": _to_dec(d.get("f6")),
+                    "turnover_rate": _to_dec(d.get("f8")),
+                    "volume_ratio": _to_dec(d.get("f10")),
+                    "pe": _to_dec(d.get("f9")),
+                    "total_market_cap": _to_dec(d.get("f20")),
+                    "main_net": _to_dec(d.get("f62")),
                 }
             )
 
@@ -134,10 +136,11 @@ def search_sector(keyword: str) -> list[dict[str, str]]:
     return out
 
 
-def _to_float(v: Any) -> float:
+def _to_dec(v: Any) -> Decimal:
+    """安全转 Decimal，失败/缺失返回 0（板块行情缺字段按无数据处理）。"""
     if v is None or v == "":
-        return 0.0
+        return Decimal("0")
     try:
-        return float(v)
-    except (ValueError, TypeError):
-        return 0.0
+        return Decimal(str(v))
+    except Exception:
+        return Decimal("0")

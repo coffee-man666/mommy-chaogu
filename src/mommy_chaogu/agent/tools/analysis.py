@@ -11,7 +11,7 @@ from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _floatify, _json
 from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
 from mommy_chaogu.market_data.news_api import get_announcements
 from mommy_chaogu.market_data.types import BarInterval
@@ -179,7 +179,7 @@ def _handle_check_earnings_catalyst(ctx: ToolContext, args: dict[str, Any]) -> s
                 "ann_titles": [str(item.get("title", "")) for item in announcements],
             }
         )
-    return _contract(results)
+    return _contract(_floatify(results))
 
 
 def _completed_daily_bars(bars: list[Any], now: datetime | None = None) -> list[Any]:

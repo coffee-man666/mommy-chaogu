@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import requests
@@ -206,9 +207,9 @@ def get_longhuban(date: str | None = None, limit: int = 20) -> list[dict[str, An
                     "code": str(item.get("SECURITY_CODE", "")),
                     "name": str(item.get("SECURITY_NAME_ABBR", "")),
                     "date": str(item.get("TRADE_DATE", ""))[:10],
-                    "change_rate": float(item.get("CHANGE_RATE", 0) or 0),
+                    "change_rate": _to_dec(item.get("CHANGE_RATE")),
                     "reason": str(item.get("EXPLAIN", "")),
-                    "net_buy_amount": float(item.get("NET_AMOUNT", 0) or 0),
+                    "net_buy_amount": _to_dec(item.get("NET_AMOUNT")),
                     "rank": int(item.get("RANK", 0) or 0),
                 }
             )
@@ -217,3 +218,13 @@ def get_longhuban(date: str | None = None, limit: int = 20) -> list[dict[str, An
     except Exception as e:
         _log.warning("get_longhuban(%s) failed: %s", date, e)
         return []
+
+
+def _to_dec(v: Any) -> Decimal:
+    """安全转 Decimal，失败/缺失返回 0（龙虎榜净买额是金额，不用 float）。"""
+    if v is None or v == "":
+        return Decimal("0")
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
