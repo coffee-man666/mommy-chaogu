@@ -334,7 +334,6 @@ class TestGetPredictionHistory:
     ) -> None:  # type: ignore[no-untyped-def]
         """冷门股记录不在最近 N 条内时，按 code 查询仍能查到（SQL 层下推）。"""
         import time
-
         from pathlib import Path
 
         from mommy_chaogu.agent.prediction_tracker import PredictionTracker

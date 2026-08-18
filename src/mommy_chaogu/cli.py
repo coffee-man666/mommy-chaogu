@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from rich.text import Text
 
+    from mommy_chaogu.workflow.assembly import NLRuntime
+    from mommy_chaogu.workflow.store import WorkflowStore
+
 # The facade intentionally re-exports the established command API.
 from mommy_chaogu.cli_support import *
 from mommy_chaogu.cli_commands.agent import *
@@ -28,6 +31,7 @@ from mommy_chaogu.cli_commands.semicon import *
 from mommy_chaogu.cli_commands.watchlist import *
 from mommy_chaogu.cli_commands.web import *
 from mommy_chaogu.cli_commands.workflow import *
+from mommy_chaogu.errors import friendly_error
 from mommy_chaogu.setup import main_setup
 
 # ============================================================
@@ -195,18 +199,9 @@ def _run_mommy_repl(
         console.print(help_text)
 
     def render_error(exc: Exception) -> None:
-        message = str(exc)
-        lowered = message.lower()
-        if "rate_limit" in lowered or "429" in lowered:
-            friendly = "API 调用频率超限，请稍后重试。"
-        elif "quota" in lowered or "insufficient" in lowered:
-            friendly = "API 额度已用完，请检查账户余额。"
-        elif "authentication" in lowered or "401" in lowered:
-            friendly = "API key 无效，请运行 `mommy setup` 重新配置。"
-        else:
-            friendly = "这次没能完成，请稍后重试。"
-            if verbose:
-                friendly += f"\n\n{type(exc).__name__}: {message}"
+        friendly = friendly_error(exc)
+        if verbose:
+            friendly += f"\n\n{type(exc).__name__}: {exc}"
         console.print(Panel(friendly, title="[bold red]执行失败[/]", border_style="red"))
 
     def render_help() -> None:
@@ -494,24 +489,9 @@ def _print_workflow_result(result: object) -> None:
         print()
 
 
-def main_mommy() -> NoReturn:
-    """mommy — 面向用户的自然语言入口。
-
-    无参数 → 进入交互式 REPL
-    带参数 → 单次自然语言查询
-    <子命令> [参数] → 透传到底层 CLI（如 mommy watchlist list）
-    --raw <子命令> [参数] → 同上（向后兼容）
-    """
-    # 加载 .env 里的 API key（与 mommy-agent 的 load_config、TUI bootstrap
-    # 对齐——主入口漏了这步时，只配 .env 的用户会被误报「未配置 API key」）。
-    # 不覆盖已有的 shell 环境变量。
-    from mommy_chaogu.config import load_runtime_env
-
-    load_runtime_env()
-
-    # 子命令 → 对应 main_* 函数 / entry point 的分发表
-    # mommy watchlist list / mommy --raw watchlist list 共用同一张表
-    dispatch: dict[str, tuple[str, object]] = {
+def _build_dispatch() -> dict[str, tuple[str, object]]:
+    """子命令 → (prog 名, main 函数) 分发表；tui 走独立 entry point 用 None。"""
+    return {
         "watchlist": ("mommy-watchlist", main_watchlist),
         "monitor": ("mommy-monitor", main_monitor),
         "cache": ("mommy-cache", main_cache),
@@ -529,46 +509,168 @@ def main_mommy() -> NoReturn:
         "doctor": ("mommy-doctor", main_doctor),
     }
 
-    # 直接子命令模式：mommy watchlist list
-    if len(sys.argv) > 1 and sys.argv[1] in dispatch:
-        subcmd = sys.argv[1]
-        prog_name, func = dispatch[subcmd]
-        sys.argv = [prog_name, *sys.argv[2:]]
-        if func is not None:
-            func()
-        else:
-            # tui: 独立 entry point，直接导入调用
-            from mommy_chaogu.tui.app import main as _tui_main
 
-            _tui_main()
+def _launch_subcommand(func: object) -> None:
+    """启动分发表命中的子命令 main（tui 延迟导入，避免 REPL 模式背上 Textual）。"""
+    if func is not None:
+        func()  # type: ignore[misc]
         return
+    from mommy_chaogu.tui.app import main as _tui_main
 
-    # --raw 模式：透传到底层 CLI 子命令（向后兼容）
-    if len(sys.argv) > 1 and sys.argv[1] in ("--raw", "--advanced"):
-        remaining = sys.argv[2:]
+    _tui_main()
+
+
+def _dispatch_passthrough_subcommand(dispatch: dict[str, tuple[str, object]]) -> bool:
+    """直接子命令（mommy watchlist list）与 --raw 透传模式。
+
+    命中并启动子命令时返回 True（子命令 main 自行退出）；否则返回 False
+    继续自然语言模式。--raw 的用法错误直接 sys.exit。
+    """
+    argv = sys.argv
+    if len(argv) > 1 and argv[1] in dispatch:
+        prog_name, func = dispatch[argv[1]]
+        sys.argv = [prog_name, *argv[2:]]
+        _launch_subcommand(func)
+        return True
+
+    if len(argv) > 1 and argv[1] in ("--raw", "--advanced"):
+        remaining = argv[2:]
         if not remaining:
             print("用法: mommy --raw <子命令> [参数]")
             print("可用子命令: " + ", ".join(dispatch.keys()))
             sys.exit(1)
         subcmd = remaining[0]
-        sub_args = remaining[1:]
-
         if subcmd not in dispatch:
             print(f"未知子命令: {subcmd}")
             print(f"可用: {', '.join(dispatch.keys())}")
             sys.exit(1)
-
         prog_name, func = dispatch[subcmd]
-        sys.argv = [prog_name, *sub_args]
-        if func is not None:
-            func()
-        else:
-            from mommy_chaogu.tui.app import main as _tui_main
+        sys.argv = [prog_name, *remaining[1:]]
+        _launch_subcommand(func)
+        return True
 
-            _tui_main()
+    return False
+
+
+def _build_cli_toolchain() -> tuple[NLRuntime, WorkflowStore]:
+    """CLI 入口的工具链装配：CachedAdapter + 共享 build_nl_runtime 工厂。"""
+    from mommy_chaogu.agent.tools import ToolContext
+    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
+    from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
+    from mommy_chaogu.market_data import create_adapter_chain
+    from mommy_chaogu.portfolio.store import PortfolioStore
+    from mommy_chaogu.watchlist.store import WatchlistStore
+    from mommy_chaogu.workflow.assembly import build_nl_runtime
+    from mommy_chaogu.workflow.store import WorkflowStore
+
+    adapter = CachedMarketDataAdapter(create_adapter_chain(), CacheStore(MARKET_DB))
+    ctx = ToolContext(
+        adapter=adapter,
+        watchlist_store=WatchlistStore(PORTFOLIO_DB),
+        portfolio_store=PortfolioStore(PORTFOLIO_DB),
+        agent_db=AGENT_DB,
+        market_db=MARKET_DB,
+        portfolio_db=PORTFOLIO_DB,
+    )
+    # 三入口共享装配工厂（builtin + 自定义工作流 merge + 共享 summarizer），
+    # 本入口持有 WorkflowStore 以便 increment_hit / 退出 close
+    workflow_store = WorkflowStore(AGENT_DB)
+    return build_nl_runtime(context=ctx, workflow_store=workflow_store), workflow_store
+
+
+def _run_single_query(
+    query: str,
+    *,
+    runtime: NLRuntime,
+    workflow_store: WorkflowStore,
+    verbose: bool,
+) -> NoReturn:
+    """单次自然语言查询：正则工作流优先，未命中转交 AI 助手，完成即退出。"""
+    router, agent = runtime.router, runtime.agent_service
+
+    route = router.route(query)
+    if route.matched:
+        if verbose:
+            wf = route.workflow  # type: ignore[attr-defined]
+            print(f"  [匹配工作流: {wf.description}]")
+            print(f"  [工作流 ID: {wf.id}]")
+        else:
+            wf_desc = route.workflow.description  # type: ignore[attr-defined]
+            print(f"  [匹配: {wf_desc}]")
+        print()
+        try:
+            result = router.execute_route(
+                route,
+                query,
+                on_step_start=lambda n: print(f"  ⠹ {n}...", end="\r", flush=True),
+                on_step_done=lambda n, ok: print(f"  {'✓' if ok else '✗'} {n}" + " " * 10),
+            )
+        except ValueError as exc:
+            print(f"  ⚠️ 工作流参数解析失败: {exc}")
+            workflow_store.close()
+            sys.exit(1)
+        print()
+        if result.summary:
+            print(result.summary)
+        else:
+            _print_workflow_result(result)
+        if result.workflow_id.startswith("user_") and result.succeeded:
+            workflow_store.increment_hit(result.workflow_id)
+    else:
+        # 未命中预设工作流
+        if verbose:
+            reason = getattr(route, "fallback_reason", "")
+            print(f"  [未命中预设工作流{f': {reason}' if reason else ''}]")
+        print("  [转交 AI 助手处理]")
+
+        if agent is None:
+            print(
+                "⚠️ AI 助手不可用（未配置 API key）。\n"
+                "   运行 mommy setup 配置 Provider、模型和 API key。\n"
+                "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
+            )
+        else:
+
+            def _on_tool(name: str, a: dict[str, object]) -> None:
+                if verbose:
+                    args_str = ", ".join(f"{k}={v}" for k, v in a.items())
+                    print(f"  🔧 {name}({args_str})")
+                else:
+                    print(f"  🔧 调用: {name}...")
+
+            try:
+                resp = agent.chat(query, on_tool_call=_on_tool)
+                print(f"\n{resp.text}\n")
+                if resp.tool_calls and not verbose:
+                    tool_names = ", ".join(tc.name for tc in resp.tool_calls)
+                    print(f"[调用了 {len(resp.tool_calls)} 个工具: {tool_names}]")
+                # P6：后台提取线程完成后再退出（单发模式唯一的消息轮次，
+                # 不 flush 进程退出时提取会被静默丢弃）
+                agent.flush(timeout=30)
+            except Exception as e:
+                print(f"\n⚠️ {friendly_error(e)}\n")
+    workflow_store.close()
+    sys.exit(0)
+
+
+def main_mommy() -> NoReturn:
+    """mommy — 面向用户的自然语言入口。
+
+    无参数 → 进入交互式 REPL
+    带参数 → 单次自然语言查询
+    <子命令> [参数] → 透传到底层 CLI（如 mommy watchlist list）
+    --raw <子命令> [参数] → 同上（向后兼容）
+    """
+    # 加载 .env 里的 API key（与 mommy-agent 的 load_config、TUI bootstrap
+    # 对齐——主入口漏了这步时，只配 .env 的用户会被误报「未配置 API key」）。
+    # 不覆盖已有的 shell 环境变量。
+    from mommy_chaogu.config import load_runtime_env
+
+    load_runtime_env()
+
+    if _dispatch_passthrough_subcommand(_build_dispatch()):
         return
 
-    # 正常自然语言模式
     parser = argparse.ArgumentParser(
         prog="mommy",
         description="妈妈炒股 - 自然语言投资助手",
@@ -603,8 +705,13 @@ def main_mommy() -> NoReturn:
         action="store_true",
         help="运行首次配置引导（Provider + 模型 + API key + 微信）",
     )
-    # 解析已知参数，剩余的忽略（避免 argparse 报错）
-    args, _unknown = parser.parse_known_args()
+    # 解析已知参数；无法识别的参数告警而非静默吞掉（拼错参数应当被看见）
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        print(
+            f"⚠️ 已忽略无法识别的参数: {' '.join(unknown)}（完整用法见 mommy --help）",
+            file=sys.stderr,
+        )
 
     # --setup 模式：运行首次配置引导
     if args.setup:
@@ -633,118 +740,21 @@ def main_mommy() -> NoReturn:
             main_web()
             return
 
-    # 构建工具链
-    from mommy_chaogu.agent.tools import ToolContext
-    from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
-    from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
-    from mommy_chaogu.market_data import create_adapter_chain
-    from mommy_chaogu.portfolio.store import PortfolioStore
-    from mommy_chaogu.watchlist.store import WatchlistStore
-    from mommy_chaogu.workflow.assembly import build_nl_runtime
-    from mommy_chaogu.workflow.store import WorkflowStore
-
-    base = create_adapter_chain()
-    store = CacheStore(MARKET_DB)
-    adapter = CachedMarketDataAdapter(base, store)
-    ctx = ToolContext(
-        adapter=adapter,
-        watchlist_store=WatchlistStore(PORTFOLIO_DB),
-        portfolio_store=PortfolioStore(PORTFOLIO_DB),
-        agent_db=AGENT_DB,
-        market_db=MARKET_DB,
-        portfolio_db=PORTFOLIO_DB,
-    )
-
-    # 三入口共享装配工厂（builtin + 自定义工作流 merge + 共享 summarizer），
-    # 本入口持有 WorkflowStore 以便 increment_hit / 退出 close
-    workflow_store = WorkflowStore(AGENT_DB)
-    runtime = build_nl_runtime(context=ctx, workflow_store=workflow_store)
-    agent = runtime.agent_service
-    executor = runtime.executor
-    router = runtime.router
+    runtime, workflow_store = _build_cli_toolchain()
 
     # 单次查询模式
     query = " ".join(args.query).strip() if args.query else ""
     if query:
-        route = router.route(query)
-        if route.matched:
-            if args.verbose:
-                wf = route.workflow  # type: ignore[attr-defined]
-                print(f"  [匹配工作流: {wf.description}]")
-                print(f"  [工作流 ID: {wf.id}]")
-            else:
-                wf_desc = route.workflow.description  # type: ignore[attr-defined]
-                print(f"  [匹配: {wf_desc}]")
-            print()
-            try:
-                result = router.execute_route(
-                    route,
-                    query,
-                    on_step_start=lambda n: print(f"  ⠹ {n}...", end="\r", flush=True),
-                    on_step_done=lambda n, ok: print(f"  {'✓' if ok else '✗'} {n}" + " " * 10),
-                )
-            except ValueError as exc:
-                print(f"  ⚠️ 工作流参数解析失败: {exc}")
-                workflow_store.close()
-                sys.exit(1)
-            print()
-            if result.summary:
-                print(result.summary)
-            else:
-                _print_workflow_result(result)
-            if result.workflow_id.startswith("user_") and result.succeeded:
-                workflow_store.increment_hit(result.workflow_id)
-        else:
-            # 未命中预设工作流
-            if args.verbose:
-                reason = getattr(route, "fallback_reason", "")
-                print(f"  [未命中预设工作流{f': {reason}' if reason else ''}]")
-            print("  [转交 AI 助手处理]")
-
-            # Fallback to agent
-            if agent is None:
-                print(
-                    "⚠️ AI 助手不可用（未配置 API key）。\n"
-                    "   运行 mommy setup 配置 Provider、模型和 API key。\n"
-                    "   配置后可使用 AI 分析功能；行情查询和资金流等工作流仍可正常使用。\n"
-                )
-            else:
-
-                def _on_tool(name: str, a: dict[str, object]) -> None:
-                    if args.verbose:
-                        args_str = ", ".join(f"{k}={v}" for k, v in a.items())
-                        print(f"  🔧 {name}({args_str})")
-                    else:
-                        print(f"  🔧 调用: {name}...")
-
-                try:
-                    resp = agent.chat(query, on_tool_call=_on_tool)
-                    print(f"\n{resp.text}\n")
-                    if resp.tool_calls and not args.verbose:
-                        tool_names = ", ".join(tc.name for tc in resp.tool_calls)
-                        print(f"[调用了 {len(resp.tool_calls)} 个工具: {tool_names}]")
-                    # P6：后台提取线程完成后再退出（单发模式唯一的消息轮次，
-                    # 不 flush 进程退出时提取会被静默丢弃）
-                    agent.flush(timeout=30)
-                except Exception as e:
-                    err_msg = str(e)
-                    if "rate_limit" in err_msg.lower() or "429" in err_msg:
-                        print("\n⚠️ API 调用频率超限，请稍后重试。\n")
-                    elif "quota" in err_msg.lower() or "insufficient" in err_msg.lower():
-                        print("\n⚠️ API 额度已用完，请检查账户余额。\n")
-                    elif "authentication" in err_msg.lower() or "401" in err_msg:
-                        print("\n⚠️ API key 无效，请运行 mommy setup 重新配置。\n")
-                    else:
-                        print(f"\n⚠️ 出错了: {e}\n")
-        workflow_store.close()
-        sys.exit(0)
+        _run_single_query(
+            query, runtime=runtime, workflow_store=workflow_store, verbose=args.verbose
+        )
 
     # 交互式 REPL
     try:
         _run_mommy_repl(
-            router,
-            executor,
-            agent,
+            runtime.router,
+            runtime.executor,
+            runtime.agent_service,
             verbose=args.verbose,
             workflow_hit_recorder=workflow_store.increment_hit,
         )

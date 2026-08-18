@@ -216,9 +216,9 @@
 | F9 | ✅ | f70509e | test_cache 44 passed（新增 3 用例：区间过滤/拉新当次可见/北京日历落库）；market_data+agent 离线 701 passed |
 | F10 | ✅ | a3a3143 | test_tools+verify_engine+eval_followup 82 passed（新增冷门股下推用例） |
 | F11 | ✅ | 074cffd | test_strategy_tools 15 passed（新增字面 % 搜索用例） |
-| F12 | ◐ | — | — |
-| F13 | ☐ | — | — |
-| F14 | ☐ | — | — |
-| F15 | ☐ | — | — |
-| F16 | ☐ | — | — |
+| F12 | ✅ | 52afb50 | test_cache 46 passed（新增 stale 标注 2 用例）；TUI/services 49 passed |
+| F13 | ✅ | aceeb27 | tencent+timestamp 28 passed |
+| F14 | ✅ | 9d5527d | coding_agents 全家 45 passed；净 -27 行 |
+| F15 | ✅ | 729761f | test_agent 全套 542 passed / 0 failures；ruff+mypy（8 文件）无错 |
+| F16 | ◐ | — | — |
 | F17 | ☐ | — | — |
