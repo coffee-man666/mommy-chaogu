@@ -60,8 +60,7 @@ class NLRuntime:
         tool_registry: 工具注册表。
         agent_service: LLM agent；未配置 API key 时为 None（入口据此降级）。
         workflow_store: 自定义工作流存储。调用方注入的归调用方管理生命周期
-            （如 CLI 退出时 close）；工厂自建的随本对象被 GC 后由
-            EngineOwner 的 weakref finalizer 释放连接池。
+            （如 CLI 退出时 close）；工厂自建的由 ``close()`` 显式释放。
     """
 
     router: NLRouter
@@ -69,6 +68,17 @@ class NLRuntime:
     tool_registry: ToolRegistry
     agent_service: AgentService | None
     workflow_store: WorkflowStore | None
+    _owns_workflow_store: bool = False
+
+    def close(self) -> None:
+        """释放工厂自建的 WorkflowStore（注入的归调用方，不在此关闭）。
+
+        长驻进程（如 Web lru_cache 单例热重建）应在丢弃旧 runtime 前调用，
+        避免每次重建多挂一个 SQLite 连接。可重复调用。
+        """
+        if self._owns_workflow_store and self.workflow_store is not None:
+            self.workflow_store.close()
+            self._owns_workflow_store = False
 
 
 def merge_custom_workflows(registry: WorkflowRegistry, store: WorkflowStore) -> int:
@@ -152,6 +162,7 @@ def build_nl_runtime(
         registry.register(builtin)
 
     store = workflow_store
+    owns_store = False
     if store is None:
         db: Path | None
         if agent_db is not None:
@@ -162,6 +173,7 @@ def build_nl_runtime(
             db = None
         if db is not None:
             store = _open_workflow_store(db)
+            owns_store = store is not None
     if store is not None:
         merge_custom_workflows(registry, store)
 
@@ -171,6 +183,7 @@ def build_nl_runtime(
         tool_registry=tool_registry,
         agent_service=agent_service,
         workflow_store=store,
+        _owns_workflow_store=owns_store,
     )
 
 

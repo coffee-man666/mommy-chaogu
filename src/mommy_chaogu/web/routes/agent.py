@@ -72,6 +72,10 @@ class RouteResponse(BaseModel):
 
 # ---------- REST 端点 ----------
 
+# 持有最近一次构建的 runtime，热重建前 close() 释放工厂自建的
+# WorkflowStore 连接，避免每次 reload_agent_caches() 多挂一个 SQLite 连接。
+_last_runtime: Any = None
+
 
 @lru_cache(maxsize=1)
 def _get_router() -> Any:
@@ -87,6 +91,11 @@ def _get_router() -> Any:
     from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB
     from mommy_chaogu.workflow.assembly import build_nl_runtime
 
+    global _last_runtime
+    if _last_runtime is not None:
+        _last_runtime.close()
+        _last_runtime = None
+
     ctx = ToolContext(
         adapter=get_adapter(),
         watchlist_store=get_watchlist_store(),
@@ -100,6 +109,7 @@ def _get_router() -> Any:
         # deps 单例 agent；未配置 key 时为 None（路由仍可用，仅无 LLM 总结）
         agent_service=cast("Any", get_agent_service()),
     )
+    _last_runtime = runtime
     return runtime.router
 
 

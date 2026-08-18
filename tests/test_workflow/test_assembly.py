@@ -111,6 +111,27 @@ class TestBuildNLRuntime:
         route = runtime.router.route("今天怎么样")
         assert route.matched, "无 key 时内置工作流仍应可路由"
 
+    def test_close_releases_factory_built_store(self, isolated_dbs: Path) -> None:
+        """工厂自建的 store 由 close() 释放（长驻进程热重建前必须调用）。"""
+        runtime = build_nl_runtime(agent_db=isolated_dbs / "agent.db", build_agent=False)
+        store = runtime.workflow_store
+        assert store is not None
+        finalizer = store._engine_finalizer
+        assert finalizer.alive
+        runtime.close()
+        assert not finalizer.alive, "close() 应 dispose 自建 store 的 engine"
+        runtime.close()  # 幂等：重复调用不抛错
+
+    def test_close_does_not_touch_injected_store(self, isolated_dbs: Path) -> None:
+        """注入的 store 归调用方管理：runtime.close() 不得关闭它。"""
+        store = _store_with(isolated_dbs, _good_spec())
+        try:
+            runtime = build_nl_runtime(workflow_store=store, build_agent=False)
+            runtime.close()
+            assert store._engine_finalizer.alive, "注入的 store 不应被 runtime.close() 关闭"
+        finally:
+            store.close()
+
 
 class TestAgentSummarizerShared:
     def test_wraps_injected_agent_via_chat_raw(self, isolated_dbs: Path) -> None:
