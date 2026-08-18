@@ -156,6 +156,48 @@ class TestGetQuotes:
         assert result == []
         assert fb.stats()["__total__"]["all_fail"] == 1
 
+    def test_adapter_missing_batch_method_is_skipped(self):
+        """链上某源未实现批量方法时不得抛 AttributeError，应跳过并继续补齐。"""
+        backup = _ByCodeAdapter("efinance", {"600519": _Item("600519"), "AAPL": _Item("AAPL")})
+
+        class _NoBatch:
+            name = "no_batch"
+
+        fb = FallbackAdapter([_NoBatch(), backup])  # type: ignore[list-item]
+        result = fb.get_quotes(["600519", "AAPL"])
+        assert [q.code for q in result] == ["600519", "AAPL"]
+        assert fb.stats()["no_batch"]["fail"] == 1
+
+    def test_all_adapters_missing_batch_method_returns_empty(self):
+        """所有源都缺批量方法 → []（all_fail +1），与全失败语义一致。"""
+
+        class _NoBatch:
+            name = "no_batch"
+
+        fb = FallbackAdapter([_NoBatch()])  # type: ignore[list-item]
+        assert fb.get_quotes(["600519"]) == []
+        assert fb.stats()["__total__"]["all_fail"] == 1
+
+    def test_full_coverage_primary_counts_primary_hit(self):
+        primary = _ByCodeAdapter("massive", {"600519": _Item("600519"), "AAPL": _Item("AAPL")})
+        fb = FallbackAdapter([primary])
+        fb.get_quotes(["600519", "AAPL"])
+        total = fb.stats()["__total__"]
+        assert total["primary_hits"] == 1
+        assert total["partial_hits"] == 0
+
+    def test_partial_primary_counts_partial_hit_not_primary_hit(self):
+        """主源部分覆盖时计 partial_hits 而非 primary_hits，缺口补齐计 fallback_hits。"""
+        primary = _ByCodeAdapter("massive", {"AAPL": _Item("AAPL")})
+        backup = _ByCodeAdapter("efinance", {"600519": _Item("600519")})
+        fb = FallbackAdapter([primary, backup])
+        result = fb.get_quotes(["600519", "AAPL"])
+        assert [q.code for q in result] == ["600519", "AAPL"]
+        total = fb.stats()["__total__"]
+        assert total["primary_hits"] == 0
+        assert total["partial_hits"] == 1
+        assert total["fallback_hits"] == 1
+
 
 # ---------- get_quote (单股，已有 None 处理，回归保护) ----------
 
@@ -171,3 +213,14 @@ class TestGetQuote:
         primary = _MockAdapter("primary", get_quote_ret="q1")
         fb = FallbackAdapter([primary])
         assert fb.get_quote("600519") == "q1"
+
+    def test_adapter_missing_method_is_skipped(self):
+        """单股路径同理：源未实现该方法时跳过，不得抛 AttributeError。"""
+        backup = _MockAdapter("backup", get_quote_ret="q2")
+
+        class _NoQuote:
+            name = "no_quote"
+
+        fb = FallbackAdapter([_NoQuote(), backup])  # type: ignore[list-item]
+        assert fb.get_quote("600519") == "q2"
+        assert fb.stats()["no_quote"]["fail"] == 1

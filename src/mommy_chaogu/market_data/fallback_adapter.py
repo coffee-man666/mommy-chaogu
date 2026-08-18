@@ -14,7 +14,13 @@
 注意：
 - 不缓存 fallback 结果（避免缓存层 + fallback 层互相干扰）
 - 每个方法独立 fallback（一个方法在主源失败不影响其他方法）
-- 指标统计：primary_hits / fallback_hits / all_fail
+- 指标统计口径：
+  - primary_hits：主源一次调用即满足全部请求（批量接口要求全覆盖）；
+  - partial_hits：主源有贡献但未全覆盖，缺口由下游源补齐；
+  - fallback_hits：主源完全无贡献，结果来自下游源；
+  - all_fail：所有源都无贡献。
+  partial_hits 偏高正是"主源看似正常实则缺口"的信号，监控上应与
+  primary_hits 分开看。
 """
 
 from __future__ import annotations
@@ -53,6 +59,7 @@ class FallbackAdapter:
         }
         self._stats["__total__"] = {
             "primary_hits": 0,
+            "partial_hits": 0,
             "fallback_hits": 0,
             "all_fail": 0,
             "calls": 0,
@@ -70,7 +77,12 @@ class FallbackAdapter:
         last_exc: Exception | None = None
         for idx, adapter in enumerate(self.adapters):
             self._stats[adapter.name]["calls"] += 1
-            method = getattr(adapter, method_name)
+            # adapter 可能未实现该方法：缺方法视为该源失败，继续向下，
+            # 不得让 AttributeError 穿透 fallback 链抛给调用方。
+            method = getattr(adapter, method_name, None)
+            if method is None:
+                self._stats[adapter.name]["fail"] += 1
+                continue
             try:
                 result = method(*args, **kwargs)
             except Exception as e:
@@ -128,7 +140,11 @@ class FallbackAdapter:
             if not remaining:
                 break
             self._stats[adapter.name]["calls"] += 1
-            method = getattr(adapter, method_name)
+            # 与 _try_call 同理：缺方法视为该源失败，继续沿链向下。
+            method = getattr(adapter, method_name, None)
+            if method is None:
+                self._stats[adapter.name]["fail"] += 1
+                continue
             try:
                 result = method(remaining)
             except Exception as e:
@@ -147,23 +163,29 @@ class FallbackAdapter:
                 continue
             self._stats[adapter.name]["ok"] += 1
             any_ok = True
+            got = set()
+            for item in result:
+                merged[item.code] = item
+                got.add(item.code)
+            covered = [c for c in remaining if c in got]
+            remaining = [c for c in remaining if c not in got]
             if idx == 0:
-                self._stats["__total__"]["primary_hits"] += 1
+                # 主源全覆盖才算 primary_hits；部分覆盖单独计 partial_hits，
+                # 避免"主源命中率"掩盖批量缺口（F1 想暴露的正是这类信号）。
+                if not remaining:
+                    self._stats["__total__"]["primary_hits"] += 1
+                else:
+                    self._stats["__total__"]["partial_hits"] += 1
             else:
                 self._stats["__total__"]["fallback_hits"] += 1
                 _log.info(
                     "fallback: %s used for %d/%d codes (primary %s.%s partial)",
                     adapter.name,
-                    len(result),
-                    len(remaining),
+                    len(covered),
+                    len(covered) + len(remaining),
                     self.adapters[0].name,
                     method_name,
                 )
-            got = set()
-            for item in result:
-                merged[item.code] = item
-                got.add(item.code)
-            remaining = [c for c in remaining if c not in got]
         if not any_ok:
             self._stats["__total__"]["all_fail"] += 1
             return None
