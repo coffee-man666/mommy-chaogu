@@ -107,6 +107,7 @@
 | F7 | ✅ | 6b2f24f | test_release_consistency.py 绊网（exclude 不含 bundled skill、_bundled_skill_dirs 落盘）；doctor missing-skill 附 repair 指引；11 passed |
 | F8 | ✅ | 4385e3f | EVOLUTION/GUIDE/TUI audit/definitions/vector_search/agent_managed/skill 文案逐项对齐；dev 副本与捆绑版 diff 为空 |
 | 集成 | ✅ | — | junitxml 权威计数：2114 tests / 0 failures / 0 errors（基线 2082 + 新增 32）；ruff check . 全绿；mypy --strict 207 文件无错误 |
+| 第二批集成 | ✅ | — | junitxml 权威计数：2135 tests / 0 failures / 0 errors / 0 skipped（第一批 2114 + 新增 21）；ruff check . 全绿；mypy --strict 208 文件无错误 |
 
 ## 验证方法备忘
 
@@ -221,4 +222,4 @@
 | F14 | ✅ | 9d5527d | coding_agents 全家 45 passed；净 -27 行 |
 | F15 | ✅ | 729761f | test_agent 全套 542 passed / 0 failures；ruff+mypy（8 文件）无错 |
 | F16 | ✅ | c8fabbd | test_cli_repl 12 新用例全过；main_mommy 258→109 行；ruff+mypy 无错 |
-| F17 | ✅ | （本 commit） | 评估中升级为真 bug：--db 只替换 get_db_path 属性，store 重建仍读默认路径。改为 deps.set_portfolio_db_override 走解析链 + 重建单例；test_web 369 passed（新增 2 用例） |
+| F17 | ✅ | 2bab397 | 评估中升级为真 bug：--db 只替换 get_db_path 属性，store 重建仍读默认路径。改为 deps.set_portfolio_db_override 走解析链 + 重建单例；test_web 369 passed（新增 2 用例） |
