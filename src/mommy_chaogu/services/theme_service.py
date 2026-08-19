@@ -31,6 +31,14 @@ _BUNDLED_DATA_ROOT = Path(__file__).resolve().parents[1] / "bundled_data"
 # this remains safe when the adapter falls back to another source.
 THEME_QUOTE_BATCH_SIZE = 50
 
+# Money flow has no batch API — each code is one upstream request. Fill up to
+# THEME_FLOW_MAX_STOCKS representative stocks (theme order) per build; a hard
+# attempt ceiling bounds total upstream requests when early stocks fail, so
+# failures consume attempts but not fill slots. The rest keep
+# main_net_inflow=None.
+THEME_FLOW_MAX_STOCKS = 10
+THEME_FLOW_MAX_ATTEMPTS = 15
+
 
 def _theme_data_dir() -> Path:
     local = Path("data/supply_chains")
@@ -156,6 +164,10 @@ class ThemeService:
         返回 canonical 列表，每个 item 包含成分股元数据 + 行情字段。
         行情字段（price/change_pct/volume/turnover_rate/pe/main_net_inflow）
         在 adapter 缺失或拉取失败时为 None；error 字段在异常时填错误信息。
+        main_net_inflow 来自逐只资金流查询（无批量接口），每次构建最多填充
+        THEME_FLOW_MAX_STOCKS 只拿到行情的代表股（按主题定义顺序），失败/空
+        数据的股票不占填充名额；同时以 THEME_FLOW_MAX_ATTEMPTS 封顶上游请求
+        总数防 N+1。金额保持 Decimal，由调用方决定序列化方式。
 
         调用方（工具层 / API 层）各自决定如何序列化这些字段。
         """
@@ -236,6 +248,26 @@ class ThemeService:
                 item["volume"] = selected_quote.volume
                 item["turnover_rate"] = selected_quote.turnover_rate
                 item["pe"] = selected_quote.pe_dynamic
-                item["main_net_inflow"] = selected_quote.extra.get("main_net_inflow")
+
+        # 主力净流入：资金流没有批量接口，逐只查有 N+1 风险。上限约束的是
+        # 填充成功数（THEME_FLOW_MAX_STOCKS），失败/空数据的股票不占名额，
+        # 靠 THEME_FLOW_MAX_ATTEMPTS 封顶总请求数。单只失败静默置 None
+        # （拉新失败保留旧数据），不影响行情等其他字段。
+        flow_candidates = [c for c in items_by_code if c in quotes_by_code]
+        filled = 0
+        for code in flow_candidates[:THEME_FLOW_MAX_ATTEMPTS]:
+            if filled >= THEME_FLOW_MAX_STOCKS:
+                break
+            try:
+                flows = self._adapter.get_today_money_flow(code)
+            except Exception as e:
+                _log.warning("theme money flow failed for %s: %s", code, e)
+                continue
+            if not flows:
+                continue
+            latest = flows[-1]
+            for item in items_by_code[code]:
+                item["main_net_inflow"] = latest.main_net.amount
+            filled += 1
 
         return results

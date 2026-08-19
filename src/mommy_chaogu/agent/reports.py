@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -90,8 +91,8 @@ class AgentReportService:
         n_up = sum(1 for s in stocks if s["change_pct"] > 0)
         n_down = sum(1 for s in stocks if s["change_pct"] < 0)
         avg_pct = sum(s["change_pct"] for s in stocks) / len(stocks)
-        total_amt = sum(s["amount"] for s in stocks) / 1e8
-        total_main = sum(s["main_net"] for s in stocks) / 1e8
+        total_amt = sum(s["amount"] for s in stocks) / Decimal("1e8")
+        total_main = sum(s["main_net"] for s in stocks) / Decimal("1e8")
 
         # 按主力净流入排序
         by_main = sorted(stocks, key=lambda x: x["main_net"], reverse=True)
@@ -114,7 +115,7 @@ class AgentReportService:
                     "name": s["name"],
                     "change_pct": round(s["change_pct"], 2),
                     "price": round(s["price"], 2),
-                    "main_net_wan": round(s["main_net"] / 1e4, 0),
+                    "main_net_wan": round(s["main_net"] / Decimal("1e4"), 0),
                     "turnover_rate": round(s["turnover_rate"], 1) if s["turnover_rate"] else 0,
                     "pe": round(s["pe"], 1) if s["pe"] else 0,
                 }
@@ -126,7 +127,7 @@ class AgentReportService:
                     "name": s["name"],
                     "change_pct": round(s["change_pct"], 2),
                     "price": round(s["price"], 2),
-                    "main_net_wan": round(s["main_net"] / 1e4, 0),
+                    "main_net_wan": round(s["main_net"] / Decimal("1e4"), 0),
                     "turnover_rate": round(s["turnover_rate"], 1) if s["turnover_rate"] else 0,
                 }
                 for s in top_outflow

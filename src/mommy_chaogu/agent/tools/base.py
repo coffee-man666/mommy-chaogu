@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +122,21 @@ def _quote_to_dict(q: Quote) -> dict[str, Any]:
 def _json(obj: Any) -> str:
     """安全 JSON 序列化（处理 Decimal / datetime）。"""
     return json.dumps(obj, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
+def _floatify(obj: Any) -> Any:
+    """工具层面向 LLM：Decimal → float 序列化省 token。
+
+    canonical 数据层（market_data / services）保留 Decimal 精度，
+    只在工具输出边界转 float——与 themes.py 的分层约定一致。
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {key: _floatify(value) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_floatify(item) for item in obj]
+    return obj
 
 
 def _clamp_int(value: Any, default: int, low: int, high: int) -> int:

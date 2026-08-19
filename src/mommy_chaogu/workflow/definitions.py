@@ -1,4 +1,4 @@
-"""9 个预定义工作流。
+"""10 个预定义工作流。
 
 覆盖 80% 日常投资操作场景。每个工作流是一组有序的工具调用，
 最后可选接一个 LLM 总结步骤。
@@ -539,6 +539,6 @@ def get_default_registry() -> WorkflowRegistry:
     """获取包含所有预定义工作流的注册表。
 
     Returns:
-        已注册 9 个工作流的 WorkflowRegistry。
+        已注册 10 个工作流的 WorkflowRegistry。
     """
     return _DEFAULT_REGISTRY

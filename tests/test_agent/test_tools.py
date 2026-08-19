@@ -218,6 +218,18 @@ class TestUnknownTool:
         assert "error" in data
 
 
+class TestTruncationDetection:
+    def test_is_truncated_result_matches_registry_marker(self) -> None:
+        from mommy_chaogu.agent.tools.registry import _truncate_result, is_truncated_result
+
+        long_json = json.dumps({"bars": [{"close": i} for i in range(500)]})
+        truncated = _truncate_result(long_json, max_bytes=256)
+        assert is_truncated_result(truncated)
+        assert not is_truncated_result(long_json)
+        # 正文偶然包含同形文本但不在尾部，不算截断
+        assert not is_truncated_result('{"note": "... \\"[truncated, 10 bytes omitted]\\""}')
+
+
 # ---------- 记忆查询工具测试 ----------
 
 
@@ -316,6 +328,37 @@ class TestGetPredictionHistory:
         data = json.loads(result)
         assert len(data) == 1
         assert data[0]["code"] == "600519"
+
+    def test_code_filter_pushdown_reaches_records_beyond_limit_window(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """冷门股记录不在最近 N 条内时，按 code 查询仍能查到（SQL 层下推）。"""
+        import time
+        from pathlib import Path
+
+        from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+        db = tmp_path / "agent.db"
+        tracker = PredictionTracker(Path(db))
+        # 先建冷门股记录，再用 5 条新记录把它挤出 limit=3 的窗口
+        tracker.create(
+            code="300750", name="宁德时代", prediction="横盘", direction="flat", timeframe="5d"
+        )
+        time.sleep(0.02)
+        for index in range(5):
+            tracker.create(
+                code="600519",
+                name="贵州茅台",
+                prediction=f"看涨 #{index}",
+                direction="up",
+                timeframe="5d",
+            )
+            time.sleep(0.02)
+
+        ctx = ToolContext(adapter=MagicMock(), db_path=Path(db))
+        reg = ToolRegistry(ctx)
+        result = reg.call("get_prediction_history", {"code": "300750", "limit": 3})
+        data = json.loads(result)
+        assert len(data) == 1
+        assert data[0]["code"] == "300750"
 
 
 class TestSearchSimilarEvents:

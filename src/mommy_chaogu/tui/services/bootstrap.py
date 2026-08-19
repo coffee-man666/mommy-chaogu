@@ -275,7 +275,7 @@ class Services:
                 from mommy_chaogu.agent.prediction_tracker import PredictionTracker
                 from mommy_chaogu.agent.semantic_memory import SemanticMemory
                 from mommy_chaogu.agent.service import AgentService
-                from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
+                from mommy_chaogu.agent.tools import ToolContext
 
                 ctx = ToolContext(
                     adapter=adapter,
@@ -298,12 +298,11 @@ class Services:
         else:
             _log.info("未检测到任何 LLM API key，agent 不可用（聊天模式降级）")
 
-        # 尝试初始化 router
+        # 尝试初始化 router（含用户自定义工作流 merge，装配见
+        # workflow/assembly.py；agent 复用上面按探测链构建的同一实例）
         try:
-            from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
-            from mommy_chaogu.workflow.definitions import get_default_registry
-            from mommy_chaogu.workflow.engine import WorkflowExecutor
-            from mommy_chaogu.workflow.router import NLRouter
+            from mommy_chaogu.agent.tools import ToolContext
+            from mommy_chaogu.workflow.assembly import build_nl_runtime
 
             ctx = ToolContext(
                 adapter=adapter,
@@ -313,24 +312,8 @@ class Services:
                 market_db=MARKET_DB,
                 portfolio_db=PORTFOLIO_DB,
             )
-            tool_registry = ToolRegistry(ctx)
-
-            llm_summarizer = None
-            if agent_bridge._agent is not None:
-
-                class _Adapter:
-                    def __init__(self, svc: Any) -> None:
-                        self._svc = svc
-
-                    def summarize(self, template: str, context: str) -> str:
-                        prompt = template.format(context=context)
-                        resp = self._svc.chat_raw([{"role": "user", "content": prompt}])
-                        return resp.text  # type: ignore[no-any-return]
-
-                llm_summarizer = _Adapter(agent_bridge._agent)
-
-            executor = WorkflowExecutor(tool_registry, llm_summarizer=llm_summarizer)
-            agent_bridge._router = NLRouter(get_default_registry(), executor=executor)
+            runtime = build_nl_runtime(context=ctx, agent_service=agent_bridge._agent)
+            agent_bridge._router = runtime.router
         except Exception as e:
             _log.warning("NLRouter 初始化失败: %s", e)
 

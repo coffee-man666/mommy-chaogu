@@ -206,11 +206,8 @@ def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> st
     limit = _clamp_int(args.get("limit", 10), 10, 1, 100)
 
     tracker = PredictionTracker(db_path)
-    preds = tracker.all(limit=limit, status=status)
-
-    # all() 不支持 code 过滤，在 Python 层过滤
-    if code is not None:
-        preds = [p for p in preds if p.get("code") == code]
+    # code/status 过滤在 SQL 层下推：先截断后过滤会漏掉不在最近 N 条内的冷门股记录
+    preds = tracker.all(limit=limit, status=status, code=code)
 
     return _json(
         [

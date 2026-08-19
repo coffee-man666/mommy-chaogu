@@ -37,8 +37,11 @@ def get_market_db() -> Path:
 
 @lru_cache(maxsize=1)
 def get_portfolio_db() -> Path:
-    """用户数据库路径（自选股 + 持仓）。"""
-    return PORTFOLIO_DB
+    """用户数据库路径（自选股 + 持仓）。
+
+    mommy-web --db 的进程级覆盖见 set_portfolio_db_override。
+    """
+    return _portfolio_db_override or PORTFOLIO_DB
 
 
 @lru_cache(maxsize=1)
@@ -57,7 +60,27 @@ def get_reference_db() -> Path:
 @lru_cache(maxsize=1)
 def get_db_path() -> Path:
     """全局 DB 路径（向后兼容，指向 portfolio.db）。"""
-    return PORTFOLIO_DB
+    return get_portfolio_db()
+
+
+# 进程级 portfolio.db 覆盖（mommy-web --db）。仍然全局单值——
+# Web 服务本身就是每进程一个 app；测试需要隔离时先 set(None) 复位。
+_portfolio_db_override: Path | None = None
+
+
+def set_portfolio_db_override(path: Path | None) -> None:
+    """覆盖/复位 portfolio 用户库路径，并重建受影响的单例。
+
+    覆盖必须走 get_portfolio_db() 的解析链（而不是替换某个函数属性），
+    否则 get_watchlist_store / get_portfolio_store 清缓存重建时仍会
+    读默认路径，--db 静默失效。
+    """
+    global _portfolio_db_override
+    _portfolio_db_override = path
+    get_portfolio_db.cache_clear()
+    get_db_path.cache_clear()
+    get_watchlist_store.cache_clear()
+    get_portfolio_store.cache_clear()
 
 
 @lru_cache(maxsize=1)

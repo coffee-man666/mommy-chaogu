@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from mommy_chaogu.cache.config import CacheConfig
 from mommy_chaogu.cache.store import CacheStore, QuoteCacheEntry
@@ -30,6 +31,18 @@ from mommy_chaogu.market_data.types import (
 )
 
 _log = logging.getLogger(__name__)
+
+# K 线交易日历：时间戳统一 aware UTC 后，直接 strftime 会把北京午夜
+# （UTC 前一天 16:00）落到错误的日期，落库 trade_date 必须按北京时区取。
+_TZ_BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+def _bar_trade_date(ts: datetime) -> str:
+    """K 线时间戳 → 北京时区的交易日字符串（YYYY-MM-DD）。"""
+    if ts.tzinfo is None:
+        # 防御：naive 视为北京墙时间（与 F2 之前 adapter 的历史语义一致）
+        ts = ts.replace(tzinfo=_TZ_BEIJING)
+    return ts.astimezone(_TZ_BEIJING).strftime("%Y-%m-%d")
 
 
 def _utcnow() -> datetime:
@@ -161,6 +174,7 @@ class CachedMarketDataAdapter:
 
         # 2. 未命中的 codes 一次性批量拉（关键：走 inner.get_quotes 而非逐个 get_quote）
         fresh_map: dict[str, Quote] = {}
+        batch_fetch_failed = False
         if miss_codes:
             for code in miss_codes:
                 self._mark_fetched(f"quote:{code}")
@@ -171,6 +185,7 @@ class CachedMarketDataAdapter:
                 self.stats_counters["fetch_fail"] += 1
                 _log.warning("fetch get_quotes(%s) failed: %s", miss_codes, e)
                 fresh_list = []
+                batch_fetch_failed = True
             if fresh_list:
                 self.stats_counters["fetch_ok"] += 1
                 for q in fresh_list:
@@ -184,6 +199,8 @@ class CachedMarketDataAdapter:
         out: list[Quote] = []
         used_network = False
         used_cache = False
+        used_stale = False
+        stale_candidates = set(miss_codes) if batch_fetch_failed else set()
         for code in unique_codes:
             q = fresh_map.get(code)
             if q is not None:
@@ -195,7 +212,13 @@ class CachedMarketDataAdapter:
                 out.append(entry.quote)  # type: ignore[arg-type]
                 self.stats_counters["hits"] += 1
                 used_cache = True
-        if used_network:
+                if code in stale_candidates:
+                    used_stale = True
+        # 标注优先级：stale_cache > network > cache —— 只要有一条数据来自
+        # "拉新失败后翻出的旧缓存"，就必须让下游看见（与单股路径一致）
+        if used_stale:
+            self.last_source = "stale_cache"
+        elif used_network:
             self.last_source = "network"
         elif used_cache:
             self.last_source = "cache"
@@ -277,18 +300,43 @@ class CachedMarketDataAdapter:
     ) -> list[Bar]:
         """K 线缓存：按日期永久保留。
 
-        - 数据库已有该 code 的部分日期 → 用缓存
-        - 数据库没有 → 拉新并缓存
+        - 请求区间内的缓存 → 节流窗口外增量拉新，拉新后重读缓存（当次调用即见新数据）
+        - 无缓存（整体或该区间内都没有）→ 拉新并缓存
+        - start/end 为闭区间：缓存读取与返回结果都按区间过滤
         """
         interval_str = interval.value
         adj_str = adjustment.value
-
-        # 1. 尝试从缓存读所有日期
-        cached_bars = self.store.get_bars(code, interval_str, adj_str)
+        start_str = start.isoformat() if start is not None else None
+        end_str = end.isoformat() if end is not None else None
         key = f"bar:{code}:{interval_str}:{adj_str}"
 
-        if cached_bars is None or len(cached_bars) == 0:
-            # 完全没缓存 → 必须拉新
+        def _read_cache():
+            return self.store.get_bars(
+                code, interval_str, adj_str, start_date=start_str, end_date=end_str
+            )
+
+        def _persist(fresh: list[Bar]) -> None:
+            from dataclasses import asdict
+
+            for bar in fresh:
+                trade_date = _bar_trade_date(bar.timestamp)
+                bar_dict = asdict(bar)
+                bar_dict["timestamp"] = bar.timestamp.isoformat()
+                bar_dict["interval"] = interval_str
+                bar_dict["adjustment"] = adj_str
+                bar_dict = _recursive_safe(bar_dict)
+                try:
+                    self.store.set_bar(code, interval_str, adj_str, trade_date, bar_dict)
+                except Exception as e:
+                    _log.error("cache set_bar failed: %s", e)
+
+        cached_bars = _read_cache()
+
+        if not cached_bars:
+            # 该区间内无缓存 → 尝试拉新（节流窗口内不重复打上游）
+            if not self._should_fetch(key, self.config.bar_fetch_interval_seconds):
+                self.last_source = "cache"
+                return []
             self._mark_fetched(key)
             self.stats_counters["fetches"] += 1
             try:
@@ -312,25 +360,11 @@ class CachedMarketDataAdapter:
                 self.last_source = "cache"
                 return []
 
-            # 写入缓存（每根 K 线一天条记录）
-            for bar in fresh:
-                trade_date = bar.timestamp.strftime("%Y-%m-%d")
-                from dataclasses import asdict
-
-                bar_dict = asdict(bar)
-                # 递归转换 datetime/Decimal（含嵌套 Money→dict 后的 amount）
-                bar_dict["timestamp"] = bar.timestamp.isoformat()
-                bar_dict["interval"] = interval_str
-                bar_dict["adjustment"] = adj_str
-                bar_dict = _recursive_safe(bar_dict)
-                try:
-                    self.store.set_bar(code, interval_str, adj_str, trade_date, bar_dict)
-                except Exception as e:
-                    _log.error("cache set_bar failed: %s", e)
-            self.last_source = "cache"
+            _persist(fresh)
+            self.last_source = "network"
             return fresh
 
-        # 有缓存 → 看是否需要尝试拉新（节流）
+        # 区间内有缓存 → 节流窗口外尝试增量拉新，拉新后重读缓存
         if self._should_fetch(key, self.config.bar_fetch_interval_seconds):
             self._mark_fetched(key)
             self.stats_counters["fetches"] += 1
@@ -344,25 +378,17 @@ class CachedMarketDataAdapter:
                     limit=limit,
                 )
                 self.stats_counters["fetch_ok"] += 1
-                if fresh is None:
-                    raise RuntimeError("inner adapter returned None for get_bars")
-                for bar in fresh:
-                    trade_date = bar.timestamp.strftime("%Y-%m-%d")
-                    from dataclasses import asdict
-
-                    bar_dict = asdict(bar)
-                    bar_dict["timestamp"] = bar.timestamp.isoformat()
-                    bar_dict["interval"] = interval_str
-                    bar_dict["adjustment"] = adj_str
-                    bar_dict = _recursive_safe(bar_dict)
-                    self.store.set_bar(code, interval_str, adj_str, trade_date, bar_dict)
+                if fresh is not None:
+                    _persist(fresh)
+                    refreshed = _read_cache()
+                    if refreshed:
+                        cached_bars = refreshed
             except Exception as e:
                 _log.warning("refetch bars(%s) failed (using cache): %s", code, e)
 
         # 从缓存构造 Bar 列表
         self.stats_counters["hits"] += 1
         self.last_source = "cache"
-        from mommy_chaogu.market_data.types import Bar
 
         bars: list[Bar] = []
         for bar_dict in cached_bars:
@@ -549,8 +575,11 @@ class CachedMarketDataAdapter:
             elif "Tencent" in inner_name:
                 return "腾讯财经 实时"
             return "实时数据"
-        if self.last_source in ("cache", "stale_cache", "stale_snapshot"):
+        if self.last_source == "cache":
             return "本地缓存"
+        if self.last_source in ("stale_cache", "stale_snapshot"):
+            # 拉新失败后翻出的旧数据——与"刚缓存"区分，妈妈看得见可能过期
+            return "本地缓存（拉新失败，可能过期）"
         return self.last_source
 
 

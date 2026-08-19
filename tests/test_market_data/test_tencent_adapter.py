@@ -66,7 +66,6 @@ def _patch_session(monkeypatch, text: str) -> None:
     def patched_init(self, timeout=10.0):
         self.timeout = timeout
         self._session = _mock_session_with_response(text)
-        self._last_call_ts = 0.0
 
     monkeypatch.setattr(TencentAdapter, "__init__", patched_init)
 

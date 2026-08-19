@@ -351,28 +351,31 @@ class PredictionTracker(EngineOwner):
             ).all()
             return [_row_to_dict(r) for r in rows]
 
-    def all(self, limit: int = 100, status: str | None = None) -> list[dict[str, Any]]:
-        """返回所有预测，按 created_at 降序，可选 status 过滤。"""
+    def all(
+        self,
+        limit: int = 100,
+        status: str | None = None,
+        code: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """返回所有预测，按 created_at 降序，可选 status/code 过滤（SQL 层下推）。
+
+        code 过滤必须在 SQL 层做：先 LIMIT 后内存过滤会把冷门股票的
+        记录挡在最近 N 条之外，导致按 code 查询查空。
+        """
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": limit}
+        if status is not None:
+            clauses.append("status = :status")
+            params["status"] = status
+        if code is not None:
+            clauses.append("code = :code")
+            params["code"] = code
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         with self.session() as s:
-            if status is not None:
-                rows = s.execute(
-                    text("""
-                        SELECT * FROM predictions
-                        WHERE status = :status
-                        ORDER BY created_at DESC
-                        LIMIT :limit
-                    """),
-                    {"status": status, "limit": limit},
-                ).all()
-            else:
-                rows = s.execute(
-                    text("""
-                        SELECT * FROM predictions
-                        ORDER BY created_at DESC
-                        LIMIT :limit
-                    """),
-                    {"limit": limit},
-                ).all()
+            rows = s.execute(
+                text(f"SELECT * FROM predictions{where} ORDER BY created_at DESC LIMIT :limit"),
+                params,
+            ).all()
             return [_row_to_dict(r) for r in rows]
 
     def by_code(self, code: str, limit: int = 20) -> list[dict[str, Any]]:

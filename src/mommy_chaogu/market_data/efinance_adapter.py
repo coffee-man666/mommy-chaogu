@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import warnings
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import efinance as ef
 import pandas as pd
@@ -32,6 +33,16 @@ from mommy_chaogu.market_data.types import (
 )
 
 warnings.filterwarnings("ignore")
+
+# 东财接口返回的墙时间均为北京时间语义
+_TZ_BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+def _beijing_ts_to_utc(ts: datetime) -> datetime:
+    """naive 北京时间 → aware UTC；已 aware 的仅做时区换算。"""
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=_TZ_BEIJING).astimezone(UTC)
+    return ts.astimezone(UTC)
 
 
 # ---------- 内部工具 ----------
@@ -128,13 +139,12 @@ class EfinanceAdapter:
         code = str(g("股票代码", "代码") or "")
         name = str(g("股票名称", "名称") or "")
         ts_str = str(g("更新时间", "时间") or "")
-        # 时间解析：优先完整时间戳，否则只有 HH:MM:SS 时拼当日
+        # 时间解析：优先完整时间戳，否则只有 HH:MM:SS 时拼当日；东财墙时间按
+        # 北京时间语义统一换算成 aware UTC（含 NaT 的异常统一落到 now(UTC) 兜底）
         try:
-            ts = pd.to_datetime(ts_str).to_pydatetime()
-            if ts.tzinfo is None:
-                ts = ts.replace()  # naive
+            ts = _beijing_ts_to_utc(pd.to_datetime(ts_str).to_pydatetime())
         except Exception:
-            ts = datetime.now()
+            ts = datetime.now(UTC)
 
         market_str = str(g("市场类型") or "")
         # efinance 市场类型如 "沪A" / "深A" / "京A"
@@ -295,9 +305,9 @@ class EfinanceAdapter:
 
         ts_raw = ser.get("时间", "")
         try:
-            ts = pd.to_datetime(str(ts_raw)).to_pydatetime()
+            ts = _beijing_ts_to_utc(pd.to_datetime(str(ts_raw)).to_pydatetime())
         except Exception:
-            ts = datetime.now()
+            ts = datetime.now(UTC)
 
         return OrderBook(
             code=str(ser.get("代码", code)),
@@ -353,13 +363,14 @@ class EfinanceAdapter:
         bars: list[Bar] = []
         for _, row in df.iterrows():
             try:
-                ts = pd.to_datetime(row.get("日期")).to_pydatetime()
+                ts = _beijing_ts_to_utc(pd.to_datetime(row.get("日期")).to_pydatetime())
             except Exception:
                 continue
-            # 应用调用方的 start/end 二次过滤
-            if start and ts.date() < start:
+            # 应用调用方的 start/end 二次过滤（K 线日期是北京交易日历，按北京日比较）
+            bar_date = ts.astimezone(_TZ_BEIJING).date()
+            if start and bar_date < start:
                 continue
-            if end and ts.date() > end:
+            if end and bar_date > end:
                 continue
 
             name = str(row.get("股票名称", ""))
@@ -454,7 +465,7 @@ class EfinanceAdapter:
         for _, row in df.iterrows():
             ts_raw = str(row.get("时间", ""))
             try:
-                ts = pd.to_datetime(ts_raw).to_pydatetime()
+                ts = _beijing_ts_to_utc(pd.to_datetime(ts_raw).to_pydatetime())
             except Exception:
                 continue
             ticks.append(
@@ -481,7 +492,7 @@ class EfinanceAdapter:
         for _, row in df.iterrows():
             ts_raw = str(row.get("时间", row.get("日期", "")))
             try:
-                ts = pd.to_datetime(ts_raw).to_pydatetime()
+                ts = _beijing_ts_to_utc(pd.to_datetime(ts_raw).to_pydatetime())
             except Exception:
                 continue
             flows.append(
@@ -513,7 +524,7 @@ class EfinanceAdapter:
             return []
         flows = self._bill_rows_to_flow(df, code)
         # 只取最近 N 天
-        cutoff = datetime.now() - timedelta(days=days)
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         return [f for f in flows if f.timestamp >= cutoff]
 
     # ---------- 板块 ----------

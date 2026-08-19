@@ -1,12 +1,14 @@
 """个股基本面数据接口（东财 push2 直连）。
 
 获取 PE / PB / PS / ROE / 毛利率 / 净利率 / 市值 / 所属行业等指标，
-补充行情数据无法覆盖的"质地"维度。
+补充行情数据无法覆盖的"质地"维度。数值字段一律 Decimal（含市值金额），
+工具层序列化时再转 float。
 """
 
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Any
 
 import requests
@@ -79,22 +81,23 @@ def get_fundamentals(code: str) -> dict[str, Any]:
     return {
         "code": code,
         "name": str(data.get("f14") or data.get("name") or ""),
-        "pe": _to_float(data.get("f9")),
-        "pb": _to_float(data.get("f23")),
-        "ps": _to_float(data.get("f37")),
-        "roe": _to_float(data.get("f162")),
-        "gross_margin": _to_float(data.get("f163")),
-        "net_margin": _to_float(data.get("f167")),
-        "total_market_cap": _to_float(data.get("f116")),
-        "circulating_market_cap": _to_float(data.get("f117")),
+        "pe": _to_dec(data.get("f9")),
+        "pb": _to_dec(data.get("f23")),
+        "ps": _to_dec(data.get("f37")),
+        "roe": _to_dec(data.get("f162")),
+        "gross_margin": _to_dec(data.get("f163")),
+        "net_margin": _to_dec(data.get("f167")),
+        "total_market_cap": _to_dec(data.get("f116")),
+        "circulating_market_cap": _to_dec(data.get("f117")),
         "industry": str(data.get("f100") or ""),
     }
 
 
-def _to_float(v: Any) -> float | None:
+def _to_dec(v: Any) -> Decimal | None:
+    """安全转 Decimal（金额/比率统一 Decimal，失败返回 None）。"""
     if v is None or v == "":
         return None
     try:
-        return float(v)
-    except (ValueError, TypeError):
+        return Decimal(str(v))
+    except Exception:
         return None

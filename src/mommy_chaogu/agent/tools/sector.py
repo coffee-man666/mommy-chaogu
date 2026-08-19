@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
+from mommy_chaogu.agent.tools.base import (
+    ToolContext,
+    ToolDef,
+    ToolHandler,
+    _clamp_int,
+    _floatify,
+    _json,
+)
 from mommy_chaogu.market_data.rankings import fetch_sector_ranking
 from mommy_chaogu.market_data.sector_api import fetch_sector_stocks, search_sector
 
@@ -95,7 +102,7 @@ def _handle_get_sector_stocks(_ctx: ToolContext, args: dict[str, Any]) -> str:
     sort_by = args.get("sort_by", "change_pct")
     limit = _clamp_int(args.get("limit", 30), 30, 1, 100)
     stocks = fetch_sector_stocks(board_code, sort_by=sort_by, limit=limit)
-    return _json(stocks)
+    return _json(_floatify(stocks))
 
 
 HANDLERS: dict[str, ToolHandler] = {

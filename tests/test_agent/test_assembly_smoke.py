@@ -111,6 +111,40 @@ class TestTuiBootstrapSmoke:
 
         assert not services.agent.has_agent()
 
+    def test_bootstrap_router_routes_custom_workflows(
+        self, isolated_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TUI bootstrap 后 router 能路由 AGENT_DB 里的自定义工作流（F4）。
+
+        修复前 TUI 只挂 ``get_default_registry()``，``mommy workflow add``
+        保存的自定义工作流在 TUI 不可见——与 CLI 行为不一致。
+        """
+        from mommy_chaogu.tui.services.bootstrap import Services
+        from mommy_chaogu.workflow.spec import StepSpec, WorkflowSpec
+        from mommy_chaogu.workflow.store import WorkflowStore
+
+        spec = WorkflowSpec(
+            id="user_tui_visible",
+            trigger_patterns=["白酒动量打分列一下"],  # 与内置 pattern 无冲突
+            description="TUI 应可见的自定义工作流",
+            steps=[StepSpec("get_market_indexes", "取大盘指数")],
+        )
+        store = WorkflowStore(isolated_env / "agent.db")
+        store.save(spec, "smoke test")
+        store.close()
+
+        with patch("openai.OpenAI"):
+            services = Services.bootstrap()
+
+        route = services.agent.route("白酒动量打分列一下")
+        assert route is not None
+        assert route.matched
+        assert route.workflow is not None
+        assert route.workflow.id == "user_tui_visible"
+        # AgentBridge.route 静默降级：router 未初始化/未命中时返回 None/fallback
+        miss = services.agent.route("一句不匹配任何工作流的话吗")
+        assert miss is None or not miss.matched
+
 
 class TestMcpServerSmoke:
     """MCP server 真实装配路径。"""

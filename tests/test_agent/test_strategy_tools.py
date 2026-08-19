@@ -148,6 +148,34 @@ def test_unconfirmed_draft_is_not_persisted(tmp_path: Path) -> None:
     assert listed["count"] == 0
 
 
+def test_list_query_treats_like_wildcards_as_literals(tmp_path: Path) -> None:
+    """搜索字面 % / _ 时不得当通配符误匹配所有卡片。"""
+    registry = _registry(tmp_path)
+    percent_card = _card()
+    percent_card["title"] = "涨100%后的减仓观察"  # type: ignore[assignment]
+    saved = _call(
+        registry,
+        "strategy_save",
+        {
+            "card": percent_card,
+            "user_confirmed": True,
+            "confirmation_note": "用户确认保存。",
+        },
+    )
+    assert saved["saved"] is True
+    assert _save(registry)["saved"] is True  # 第二张：标题不含 %
+
+    literal_percent = _call(registry, "strategy_list", {"query": "%"})
+    assert literal_percent["count"] == 1
+    titles = [item["title"] for item in literal_percent["strategies"]]
+    assert "涨100%后的减仓观察" in titles
+
+    # 未转义时 "%" 构成的模式 "%%" 会匹配所有卡片；只命中 1 张说明 % 按字面量处理。
+    # （"_" 不做此断言：card_json 的字段名本身含下划线，跨字段命中是预期行为。）
+    normal = _call(registry, "strategy_list", {"query": "价格观察"})
+    assert normal["count"] == 1
+
+
 def test_save_reopen_and_duplicate_preserve_source_and_revision(tmp_path: Path) -> None:
     registry = _registry(tmp_path)
     first = _save(registry)

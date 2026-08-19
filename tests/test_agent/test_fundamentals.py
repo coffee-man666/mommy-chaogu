@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
@@ -33,14 +34,15 @@ class TestGetFundamentals:
         result = get_fundamentals("600519")
         assert result["code"] == "600519"
         assert result["name"] == "贵州茅台"
-        assert result["pe"] == 25.5
-        assert result["pb"] == 8.2
-        assert result["ps"] == 10.1
-        assert result["roe"] == 30.5
-        assert result["gross_margin"] == 91.5
-        assert result["net_margin"] == 52.3
-        assert result["total_market_cap"] == 2100000000000.0
-        assert result["circulating_market_cap"] == 2100000000000.0
+        # canonical 层一律 Decimal（市值是金额，比率随源）
+        assert result["pe"] == Decimal("25.5")
+        assert result["pb"] == Decimal("8.2")
+        assert result["ps"] == Decimal("10.1")
+        assert result["roe"] == Decimal("30.5")
+        assert result["gross_margin"] == Decimal("91.5")
+        assert result["net_margin"] == Decimal("52.3")
+        assert result["total_market_cap"] == Decimal("2100000000000")
+        assert result["circulating_market_cap"] == Decimal("2100000000000")
         assert result["industry"] == "白酒"
 
     @patch("mommy_chaogu.market_data.fundamentals_api.requests.get")

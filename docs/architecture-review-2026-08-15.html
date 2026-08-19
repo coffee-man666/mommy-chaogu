@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Architecture review — mommy-chaogu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .leak { stroke: #dc2626; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+
+      <header class="space-y-3">
+        <h1 class="font-serif text-3xl font-bold">Architecture review — mommy-chaogu</h1>
+        <p class="text-sm text-slate-500">2026-08-15 · 分支 fix/audit-2026-08-15 · 分析截至 commit <code class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">43f77b6</code>（本报告所分析代码的最后提交，F1–F8 修复全部落地）· 焦点：agent-first 主线的宿主适配层、TUI 对话流、数据序列化边界</p>
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">注：本报告样式与图表依赖 Tailwind / Mermaid CDN，离线打开将退化为纯文本（内容仍完整可读）。</p>
+        <div class="flex flex-wrap gap-4 text-xs text-slate-600 pt-1">
+          <span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 h-3 border border-slate-500 bg-white"></span> module</span>
+          <span class="inline-flex items-center gap-1.5"><svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="#64748b" stroke-width="1.5" class="seam"/></svg> seam</span>
+          <span class="inline-flex items-center gap-1.5"><svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="#dc2626" stroke-width="2"/></svg> 泄漏 / 纠缠</span>
+          <span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 h-3 deep"></span> deep module</span>
+        </div>
+      </header>
+
+      <section id="candidates" class="space-y-10">
+
+        <!-- ═══════════════ 候选 1 ═══════════════ -->
+        <article id="c1" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">1 · 宿主元数据单一真相源（HostInfo 注册表）</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">coding_agents/__init__.py · cli_commands/connect.py · cli_commands/agent_managed.py · coding_agents/base.py:136-148</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-stone-50 p-4">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">Before — 同一份宿主知识散落 9 处</p>
+              <div class="space-y-2 text-xs">
+                <div class="border border-red-300 bg-red-50 rounded px-3 py-1.5">connect.py ×8 处四宿主字面量 <span class="text-slate-400">(48,59,61,63,252,274,364)</span></div>
+                <div class="border border-red-300 bg-red-50 rounded px-3 py-1.5">display_name 字典 <b>逐字重复两份</b>：connect.py:67-70 ＝ agent_managed.py:135-140</div>
+                <div class="border border-red-300 bg-red-50 rounded px-3 py-1.5">claude 配置路径逻辑两份：claude.py:39-41 ＝ agent_managed.py:237-239</div>
+                <div class="border border-red-300 bg-red-50 rounded px-3 py-1.5">SUPPORTED_HOSTS / adapter_for 字典 / base.py agent_home switch / 测试 TARGETS</div>
+                <p class="text-red-700 pt-1">加第 5 个宿主 = 6 文件 16 处编辑，~110 行新文件（85% 模板）</p>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 一张表，两处注册</p>
+              <div class="deep rounded-lg p-4 text-center text-white">
+                <p class="text-xs uppercase tracking-wider">HostInfo 注册表</p>
+                <p class="text-xs text-slate-300 mt-1">name · display_name · config_target · skill_dir · agent_home · adapter 工厂</p>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                <div class="border border-slate-300 rounded px-2 py-1 text-center">connect / doctor / repair（消费）</div>
+                <div class="border border-slate-300 rounded px-2 py-1 text-center">契约测试 TARGETS（消费）</div>
+              </div>
+              <p class="text-xs text-emerald-700 pt-2">加第 5 个宿主 = 1 个 HostInfo 条目 + 1 个 adapter 映射</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>四个宿主的名字、路径、展示名是数据，却被写成 9 处字面量——每处都是即将漂移的浅 module。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>一张 HostInfo 表收编全部宿主元数据，消费方（connect / agent_managed / 测试）只读表；不动 adapter 类。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">leverage：一个 interface，9 个调用点</li>
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">locality：宿主知识集中一处</li>
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">契约测试零改动通过</li>
+          </ul>
+        </article>
+
+        <!-- ═══════════════ 候选 2 ═══════════════ -->
+        <article id="c2" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">2 · 宿主 adapter 机制合并（JSON 族 / CLI 族）</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">ports &amp; adapters</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">coding_agents/{claude,kimi,cline,codex}.py（445 行）· base.py（324 行）</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Before — 4 个浅 adapter</p>
+              <pre class="mermaid">
+flowchart TB
+  subgraph perHost["4 × per-host adapter 文件"]
+    C["claude.py<br/>inspect_status 16 行"]
+    K["kimi.py<br/>inspect_status 16 行"]
+    L["cline.py<br/>inspect_status 16 行"]
+    X["codex.py<br/>inspect_status 16 行"]
+  end
+  C -.逐字相同.- K
+  K -.逐字相同.- L
+  L -.逐字相同.- X
+  B["base.py：install_skill staging+回滚 · connection_spec"]
+  perHost --> B
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class C,K,L,X leak
+              </pre>
+              <p class="text-xs text-slate-500 mt-2">inspect_status 四份逐字节相同（diff 验证）；disconnect/register_mcp 两族内部重复</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">After — 2 个机制 + 1 张描述表</p>
+              <pre class="mermaid">
+flowchart TB
+  T["HostInfo 描述表<br/>entry 读写形状 · 路径 · 特判"]
+  J["JSON 写入机制<br/>kimi+cline：路径+entry函数+cwd策略"]
+  M["CLI 注册机制<br/>claude+codex：scope flag+entry reader"]
+  T --> J
+  T --> M
+  B["base.py（不变）"]
+  J --> B
+  M --> B
+  classDef deepN fill:#0f172a,color:#fff,stroke:#0f172a;
+  class J,M deepN
+              </pre>
+              <p class="text-xs text-slate-500 mt-2">445 行 → ~180 行机制 + 40 行表；净删 ~250 行</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>四个 adapter 是 shallow module——interface（install/disconnect/inspect）几乎与 implementation 一样大，差异轴（配置机制、entry 形状）埋在复制里。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>描述表 + 两个机制实现（JSON 写入 / CLI 注册）；kimi 的 cwd 匹配、codex 的共享 skill 目录、claude 的双根路径进表，不进 if-else。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">deletion test：复杂度真实集中</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">第 5 宿主不再抄 110 行</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">依赖候选 1 先落地</li>
+          </ul>
+          <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">坑：特判若写成机制内的 if-else，抽象即变浅——必须留在描述表。第三种配置机制出现时应新增机制类，不是继承。</div>
+        </article>
+
+        <!-- ═══════════════ 候选 3 ═══════════════ -->
+        <article id="c3" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">3 · TUI 卡片 builders 自由函数化</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">mock</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">tui/views/chat.py:464-679（10 个 _build_* 方法，~215 行）· 先例：tui/services/renderers.py</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-stone-50 p-4">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">Before — 质量图（interface vs implementation）</p>
+              <div class="flex items-end justify-center gap-8 h-56">
+                <div class="flex flex-col items-center gap-1">
+                  <div class="w-20 bg-red-200 border border-red-400 rounded-t" style="height:130px"></div>
+                  <div class="w-20 bg-slate-300 border border-slate-400 rounded-b" style="height:150px"></div>
+                  <p class="text-xs text-slate-600 mt-1">ChatView._build_*</p>
+                  <p class="text-[10px] text-red-600">必须整个 app（Pilot）才能测</p>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <div class="w-20 bg-emerald-200 border border-emerald-400 rounded-t" style="height:28px"></div>
+                  <div class="w-20 bg-slate-300 border border-slate-400 rounded-b" style="height:150px"></div>
+                  <p class="text-xs text-slate-600 mt-1">renderers.py 先例</p>
+                  <p class="text-[10px] text-emerald-700">自由函数，纯单测</p>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500 mt-2 text-center">同一仓库两种风格并存：工具结果卡片可单测，slash 卡片被迫 Pilot</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 卡片构建与对话流解耦</p>
+              <div class="space-y-2 text-xs">
+                <div class="deep rounded-lg p-3 text-white">
+                  <p class="text-xs uppercase tracking-wider">卡片 builders（自由函数）</p>
+                  <p class="text-xs text-slate-300">输入：服务数据 → 输出：Widget；零 self 依赖</p>
+                </div>
+                <div class="text-center text-slate-400">↑ 单测直接打这个 interface</div>
+                <div class="border border-slate-300 rounded px-3 py-2 text-center text-slate-600">chat.py 对话流：只负责挂载时机与滚动</div>
+              </div>
+              <p class="text-xs text-emerald-700 pt-2">TestSlashCards 十几个 Pilot 用例可降为纯单测</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>10 个 _build_* 绑定 self._services()，interface 与 ChatView 实例耦合——测试面被迫放大到整个 app。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>照 renderers.py 先例改成自由函数（数据进、Widget 出），chat.py 只保留挂载。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">interface 缩小；实现吸收耦合</li>
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">Pilot 用例降为单测（提速）</li>
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">chat.py 减 ~215 行</li>
+          </ul>
+        </article>
+
+        <!-- ═══════════════ 候选 4 ═══════════════ -->
+        <article id="c4" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">4 · Turn 生命周期归一（TurnController）</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">tui/views/chat.py（946 行，18 个实例字段）· tui/app.py（turn_id 129-140 · 守卫 333-338 · cancel 279-284）</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 relative">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">Before — turn 状态两文件各持一半</p>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="border border-slate-400 rounded-lg p-3 text-xs space-y-1">
+                  <p class="font-semibold">app.py 持有</p>
+                  <p class="text-slate-600">_active_turn_id<br/>_cancel_event<br/>_stream_usage<br/>_turn_started</p>
+                </div>
+                <div class="border border-slate-400 rounded-lg p-3 text-xs space-y-1">
+                  <p class="font-semibold">chat.py 持有</p>
+                  <p class="text-slate-600">_busy / _queued<br/>_stream 状态机<br/>_cancelled 标志<br/>_cancel_callback</p>
+                </div>
+              </div>
+              <svg class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" width="60" height="24"><path d="M2,12 C20,2 40,2 58,12" fill="none" stroke="#dc2626" stroke-width="2" class="leak"/><path d="M2,12 C20,22 40,22 58,12" fill="none" stroke="#dc2626" stroke-width="2"/></svg>
+              <p class="text-xs text-red-600 mt-3 text-center">_clear_messages 一个操作要同时重置两边 12+ 个字段（chat.py:871-898）</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — turn 状态归一方所有</p>
+              <div class="deep rounded-lg p-4 text-white text-center">
+                <p class="text-xs uppercase tracking-wider">TurnController</p>
+                <p class="text-xs text-slate-300 mt-1">begin / cancel / finish / is-current<br/>busy 队列 · 流式节流 · 取消语义</p>
+              </div>
+              <div class="grid grid-cols-2 gap-2 mt-3 text-xs text-slate-600">
+                <div class="border border-slate-300 rounded px-2 py-1 text-center">app.py：只发消息</div>
+                <div class="border border-slate-300 rounded px-2 py-1 text-center">chat.py：只渲染</div>
+              </div>
+              <p class="text-xs text-emerald-700 pt-2">Esc 取消 / busy 排队 / 清屏的回归测试打一个 interface</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>turn 协议跨 app.py/chat.py 对半分账——历史 12 个 TUI bug 里的"假取消污染下一轮"正是这条 seam 漏的。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>turn 生命周期（含 busy 队列与流式节流）收进一个 TurnController module，两个文件各自只留发送与渲染。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">locality：取消类 bug 集中一处</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">清屏不再跨文件重置</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">依赖候选 3 先减负</li>
+          </ul>
+        </article>
+
+        <!-- ═══════════════ 候选 5 ═══════════════ -->
+        <article id="c5" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">5 · 时间戳规范化收进三个序列化边界</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">web/mappers.py:44,138,174 · services/basket_service.py:222,239 · routes/preferences.py:26 · tui/widgets/cards.py:322 · agent/verify_engine.py:62 · preferences.py:135</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Before — 9 处 naive→UTC 防御分支</p>
+              <pre class="mermaid">
+flowchart LR
+  subgraph srcs["三个真实来源"]
+    A1["cache 读回<br/>存量 naive JSON"]
+    A2["SQLAlchemy 读回<br/>SQLite 丢 tzinfo"]
+    A3["agent.db ISO TEXT<br/>verify_after"]
+  end
+  A1 --> B1["mappers.py:44"]
+  A1 --> B2["basket_service.py:222"]
+  A2 --> B3["mappers.py:138,174"]
+  A2 --> B4["preferences 路由:26"]
+  A3 --> B5["cards.py:322"]
+  A3 --> B6["verify_engine.py:62"]
+  B7["basket_service.py:239<br/>纯死分支"]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class B1,B2,B3,B4,B5,B6,B7 leak
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">After — 3 个边界各一处 coerce</p>
+              <pre class="mermaid">
+flowchart LR
+  A1["cache/serializer.py<br/>quote_from_dict 出口"] --> C1["coerce → aware UTC"]
+  A2["ORM 读回<br/>TypeDecorator"] --> C2["coerce → aware UTC"]
+  A3["agent.db ISO 字段<br/>写入带 offset"] --> C3["coerce → aware UTC"]
+  C1 --> D["下游全部 aware<br/>9 处分支删除"]
+  C2 --> D
+  C3 --> D
+  classDef deepN fill:#0f172a,color:#fff,stroke:#0f172a;
+  class C1,C2,C3 deepN
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>F2 后 adapter 已统一 aware UTC，但 9 处下游防御分支仍在各自打补丁——根因是三个序列化边界（cache JSON、SQLite ORM、ISO TEXT）持续产出 naive。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>coerce 收进三个边界的出口（cache 反序列化 / TypeDecorator / 写入带 offset），下游分支全删；mappers.py:42 的过时注释同步清理。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">9 处 → 3 处，死分支即删</li>
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">locality：新鲜度语义一处可测</li>
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">实测确认：SQLite DateTime(timezone=True) 是假承诺</li>
+          </ul>
+        </article>
+
+        <!-- ═══════════════ 候选 6 ═══════════════ -->
+        <article id="c6" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">6 · web AppState：废除 create_app 自改</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">web/deps.py（303 行，15 个 lru_cache）· web/app.py:117-130 · routes/agent.py:76-103 · tests/test_web/（monkeypatch 207 处）</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Before — 循环依赖 + 模块自改</p>
+              <pre class="mermaid">
+flowchart LR
+  APP["create_app"] -- "db_path ≠ 空：<br/>替换 deps.get_db_path 模块属性" --> DEPS["deps.py<br/>15 × lru_cache"]
+  DEPS --> RT["routes/agent._get_router"]
+  RT --> DEPS
+  APP --> RT2["16 个路由文件<br/>Depends(get_xxx)"]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class APP,RT leak
+              </pre>
+              <p class="text-xs text-red-600 mt-2">同进程两次 create_app(不同 db_path) 互相污染；close 链靠 getattr 容错活着</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">After — 显式容器</p>
+              <pre class="mermaid">
+flowchart LR
+  APP["create_app(db_path)"] --> ST["app.state: AppState"]
+  ST --> RT["16 个路由文件<br/>Depends(get_xxx) 不变"]
+  ST --> TEST["测试：构造 AppState 注入"]
+  classDef deepN fill:#0f172a,color:#fff,stroke:#0f172a;
+  class ST deepN
+              </pre>
+              <p class="text-xs text-emerald-700 mt-2">get_xxx(request) 签名保留 → 路由代码零改动；app 可多实例并行</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>deps.py 是全项目 seam 枢纽，但 create_app 用模块属性自改注入 db_path，且 deps→routes 反向依赖——隐式全局让测试只能 monkeypatch（207 处）。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>依赖收进 AppState 挂 app.state；get_xxx 签名不变、实现改为从 request.app.state 取——路由零改动，测试改构造注入。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">测试去 monkeypatch 时序敏感</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">多实例 app 并行（提速）</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">成本：~26 个测试文件调 override</li>
+          </ul>
+        </article>
+
+        <!-- ═══════════════ 候选 7 ═══════════════ -->
+        <article id="c7" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">7 · services 补全：MoneyFlow 序列化 + cache 公开 interface</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">local-substitutable</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">agent/tools/flows.py:57-68,117-131 · web/routes/quotes.py:104-115,143-155 · flows/service.py:123,128,341 · cache/manager.py:38,51-54,75,80 · cache/adapter.py:61</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-stone-50 p-4 space-y-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400">Before — 两个 seam 破损</p>
+              <div class="space-y-2 text-xs">
+                <div class="border border-red-300 bg-red-50 rounded p-2">MoneyFlow→dict 拆解 <b>4 份</b>：flows 工具 ×2（float）+ quotes 路由 ×2（str）——同一 dataclass 四处拆字段</div>
+                <div class="border border-red-300 bg-red-50 rounded p-2">CachedMarketDataAdapter 私有属性被外部 poke <b>6 处</b>（flows/service 自注释"私有 API，但 CacheManager 也用这招"）</div>
+                <div class="border border-red-300 bg-red-50 rounded p-2">拉新节流 <code>_last_fetch_attempt</code> 进程内存：Web 常驻 + CLI/cron 各一份 → 上游限频穿透 ×2</div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+              <p class="text-xs uppercase tracking-wider text-slate-400">After — 深化两个既有 module</p>
+              <div class="space-y-2 text-xs">
+                <div class="deep rounded p-2 text-white">flows 序列化收敛一处（float/str 两种视图片刻意并注释）</div>
+                <div class="deep rounded p-2 text-white">cache 公开 <code>force_refresh / invalidate</code> interface，6 处 poke 删除</div>
+                <div class="border border-slate-300 rounded p-2 text-slate-600">节流状态挪 fetched_at 列（库里已有）→ 跨进程成立</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>services/ 四个 module 本身是深的（双消费面真共享），但 flows 域和 cache 的 interface 有洞——消费方被迫伸手进 implementation。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>MoneyFlow 序列化收进一处；cache 补 force/invalidate 公开方法；节流改读库里的 fetched_at。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">leverage：4 份拆解 → 1</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">seal 私有属性，删 6 处 poke</li>
+            <li class="bg-amber-50 text-amber-800 rounded-full px-3 py-1">节流跨进程可测</li>
+          </ul>
+        </article>
+
+        <!-- ═══════════════ 候选 8 ═══════════════ -->
+        <article id="c8" class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="font-serif text-xl font-bold">8 · 删除 frontend/（Taro 小程序壳）</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">deletion</span>
+            </div>
+          </div>
+          <p class="font-mono text-sm text-slate-600">frontend/（22 文件 1654 行，最后提交 2026-06-27）· web/app.py:71</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-stone-50 p-4">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">Before</p>
+              <div class="flex items-center gap-3 justify-center">
+                <div class="border border-slate-400 rounded px-4 py-3 text-xs text-slate-600">web/（Vue3，活跃）</div>
+                <div class="text-slate-300 text-lg">＋</div>
+                <div class="border border-red-400 bg-red-50 rounded px-4 py-3 text-xs">
+                  <p class="font-semibold text-red-700">frontend/（Taro）</p>
+                  <p class="text-red-600">1654 行 · CI 零引用 · .gitignore 已标"废弃"</p>
+                  <p class="text-red-500 mt-1 text-[10px]">残留钩子：app.py:71 静态目录候选 frontend/dist</p>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase tracking-wider text-slate-400 mb-3">After</p>
+              <div class="flex items-center gap-3 justify-center">
+                <div class="border border-slate-400 rounded px-4 py-3 text-xs text-slate-600">web/（Vue3，活跃）</div>
+                <div class="border border-dashed border-slate-300 rounded px-4 py-3 text-xs text-slate-400">git history 8c9e38f 永久可找回</div>
+              </div>
+              <p class="text-xs text-emerald-700 text-center mt-3">净移除 1654 行 + 一条隐性死路径</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 text-sm">
+            <div><p class="font-semibold text-slate-700 mb-1">Problem</p><p>五表面并存里唯一零引用、零计划认领的一个——"mini program 参考"的价值在 git history 里，物理保留只制造噪音。</p></div>
+            <div><p class="font-semibold text-slate-700 mb-1">Solution</p><p>整目录删除（history 可找回），同步删 app.py:71 的 frontend/dist 静态目录候选。</p></div>
+          </div>
+          <ul class="flex flex-wrap gap-2 text-xs">
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">deletion test：净移除</li>
+            <li class="bg-emerald-50 text-emerald-800 rounded-full px-3 py-1">表面收敛（agent-first 定位）</li>
+          </ul>
+          <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">这是产品资源决策（审计延期项 D3 的最小子集）——若想保留小程序可能性，可改为记录 ADR 后再删。</div>
+        </article>
+
+      </section>
+
+      <!-- ═══════════════ Top recommendation ═══════════════ -->
+      <section id="top-recommendation" class="rounded-xl deep text-white p-8 space-y-3">
+        <p class="text-xs uppercase tracking-wider text-slate-400">Top recommendation</p>
+        <h2 class="font-serif text-2xl font-bold"><a href="#c1" class="underline decoration-emerald-400 underline-offset-4">候选 1 · 宿主元数据单一真相源</a></h2>
+        <p class="text-sm text-slate-300">agent-first 是产品主线，"加宿主"是这条主线上最高频的未来改动；它今天要动 6 文件 16 处，是因为宿主知识没有 module——只有散落的字面量。一张 HostInfo 表是 deletion test 最干净的通过者：删掉 9 处字面量，复杂度真实集中。风险最低（契约测试按 TARGETS 参数化，可不改一行通过），且为候选 2 的机制合并铺路。<span class="text-emerald-300">顺手项：候选 8（删 frontend/）可与它同日完成。</span></p>
+      </section>
+
+      <footer class="text-xs text-slate-400 text-center pb-6">mommy-chaogu · architecture review · 术语表：module / interface / depth / seam / adapter / leverage / locality / deletion test</footer>
+    </main>
+  </body>
+</html>

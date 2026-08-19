@@ -121,12 +121,15 @@ def test_get_bars_d1_limit(adp: EfinanceAdapter) -> None:
 @pytest.mark.network
 def test_get_bars_d1_date_range(adp: EfinanceAdapter) -> None:
     from datetime import date, timedelta
+    from zoneinfo import ZoneInfo
 
     end = date.today()
     start = end - timedelta(days=30)
     bars = adp.get_bars("600519", interval=BarInterval.D1, start=start, end=end)
     assert 15 <= len(bars) <= 31
-    assert all(start <= b.timestamp.date() <= end for b in bars)
+    # 时间戳为 aware UTC，交易日历按北京日比较
+    beijing = ZoneInfo("Asia/Shanghai")
+    assert all(start <= b.timestamp.astimezone(beijing).date() <= end for b in bars)
 
 
 @pytest.mark.network

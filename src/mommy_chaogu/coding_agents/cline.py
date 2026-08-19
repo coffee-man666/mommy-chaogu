@@ -12,8 +12,8 @@ from mommy_chaogu.coding_agents.base import (
     ConnectionStatus,
     agent_home,
     entry_matches_spec,
+    inspect_status,
     install_skill,
-    managed_skills_ok,
     previous_spec,
     remove_managed_skills,
     run_command,
@@ -78,21 +78,7 @@ class ClineAdapter:
         return install_skill("cline", source, self.previous, force=self.force)
 
     def inspect_status(self) -> ConnectionStatus:
-        old, current = previous_spec(self.previous), self._entry()
-        configured = (
-            old is not None and current is not None and entry_matches_spec("cline", current, old)
-        )
-        skill_ok = managed_skills_ok("cline", self.previous)
-        profile = old.profile if old else "market-only"
-        return ConnectionStatus(
-            "cline",
-            "已连接" if configured else ("配置已修改" if current else "配置缺失"),
-            profile,
-            configured,
-            skill_ok,
-            self.previous is not None,
-            profile == "market-only",
-        )
+        return inspect_status("cline", self.previous, self._entry())
 
     def disconnect(self) -> None:
         config, current, old = self._load(), self._entry(), previous_spec(self.previous)

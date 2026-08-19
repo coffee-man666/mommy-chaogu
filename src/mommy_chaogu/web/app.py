@@ -106,7 +106,8 @@ def create_app(
     """FastAPI app 工厂。
 
     参数：
-        db_path: 自选股/缓存数据库路径（None 用默认 data/portfolio.db）
+        db_path: portfolio 用户数据库路径（自选股 + 持仓；None 用默认，
+            传入 None 会复位此前进程内的 --db 覆盖）。行情缓存库不受影响。
         poll_interval_seconds: 后台轮询间隔（秒）
         local_setup_enabled: 允许本机 loopback 免令牌访问 /api/setup/*。
             仅当服务器绑定到回环地址时由 cli 设为 True；默认 False 保持保守。
@@ -114,20 +115,11 @@ def create_app(
             非空时启用 pairing 模式：浏览器可用配对码换取 HttpOnly 会话 cookie。
             明文配对码绝不进入 WebSecurity；仅摘要。
     """
-    if db_path is not None:
-        # 覆盖默认 db 路径
-        from mommy_chaogu.web import deps
+    # --db 覆盖走 deps 的解析链并重建受影响单例（此前直接替换模块属性，
+    # 清缓存后 store 重建仍读默认路径，--db 对自选/持仓静默失效）
+    from mommy_chaogu.web import deps
 
-        deps.get_db_path.cache_clear()  # type: ignore[attr-defined]
-
-        def _custom_db_path() -> Path:
-            return db_path
-
-        deps.get_db_path = _custom_db_path  # type: ignore[assignment]
-        deps.get_adapter.cache_clear()  # type: ignore[attr-defined]
-        deps.get_watchlist_store.cache_clear()  # type: ignore[attr-defined]
-        deps.get_alerter.cache_clear()  # type: ignore[attr-defined]
-        deps.get_portfolio_store.cache_clear()  # type: ignore[attr-defined]
+    deps.set_portfolio_db_override(db_path)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

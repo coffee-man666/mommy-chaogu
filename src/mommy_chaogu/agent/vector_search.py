@@ -6,12 +6,18 @@
 
 技术栈：
 - sqlite-vec（SQLite 原生向量扩展，零外部依赖）
-- OpenAI / DeepSeek embedding API（text-embedding-3-small 或 DeepSeek embedding）
+- embedding API：仅 ``openai`` provider 可用（text-embedding-3-small）。
+  其余 provider（deepseek / kimi / zai / minimax）在 ``llm.py`` 的
+  SUPPORTED_PROVIDERS 中 ``embedding_model=None``——没有 OpenAI 兼容的
+  embedding 接口，聊天模型名不能当 embedding 模型用。
 
 设计：
 - VectorSearch 不拥有 db_path，而是接收 EpisodicMemory 的 engine
 - embedding 维度由模型决定（text-embedding-3-small = 1536 维）
 - 向量表用 sqlite-vec 虚拟表，通过 raw_connection load extension
+- 无 embedding 模型时（如默认 deepseek 配置）本层整体不可用，记忆系统
+  以 4 层 + degraded 状态运行（get_memory_health 会如实报告），
+  不降级到"用聊天模型假装 embedding"
 """
 
 from __future__ import annotations

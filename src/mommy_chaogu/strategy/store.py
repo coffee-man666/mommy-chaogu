@@ -390,8 +390,11 @@ class StrategyStore(EngineOwner):
             params["status"] = status
         cleaned_query = (query or "").strip()
         if cleaned_query:
-            clauses.append("(title LIKE :query OR card_json LIKE :query)")
-            params["query"] = f"%{cleaned_query}%"
+            clauses.append(r"(title LIKE :query ESCAPE '\' OR card_json LIKE :query ESCAPE '\')")
+            # % 和 _ 是 LIKE 通配符：用户搜索字面量时必须转义，否则
+            # 搜索"100%"会匹配任何包含"100"后跟任意字符的标题
+            escaped = cleaned_query.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+            params["query"] = f"%{escaped}%"
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         statement = text(
             "SELECT id, status, version, card_json, created_at, updated_at "

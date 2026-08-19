@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
+from mommy_chaogu.agent.tools.base import (
+    ToolContext,
+    ToolDef,
+    ToolHandler,
+    _clamp_int,
+    _floatify,
+    _json,
+)
 from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
 from mommy_chaogu.market_data.news_api import (
     get_announcements,
@@ -112,13 +119,13 @@ def _handle_get_longhuban(_ctx: ToolContext, args: dict[str, Any]) -> str:
     date = args.get("date")
     limit = _clamp_int(args.get("limit", 20), 20, 1, 100)
     items = get_longhuban(date=date, limit=limit)
-    return _json(items)
+    return _json(_floatify(items))
 
 
 def _handle_get_fundamentals(_ctx: ToolContext, args: dict[str, Any]) -> str:
     code = args["code"]
     result = get_fundamentals(code)
-    return _json(result)
+    return _json(_floatify(result))
 
 
 HANDLERS: dict[str, ToolHandler] = {

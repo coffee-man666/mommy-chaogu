@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 from mommy_chaogu.agent.tools.base import ToolDef, _json
+from mommy_chaogu.agent.tools.registry import is_truncated_result
 
 _log = logging.getLogger(__name__)
 
@@ -45,6 +46,11 @@ MARKET_ONLY_BASE_TOOLS: frozenset[str] = frozenset(
         "get_fundamentals",
         "list_themes",
         "get_theme_stocks",
+        # 三个纯确定性行情/参考库分析工具：只读行情与公共参考数据，
+        # 不触及个人数据、不写库，与 market-only 边界一致。
+        "screen_inflow_stocks",
+        "check_earnings_catalyst",
+        "check_kline_signal",
     }
 )
 
@@ -297,9 +303,10 @@ class _Evidence:
     ok: bool
     data: Any = None
     error: str | None = None
+    truncated: bool = False
 
     def as_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {"tool": self.tool, "ok": self.ok}
+        payload: dict[str, Any] = {"tool": self.tool, "ok": self.ok, "truncated": self.truncated}
         if self.ok:
             payload["data"] = self.data
         else:
@@ -352,13 +359,17 @@ class ResearchToolCatalog:
 
     def _call(self, name: str, args: dict[str, Any]) -> _Evidence:
         raw = self._registry.call(name, args)
+        truncated = False
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
+            # 截断发生在 JSON 字符串层面：fallback 原始字符串时必须
+            # 把证据标为数据不完整，而不是当成完整数据交给宿主。
             data = raw
+            truncated = is_truncated_result(raw)
         if isinstance(data, dict) and "error" in data:
             return _Evidence(tool=name, ok=False, error=str(data["error"]))
-        return _Evidence(tool=name, ok=True, data=data)
+        return _Evidence(tool=name, ok=True, data=data, truncated=truncated)
 
     def _pack(
         self,
@@ -382,6 +393,7 @@ class ResearchToolCatalog:
             "instructions": [
                 "先给结论，再列证据和风险",
                 "只引用 ok=true 的证据；缺失数据必须明确说明",
+                "truncated=true 的证据被截断过：只能引用可见部分，必须声明数据不完整",
                 "区分工具事实与模型推断，不得编造实时数据",
             ],
         }

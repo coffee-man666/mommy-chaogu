@@ -23,6 +23,12 @@ shell commands or APIs.
 Prefer one high-level `research_*` call over manually recreating the same sequence. The returned
 evidence pack is deterministic and contains no hidden LLM summary.
 
+At the first research call in a session, call `get_memory_health` when it is available. In a
+`personal` connection, use task-scoped holdings, watchlists, alerts, and memory when they help the
+request; do not fetch unrelated personal data. Treat `status=degraded` as usable: exact code/scope
+and keyword retrieval still work without an embedding model. Pass `record_session=false` unless the
+user has explicitly asked to keep the research process. Saving a conclusion is a separate choice.
+
 ## 美股研究（US Stocks）
 
 代码约定（Yahoo 风格）：
@@ -54,17 +60,20 @@ session. Detect the active profile by listing the available tools: presence of
 `manage_alert`, `record_research_conclusion`) means `personal`; their absence means
 `market-only`.
 
-**At the start of a session that may involve personal data, ask the user before using it:**
-> 这次分析需要用到你的持仓 / 自选 / 历史记忆吗？
-
-- Not needed (or unsure) → use only public market and research tools.
-- Needed, and the active profile is `personal` → personal tools are available. Mention
-  before the first personal-data call that the result will enter the current model context.
-- Needed, but the active profile is `market-only` → personal tools are intentionally not
-  published. Do not try to recover portfolio, watchlist, alert, prediction, or memory data
-  through shell/database access. Tell the user to reconnect and pick personal:
-  `mommy connect <agent> --profile personal`（交互式连接会询问；非交互默认 market-only）。
-  Restarting the agent is required for the new profile to take effect.
+- In `personal`, high-level `research_*` tools use only personal context relevant to the current
+  stock, sector, market, or portfolio. Do not fetch the full portfolio for an unrelated market
+  question. New connections start in `market-only`; personal requires an explicit scope change.
+- If the user says “不要使用个人数据 / don't use personal data”, pass
+  `use_personal_context=false` and `record_session=false`. Use public research workflows only and
+  do not call `research_portfolio`.
+- Personal profile permission does not itself authorize a new memory write. Keep
+  `record_session=false` by default and ask before saving a conclusion.
+- If personal context is needed but the active profile is `market-only`, personal tools are
+  intentionally not published. Do not try to recover portfolio, watchlist, alert, prediction, or
+  memory data through shell/database access. Tell the user to reconnect and pick personal:
+  first run `mommy agent plan --host <agent> --profile personal --json`, show the changed scope,
+  and wait for approval before `mommy agent connect`. Restarting the Agent is required for the new
+  profile to take effect.
 
 Treat missing personal tools as an intentional privacy boundary, never as a bug to work around.
 
@@ -83,9 +92,13 @@ For thresholds and output conventions, read [references/analysis-method.md](refe
 
 ## Save conclusions
 
-Call `record_research_conclusion` only after the user explicitly asks to save/remember the analysis
-or confirms a save suggestion. Include a prediction only when the response contains a falsifiable
-direction and timeframe. Never silently persist an inferred prediction.
+After a substantive, evidence-backed analysis, ask whether the user wants the conclusion saved
+locally for later recall. Only after an explicit “yes” call `record_research_conclusion` with
+`user_confirmed=true` and a factual `confirmation_note`. Pass a stable `idempotency_key`,
+`analysis_type`, `evidence_as_of`, and `data_coverage` when available. Include a prediction only
+when the user approved saving a falsifiable direction, timeframe, and rationale. Do not save quotes,
+failures, empty evidence, casual chat, or an answer the user has not yet seen. Show a short receipt
+after success; a repeated idempotency key reuses the original record.
 
 ## Response shape
 
