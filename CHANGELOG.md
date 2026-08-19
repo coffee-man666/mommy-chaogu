@@ -7,8 +7,16 @@
 
 ## [Unreleased]
 
+后续变更将在这里记录。
+
+## [1.5.0] - 2026-08-19
+
 ### 新增
 
+- **盘中观察 Skill**——新增第四个捆绑 Skill `market-watch-loop`，支持外部 Agent 按市场、主题、
+  股票范围、轮询频率和停止条件组织有边界的监控循环，并声明数据管线、来源时间戳和覆盖缺口。
+- **更完整的 market-only 能力**——公共权限模式新增 `check_kline_signal`、
+  `screen_inflow_stocks` 和 `check_earnings_catalyst` 三个确定性行情工具，不读取个人数据或写库。
 - **Strategy Distillation 用户闭环**——新增 `mommy-strategy` Skill 与本地策略卡
   `save/list/get/archive`，保留来源、用户修订和版本；可为“按这套方法看 X”准备当前证据清单，
   并只把现有系统真实支持的价格/涨跌幅规则转成监控候选。
@@ -20,9 +28,12 @@
 
 ### 变更
 
+- **三入口统一装配**——CLI、TUI、Web 共用自然语言运行时；自定义工作流现在可以跨入口使用。
 - 新 Agent/MCP 连接默认改为 `market-only`；个人数据、研究记录、策略卡保存和监控按阶段明确授权。
 - 研究过程默认不写入记忆；研究结论只有在展示给用户并得到明确保存确认后才写入。
 - MCP 配置固定到运行当前 `mommy` 的 Python 环境，避免新 Skill 配到旧版全局 server。
+- **数据精度与新鲜度**——行情 adapter 时间戳统一为 aware UTC，资金/基本面/板块数值在 canonical
+  数据层保留 Decimal，工具输出边界再做序列化。
 - 策略沉淀不再以 Golden Scenario、回测、DSL、Walk-forward 或收益指标作为交付门槛；未接入的
   EMA/ATR/通道能力诚实标记为人工或当前不可用。
 
@@ -31,7 +42,18 @@
 - doctor 不再把“配置文件存在”报告为 MCP 正常；探针失败时 privacy 状态为 `not_checked`。
 - Agent-managed `--timeout` 现在真实限制 MCP 探针执行时间。
 - MCP discovery 延迟初始化数据库和数据源，initialize/tools-list 保持只读。
+- 批量行情按 code 缺口继续 fallback，修复混合 A 股/美股查询漏数；同时修复 efinance/Tencent
+  时间戳、腾讯盘口字段 off-by-one、K 线交易日和缓存 stale 标记。
+- 研究证据被工具层截断时标记 `truncated=true`，宿主必须声明数据不完整，避免把截断结果当成完整证据。
+- 主题详情的 `main_net_inflow` 改为真实资金流查询；修复 Web `--db` 覆盖、预测代码筛选、策略
+  搜索通配符、K 线区间缓存和东财直连接口的 Decimal 精度问题。
+- wheel 与捆绑 Skill 集合对齐，补充 release consistency 绊网；Web 热重建会释放自建工作流存储，
+  CLI 入口和 Coding Agent 状态装配也完成收敛。
 - 发行物显式排除本地运行输出和实验性测试 Skill，避免从脏工作树构建时泄露用户文件。
+
+### 文档
+
+- README、`agent-start.md` 和 Getting Started 对齐四个 Skill、`market-watch-loop` 和 v1.5.0 安装入口。
 
 ## [1.4.0] - 2026-08-06
 

@@ -329,9 +329,7 @@ class TestGetPredictionHistory:
         assert len(data) == 1
         assert data[0]["code"] == "600519"
 
-    def test_code_filter_pushdown_reaches_records_beyond_limit_window(
-        self, tmp_path
-    ) -> None:  # type: ignore[no-untyped-def]
+    def test_code_filter_pushdown_reaches_records_beyond_limit_window(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """冷门股记录不在最近 N 条内时，按 code 查询仍能查到（SQL 层下推）。"""
         import time
         from pathlib import Path

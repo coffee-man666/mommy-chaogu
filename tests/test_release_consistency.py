@@ -55,6 +55,15 @@ def test_runtime_output_stays_excluded_from_release_artifacts() -> None:
     assert "/output/**" in excluded
 
 
+def test_sdist_force_includes_shipping_monitor_skill() -> None:
+    config = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    force_include = config["tool"]["hatch"]["build"]["targets"]["sdist"]["force-include"]
+
+    assert force_include["src/mommy_chaogu/bundled_skills/market-watch-loop"] == (
+        "src/mommy_chaogu/bundled_skills/market-watch-loop"
+    )
+
+
 def test_every_shipping_bundled_skill_is_not_excluded() -> None:
     on_disk = _bundled_skill_dir_names()
     excluded = _excluded_skill_names(_hatch_exclude_patterns())

@@ -71,6 +71,11 @@ exclude = [
     "/src/mommy_chaogu/bundled_skills/market-monitoring-test/**",
 ]
 
+[tool.hatch.build.targets.sdist]
+# Hatch's sdist file selection follows repository ignore rules. Keep the shipping
+# monitoring Skill in source distributions so wheel builds from sdist remain complete.
+force-include = {"src/mommy_chaogu/bundled_skills/market-watch-loop" = "src/mommy_chaogu/bundled_skills/market-watch-loop"}
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mommy_chaogu"]
 

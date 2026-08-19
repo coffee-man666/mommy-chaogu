@@ -361,9 +361,7 @@ def test_get_bars_refetch_visible_in_same_call(
     new_ts = datetime(2026, 1, 2, tzinfo=UTC)
     mock_adp.bars = [_make_bar(old_ts), _make_bar(new_ts, close="105")]
 
-    bars = cached.get_bars(
-        "600519", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD
-    )
+    bars = cached.get_bars("600519", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD)
 
     assert [bar.timestamp.day for bar in bars] == [1, 2]
     assert bars[-1].close == Decimal("105")
@@ -376,9 +374,7 @@ def test_get_bars_persists_beijing_trade_date(
     # 北京 2026-01-02 00:00 = UTC 2026-01-01 16:00；按 UTC strftime 会错误得到 01-01
     mock_adp.bars = [_make_bar(datetime(2026, 1, 1, 16, 0, tzinfo=UTC))]
 
-    bars = cached.get_bars(
-        "600519", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD
-    )
+    bars = cached.get_bars("600519", interval=BarInterval.D1, adjustment=AdjustmentType.FORWARD)
 
     assert len(bars) == 1
     in_range = store.get_bars(

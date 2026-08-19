@@ -30,7 +30,8 @@ what to ask for at any time, change direction, or just look around.
 
 Keep two senses of "complete" separate:
 
-- **Integration is available** once configuration, all three Skills, a real MCP initialize/tools-list,
+- **Integration is available** once configuration, all four Skills (`mommy-onboard`, `mommy-research`,
+  `mommy-strategy`, and `market-watch-loop`), a real MCP initialize/tools-list,
   and the privacy boundary check all pass. At that point the toolbox is reachable and the user can
   explore freely; you should not force a workflow to run.
 - **An investing or research goal is complete** only when the user sees and understands a useful
@@ -144,7 +145,7 @@ After approval:
 mommy agent connect --host <HOST> --profile <PROFILE> --timeout 20 --json
 ```
 
-Success requires the embedded doctor checks for configuration, all three Skills, real MCP
+Success requires the embedded doctor checks for configuration, all four Skills, real MCP
 initialize/tools-list, and privacy boundary to pass. `live_market_data=not_checked` is honest at
 this stage. If a blocking check fails, show the failure and inspect a safe repair proposal:
 
@@ -155,9 +156,9 @@ mommy agent repair --host <HOST> --json
 Do not force-overwrite user-modified configuration or Skills. Restart the host Agent when requested.
 
 When every blocking check passes, **the integration is available**: configuration is written, the
-three Skills are installed, MCP initialize and tools/list really ran, and the privacy boundary
-matches the chosen profile. Say this plainly and stop. Do not imply an investing or research goal is
-already done, and do not push the user to run a workflow before they have asked for one.
+four Skills are installed, MCP initialize and tools/list really ran, and the privacy boundary matches
+the chosen profile. Say this plainly and stop. Do not imply an investing or research goal is already
+done, and do not push the user to run a workflow before they have asked for one.
 
 ## 4. Invite free exploration
 
@@ -173,7 +174,8 @@ are examples, not a mandatory menu, and the user may ask for something else enti
   map each part to current tools; run one supported pass. Clearly mark anything manual or
   unavailable, and do not claim persistence unless a real saved workflow exists.
 - **持续监测**: first show the exact supported trigger and run a current check. Preparing a monitor
-  is not activation; personal access and activation each require their own plan or consent.
+  is not activation; personal access and activation each require their own plan or consent. Use
+  `market-watch-loop` for bounded polling requests and state the selected market data pipeline first.
 
 When the user does pick a direction, finish by showing what it produced, what remains unsupported,
 and how they can ask you to run or refine it again. Raw JSON, tool count, installation, a workflow
