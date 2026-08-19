@@ -223,3 +223,21 @@
 | F15 | ✅ | 729761f | test_agent 全套 542 passed / 0 failures；ruff+mypy（8 文件）无错 |
 | F16 | ✅ | c8fabbd | test_cli_repl 12 新用例全过；main_mommy 258→109 行；ruff+mypy 无错 |
 | F17 | ✅ | 2bab397 | 评估中升级为真 bug：--db 只替换 get_db_path 属性，store 重建仍读默认路径。改为 deps.set_portfolio_db_override 走解析链 + 重建单例；test_web 369 passed（新增 2 用例） |
+
+---
+
+# 第三批：外部评审补丁（2026-08-18，R1–R4）
+
+> 输入：另一 Agent（kimi-review）对 PR #53 的评审后续，以 4 个补丁交付。
+> 主会话逐项核实其问题陈述（AttributeError 穿透路径、--db 泄漏链路、
+> `reload_agent_caches` → `_get_router.cache_clear` 热重建、`_engine_finalizer`
+> 属性存在性）全部属实后，按原序 `git am` 合入，保留原作者与提交信息。
+> 注意：随补丁一起送达的 `app/`（React 市场操纵模拟器）与本仓库无关，未合入。
+
+| 编号 | 主题 | 状态 | Commit | 验证记录 |
+|---|---|---|---|---|
+| R1 | fallback 链缺方法防 AttributeError 穿透 + primary/partial/fallback_hits 口径拆分（含 F1 日志分母错位修正） | ✅ | a1d166e | 新增 6 用例（缺方法跳过×2、全覆盖/部分覆盖计数×2 等）；定向 58 passed |
+| R2 | 主题资金流"填充满额而非尝试封顶"：失败不占 THEME_FLOW_MAX_STOCKS 名额，新增 THEME_FLOW_MAX_ATTEMPTS=15 封顶总请求 | ✅ | a68ebcf | 新增 2 用例（失败回填、持续失败封顶） |
+| R3 | NLRuntime.close()（仅关工厂自建 WorkflowStore）+ Web router 热重建前释放旧 runtime，修 setup 保存后 SQLite 连接泄漏 | ✅ | c60e1d5 | 新增 2 用例（自建释放+幂等、注入免疫）；泄漏路径已核实（deps.py reload_agent_caches） |
+| R4 | 文档：HTML 报告标注 CDN 依赖、.gitignore 解释两套排除机制、腾讯 fixture 记录抓取来源 | ✅ | f34634a | docs-only |
+| 集成 | — | ✅ | — | junitxml 权威计数：2144 tests / 0 failures / 0 errors / 0 skipped（第二批 2135 + 补丁新增 9）；ruff check . 全绿；mypy --strict 208 文件无错误 |
