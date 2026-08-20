@@ -1,7 +1,5 @@
 # mommy-chaogu
 
-> 原生 iOS MVP 已加入：[iOS 运行与架构说明](ios/README.md)。
-
 <div align="center">
 
 **一套边界明确、可由 Agent 接管和编排的本地投研工具箱：行情、指标、监测、策略蒸馏，都按你的方法组合。**
