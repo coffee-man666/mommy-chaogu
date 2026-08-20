@@ -124,7 +124,7 @@ LLM 再聪明，没有工具就拿不到数据。agent 能做什么，完全取�
 
 这一节早期版本的结论是"coding agent 是开发模式，投研用户不应该走这条路，只有内置 agent（模式 ① / ②）才是使用模式"——这个定性已经过时，如实修正：
 
-- **当前主路线是 `mommy agent connect`**：面向投研用户的正式接入路径。它安装 4 个内置 Skill（mommy-onboard / mommy-research / mommy-strategy / market-watch-loop）、注册本地 stdio MCP Server；宿主 Agent 是唯一推理者（`external_agent_is_only_reasoner`），用户不需要为外部模式配置第二套 LLM key，数据获取与确定性计算仍走项目封装的工具层（与模式 ① / ② 同构）。
+- **当前主路线是 `mommy agent connect`**：面向投研用户的正式接入路径。它安装 6 个内置 Skill（mommy-onboard / mommy-research / mommy-strategy / market-watch-loop / basket-analysis / food-security-analysis）、注册本地 stdio MCP Server；宿主 Agent 是唯一推理者（`external_agent_is_only_reasoner`），用户不需要为外部模式配置第二套 LLM key，数据获取与确定性计算仍走项目封装的工具层（与模式 ① / ② 同构）。
 - **模式 ① / ② 仍然保留**，作为不依赖外部宿主的内置入口；它们与 MCP 路线共享同一工具层，不存在两套能力。
 - **模式 ③ 的原始形态**（coding agent 在项目目录里直接读文件、跑命令、查 DB）仍属于**开发场景**：对开发者合理，对纯投研用户风险边界依旧成立——这正是 `mommy agent connect` 把宿主 Agent 的投研用法约束到"工具层 + Skill"上的原因。
 

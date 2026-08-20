@@ -19,6 +19,7 @@ import tomllib
 from pathlib import Path
 
 from mommy_chaogu.cli_commands.connect import _bundled_skill_dirs
+from mommy_chaogu.plugins import BUNDLED_PLUGINS
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _BUNDLED_SKILLS_DIR = _REPO_ROOT / "src" / "mommy_chaogu" / "bundled_skills"
@@ -55,13 +56,13 @@ def test_runtime_output_stays_excluded_from_release_artifacts() -> None:
     assert "/output/**" in excluded
 
 
-def test_sdist_force_includes_shipping_monitor_skill() -> None:
+def test_sdist_force_includes_all_shipping_plugins() -> None:
     config = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     force_include = config["tool"]["hatch"]["build"]["targets"]["sdist"]["force-include"]
 
-    assert force_include["src/mommy_chaogu/bundled_skills/market-watch-loop"] == (
-        "src/mommy_chaogu/bundled_skills/market-watch-loop"
-    )
+    for plugin in BUNDLED_PLUGINS:
+        relative = f"src/mommy_chaogu/bundled_skills/{plugin.name}"
+        assert force_include[relative] == relative
 
 
 def test_every_shipping_bundled_skill_is_not_excluded() -> None:
@@ -94,3 +95,14 @@ def test_connector_skill_references_exist_in_bundled_package() -> None:
     )
     for path in _bundled_skill_dirs():
         assert path.is_dir(), f"捆绑 Skill 路径不存在: {path}"
+
+
+def test_bundled_plugins_have_skill_contracts() -> None:
+    assert tuple(path.name for path in _bundled_skill_dirs()) == tuple(
+        plugin.name for plugin in BUNDLED_PLUGINS
+    )
+    for path in _bundled_skill_dirs():
+        skill_file = path / "SKILL.md"
+        assert skill_file.is_file(), f"捆绑 Plugin 缺少 SKILL.md: {path}"
+        content = skill_file.read_text(encoding="utf-8")
+        assert f"name: {path.name}" in content, f"SKILL.md 名称与目录不一致: {path}"

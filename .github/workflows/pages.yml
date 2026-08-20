@@ -1,0 +1,65 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/verify_pages.py"
+      - "src/mommy_chaogu/bundled_skills/**"
+      - "src/mommy_chaogu/plugins.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify static site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate pages and downloadable archives
+        run: python3 scripts/verify_pages.py
+      - name: Smoke-test Skill installer
+        run: |
+          for archive in site/skills/mommy-onboard-v1.5.0.zip \
+            site/skills/mommy-research-v1.5.0.zip \
+            site/skills/mommy-strategy-v1.5.0.zip \
+            site/skills/market-watch-loop-v1.5.0.zip \
+            site/skills/basket-analysis-v1.2.1.zip \
+            site/skills/food-security-analysis-v1.2.zip; do
+            name="$(basename "$archive" .zip)"
+            python3 site/install-skill.py \
+              --target custom \
+              --destination "$RUNNER_TEMP/mommy-chaogu-skill-smoke/$name" \
+              "$archive"
+          done
+          python3 site/install-skill.py \
+            --target custom \
+            --destination "$RUNNER_TEMP/mommy-chaogu-skill-smoke/basket-analysis-tar" \
+            site/skills/basket-analysis-v1.2.1.tar.gz
+
+  deploy:
+    name: Deploy site
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

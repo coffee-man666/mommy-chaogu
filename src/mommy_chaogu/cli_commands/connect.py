@@ -30,6 +30,7 @@ from mommy_chaogu.coding_agents.base import (
     skill_dir,
 )
 from mommy_chaogu.config import default_user_config_dir
+from mommy_chaogu.plugins import bundled_plugin_dirs
 
 STATE_VERSION = 2
 PRIVACY_CONSENT_VERSION = "2026-08-07.personal-v1"
@@ -104,11 +105,7 @@ def _save_state(state: dict[str, Any]) -> None:
 
 
 def _bundled_skill_dirs() -> tuple[Path, ...]:
-    root = Path(__file__).resolve().parents[1] / "bundled_skills"
-    return tuple(
-        root / name
-        for name in ("mommy-onboard", "mommy-research", "mommy-strategy", "market-watch-loop")
-    )
+    return bundled_plugin_dirs()
 
 
 def _bundled_skill_dir() -> Path:

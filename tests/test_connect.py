@@ -130,6 +130,8 @@ def test_kimi_connect_preserves_other_servers_and_installs_skill(
     assert (kimi_home / "skills" / "mommy-onboard" / "SKILL.md").is_file()
     assert (kimi_home / "skills" / "mommy-strategy" / "SKILL.md").is_file()
     assert (kimi_home / "skills" / "market-watch-loop" / "SKILL.md").is_file()
+    assert (kimi_home / "skills" / "basket-analysis" / "SKILL.md").is_file()
+    assert (kimi_home / "skills" / "food-security-analysis" / "SKILL.md").is_file()
 
     state = json.loads((config_home / "connections.json").read_text(encoding="utf-8"))
     assert state["version"] == 2
@@ -139,6 +141,8 @@ def test_kimi_connect_preserves_other_servers_and_installs_skill(
         "mommy-research",
         "mommy-strategy",
         "market-watch-loop",
+        "basket-analysis",
+        "food-security-analysis",
     }
     assert "当前为 market-only" in capsys.readouterr().out
 

@@ -1,0 +1,66 @@
+{
+  "store": "mommy-chaogu plugins store",
+  "catalog_version": 1,
+  "project_version": "1.5.0",
+  "updated": "2026-08-19",
+  "acquisition": {
+    "bundled": "mommy agent plan/connect --host <host>",
+    "archive_installer": "install-skill.py"
+  },
+  "plugins": [
+    {
+      "name": "mommy-onboard",
+      "version": "1.5.0",
+      "kind": "skill",
+      "status": "bundled_and_downloadable",
+      "category": "onboarding",
+      "archive": "skills/mommy-onboard-v1.5.0.zip",
+      "summary": "解释产品边界、展示连接计划，并把宿主 Agent 安全带入投研工具箱。"
+    },
+    {
+      "name": "mommy-research",
+      "version": "1.5.0",
+      "kind": "skill",
+      "status": "bundled_and_downloadable",
+      "category": "research",
+      "archive": "skills/mommy-research-v1.5.0.zip",
+      "summary": "用带时间戳和来源的行情、板块、资金流与业绩证据完成研究。"
+    },
+    {
+      "name": "mommy-strategy",
+      "version": "1.5.0",
+      "kind": "skill",
+      "status": "bundled_and_downloadable",
+      "category": "strategy",
+      "archive": "skills/mommy-strategy-v1.5.0.zip",
+      "summary": "把文章、研报或个人方法整理成可修订、可复用的策略卡。"
+    },
+    {
+      "name": "market-watch-loop",
+      "version": "1.5.0",
+      "kind": "skill",
+      "status": "bundled_and_downloadable",
+      "category": "monitoring",
+      "archive": "skills/market-watch-loop-v1.5.0.zip",
+      "summary": "按市场、主题、标的、频率和停止条件组织有边界的盘中观察。"
+    },
+    {
+      "name": "basket-analysis",
+      "version": "1.2.1",
+      "kind": "skill",
+      "status": "bundled_and_downloadable",
+      "category": "analysis",
+      "archive": "skills/basket-analysis-v1.2.1.zip",
+      "summary": "通用 A 股主题篮子分析：资金流、均线、触发变量、Top 5 与九项交付物。"
+    },
+    {
+      "name": "food-security-analysis",
+      "version": "1.2.0",
+      "kind": "skill",
+      "status": "bundled_and_downloadable",
+      "category": "analysis",
+      "archive": "skills/food-security-analysis-v1.2.zip",
+      "summary": "粮食安全 / 粮食危机主题的 35 只 A 股篮子分析与可审计报告。"
+    }
+  ]
+}

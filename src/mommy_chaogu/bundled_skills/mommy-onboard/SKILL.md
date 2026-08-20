@@ -6,7 +6,8 @@ description: Explain, safely install, connect, diagnose, or repair the mommy-cha
 # Mommy Onboard
 
 Explain the toolbox and manage the machine lifecycle. Keep two senses of "complete" separate:
-configuration + four Skills (onboard / research / strategy / market-watch-loop) + a real MCP
+configuration + six bundled Skills (onboard / research / strategy / market-watch-loop /
+basket-analysis / food-security-analysis) + a real MCP
 initialize/tools-list + the privacy boundary passing means
 the **integration is available** and the user can explore freely; an **investing or research goal** is
 complete only when the user sees and understands a useful result from a flow they actually asked for.
@@ -92,9 +93,10 @@ version from being mistaken for this commit.
    mommy agent plan --host HOST --profile PROFILE --json
    ```
 
-5. Translate the plan into a compact human summary: configuration target, the four Skills
-   (mommy-onboard, mommy-research, mommy-strategy, and market-watch-loop for continuous
-   intraday watch / polling scenarios), local MCP command, privacy scope, and restart
+5. Translate the plan into a compact human summary: configuration target, the six bundled Skills
+   (mommy-onboard, mommy-research, mommy-strategy, market-watch-loop for continuous intraday
+   watch / polling scenarios, basket-analysis, and food-security-analysis), local MCP command,
+   privacy scope, and restart
    requirement. Ask for permission to make exactly those changes.
    If the read-only plan matches a scope the user already approved, do not re-confirm; pause again
    only if command, paths, host, or privacy materially change.
@@ -113,7 +115,8 @@ The timeout is a real execution deadline. Read the embedded doctor result rather
 word “connected”:
 
 - `host_configuration` must be `ok`;
-- all four Skills (mommy-onboard, mommy-research, mommy-strategy, market-watch-loop) must have
+- all six bundled Skills (mommy-onboard, mommy-research, mommy-strategy, market-watch-loop,
+  basket-analysis, food-security-analysis) must have
   `status=ok`;
 - `mcp_initialize_and_list_tools` must say it actually ran initialize and tools/list;
 - `privacy_boundary` must match the selected profile;

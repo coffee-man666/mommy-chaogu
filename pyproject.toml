@@ -65,16 +65,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 # Runtime output must never enter a release artifact; market-monitoring-test is a
-# local experimental Skill, not a bundled product Skill.
+# local experimental Skill, not a bundled product Skill. All six catalog plugins
+# under bundled_skills/ are part of the installable project package.
 exclude = [
     "/output/**",
     "/src/mommy_chaogu/bundled_skills/market-monitoring-test/**",
 ]
 
 [tool.hatch.build.targets.sdist]
-# Hatch's sdist file selection follows repository ignore rules. Keep the shipping
-# monitoring Skill in source distributions so wheel builds from sdist remain complete.
-force-include = {"src/mommy_chaogu/bundled_skills/market-watch-loop" = "src/mommy_chaogu/bundled_skills/market-watch-loop"}
+# Hatch's sdist file selection follows repository ignore rules. Keep the
+# catalog plugins explicit so wheel builds from sdist remain complete.
+force-include = {"src/mommy_chaogu/bundled_skills/mommy-onboard" = "src/mommy_chaogu/bundled_skills/mommy-onboard", "src/mommy_chaogu/bundled_skills/mommy-research" = "src/mommy_chaogu/bundled_skills/mommy-research", "src/mommy_chaogu/bundled_skills/mommy-strategy" = "src/mommy_chaogu/bundled_skills/mommy-strategy", "src/mommy_chaogu/bundled_skills/market-watch-loop" = "src/mommy_chaogu/bundled_skills/market-watch-loop", "src/mommy_chaogu/bundled_skills/basket-analysis" = "src/mommy_chaogu/bundled_skills/basket-analysis", "src/mommy_chaogu/bundled_skills/food-security-analysis" = "src/mommy_chaogu/bundled_skills/food-security-analysis"}
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mommy_chaogu"]
@@ -85,6 +86,14 @@ path = "src/mommy_chaogu/version.py"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# These two directories are independently versioned, distributable Skill
+# payloads from the public Plugins Store; their scripts are not application
+# modules and should be linted by their own release process.
+exclude = [
+    "src/mommy_chaogu/bundled_skills/basket-analysis/**",
+    "src/mommy_chaogu/bundled_skills/food-security-analysis/**",
+    "site/install-skill.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
@@ -95,6 +104,8 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
+# Store payload scripts are standalone Skill assets, not imported project code.
+exclude = "src/mommy_chaogu/bundled_skills/(basket-analysis|food-security-analysis)/"
 
 [[tool.mypy.overrides]]
 module = [

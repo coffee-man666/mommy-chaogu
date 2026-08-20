@@ -24,6 +24,8 @@ mommy-chaogu 不是要求用户先学习复杂界面的“又一个投研软件�
 的就运行，暂时不能实现的就标为需人工判断或当前不可用。它不是任意代码执行器，也不承诺自动下单
 或“策略一定有效”，更不会为了显得可用而把用户的定义偷换成相似指标。
 
+宣传站与 `mommy-chaogu plugins store` 源码在 [`site/`](site/)，包含六个并列项目插件、`2026-08-19` 可下载测试样例、版本时间线和可实际运行的 `install-skill.py`。GitHub Pages 发布与本地检查方式见 [`docs/GITHUB-PAGES.md`](docs/GITHUB-PAGES.md)。
+
 ## 让你的 Agent 接管
 
 把下面这句话发给你的 Agent：
@@ -111,7 +113,7 @@ mommy channel weixin stop      # 停止网关，但保留本机授权
 | Coding Agent 风格终端 | `mommy tui` | 富卡片、slash 命令、`@` 股票联想、流式状态 |
 | 本机网页 | `mommy web` | 打开 `http://127.0.0.1:8000`，本机默认免登录 |
 | Claude Code | `mommy agent plan --host claude --json` | 先看修改与权限计划，再由 Agent 连接 |
-| Kimi Code | `mommy agent plan --host kimi --json` | 安装四个内置 Skill，含持续监测能力 |
+| Kimi Code | `mommy agent plan --host kimi --json` | 安装六个内置 Skill，含主题分析与持续监测能力 |
 | Cline | `mommy agent plan --host cline --json` | 计划确认后写入本地 MCP 配置 |
 | Codex | `mommy agent plan --host codex --json` | 复用 Codex 登录，不再配置一套 LLM Key |
 | 微信远程对话 | `mommy channel weixin connect` | 扫码连接本地网关，不开放公网端口 |
@@ -120,8 +122,9 @@ Agent-managed 自动连接目前只覆盖表中的 Claude Code、Kimi Code、Cli
 stdio MCP 的宿主可以使用同一个 MCP Server，但它们的配置与 Skill 安装尚未纳入这套自动计划；
 入口 Agent 必须先说明这一点，不能把 OpenClaw、Hermes 等宿主伪装成已被自动检测和验证。
 
-连接任一受支持宿主会安装四个内置 Skill：`mommy-onboard`、`mommy-research`、
-`mommy-strategy` 和 `market-watch-loop`。最后一个用于按市场、主题、股票范围和轮询频率组织
+连接任一受支持宿主会安装六个内置 Skill：`mommy-onboard`、`mommy-research`、
+`mommy-strategy`、`market-watch-loop`、`basket-analysis` 和 `food-security-analysis`。
+其中主题分析 Skill 负责篮子研究交付，`market-watch-loop` 用于按市场、主题、股票范围和轮询频率组织
 有边界的盘中观察；它会保留数据来源、时间戳、覆盖范围和停止条件，不会把一次查询伪装成无限后台任务。
 
 开发者如果不想安装全局命令，可以在源码仓库中把 `mommy` 替换为 `uv run mommy`。

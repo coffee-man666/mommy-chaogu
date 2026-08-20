@@ -2,8 +2,8 @@
 
 This module intentionally reuses the established connector and MCP server.  It
 does not introduce a second capability runtime.  Completion is reported in two
-layers: ``integration_available`` is true once configuration, the four Skills,
-a real MCP initialize/tools-list, and the privacy boundary all pass, leaving the
+layers: ``integration_available`` is true once configuration, the six bundled
+Skills, a real MCP initialize/tools-list, and the privacy boundary all pass, leaving the
 toolbox open for free exploration; ``investing_goal_complete`` stays false here,
 because a useful result from a user-chosen workflow remains a host-Agent and
 user interaction that this CLI never performs.
@@ -338,7 +338,7 @@ def doctor_payload(host: str, timeout_seconds: float) -> dict[str, Any]:
     skill_checks = _skill_checks(selected, previous)
     skills_ok = all(item["status"] == "ok" for item in skill_checks)
     if skills_ok:
-        skill_message = "四个内置 Skill 均已安装且与捆绑版本一致。"
+        skill_message = f"{len(skill_checks)} 个内置 Skill 均已安装且与捆绑版本一致。"
     else:
         problems = ", ".join(f"{item['name']}={item['status']}" for item in skill_checks)
         skill_message = (
@@ -439,7 +439,7 @@ def doctor_payload(host: str, timeout_seconds: float) -> dict[str, Any]:
         discovered_tools=tool_names,
         integration_available=integration_available,
         integration_completion_rule=(
-            "配置、四个 Skill、真实 MCP initialize/tools-list 与权限边界全部通过即代表集成可用；"
+            f"配置、{len(_bundled_skill_dirs())} 个 Skill、真实 MCP initialize/tools-list 与权限边界全部通过即代表集成可用；"
             "此时工具箱对宿主 Agent 开放，用户可自由探索，不必先选择或运行某条流程。"
         ),
         investing_goal_complete=False,

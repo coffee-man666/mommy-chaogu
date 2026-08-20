@@ -18,11 +18,9 @@ from typing import Any, Protocol
 from mommy_chaogu.agent.research_tools import McpProfile, normalize_mcp_profile
 from mommy_chaogu.config import default_user_config_dir
 from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
+from mommy_chaogu.plugins import BUNDLED_SKILL_NAMES
 
 SERVER_NAME = "mommy-chaogu"
-BUNDLED_SKILL_NAMES = frozenset(
-    {"mommy-onboard", "mommy-research", "mommy-strategy", "market-watch-loop"}
-)
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 
 

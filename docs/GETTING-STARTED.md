@@ -135,9 +135,10 @@ uv run mommy connect test claude     # 替换为实际 target
 ```
 
 推荐先让 Agent 运行 `mommy agent detect --json` 和 `mommy agent plan --host ... --json`，把
-配置文件、四个 Skills 与权限范围展示给用户，再执行连接。兼容的 `mommy connect` 命令会注册
+配置文件、六个 Skills 与权限范围展示给用户，再执行连接。兼容的 `mommy connect` 命令会注册
 本地 stdio MCP Server、安装 `mommy-onboard` / `mommy-research` / `mommy-strategy` /
-`market-watch-loop`，并执行连通测试。新连接默认 `market-only`，不读取个人数据，也不写研究记录。
+`market-watch-loop` / `basket-analysis` / `food-security-analysis`，并执行连通测试。新连接默认
+`market-only`，不读取个人数据，也不写研究记录。
 
 其中 `market-watch-loop` 用于有明确市场、覆盖范围、轮询频率和停止条件的盘中观察；它会声明
 数据管线、来源时间戳、缺失字段和降级情况，不会把前台轮询伪装成未创建的后台任务。

@@ -30,8 +30,8 @@ what to ask for at any time, change direction, or just look around.
 
 Keep two senses of "complete" separate:
 
-- **Integration is available** once configuration, all four Skills (`mommy-onboard`, `mommy-research`,
-  `mommy-strategy`, and `market-watch-loop`), a real MCP initialize/tools-list,
+- **Integration is available** once configuration, all six bundled Skills (`mommy-onboard`, `mommy-research`,
+  `mommy-strategy`, `market-watch-loop`, `basket-analysis`, and `food-security-analysis`), a real MCP initialize/tools-list,
   and the privacy boundary check all pass. At that point the toolbox is reachable and the user can
   explore freely; you should not force a workflow to run.
 - **An investing or research goal is complete** only when the user sees and understands a useful
@@ -145,7 +145,7 @@ After approval:
 mommy agent connect --host <HOST> --profile <PROFILE> --timeout 20 --json
 ```
 
-Success requires the embedded doctor checks for configuration, all four Skills, real MCP
+Success requires the embedded doctor checks for configuration, all six bundled Skills, real MCP
 initialize/tools-list, and privacy boundary to pass. `live_market_data=not_checked` is honest at
 this stage. If a blocking check fails, show the failure and inspect a safe repair proposal:
 
@@ -156,7 +156,7 @@ mommy agent repair --host <HOST> --json
 Do not force-overwrite user-modified configuration or Skills. Restart the host Agent when requested.
 
 When every blocking check passes, **the integration is available**: configuration is written, the
-four Skills are installed, MCP initialize and tools/list really ran, and the privacy boundary matches
+six bundled Skills are installed, MCP initialize and tools/list really ran, and the privacy boundary matches
 the chosen profile. Say this plainly and stop. Do not imply an investing or research goal is already
 done, and do not push the user to run a workflow before they have asked for one.
 
