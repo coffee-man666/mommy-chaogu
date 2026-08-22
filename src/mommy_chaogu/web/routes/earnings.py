@@ -71,12 +71,15 @@ async def get_stock_earnings(
                 "code": a.code,
                 "name": a.name,
                 "period": a.period,
-                "report_date": a.report_date.isoformat() if a.report_date else None,
-                "revenue": str(a.revenue) if a.revenue else None,
-                "revenue_yoy": str(a.revenue_yoy) if a.revenue_yoy else None,
-                "net_profit": str(a.net_profit) if a.net_profit else None,
-                "net_profit_yoy": str(a.net_profit_yoy) if a.net_profit_yoy else None,
-                "eps": str(a.eps) if a.eps else None,
+                # EarningsActual 真实字段：disclosure_date（披露日期）、
+                # actual_value（净利润）、growth_pct（同比增速）。
+                # 此前路由读 report_date/revenue/eps 等不存在字段，
+                # AttributeError 被 except 吞掉导致该端点恒返回空。
+                "report_date": a.disclosure_date.isoformat(),
+                "net_profit": str(a.actual_value),
+                "net_profit_yoy": str(a.growth_pct) if a.growth_pct is not None else None,
+                "source": a.source.value,
+                "note": a.note,
             }
             for a in actuals
             if a.code == code

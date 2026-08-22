@@ -12,15 +12,16 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from mommy_chaogu.earnings.types import (
+    EarningsActual,
     EarningsCalendar,
     EarningsScore,
+    EarningsSource,
     EarningsVerdict,
 )
 
@@ -42,23 +43,24 @@ def _make_calendar(
     )
 
 
-def _make_actual(code: str = "600519") -> SimpleNamespace:
-    """个股业绩假对象。
+def _make_actual(
+    code: str = "600519", growth_pct: Decimal | None = Decimal("18.5")
+) -> EarningsActual:
+    """个股业绩真实对象（与 EarningsStore.list_actuals 返回同型）。
 
-    路由层访问的字段（code/name/period/report_date/revenue/revenue_yoy/
-    net_profit/net_profit_yoy/eps）未必全在 EarningsActual dataclass 上，
-    这里用 SimpleNamespace 提供路由实际读取的全部字段以走通序列化分支。
+    路由层只应访问 EarningsActual 的真实字段（disclosure_date/actual_value/
+    growth_pct）；此前测试用 SimpleNamespace 伪造 report_date/revenue/eps
+    等不存在的字段，掩盖了路由恒返回空的 bug，现改回真实类型。
     """
-    return SimpleNamespace(
+    return EarningsActual(
         code=code,
         name="贵州茅台",
         period="2026H1",
-        report_date=date(2026, 8, 15),
-        revenue=Decimal("700000000000"),
-        revenue_yoy=Decimal("15.3"),
-        net_profit=Decimal("300000000000"),
-        net_profit_yoy=Decimal("18.5"),
-        eps=Decimal("23.8"),
+        actual_value=Decimal("300000000000"),
+        growth_pct=growth_pct,
+        disclosure_date=date(2026, 8, 15),
+        source=EarningsSource.REPORT,
+        note=None,
     )
 
 
@@ -85,7 +87,7 @@ class _FakeStore:
     def __init__(
         self,
         calendars: list[EarningsCalendar] | None = None,
-        actuals: list[Any] | None = None,
+        actuals: list[EarningsActual] | None = None,
         scores: list[EarningsScore] | None = None,
         raise_on_calendars: bool = False,
         raise_on_actuals: bool = False,
@@ -108,7 +110,9 @@ class _FakeStore:
             raise RuntimeError("calendar db locked")
         return self._calendars
 
-    def list_actuals(self, period: str | None = None, since_date: str | None = None) -> list[Any]:
+    def list_actuals(
+        self, period: str | None = None, since_date: str | None = None
+    ) -> list[EarningsActual]:
         if self._raise_on_actuals:
             raise RuntimeError("actuals db locked")
         return self._actuals
@@ -235,12 +239,11 @@ class TestGetStockEarnings:
         assert item["name"] == "贵州茅台"
         assert item["period"] == "2026H1"
         assert item["report_date"] == "2026-08-15"
-        # Decimal → str
-        assert item["revenue"] == "700000000000"
-        assert item["revenue_yoy"] == "15.3"
+        # Decimal → str（EarningsActual：actual_value=净利润，growth_pct=同比增速）
         assert item["net_profit"] == "300000000000"
         assert item["net_profit_yoy"] == "18.5"
-        assert item["eps"] == "23.8"
+        assert item["source"] == "report"
+        assert item["note"] is None
 
     def test_non_matching_code_returns_empty(
         self,
@@ -258,16 +261,14 @@ class TestGetStockEarnings:
         patch_store: Any,
     ) -> None:
         actuals = [
-            SimpleNamespace(
+            EarningsActual(
                 code="600519",
                 name="贵州茅台",
                 period=f"2026Q{i}",
-                report_date=date(2026, i + 1, 1),
-                revenue=Decimal("100"),
-                revenue_yoy=Decimal("1"),
-                net_profit=Decimal("50"),
-                net_profit_yoy=Decimal("2"),
-                eps=Decimal("1"),
+                actual_value=Decimal("50"),
+                growth_pct=Decimal("2"),
+                disclosure_date=date(2026, i + 1, 1),
+                source=EarningsSource.EXPRESS,
             )
             for i in range(1, 5)
         ]
@@ -286,38 +287,18 @@ class TestGetStockEarnings:
         assert resp.status_code == 200
         assert resp.json() == {"items": [], "total": 0}
 
-    def test_none_fields_become_none(
+    def test_none_growth_becomes_none(
         self,
         client: TestClient,
         patch_store: Any,
     ) -> None:
-        """revenue_yoy/net_profit_yoy/eps/report_date 为 None 时输出 None。"""
-        patch_store(
-            _FakeStore(
-                actuals=[
-                    SimpleNamespace(
-                        code="600519",
-                        name="贵州茅台",
-                        period="2026H1",
-                        report_date=None,
-                        revenue=None,
-                        revenue_yoy=None,
-                        net_profit=None,
-                        net_profit_yoy=None,
-                        eps=None,
-                    )
-                ]
-            )
-        )
+        """growth_pct 为 None 时 net_profit_yoy 输出 None。"""
+        patch_store(_FakeStore(actuals=[_make_actual("600519", growth_pct=None)]))
         resp = client.get("/api/earnings/stock/600519")
         body = resp.json()
         item = body["items"][0]
-        assert item["report_date"] is None
-        assert item["revenue"] is None
-        assert item["revenue_yoy"] is None
-        assert item["net_profit"] is None
         assert item["net_profit_yoy"] is None
-        assert item["eps"] is None
+        assert item["net_profit"] == "300000000000"
 
 
 # ---------- GET /api/earnings/scores/{code} (异常降级) ----------
