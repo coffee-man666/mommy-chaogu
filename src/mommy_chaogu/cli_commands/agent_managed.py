@@ -43,9 +43,10 @@ from mommy_chaogu.coding_agents.base import (
     previous_spec,
     skill_dir,
 )
+from mommy_chaogu.coding_agents.dsh import dsh_version_check
 from mommy_chaogu.version import __version__
 
-SUPPORTED_HOSTS = ("claude", "kimi", "cline", "codex")
+SUPPORTED_HOSTS = ("claude", "kimi", "cline", "codex", "dsh")
 _PERSONAL_REQUIRED_TOOLS = {
     "get_memory_context",
     "research_portfolio",
@@ -126,6 +127,13 @@ def _host_version(executable: str | None) -> str | None:
     return value[0][:200] if result.returncode == 0 and value else None
 
 
+def _host_installed(host: str, executable: str | None) -> bool:
+    if host == "dsh":
+        # dsh 常以 npx 运行而没有全局二进制；家目录存在即视为已安装。
+        return executable is not None or agent_home("dsh").is_dir()
+    return executable is not None
+
+
 def _host_status(host: str, connections: dict[str, Any]) -> dict[str, Any]:
     item = connections.get(host)
     previous = item if isinstance(item, dict) else None
@@ -137,10 +145,11 @@ def _host_status(host: str, connections: dict[str, Any]) -> dict[str, Any]:
             "kimi": "Kimi Code",
             "cline": "Cline",
             "codex": "Codex",
+            "dsh": "DeepSeek Harness",
         }[host],
         "executable": executable,
         "version": _host_version(executable),
-        "installed": executable is not None,
+        "installed": _host_installed(host, executable),
         "managed_connection": previous is not None,
         "configured": False,
         "skills_ok": False,
@@ -241,6 +250,8 @@ def _configuration_target(host: str) -> str:
         return str(agent_home("kimi") / "mcp.json")
     if host == "cline":
         return str(agent_home("cline") / "cline_mcp_settings.json")
+    if host == "dsh":
+        return str(agent_home("dsh") / "cordis.patch.yml")
     return "Codex user MCP registry (managed by `codex mcp add/remove`)"
 
 
@@ -335,6 +346,10 @@ def doctor_payload(host: str, timeout_seconds: float) -> dict[str, Any]:
             "message": str(status.get("state", "配置状态未知")),
         },
     ]
+    if selected == "dsh":
+        # dsh 是 developer preview（0.x），记录验证基线并对版本漂移告警；
+        # warning 不计入 blocking，探测不到版本（npx 运行）时诚实标 not_checked。
+        checks.append(dsh_version_check(status.get("version")))
     skill_checks = _skill_checks(selected, previous)
     skills_ok = all(item["status"] == "ok" for item in skill_checks)
     if skills_ok:

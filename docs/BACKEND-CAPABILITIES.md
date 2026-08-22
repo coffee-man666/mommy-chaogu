@@ -341,7 +341,7 @@ def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None
 | `mommy` | 自然语言主入口（REPL/单发/--setup/--verbose） |
 | `mommy-tui` / `mommy-web` | 两个前端 |
 | `mommy watchlist/monitor/cache/semicon/flows/report/agent/memory/earnings/...` | 透传子命令 |
-| `mommy connect claude/kimi` | 注册本地 MCP、安装投研 Skill、测试与断开 |
+| `mommy connect claude/kimi/cline/codex/dsh` | 注册本地 MCP、安装投研 Skill、测试与断开 |
 | `mommy-mcp` | MCP server（25 个底层工具 + 6 个研究工作流，按 privacy profile 发布） |
 
 `--verbose` 输出路由决策 + 工具调用过程，是调试前端路由展示的参考输出。

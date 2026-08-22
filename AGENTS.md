@@ -109,7 +109,7 @@ src/mommy_chaogu/
    - 这些命令保留向后兼容，推荐使用 `mommy <子命令>` 风格
    - `mommy agent detect|plan|connect|doctor|repair --json` → Agent-managed 安装/诊断契约；plan
      先展示文件和权限，真实 MCP 探针通过也不等于首次价值完成
-   - `mommy connect claude|kimi|cline|codex` → 兼容入口，安装 onboard/research/strategy 三个
+   - `mommy connect claude|kimi|cline|codex|dsh` → 兼容入口，安装 onboard/research/strategy 三个
      Skill + 注册本地 MCP；新连接默认 market-only，显式 `--profile personal` 才开放个人能力
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：

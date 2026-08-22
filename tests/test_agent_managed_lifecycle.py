@@ -78,7 +78,7 @@ def test_detect_explains_the_toolbox_without_claiming_generic_managed_support() 
         result = detect_payload()
 
     assert result["product"]["positioning"] == "可由宿主 Agent 编排的本地投研工具箱"
-    assert result["managed_connection_hosts"] == ["claude", "kimi", "cline", "codex"]
+    assert result["managed_connection_hosts"] == ["claude", "kimi", "cline", "codex", "dsh"]
     assert result["generic_mcp_available"] is False
     assert result["portable_stdio_mcp_available"] is True
     assert result["auto_candidates"] == []

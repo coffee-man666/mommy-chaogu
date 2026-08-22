@@ -10,6 +10,7 @@ from mommy_chaogu.coding_agents.base import (
 from mommy_chaogu.coding_agents.claude import ClaudeAdapter
 from mommy_chaogu.coding_agents.cline import ClineAdapter
 from mommy_chaogu.coding_agents.codex import CodexAdapter
+from mommy_chaogu.coding_agents.dsh import DshAdapter
 from mommy_chaogu.coding_agents.kimi import KimiAdapter
 
 
@@ -19,6 +20,7 @@ def adapter_for(target: str, **kwargs: Any) -> CodingAgentAdapter:
         "kimi": KimiAdapter,
         "cline": ClineAdapter,
         "codex": CodexAdapter,
+        "dsh": DshAdapter,
     }
     try:
         return cast(CodingAgentAdapter, adapters[target](target=target, **kwargs))
@@ -33,6 +35,7 @@ __all__ = [
     "CodingAgentAdapter",
     "ConnectionSpec",
     "ConnectionStatus",
+    "DshAdapter",
     "KimiAdapter",
     "adapter_for",
 ]

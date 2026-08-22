@@ -632,7 +632,7 @@ uv run mommy tui
 
 ```bash
 # 一键注册 MCP + 安装投研 Skill + 连通测试
-uv run mommy connect kimi          # 也可用 claude / cline / codex
+uv run mommy connect kimi          # 也可用 claude / cline / codex / dsh
 
 # 查看和复测
 uv run mommy connect status

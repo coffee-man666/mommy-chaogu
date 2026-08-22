@@ -132,6 +132,9 @@ def directory_hash(path: Path) -> str:
 
 
 def agent_home(target: str) -> Path:
+    if target == "dsh":
+        override = os.environ.get("DSH_HOME", "").strip()
+        return Path(override).expanduser() if override else Path.home() / ".dsh"
     if target == "claude":
         override = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
         return Path(override).expanduser() if override else Path.home() / ".claude"
@@ -276,7 +279,8 @@ def entry_matches_spec(target: str, entry: dict[str, Any], spec: ConnectionSpec)
         return False
     if transport.get("env", {}) != spec.env:
         return False
-    return target != "kimi" or entry.get("cwd") == spec.cwd
+    # Kimi 和 dsh 的配置都支持并记录 cwd，需要一并校验。
+    return target not in {"kimi", "dsh"} or entry.get("cwd") == spec.cwd
 
 
 def load_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:

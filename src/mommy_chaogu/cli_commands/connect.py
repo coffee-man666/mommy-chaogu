@@ -43,10 +43,10 @@ class ConnectError(RuntimeError):
 def build_connect_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mommy-connect",
-        description="把本地投研能力连接到 Claude Code、Kimi Code、Cline 或 Codex",
+        description="把本地投研能力连接到 Claude Code、Kimi Code、Cline、Codex 或 DeepSeek Harness",
     )
     action = parser.add_subparsers(dest="action", required=True)
-    for target in ("claude", "kimi", "cline", "codex"):
+    for target in ("claude", "kimi", "cline", "codex", "dsh"):
         connect = action.add_parser(target, help=f"连接 {_display_name(target)}")
         connect.add_argument(
             "--profile",
@@ -57,18 +57,22 @@ def build_connect_parser() -> argparse.ArgumentParser:
         connect.add_argument("--force", action="store_true", help="替换同名的非托管配置或 Skill")
         connect.add_argument("--skip-test", action="store_true", help="安装后跳过 MCP 连通测试")
     status = action.add_parser("status", help="查看连接状态")
-    status.add_argument("target", nargs="?", choices=("claude", "kimi", "cline", "codex"))
+    status.add_argument("target", nargs="?", choices=("claude", "kimi", "cline", "codex", "dsh"))
     disconnect = action.add_parser("disconnect", help="断开连接并删除托管的 Skill")
-    disconnect.add_argument("target", choices=("claude", "kimi", "cline", "codex", "all"))
+    disconnect.add_argument("target", choices=("claude", "kimi", "cline", "codex", "dsh", "all"))
     test = action.add_parser("test", help="启动 MCP 并检查可用工具")
-    test.add_argument("target", choices=("claude", "kimi", "cline", "codex"))
+    test.add_argument("target", choices=("claude", "kimi", "cline", "codex", "dsh"))
     return parser
 
 
 def _display_name(target: str) -> str:
-    return {"claude": "Claude Code", "kimi": "Kimi Code", "cline": "Cline", "codex": "Codex"}[
-        target
-    ]
+    return {
+        "claude": "Claude Code",
+        "kimi": "Kimi Code",
+        "cline": "Cline",
+        "codex": "Codex",
+        "dsh": "DeepSeek Harness (dsh)",
+    }[target]
 
 
 def _state_path() -> Path:
@@ -246,7 +250,7 @@ def _connect(target: str, profile: str | None, *, force: bool, skip_test: bool) 
 
 def _status(target: str | None) -> int:
     state = _load_state()
-    targets = [target] if target else ["claude", "kimi", "cline", "codex"]
+    targets = [target] if target else ["claude", "kimi", "cline", "codex", "dsh"]
     for name in targets:
         item = state["connections"].get(name)
         if not isinstance(item, dict):
@@ -268,7 +272,7 @@ def _status(target: str | None) -> int:
 
 def _disconnect(target: str) -> int:
     state = _load_state()
-    names = ["claude", "kimi", "cline", "codex"] if target == "all" else [target]
+    names = ["claude", "kimi", "cline", "codex", "dsh"] if target == "all" else [target]
     for name in names:
         item = state["connections"].get(name)
         if not isinstance(item, dict):
@@ -358,7 +362,7 @@ def _run_command(command: list[str], *, check: bool = True) -> Any:
 
 def cmd_connect(args: argparse.Namespace) -> int:
     try:
-        if args.action in {"claude", "kimi", "cline", "codex"}:
+        if args.action in {"claude", "kimi", "cline", "codex", "dsh"}:
             return _connect(
                 args.action, args.profile, force=bool(args.force), skip_test=bool(args.skip_test)
             )

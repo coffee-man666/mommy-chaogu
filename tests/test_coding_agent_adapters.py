@@ -1,4 +1,4 @@
-"""Shared contract tests for Claude, Kimi, Cline and Codex adapters."""
+"""Shared contract tests for Claude, Kimi, Cline, Codex and dsh adapters."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from mommy_chaogu.cli_commands.connect import _bundled_skill_dir, _bundled_skill
 from mommy_chaogu.coding_agents import adapter_for
 from mommy_chaogu.coding_agents.base import ConnectionSpec, directory_hash, install_skill
 
-TARGETS = ("claude", "kimi", "cline", "codex")
+TARGETS = ("claude", "kimi", "cline", "codex", "dsh")
 
 
 @pytest.fixture(params=TARGETS)
@@ -27,6 +27,7 @@ def adapter_case(
     monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "kimi"))
     monkeypatch.setenv("CLINE_DATA_DIR", str(tmp_path / "cline"))
     monkeypatch.setenv("CODEX_SKILLS_DIR", str(tmp_path / "codex-skills"))
+    monkeypatch.setenv("DSH_HOME", str(tmp_path / "dsh"))
     spec = ConnectionSpec(
         command="/usr/bin/python3",
         args=["-m", "mommy_chaogu.agent.mcp_server", "--profile", "personal"],
@@ -204,6 +205,8 @@ def test_unmanaged_same_name_is_not_overwritten(adapter_case: dict[str, Any]) ->
         path = adapter_case["tmp_path"] / "cline" / "settings" / "cline_mcp_settings.json"
     elif target == "claude":
         path = adapter_case["tmp_path"] / "claude" / ".claude.json"
+    elif target == "dsh":
+        path = adapter_case["tmp_path"] / "dsh" / "cordis.patch.yml"
     else:
         adapter_case["codex_state"]["command"] = "user-managed"
         path = None
@@ -211,9 +214,22 @@ def test_unmanaged_same_name_is_not_overwritten(adapter_case: dict[str, Any]) ->
         path.parent.mkdir(parents=True, exist_ok=True)
         if target == "cline":
             value = {"mcpServers": {"mommy-chaogu": {"transport": {"command": "user-managed"}}}}
+        elif target == "dsh":
+            path.write_text(
+                "- insert:\n"
+                "    - id: user-row\n"
+                "      name: '@deepseek-ai/dsh-mcp-client'\n"
+                "      config:\n"
+                "        serverName: mommy-chaogu\n"
+                "        transport: stdio\n"
+                "        command: user-managed\n",
+                encoding="utf-8",
+            )
+            value = None
         else:
             value = {"mcpServers": {"mommy-chaogu": {"command": "user-managed"}}}
-        path.write_text(json.dumps(value))
+        if value is not None:
+            path.write_text(json.dumps(value))
     with pytest.raises(RuntimeError, match=r"非本工具管理|修改"):
         adapter_case["adapter"].register_mcp(adapter_case["spec"])
 

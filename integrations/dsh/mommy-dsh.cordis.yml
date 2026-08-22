@@ -1,0 +1,34 @@
+# mommy-chaogu → DeepSeek Harness (dsh) MCP overlay 参考配置。
+#
+# 用途：把 mommy-chaogu 的 stdio MCP server 通过 @deepseek-ai/dsh-mcp-client
+# 桥接进 dsh，工具会以 mcp__mommy-chaogu__<tool> 的形式出现。
+#
+# 使用（任选其一）：
+#   1) 临时验证：dsh web --patch /path/to/mommy-dsh.cordis.yml
+#   2) 持久化：把下面的 insert 条目合并进 $DSH_HOME/cordis.patch.yml
+#      （默认 ~/.dsh/cordis.patch.yml；文件可能已有其他 patch，务必合并而非覆盖）
+#
+# 推荐直接使用托管方式：uv run mommy connect dsh（自动合并 patch、安装
+# Skill 到 ~/.dsh/skills、记录连接状态，支持 status/disconnect/doctor）。
+#
+# 注意：dsh 的 stdio 桥会剥掉环境中疑似凭据的变量， mommy 需要的
+# MOMMY_* 路径变量必须显式写在 config.env 里（托管连接会自动处理）。
+- insert:
+    - id: mcp-mommy-chaogu
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: mommy-chaogu
+        transport: stdio
+        # 三种启动方式任选其一（托管连接使用 sys.executable 直跑模块）：
+        # 1) 仓库内：command: uv, args: [run, --project, /absolute/path/to/mommy-chaogu, mommy-mcp]
+        # 2) 已 pip 安装：command: mommy-mcp, args: []
+        # 3) 解释器直跑（下例，最接近托管行为）：
+        command: /usr/bin/python3
+        args:
+          - -m
+          - mommy_chaogu.agent.mcp_server
+          - --profile
+          - market-only # 个人能力改为 personal（见 mommy connect 的隐私授权说明）
+        env:
+          MOMMY_CONFIG_DIR: ~/.config/mommy-chaogu # 按需替换为绝对路径
+        cwd: /tmp # 子进程工作目录，按需替换

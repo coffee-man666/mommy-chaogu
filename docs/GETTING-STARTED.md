@@ -129,7 +129,7 @@ uv run mommy web --port 8765         # 本机 Web
 外部 Coding Agent 已经有自己的模型，因此不需要再给 mommy-chaogu 配一套 LLM Key：
 
 ```bash
-uv run mommy connect claude          # 也可用 kimi / cline / codex
+uv run mommy connect claude          # 也可用 kimi / cline / codex / dsh
 uv run mommy connect status
 uv run mommy connect test claude     # 替换为实际 target
 ```
