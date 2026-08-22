@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
 from mommy_chaogu.cli_support import *
+
+if TYPE_CHECKING:
+    from openai import OpenAI
+
+    from mommy_chaogu.agent.tools import ToolContext
 
 # ============================================================
 # mommy-agent — LLM agent 交互式 CLI
@@ -41,7 +48,7 @@ def build_agent_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _build_agent_context() -> object:
+def _build_agent_context() -> ToolContext:
     """从项目默认配置构造 agent ToolContext。"""
     from mommy_chaogu.agent.tools import ToolContext
     from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
@@ -67,7 +74,7 @@ def _build_agent_context() -> object:
 def _build_llm_client(
     provider: str | None = None,
     model: str | None = None,
-) -> tuple[object | None, str | None, str | None]:
+) -> tuple[OpenAI | None, str | None, str | None]:
     """容错地构造 OpenAI 兼容 client，返回 (client, model, embedding_model)。
 
     任何一步失败（provider 未知 / 无 API key / 构造抛异常）都返回

@@ -70,7 +70,7 @@ def get_bars(
 ) -> list[BarOut]:
     """K 线数据。"""
     try:
-        bars = adapter.get_bars(code, interval=interval, limit=limit, adjustment=adjustment)  # type: ignore[arg-type]
+        bars = adapter.get_bars(code, interval=interval, limit=limit, adjustment=adjustment)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="当前没有可用 K 线数据") from exc
     if not bars:

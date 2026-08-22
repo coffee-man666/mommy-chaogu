@@ -29,6 +29,7 @@ from textual.widgets import Input, Markdown, Static
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.services.errors import friendly_error
 from mommy_chaogu.tui.services.renderers import is_truncated, render_tool_result
+from mommy_chaogu.tui.views.slash_cards import SlashCardFactory
 from mommy_chaogu.tui.widgets import cards
 from mommy_chaogu.tui.widgets.hint_bar import HintBar
 from mommy_chaogu.tui.widgets.tool_indicator import (
@@ -187,6 +188,8 @@ class ChatView(Vertical):
         self._stream_dirty: bool = False
         # 取消回调（app.py 设置，Esc 触发真取消）
         self._cancel_callback: Callable[[], None] | None = None
+        # 斜杠命令卡片构建器（数据拉取 + 渲染；挂载与线程调度留在这里）
+        self._card_factory = SlashCardFactory(self._services, self._theme)
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-log"):
@@ -477,23 +480,23 @@ class ChatView(Vertical):
         elif cmd == "quit":
             self.app.exit()
         elif cmd == "today":
-            self._run_card_worker(self._build_today_card)
+            self._run_card_worker(self._card_factory.today_card)
         elif cmd == "usmarket":
-            self._run_card_worker(self._build_us_market_card)
+            self._run_card_worker(self._card_factory.us_market_card)
         elif cmd == "watch":
-            self._run_card_worker(self._build_watch_card)
+            self._run_card_worker(self._card_factory.watch_card)
         elif cmd == "portfolio":
-            self._run_card_worker(self._build_portfolio_card)
+            self._run_card_worker(self._card_factory.portfolio_card)
         elif cmd == "flows":
             self._cmd_flows(args)
         elif cmd == "quote":
             self._cmd_quote(args)
         elif cmd == "predictions":
-            self._run_card_worker(self._build_predictions_card)
+            self._run_card_worker(self._card_factory.predictions_card)
         elif cmd == "signals":
-            self._run_card_worker(self._build_signals_card)
+            self._run_card_worker(self._card_factory.signals_card)
         elif cmd == "memory":
-            self._run_card_worker(self._build_memory_card)
+            self._run_card_worker(self._card_factory.memory_card)
         elif cmd == "status":
             self._show_status_card()
 
@@ -512,97 +515,9 @@ class ChatView(Vertical):
 
         self.run_worker(_work, thread=True)
 
-    def _hint_static(self, text: str) -> Static:
-        return Static(f"[yellow]⚠[/] {escape(text)}", classes="hint-card")
-
-    def _build_today_card(self) -> Static | None:
-        svc = self._services()
-        indexes = self._call_service(getattr(svc, "indexes", None)) or []
-        data_svc = getattr(svc, "data", None)
-        rows = data_svc.watchlist_quotes() if data_svc is not None else []
-        up = sum(1 for r in rows if (r.get("change_pct") or 0) > 0)
-        down = sum(1 for r in rows if (r.get("change_pct") or 0) < 0)
-        signals = self._call_service(getattr(svc, "signals_recent", None)) or []
-        pending = 0
-        memory_db = getattr(svc, "memory_db", None)
-        if memory_db and callable(memory_db.get("predictions")):
-            stats = self._call_service(memory_db["predictions"])
-            if stats:
-                pending = int(stats.get("pending", 0) or 0)
-        return cards.overview_card(
-            indexes, len(rows), up, down, len(signals), pending, self._theme()
-        )
-
-    def _build_watch_card(self) -> Static | None:
-        svc = self._services()
-        data_svc = getattr(svc, "data", None)
-        rows = data_svc.watchlist_quotes() if data_svc is not None else []
-        return cards.watch_card(rows, self._theme())
-
-    def _build_us_market_card(self) -> Static | None:
-        """美股大盘卡：三大指数 + VIX + 10Y 美债利率。"""
-        svc = self._services()
-        data_svc = getattr(svc, "data", None)
-        adapter = getattr(data_svc, "adapter", None) if data_svc is not None else None
-        if adapter is None:
-            return self._hint_static("行情服务未配置")
-        from mommy_chaogu.services.us_market_service import fetch_us_market_brief
-
-        items = fetch_us_market_brief(adapter)
-        if not items:
-            return self._hint_static("美股行情源暂时不可用")
-        return cards.us_market_card(items, self._theme())
-
-    def _build_portfolio_card(self) -> Static | None:
-        svc = self._services()
-        data_svc = getattr(svc, "data", None)
-        if data_svc is None:
-            return self._hint_static("持仓服务未配置")
-        return cards.portfolio_card(data_svc.portfolio_snapshot(), self._theme())
-
-    def _build_predictions_card(self) -> Static | None:
-        svc = self._services()
-        memory_db = getattr(svc, "memory_db", None)
-        if not memory_db:
-            return self._hint_static("记忆系统未配置")
-        stats = self._call_service(memory_db.get("predictions"))
-        recent = self._call_service(memory_db.get("predictions_recent")) or []
-        return cards.predictions_card(stats, recent, self._theme())
-
-    def _build_signals_card(self) -> Static | None:
-        svc = self._services()
-        fn = getattr(svc, "signals_recent", None)
-        if fn is None:
-            return self._hint_static("信号服务未配置")
-        signals = self._call_service(fn) or []
-        return cards.signals_card(signals, self._theme())
-
-    def _build_memory_card(self) -> Static | None:
-        svc = self._services()
-        memory_db = getattr(svc, "memory_db", None)
-        if not memory_db:
-            return self._hint_static("记忆系统未配置")
-        return cards.memory_card(memory_db, self._theme())
-
     def _show_status_card(self) -> None:
         """/status：无 IO，同步组装直接挂载。"""
-        svc = self._services()
-        agent = getattr(svc, "agent", None)
-        provider = agent.provider_name() if agent is not None else None
-        model = agent.model_name() if agent is not None else None
-        ai_label = f"AI🟢 {provider}" if provider else "AI⚪ 未配置"
-        data_svc = getattr(svc, "data", None)
-        source = data_svc.source_label() if data_svc is not None else ""
-        counters = getattr(getattr(data_svc, "adapter", None), "stats_counters", None)
-        from mommy_chaogu.db_paths import AGENT_DB, MARKET_DB, PORTFOLIO_DB, REFERENCE_DB
-
-        paths = {
-            "market": str(MARKET_DB),
-            "portfolio": str(PORTFOLIO_DB),
-            "agent": str(AGENT_DB),
-            "reference": str(REFERENCE_DB),
-        }
-        self.mount_card(cards.status_card(ai_label, model, source, counters, paths, self._theme()))
+        self.mount_card(self._card_factory.status_card())
 
     def _cmd_quote(self, args: str) -> None:
         code = args.strip()
@@ -613,37 +528,7 @@ class ChatView(Vertical):
 
     def _show_quote(self, code: str) -> None:
         """报价卡（/quote 与 6 位代码快捷入口共用）。"""
-
-        def _build() -> Static | None:
-            svc = self._services()
-            data_svc = getattr(svc, "data", None)
-            adapter = getattr(data_svc, "adapter", None) if data_svc is not None else None
-            if adapter is None:
-                return self._hint_static("行情服务未配置")
-            quote = adapter.get_quote(code)
-            if quote is None:
-                return self._hint_static(f"未找到 {code} 的行情")
-            data: dict[str, Any] = {
-                "code": code,
-                "name": getattr(quote, "name", code),
-                "price": getattr(quote, "price", None),
-                "change_pct": getattr(quote, "change_pct", None),
-                "open": getattr(quote, "open", None),
-                "high": getattr(quote, "high", None),
-                "low": getattr(quote, "low", None),
-                "prev_close": getattr(quote, "prev_close", None),
-                "volume": getattr(quote, "volume", None),
-                "turnover": getattr(getattr(quote, "turnover", None), "amount", None),
-                "turnover_rate": getattr(quote, "turnover_rate", None),
-                "volume_ratio": getattr(quote, "volume_ratio", None),
-            }
-            if data_svc is not None:
-                flow = data_svc._fetch_flow_safe(code)
-                if flow is not None:
-                    data["main_flow"] = flow
-            return cards.quote_card(data, self._theme())
-
-        self._run_card_worker(_build)
+        self._run_card_worker(lambda: self._card_factory.quote_card(code))
 
     def _cmd_flows(self, args: str) -> None:
         code = args.strip()
@@ -651,32 +536,10 @@ class ChatView(Vertical):
             if not _CODE_RE.fullmatch(code):
                 self.append_hint("用法: /flows <代码>，如 /flows 688981 或 /flows AAPL")
                 return
-
-            def _build() -> Static | None:
-                svc = self._services()
-                flows_service = getattr(svc, "flows", None)
-                if flows_service is None:
-                    return self._hint_static("资金流服务未配置")
-                info = flows_service.show(code, days=30)
-                return cards.flows_command_card(code, info, self._theme())
-
-            self._run_card_worker(_build)
+            self._run_card_worker(lambda: self._card_factory.flows_card(code))
             return
-
         # 无参数：自选股主力净流入榜
-        def _build_watchlist_flows() -> Static | None:
-            svc = self._services()
-            data_svc = getattr(svc, "data", None)
-            rows = data_svc.watchlist_quotes() if data_svc is not None else []
-            with_flow = [r for r in rows if r.get("main_flow") is not None]
-            with_flow.sort(key=lambda r: abs(float(r["main_flow"])), reverse=True)
-            items = [
-                {"code": r.get("code", ""), "name": r.get("name", ""), "main_net": r["main_flow"]}
-                for r in with_flow[:10]
-            ]
-            return cards.flow_multi_card(items, self._theme())
-
-        self._run_card_worker(_build_watchlist_flows)
+        self._run_card_worker(self._card_factory.watchlist_flows_card)
 
     # ------------------------------------------------------------------
     # 对话流追加（用户 / 助手 / 工作流 / 工具 / 提示 / 卡片）
@@ -789,7 +652,9 @@ class ChatView(Vertical):
         """回填欢迎卡内容（数据未到时 indexes/watch_total 传 None 渲染骨架）。"""
         try:
             welcome = self.query_one("#chat-welcome", Static)
-        except Exception:
+        except Exception as e:
+            # 清屏/退出竞态下 widget 已卸载，属预期路径
+            _log.debug("welcome 卡未挂载，跳过回填: %s", e)
             return
         welcome.update(
             cards.welcome_text(indexes, watch_total, watch_up, watch_down, has_agent, self._theme())

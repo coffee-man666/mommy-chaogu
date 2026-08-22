@@ -8,10 +8,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TypedDict, cast
 
+from mommy_chaogu.market_data import Bar, OrderBook
 from mommy_chaogu.monitor import Snapshot, SnapshotRow
+from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.portfolio.models import Position, PositionAdjustment
 from mommy_chaogu.signals.types import Signal
 from mommy_chaogu.watchlist.models import Group, StockEntry
@@ -28,6 +32,8 @@ from mommy_chaogu.web.schemas import (
     WatchlistGroupOut,
     WatchlistStockOut,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -82,31 +88,25 @@ def snapshot_to_out(snapshot: Snapshot) -> SnapshotOut:
     )
 
 
-def bar_to_out(bar: object) -> BarOut:
-    """Bar → BarOut（mappers 模块要避免 efinance 类型耦合）。"""
+def bar_to_out(bar: Bar) -> BarOut:
+    """Bar → BarOut（adapter 层已统一为 market_data.types.Bar）。"""
     return BarOut(
-        timestamp=bar.timestamp,  # type: ignore[attr-defined]
-        open=bar.open,  # type: ignore[attr-defined]
-        high=bar.high,  # type: ignore[attr-defined]
-        low=bar.low,  # type: ignore[attr-defined]
-        close=bar.close,  # type: ignore[attr-defined]
-        volume=int(bar.volume),  # type: ignore[attr-defined]
-        turnover=bar.turnover.amount,  # type: ignore[attr-defined]
+        timestamp=bar.timestamp,
+        open=bar.open,
+        high=bar.high,
+        low=bar.low,
+        close=bar.close,
+        volume=int(bar.volume),
+        turnover=bar.turnover.amount,
     )
 
 
-def orderbook_to_out(code: str, ob: object) -> OrderBookOut:
-    bids = [
-        OrderBookLevelOut(price=lv.price, volume=int(lv.volume))  # type: ignore[attr-defined]
-        for lv in ob.bids  # type: ignore[attr-defined]
-    ]
-    asks = [
-        OrderBookLevelOut(price=lv.price, volume=int(lv.volume))  # type: ignore[attr-defined]
-        for lv in ob.asks  # type: ignore[attr-defined]
-    ]
+def orderbook_to_out(code: str, ob: OrderBook) -> OrderBookOut:
+    bids = [OrderBookLevelOut(price=lv.price, volume=int(lv.volume)) for lv in ob.bids]
+    asks = [OrderBookLevelOut(price=lv.price, volume=int(lv.volume)) for lv in ob.asks]
     return OrderBookOut(
         code=code,
-        timestamp=ob.timestamp,  # type: ignore[attr-defined]
+        timestamp=ob.timestamp,
         bids=bids,
         asks=asks,
     )
@@ -131,8 +131,8 @@ def stock_entry_to_out(entry: StockEntry, group_name: str) -> WatchlistStockOut:
                 ).fetchall()
                 if rows and rows[0][0]:
                     name = rows[0][0]
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("从 quote_cache 回填名称失败（code=%s）: %s", entry.code, e)
     # 处理 naive datetime
     added_at = entry.created_at
     if added_at.tzinfo is None:
@@ -169,6 +169,42 @@ def signal_to_out(signal: Signal) -> SignalOut:
 
 
 # ---------- Portfolio mappers ----------
+
+
+class PortfolioSummaryItem(TypedDict):
+    """store.summary() positions 元素的形状（见 portfolio/store.py summary docstring）。"""
+
+    position: Position
+    avg_cost: Decimal
+    shares: int
+    current_price: Decimal | None
+    market_value: Decimal | None
+    total_cost: Decimal
+    unrealized_pnl: Decimal | None
+    unrealized_pnl_pct: Decimal | None
+
+
+class PortfolioSummaryData(TypedDict):
+    """store.summary() 的返回形状（store 侧只标注了 dict[str, object]）。"""
+
+    positions: list[PortfolioSummaryItem]
+    total_cost: Decimal
+    total_market_value: Decimal
+    total_unrealized_pnl: Decimal
+    total_unrealized_pnl_pct: Decimal
+    n_positions: int
+
+
+def portfolio_summary(
+    store: PortfolioStore,
+    current_prices: dict[str, Decimal],
+) -> PortfolioSummaryData:
+    """带类型地取 store.summary。
+
+    store 层返回 dict[str, object]（web 层不可改），在 web 边界按
+    store.summary 的既定契约收窄一次，路由代码即可用真实字段类型。
+    """
+    return cast("PortfolioSummaryData", store.summary(current_prices))
 
 
 def _aware(dt: datetime) -> datetime:

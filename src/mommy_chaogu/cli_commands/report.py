@@ -4,6 +4,8 @@ from __future__ import annotations
 
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
+from typing import Any
+
 from mommy_chaogu.cli_support import *
 
 # ============================================================
@@ -83,7 +85,7 @@ def cmd_report_serve(args: argparse.Namespace) -> int:
         return 1
 
     class _Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args: object, **kwargs: object) -> None:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, directory=str(out_dir), **kwargs)
 
     with socketserver.TCPServer(("0.0.0.0", args.port), _Handler) as srv:

@@ -26,15 +26,19 @@ import argparse
 import asyncio
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    AudioContent,
     CallToolRequestParams,
     CallToolResult,
+    EmbeddedResource,
+    ImageContent,
     ListToolsResult,
     PaginatedRequestParams,
+    ResourceLink,
     TextContent,
     Tool,
     ToolAnnotations,
@@ -274,8 +278,8 @@ def create_mcp_server(
     # MCP 1.x while a fresh ``uv tool install`` may resolve MCP 2.x.
     if hasattr(Server, "list_tools"):
         server = _new_server()
-        server.list_tools()(list_tools)  # type: ignore[attr-defined]
-        server.call_tool()(call_tool)  # type: ignore[attr-defined]
+        server.list_tools()(list_tools)  # type: ignore[no-untyped-call]
+        server.call_tool()(call_tool)
         return server
 
     async def on_list_tools(
@@ -288,7 +292,12 @@ def create_mcp_server(
         _request_context: Any,
         params: CallToolRequestParams,
     ) -> CallToolResult:
-        return CallToolResult(content=await call_tool(params.name, params.arguments))
+        # list[TextContent] → SDK 的联合 content 类型：list 不变性需要显式宽化
+        content = cast(
+            "list[TextContent | ImageContent | AudioContent | ResourceLink | EmbeddedResource]",
+            await call_tool(params.name, params.arguments),
+        )
+        return CallToolResult(content=content)
 
     return _new_server(
         on_list_tools=on_list_tools,

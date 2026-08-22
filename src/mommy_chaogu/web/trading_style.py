@@ -8,7 +8,7 @@ or inject an arbitrary system prompt.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from mommy_chaogu.preferences import HOLD_PERIOD_TO_DAYS
 
@@ -37,7 +37,7 @@ def parse_trading_style(value: object) -> TradingStylePreset:
     """Return a validated preset or raise ``ValueError`` for untrusted input."""
     if not isinstance(value, str) or value not in _STYLE_CONTEXT:
         raise ValueError("invalid trading style")
-    return cast(TradingStylePreset, value)
+    return value
 
 
 def trading_style_context(preset: TradingStylePreset) -> str:
@@ -52,18 +52,26 @@ def preference_context(prefs: Mapping[str, Any]) -> str:
     + 回撤敏感度 + 通知/关注摘要。非法/缺失字段回落到默认值。
     """
     style = prefs.get("style")
-    style_text = _STYLE_CONTEXT.get(style, _STYLE_CONTEXT[DEFAULT_TRADING_STYLE])
+    if not isinstance(style, str) or style not in _STYLE_CONTEXT:
+        style = DEFAULT_TRADING_STYLE
+    style_text = _STYLE_CONTEXT[style]
 
     period = prefs.get("holding_period")
-    period_label = _HOLD_PERIOD_LABEL.get(period, _HOLD_PERIOD_LABEL["swing"])
+    if not isinstance(period, str) or period not in _HOLD_PERIOD_LABEL:
+        period = "swing"
+    period_label = _HOLD_PERIOD_LABEL[period]
     days = HOLD_PERIOD_TO_DAYS.get(period, HOLD_PERIOD_TO_DAYS["swing"])
     period_text = f"持有周期偏好{period_label}，默认持有约 {days} 天。"
 
     sensitivity = prefs.get("drawdown_sensitivity")
-    drawdown_text = _DRAWDOWN_CONTEXT.get(sensitivity, _DRAWDOWN_CONTEXT["medium"])
+    if not isinstance(sensitivity, str) or sensitivity not in _DRAWDOWN_CONTEXT:
+        sensitivity = "medium"
+    drawdown_text = _DRAWDOWN_CONTEXT[sensitivity]
 
     min_severity = prefs.get("notify_min_severity")
-    severity_label = _SEVERITY_LABEL.get(min_severity, _SEVERITY_LABEL["warning"])
+    if not isinstance(min_severity, str) or min_severity not in _SEVERITY_LABEL:
+        min_severity = "warning"
+    severity_label = _SEVERITY_LABEL[min_severity]
     watched = prefs.get("watched_rules") or []
     watch_text = "关注全部信号规则" if not watched else f"仅关注 {len(watched)} 条信号规则"
     windows = prefs.get("reminder_windows") or []

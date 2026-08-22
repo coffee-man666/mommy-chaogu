@@ -8,11 +8,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from mommy_chaogu.market_data import MarketDataAdapter
 from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.portfolio.store import PositionNotFoundError
 from mommy_chaogu.web.deps import get_adapter, get_portfolio_store
 from mommy_chaogu.web.mappers import (
     adjustment_to_out,
+    portfolio_summary,
     position_detail_to_out,
     position_to_out,
 )
@@ -31,7 +33,7 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 @router.get("", response_model=PortfolioSummaryOut)
 def get_portfolio(
     store: Annotated[PortfolioStore, Depends(get_portfolio_store)],
-    adapter: Annotated[object, Depends(get_adapter)],
+    adapter: Annotated[MarketDataAdapter, Depends(get_adapter)],
 ) -> PortfolioSummaryOut:
     """持仓总览（含实时盈亏）。"""
     positions = store.list_positions()
@@ -56,30 +58,29 @@ def get_portfolio(
     except Exception:
         pass  # 价格拉不到就只返回成本
 
-    raw = store.summary(current_prices)
+    raw = portfolio_summary(store, current_prices)
     detail_list: list[PositionDetailOut] = []
     for item in raw["positions"]:
-        pos = item["position"]  # type: ignore[assignment]
         detail_list.append(
             position_detail_to_out(
-                pos=pos,  # type: ignore[arg-type]
-                avg_cost=item["avg_cost"],  # type: ignore[arg-type]
-                shares=item["shares"],  # type: ignore[arg-type]
-                current_price=item["current_price"],  # type: ignore[arg-type]
-                market_value=item["market_value"],  # type: ignore[arg-type]
-                total_cost=item["total_cost"],  # type: ignore[arg-type]
-                unrealized_pnl=item["unrealized_pnl"],  # type: ignore[arg-type]
-                unrealized_pnl_pct=item["unrealized_pnl_pct"],  # type: ignore[arg-type]
+                pos=item["position"],
+                avg_cost=item["avg_cost"],
+                shares=item["shares"],
+                current_price=item["current_price"],
+                market_value=item["market_value"],
+                total_cost=item["total_cost"],
+                unrealized_pnl=item["unrealized_pnl"],
+                unrealized_pnl_pct=item["unrealized_pnl_pct"],
             )
         )
 
     return PortfolioSummaryOut(
         positions=detail_list,
-        total_cost=raw["total_cost"],  # type: ignore[arg-type]
-        total_market_value=raw["total_market_value"],  # type: ignore[arg-type]
-        total_unrealized_pnl=raw["total_unrealized_pnl"],  # type: ignore[arg-type]
-        total_unrealized_pnl_pct=raw["total_unrealized_pnl_pct"],  # type: ignore[arg-type]
-        n_positions=raw["n_positions"],  # type: ignore[arg-type]
+        total_cost=raw["total_cost"],
+        total_market_value=raw["total_market_value"],
+        total_unrealized_pnl=raw["total_unrealized_pnl"],
+        total_unrealized_pnl_pct=raw["total_unrealized_pnl_pct"],
+        n_positions=raw["n_positions"],
     )
 
 

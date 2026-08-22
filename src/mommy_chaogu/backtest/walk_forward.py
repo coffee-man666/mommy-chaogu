@@ -165,7 +165,7 @@ def _majority_direction(predictions: list[dict[str, Any]]) -> str:
         counts[_direction_of(pred)] = counts.get(_direction_of(pred), 0) + 1
     if not counts:
         return "neutral"
-    return max(counts, key=counts.get)
+    return max(counts, key=lambda k: counts[k])
 
 
 def walk_forward_test(

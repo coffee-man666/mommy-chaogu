@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 from mommy_chaogu.agent.tools import ToolRegistry
 from mommy_chaogu.cli_commands.agent import _build_agent_context, _build_llm_client
 from mommy_chaogu.cli_support import AGENT_DB, argparse
 from mommy_chaogu.workflow.compiler import WorkflowCompiler
 from mommy_chaogu.workflow.definitions import get_default_registry
-from mommy_chaogu.workflow.engine import WorkflowExecutor
+from mommy_chaogu.workflow.engine import Workflow, WorkflowExecutor
 from mommy_chaogu.workflow.spec import WorkflowSpec
 from mommy_chaogu.workflow.spec_runtime import spec_to_workflow
 from mommy_chaogu.workflow.store import WorkflowStore
@@ -75,7 +75,7 @@ def _validate(
     *,
     exclude_id: str | None = None,
 ) -> list[str]:
-    existing = [*get_default_registry().all_workflows()]
+    existing: list[Workflow | WorkflowSpec] = [*get_default_registry().all_workflows()]
     existing.extend(item[0] for item in store.load_all() if item[0].id != exclude_id)
     return validate_spec(spec, existing_workflows=existing)
 
@@ -186,8 +186,10 @@ def _compiler(exclude_id: str | None = None) -> WorkflowCompiler | None:
     if client is None or model is None:
         return None
 
-    def chat_raw(messages: list[dict[str, str]]) -> str:
-        response = client.chat.completions.create(model=model, messages=messages, temperature=0)
+    def chat_raw(messages: list[dict[str, Any]]) -> str:
+        # 通用 dict → SDK TypedDict 消息联合类型：边界宽化
+        sdk_messages = cast(Any, messages)
+        response = client.chat.completions.create(model=model, messages=sdk_messages, temperature=0)
         return str(response.choices[0].message.content or "")
 
     store = _store()

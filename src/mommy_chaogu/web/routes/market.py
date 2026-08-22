@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Query
 
 from mommy_chaogu.cache import CacheStore
-from mommy_chaogu.market_data import MarketDataAdapter
+from mommy_chaogu.market_data import MarketDataAdapter, Quote
 from mommy_chaogu.market_data.rankings import (
     fetch_indexes,
     fetch_sector_ranking,
@@ -66,8 +67,8 @@ def search_stocks(
             code=code, name=name or cached_names.get(code, ""), source=source
         )
 
-    for entry in watchlist.list_entries():
-        add(entry.code, entry.name or "", "watchlist")
+    for wl_entry in watchlist.list_entries():
+        add(wl_entry.code, wl_entry.name or "", "watchlist")
     for stock in semicon.list_all():
         add(stock.code, stock.name, "semicon")
     for code, name in cached_names.items():
@@ -148,9 +149,9 @@ def get_sectors(
     items = fetch_sector_ranking(limit=limit)
     return [
         SectorOut(
-            code=i["code"],  # type: ignore[arg-type]
-            name=i["name"],  # type: ignore[arg-type]
-            change_pct=i["change_pct"],  # type: ignore[arg-type]
+            code=i["code"],
+            name=i["name"],
+            change_pct=i["change_pct"],
             price=i.get("price") or Decimal("0"),
         )
         for i in items
@@ -175,9 +176,9 @@ def get_losers(
     return _ranking(adapter.list_market_quotes(), top="down", limit=limit)
 
 
-def _ranking(quotes: list[object], top: str, limit: int) -> list[dict[str, object]]:
+def _ranking(quotes: Sequence[Quote], top: str, limit: int) -> list[dict[str, object]]:
     """从全市场 quote 列表筛选 + 排序。"""
-    filtered: list[tuple[object, float]] = []
+    filtered: list[tuple[Quote, float]] = []
     for q in quotes:
         try:
             name = str(getattr(q, "name", "") or "")
@@ -194,7 +195,6 @@ def _ranking(quotes: list[object], top: str, limit: int) -> list[dict[str, objec
             if not code or not (
                 (code.isdigit() and len(code) == 6) or (code.isalpha() and 1 <= len(code) <= 6)
             ):
-                continue
                 continue
             filtered.append((q, pct))
         except Exception:

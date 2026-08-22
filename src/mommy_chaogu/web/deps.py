@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mommy_chaogu.backtest.engine import BacktestEngine
 from mommy_chaogu.cache import CachedMarketDataAdapter, CacheStore
@@ -27,6 +28,16 @@ from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.semicon import SemiconStore
 from mommy_chaogu.signals import Alerter, SignalStore
 from mommy_chaogu.watchlist import WatchlistStore
+
+if TYPE_CHECKING:
+    # 单例的真实类型只在类型检查期导入；运行期 import 仍留在各函数内
+    # （避免 web 启动路径背上 agent 包的初始化开销 / 循环依赖）。
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+    from mommy_chaogu.agent.memory import ConversationMemory
+    from mommy_chaogu.agent.memory_service import MemoryService
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+    from mommy_chaogu.agent.semantic_memory import SemanticMemory
+    from mommy_chaogu.agent.service import AgentService
 
 
 @lru_cache(maxsize=1)
@@ -146,7 +157,7 @@ def get_backtest_engine() -> BacktestEngine:
 
 
 @lru_cache(maxsize=1)
-def get_agent_memory() -> object:
+def get_agent_memory() -> ConversationMemory:
     """全局 ConversationMemory 单例。"""
     from mommy_chaogu.agent.memory import ConversationMemory
 
@@ -154,7 +165,7 @@ def get_agent_memory() -> object:
 
 
 @lru_cache(maxsize=1)
-def get_episodic_memory() -> object:
+def get_episodic_memory() -> EpisodicMemory:
     """全局 EpisodicMemory 单例（情景记忆）。"""
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
@@ -162,7 +173,7 @@ def get_episodic_memory() -> object:
 
 
 @lru_cache(maxsize=1)
-def get_prediction_tracker() -> object:
+def get_prediction_tracker() -> PredictionTracker:
     """全局 PredictionTracker 单例（预测追踪）。"""
     from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 
@@ -170,7 +181,7 @@ def get_prediction_tracker() -> object:
 
 
 @lru_cache(maxsize=1)
-def get_semantic_memory() -> object:
+def get_semantic_memory() -> SemanticMemory:
     """全局 SemanticMemory 单例（语义知识库）。"""
     from mommy_chaogu.agent.semantic_memory import SemanticMemory
 
@@ -178,7 +189,7 @@ def get_semantic_memory() -> object:
 
 
 @lru_cache(maxsize=1)
-def get_memory_service() -> object:
+def get_memory_service() -> MemoryService:
     """全局 MemoryService 单例。
 
     封装 MemoryPipeline + ConversationMemory，
@@ -229,7 +240,7 @@ def get_memory_service() -> object:
 
 
 @lru_cache(maxsize=1)
-def get_agent_service() -> object:
+def get_agent_service() -> AgentService | None:
     """全局 AgentService 单例（lazy init）。
 
     通过 load_config() 解析 provider（shell env > .env > config.toml），
@@ -241,7 +252,7 @@ def get_agent_service() -> object:
 
     cfg = load_config()
     if not cfg.agent.api_key:
-        return None  # type: ignore[return-value]
+        return None
 
     ctx = ToolContext(
         adapter=get_adapter(),
@@ -296,14 +307,14 @@ def close_cached_dependencies() -> None:
         if close is not None:
             close()
 
-    for factory in (
+    for singleton in (
         get_agent_service,
         get_memory_service,
         get_backtest_engine,
         *resource_factories,
         get_alerter,
     ):
-        cache_clear = getattr(factory, "cache_clear", None)
+        cache_clear = getattr(singleton, "cache_clear", None)
         if cache_clear is not None:
             cache_clear()
 

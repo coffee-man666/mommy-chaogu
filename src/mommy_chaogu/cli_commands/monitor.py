@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
 from mommy_chaogu.cli_support import *
+
+if TYPE_CHECKING:
+    from mommy_chaogu.cache import CachedMarketDataAdapter
 
 # ============================================================
 # monitor 子命令
 # ============================================================
 
 
-def _make_adapter(args: argparse.Namespace) -> object:
+def _make_adapter(args: argparse.Namespace) -> CachedMarketDataAdapter:
     """构造 adapter，默认用 fallback + 缓存包装。
 
     顺序：EfinanceAdapter (主) → TencentAdapter (fallback) → CachedMarketDataAdapter (外层)
@@ -30,7 +35,7 @@ def cmd_monitor_snapshot(args: argparse.Namespace) -> int:
     adp = _make_adapter(args)
     log_path = Path(args.log) if args.log else None
     signals_log_path = Path(args.signals_log) if args.signals_log else None
-    m = Monitor(s, adp, log_path=log_path)  # type: ignore[arg-type]
+    m = Monitor(s, adp, log_path=log_path)
     snap = m.snapshot_now()
     m.print_snapshot(snap, clear_screen=False)
     m.write_log(snap)
@@ -55,7 +60,7 @@ def cmd_monitor_run(args: argparse.Namespace) -> int:
         adp,
         log_path=log_path,
         alerter=Alerter.default(log_path=signals_log_path) if args.with_signals else None,
-    )  # type: ignore[arg-type]
+    )
     m.run(
         interval_seconds=args.interval,
         max_iterations=args.max_iterations,
@@ -121,7 +126,7 @@ def cmd_monitor_stats(args: argparse.Namespace) -> int:
     s = _store(args)
     adp = EfinanceAdapter()
     log_path = Path(args.log) if args.log else None
-    m = Monitor(s, adp, log_path=log_path)  # type: ignore[arg-type]
+    m = Monitor(s, adp, log_path=log_path)
     snap = m.snapshot_now()
     st = s.stats()
     print("=" * 50)

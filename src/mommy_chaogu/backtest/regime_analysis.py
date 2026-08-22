@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from mommy_chaogu.backtest.scoring import score_direction
@@ -72,7 +73,7 @@ def _std(values: list[float]) -> float:
         return 0.0
     mu = sum(values) / n
     var = sum((v - mu) ** 2 for v in values) / (n - 1)
-    return var**0.5
+    return math.sqrt(var)
 
 
 def _daily_returns(closes: list[float]) -> list[float]:

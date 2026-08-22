@@ -7,21 +7,22 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import CursorResult, Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from mommy_chaogu.cache.schema import SCHEMA_SQL
 from mommy_chaogu.cache.serializer import quote_from_dict, quote_to_dict
 from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
-from mommy_chaogu.market_data.types import AdjustmentType, Bar, BarInterval, MoneyFlow
+from mommy_chaogu.market_data.types import AdjustmentType, Bar, BarInterval, MoneyFlow, Quote
 
 
 def _bar_to_dict(bar: Bar) -> dict[str, Any]:
@@ -74,7 +75,7 @@ class QuoteCacheEntry:
     """quote_cache 表的单行。"""
 
     code: str
-    quote: object  # Quote dataclass
+    quote: Quote
     fetched_at: datetime
     quote_ts: datetime
 
@@ -102,10 +103,10 @@ class CacheStore(EngineOwner):
                 stmt = stmt.strip()
                 if stmt:
                     conn.execute(text(stmt))
-        self._Session = sessionmaker(self.engine, expire_on_commit=False)
+        self._Session: sessionmaker[Session] = sessionmaker(self.engine, expire_on_commit=False)
 
     @contextmanager
-    def session(self) -> object:  # type: ignore[no-untyped-def]
+    def session(self) -> Iterator[Session]:
         s = self._Session()
         try:
             yield s
@@ -139,7 +140,7 @@ class CacheStore(EngineOwner):
                 quote_ts=row[3] if isinstance(row[3], datetime) else datetime.fromisoformat(row[3]),
             )
 
-    def set_quote(self, code: str, quote) -> None:
+    def set_quote(self, code: str, quote: Quote) -> None:
         """写入/覆盖 quote_cache。"""
         quote_dict = quote_to_dict(quote)
         quote_json = json.dumps(quote_dict, ensure_ascii=False)
@@ -219,7 +220,7 @@ class CacheStore(EngineOwner):
             ).all()
             if not rows:
                 return None
-            out: list[dict] = []
+            out: list[dict[str, Any]] = []
             for trade_date, bar_json, _fetched in rows:
                 if start_date and trade_date < start_date:
                     continue
@@ -229,7 +230,9 @@ class CacheStore(EngineOwner):
                 out.append(bar_dict)
             return out
 
-    def set_bar(self, code: str, interval: str, adj_type: str, trade_date: str, bar: dict) -> None:
+    def set_bar(
+        self, code: str, interval: str, adj_type: str, trade_date: str, bar: dict[str, Any]
+    ) -> None:
         bar_json = json.dumps(bar, ensure_ascii=False)
         with self.session() as s:
             s.execute(
@@ -262,9 +265,9 @@ class CacheStore(EngineOwner):
             ).first()
             if row is None:
                 return None
-            return json.loads(row[0])
+            return cast(list[dict[str, Any]], json.loads(row[0]))
 
-    def set_today_money_flow(self, code: str, flows: list[dict]) -> None:
+    def set_today_money_flow(self, code: str, flows: list[dict[str, Any]]) -> None:
         flows_json = json.dumps(flows, ensure_ascii=False)
         with self.session() as s:
             s.execute(
@@ -291,7 +294,7 @@ class CacheStore(EngineOwner):
             rows = s.execute(stmt, {"code": code}).all()
             if not rows:
                 return None
-            out: list[dict] = []
+            out: list[dict[str, Any]] = []
             for trade_date, flow_json, _fetched in rows:
                 if start_date and trade_date < start_date:
                     continue
@@ -300,7 +303,9 @@ class CacheStore(EngineOwner):
                 out.append({"__trade_date__": trade_date, "flows": flows})
             return out
 
-    def set_money_flow_history(self, code: str, trade_date: str, flows: list[dict]) -> None:
+    def set_money_flow_history(
+        self, code: str, trade_date: str, flows: list[dict[str, Any]]
+    ) -> None:
         flow_json = json.dumps(flows, ensure_ascii=False)
         with self.session() as s:
             s.execute(
@@ -378,7 +383,9 @@ class CacheStore(EngineOwner):
 
     # ---------- Market snapshot cache (保留 N 份历史) ----------
 
-    def save_market_snapshot(self, quotes: list[dict], quote_ts: datetime | None = None) -> int:
+    def save_market_snapshot(
+        self, quotes: list[dict[str, Any]], quote_ts: datetime | None = None
+    ) -> int:
         """保存一份全市场快照，返回 id。"""
         quotes_json = json.dumps(quotes, ensure_ascii=False)
         with self.session() as s:
@@ -394,11 +401,11 @@ class CacheStore(EngineOwner):
                     "n": len(quotes),
                 },
             )
-            return result.lastrowid or 0
+            return cast(CursorResult[Any], result).lastrowid or 0
 
     def get_latest_market_snapshot(
         self,
-    ) -> tuple[int, datetime, datetime | None, list[dict]] | None:
+    ) -> tuple[int, datetime, datetime | None, list[dict[str, Any]]] | None:
         """最新一份全市场快照。"""
         with self.session() as s:
             row = s.execute(
@@ -452,7 +459,7 @@ class CacheStore(EngineOwner):
                 """),
                 {"keep": keep},
             )
-            return result.rowcount or 0
+            return cast(CursorResult[Any], result).rowcount or 0
 
     # ---------- Stats & clear ----------
 
@@ -478,7 +485,8 @@ class CacheStore(EngineOwner):
 
     def clear_quotes(self) -> int:
         with self.session() as s:
-            return s.execute(text("DELETE FROM quote_cache")).rowcount or 0
+            deleted = cast(CursorResult[Any], s.execute(text("DELETE FROM quote_cache")))
+            return deleted.rowcount or 0
 
     def clear_all(self) -> None:
         with self.session() as s:

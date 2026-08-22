@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
 from mommy_chaogu.cli_support import *
 
-# ---------- 共用 ----------
-
-
-def _store(args: argparse.Namespace) -> WatchlistStore:
-    return WatchlistStore(Path(args.db))
+_log = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -72,8 +70,9 @@ def cmd_watchlist_add(args: argparse.Namespace) -> int:
                 match = next((e for e in refreshed if e.code == args.code), None)
                 if match is not None:
                     entry = match
-        except Exception:
-            pass
+        except Exception as e:
+            # 名称回填是增强功能，失败不影响添加结果（用户会看到"名称待回填"）
+            _log.debug("名称回填失败（code=%s）: %s", args.code, e)
     name = entry.name or "(名称待回填)"
     note = f"  # {entry.note}" if entry.note else ""
     print(f"✅ 已添加 {args.code} {name} 到分组 {args.group!r}{note}")

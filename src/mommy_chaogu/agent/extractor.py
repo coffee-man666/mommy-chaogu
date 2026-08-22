@@ -57,7 +57,7 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
         tokens = _ENCODER.encode(text)
         if len(tokens) <= max_tokens:
             return text
-        return _ENCODER.decode(tokens[:max_tokens])
+        return str(_ENCODER.decode(tokens[:max_tokens]))
     if len(text) <= max_tokens:
         return text
     return text[:max_tokens]

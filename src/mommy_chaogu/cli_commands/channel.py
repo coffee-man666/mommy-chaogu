@@ -41,7 +41,7 @@ def build_channel_parser() -> argparse.ArgumentParser:
 def _display_qr(url: str) -> None:
     print("\n请用手机微信扫描二维码并确认：\n")
     try:
-        import qrcode  # type: ignore[import-untyped]
+        import qrcode
 
         qr = qrcode.QRCode(border=1)
         qr.add_data(url)
@@ -91,7 +91,7 @@ def _run_gateway(store: WeixinStore, client: WeixinClient, *, once: bool) -> Non
 
     def respond(session_id: str, message: str) -> str:
         scoped = memory.for_session(session_id)
-        response = agent.chat(message, memory=scoped)  # type: ignore[attr-defined]
+        response = agent.chat(message, memory=scoped)
         return str(response.text)
 
     gateway = WeixinGateway(

@@ -131,7 +131,7 @@ class SemanticMemory(EngineOwner):
         self._vec_model = model
         self._vec_dim = dim
         try:
-            import sqlite_vec  # type: ignore[import-untyped]
+            import sqlite_vec
 
             with self.engine.raw_connection() as raw_conn:
                 raw_conn.enable_load_extension(True)

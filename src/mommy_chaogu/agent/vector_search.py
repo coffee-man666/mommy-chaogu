@@ -124,7 +124,8 @@ class VectorSearch:
                 model=self._model,
                 input=text[:2000],  # 截断，避免超 token
             )
-            return response.data[0].embedding
+            embedding = response.data[0].embedding
+            return list(embedding)
         except Exception as e:
             _log.warning("vector_search: embedding API failed: %s", e)
             return None

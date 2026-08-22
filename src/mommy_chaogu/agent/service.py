@@ -465,7 +465,7 @@ class AgentService:
                         return max(0.0, float(retry_after))
                     except (TypeError, ValueError):
                         pass
-        return self._retry_base_delay * (2**attempt) + random.uniform(0, 0.5)
+        return float(self._retry_base_delay * (2**attempt) + random.uniform(0, 0.5))
 
     def _track_usage(self, response: Any, phase: str = "agent") -> None:
         """把一次 LLM 调用记进 TokenTracker（成本可观测性）。失败不阻塞主流程。"""

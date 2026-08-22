@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from mommy_chaogu.cache.config import CacheConfig
@@ -26,6 +26,7 @@ from mommy_chaogu.market_data.types import (
     Bar,
     BarInterval,
     Board,
+    Money,
     MoneyFlow,
     OrderBook,
 )
@@ -138,7 +139,7 @@ class CachedMarketDataAdapter:
                     "serving cached quote(%s) age=%.0fs (fetch failed)", code, cached.age_seconds
                 )
                 self.last_source = "stale_cache"
-                return cached.quote  # type: ignore[return-value]
+                return cached.quote
 
             self.stats_counters["miss"] += 1
             self.last_source = ""
@@ -148,7 +149,7 @@ class CachedMarketDataAdapter:
         if cached is not None:
             self.stats_counters["hits"] += 1
             self.last_source = "cache"
-            return cached.quote  # type: ignore[return-value]
+            return cached.quote
         # 缓存为空但不到拉新间隔（理论上不会发生，但兜底）
         self.stats_counters["miss"] += 1
         self.last_source = ""
@@ -202,14 +203,14 @@ class CachedMarketDataAdapter:
         used_stale = False
         stale_candidates = set(miss_codes) if batch_fetch_failed else set()
         for code in unique_codes:
-            q = fresh_map.get(code)
-            if q is not None:
-                out.append(q)
+            fresh_q = fresh_map.get(code)
+            if fresh_q is not None:
+                out.append(fresh_q)
                 used_network = True
                 continue
             entry = cached_entries.get(code)
             if entry is not None:
-                out.append(entry.quote)  # type: ignore[arg-type]
+                out.append(entry.quote)
                 self.stats_counters["hits"] += 1
                 used_cache = True
                 if code in stale_candidates:
@@ -310,7 +311,7 @@ class CachedMarketDataAdapter:
         end_str = end.isoformat() if end is not None else None
         key = f"bar:{code}:{interval_str}:{adj_str}"
 
-        def _read_cache():
+        def _read_cache() -> list[dict[str, Any]] | None:
             return self.store.get_bars(
                 code, interval_str, adj_str, start_date=start_str, end_date=end_str
             )
@@ -324,7 +325,7 @@ class CachedMarketDataAdapter:
                 bar_dict["timestamp"] = bar.timestamp.isoformat()
                 bar_dict["interval"] = interval_str
                 bar_dict["adjustment"] = adj_str
-                bar_dict = _recursive_safe(bar_dict)
+                bar_dict = cast(dict[str, Any], _recursive_safe(bar_dict))
                 try:
                     self.store.set_bar(code, interval_str, adj_str, trade_date, bar_dict)
                 except Exception as e:
@@ -434,7 +435,7 @@ class CachedMarketDataAdapter:
     # 资金流
     # ============================================================
 
-    def get_today_money_flow(self, code: str) -> list[MoneyFlow]:  # type: ignore[override]
+    def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
         """当日资金流：节流缓存（默认 5 分钟）。"""
         cached = self.store.get_today_money_flow(code)
         key = f"today_flow:{code}"
@@ -541,11 +542,11 @@ class CachedMarketDataAdapter:
     # 工具
     # ============================================================
 
-    def data_freshness_report(self) -> list[dict]:
+    def data_freshness_report(self) -> list[dict[str, Any]]:
         """返回 [{code, age_seconds, quote_ts, ...}, ...] 给妈妈看新鲜度。"""
         entries = self.store.get_all_quote_entries()
         now = _utcnow()
-        out_list: list = []
+        out_list: list[dict[str, Any]] = []
         for e in entries:
             out_list.append(
                 {
@@ -586,19 +587,14 @@ class CachedMarketDataAdapter:
 # ---------- 内部：MoneyFlow 序列化（简化版） ----------
 
 
-def _money_flow_to_dict(f: MoneyFlow) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+def _money_flow_to_dict(f: MoneyFlow) -> dict[str, Any]:
     """MoneyFlow → JSON-safe dict。
 
     Money 拆 {amount: str, currency}，Decimal → str，datetime → ISO str。
     """
 
-    def _money(m: object) -> dict[str, str]:
-        # 适配 Money dataclass 和 dict
-        if hasattr(m, "amount") and not isinstance(m, dict):  # type: ignore[unreachable]
-            return {"amount": str(m.amount), "currency": m.currency}  # type: ignore[attr-defined]
-        if isinstance(m, dict):
-            return {"amount": str(m["amount"]), "currency": m.get("currency", "CNY")}
-        raise TypeError(f"Cannot serialize money: {m!r}")
+    def _money(m: Money) -> dict[str, str]:
+        return {"amount": str(m.amount), "currency": m.currency}
 
     return {
         "code": f.code,
@@ -644,7 +640,7 @@ def _bar_turnover(v: object) -> Any:
     return Money(Decimal(str(v)), "CNY")
 
 
-def _money_flow_from_dict(d: dict) -> MoneyFlow:
+def _money_flow_from_dict(d: dict[str, Any]) -> MoneyFlow:
     from decimal import Decimal
 
     from mommy_chaogu.market_data.types import Money, MoneyFlow

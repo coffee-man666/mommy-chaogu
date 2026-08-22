@@ -11,7 +11,7 @@ import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 
@@ -27,6 +27,7 @@ from mommy_chaogu.web.deps import (
     get_portfolio_store,
     get_watchlist_store,
 )
+from mommy_chaogu.web.mappers import portfolio_summary
 from mommy_chaogu.web.schemas import (
     BlockStatus,
     OverviewIndex,
@@ -186,7 +187,7 @@ def _build_portfolio(
             _log.warning("overview portfolio price fetch failed: %s", exc)
 
     try:
-        raw = store.summary(prices)
+        raw = portfolio_summary(store, prices)
     except Exception as exc:
         _log.warning("overview portfolio summary failed: %s", exc)
         return OverviewPortfolioBlock(
@@ -211,7 +212,7 @@ def _build_portfolio(
                 )
             )
 
-    status = "ok" if len(prices) == len(codes) else "stale"
+    status: Literal["ok", "stale", "unavailable"] = "ok" if len(prices) == len(codes) else "stale"
     message = None
     if status == "stale":
         message = f"{len(codes) - len(prices)} 只持仓价格未获取"
@@ -348,7 +349,7 @@ def _build_themes(
         )
 
     item_times = [item.as_of for item in items if item.as_of is not None]
-    status = "ok"
+    status: Literal["ok", "stale", "unavailable"] = "ok"
     message = None
     if items and all(item.status == "unavailable" for item in items):
         status = "unavailable"

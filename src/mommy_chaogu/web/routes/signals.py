@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 
@@ -14,7 +15,17 @@ from mommy_chaogu.web.deps import get_alerter, get_signal_store
 from mommy_chaogu.web.mappers import signal_to_out
 from mommy_chaogu.web.schemas import SignalOut
 
+_log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/signals", tags=["signals"])
+
+# 旧文本日志 severity 归一化表；非法值整行丢弃（与旧行为一致：非法值
+# 本会在 pydantic Literal 校验时抛错、被上层按解析失败跳过）。
+_SEVERITY_NORMALIZE: dict[str, Literal["info", "warning", "critical"]] = {
+    "info": "info",
+    "warning": "warning",
+    "critical": "critical",
+}
 
 
 @router.get("/recent", response_model=list[SignalOut])
@@ -38,8 +49,8 @@ def history_signals(
         rows = store.list(limit=limit, rule_id=rule_id)
         if rows:
             return [_row_to_signal_out(r) for r in rows]
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("信号库读取失败，回退旧文本日志解析: %s", e)
 
     # 回退：旧文本日志解析（兼容未迁移的环境）
     return _fallback_log_parse(alerter, limit, rule_id)
@@ -102,12 +113,15 @@ def _parse_signal_line(line: str) -> SignalOut | None:
     if not m:
         return None
     ts_str, severity, code, name, rule_id_str, detail = m.groups()
+    sev = str(severity).lower().strip()
+    if sev not in _SEVERITY_NORMALIZE:
+        return None
     return SignalOut(
         timestamp=datetime.fromisoformat(ts_str),
         code=code,
         name=name,
         rule_id=rule_id_str,
-        severity=severity.lower().strip(),
+        severity=_SEVERITY_NORMALIZE[sev],
         title=f"{name} {rule_id_str}",
         detail=detail,
     )

@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+from typing import TYPE_CHECKING
+
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
 from mommy_chaogu.cli_support import *
+
+if TYPE_CHECKING:
+    from mommy_chaogu.flows.pool import PoolSource
+    from mommy_chaogu.flows.service import FlowService
 
 # ============================================================
 # flows 子命令
 # ============================================================
 
 
-def _flows_resolve_pool(args: argparse.Namespace) -> object:
+def _flows_resolve_pool(args: argparse.Namespace) -> PoolSource:
     """根据 --pool / --codes 构造 PoolSource。"""
     from mommy_chaogu.flows.pool import build_pool
 
@@ -23,13 +30,13 @@ def _flows_resolve_pool(args: argparse.Namespace) -> object:
     )
 
 
-def _flows_service(args: argparse.Namespace) -> object:
+def _flows_service(args: argparse.Namespace) -> FlowService:
     from mommy_chaogu.flows.service import FlowService
 
     return FlowService.from_default(Path(args.db), use_fallback=not args.no_fallback)
 
 
-def _format_yi(amount) -> str:
+def _format_yi(amount: Decimal | float | int | str) -> str:
     """把元 转成 亿元（保留 2 位小数）。"""
     from decimal import Decimal
 
@@ -40,7 +47,7 @@ def _format_yi(amount) -> str:
     return f"{sign}{yi:.2f}亿"
 
 
-def _format_wan(amount) -> str:
+def _format_wan(amount: Decimal | float | int | str) -> str:
     """把元 转成 万元（保留 0 位）。"""
     from decimal import Decimal
 

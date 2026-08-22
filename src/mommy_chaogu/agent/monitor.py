@@ -293,6 +293,8 @@ class AgentMonitor:
         stock: dict[str, Any],
     ) -> None:
         """将单条告警写入 episodic memory。"""
+        if self._memory is None:
+            return
         data = {
             "severity": alert.severity,
             "message": alert.message,

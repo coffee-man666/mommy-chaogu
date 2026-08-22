@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
 from mommy_chaogu.cli_support import *
+
+if TYPE_CHECKING:
+    from mommy_chaogu.cache import CacheManager
 
 # ============================================================
 # cache 子命令
 # ============================================================
 
 
-def _cache_manager(args: argparse.Namespace) -> object:
+def _cache_manager(args: argparse.Namespace) -> CacheManager:
     from mommy_chaogu.cache import CacheManager
 
     return CacheManager.default(Path(args.db))

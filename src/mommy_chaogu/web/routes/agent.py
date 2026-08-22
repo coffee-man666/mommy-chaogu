@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from functools import lru_cache
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -26,6 +26,9 @@ from mommy_chaogu.web.deps import (
     get_watchlist_store,
 )
 from mommy_chaogu.web.trading_style import preference_context
+
+if TYPE_CHECKING:
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 
 _log = logging.getLogger(__name__)
 
@@ -251,7 +254,7 @@ async def get_prediction_stats() -> dict[str, Any]:
         return dict(_EMPTY_PREDICTION_STATS)
 
 
-def get_prediction_tracker_safe() -> Any:
+def get_prediction_tracker_safe() -> PredictionTracker | None:
     """安全获取 prediction tracker（可能未配置）。"""
     try:
         from mommy_chaogu.web.deps import get_prediction_tracker

@@ -12,6 +12,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from mommy_chaogu.market_data.types import MarketType, Money, Quote, QuoteType
+
 
 class Serializer:
     """JSON 序列化器（Decimal / datetime / Enum 安全）。"""
@@ -25,7 +27,7 @@ class Serializer:
         return json.loads(s, object_hook=_json_object_hook)
 
 
-def _json_default(obj: Any) -> Any:  # type: ignore[no-untyped-def]
+def _json_default(obj: Any) -> Any:
     return _default(obj)
 
 
@@ -38,7 +40,7 @@ def _default(obj: Any) -> Any:
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-def _json_object_hook(d: dict[str, Any]) -> Any:  # type: ignore[no-untyped-def]
+def _json_object_hook(d: dict[str, Any]) -> Any:
     return _hook(d)
 
 
@@ -53,13 +55,13 @@ def _hook(d: dict[str, Any]) -> Any:
 # ---------- 单个 dataclass 的 encode/decode ----------
 
 
-def quote_to_dict(q: Any) -> dict[str, Any]:
+def quote_to_dict(q: Quote) -> dict[str, Any]:
     """Quote dataclass → JSON-safe dict。
 
     所有 Decimal 转 str，datetime 转 ISO str，enum 转 .value，Money 拆 amount/currency。
     """
 
-    def _money(m) -> dict[str, Any] | None:
+    def _money(m: Money | None) -> dict[str, Any] | None:
         if m is None:
             return None
         return {"amount": str(m.amount), "currency": m.currency}
@@ -89,9 +91,8 @@ def quote_to_dict(q: Any) -> dict[str, Any]:
     }
 
 
-def quote_from_dict(d: dict[str, Any]) -> Any:
+def quote_from_dict(d: dict[str, Any]) -> Quote:
     """dict → Quote dataclass。"""
-    from mommy_chaogu.market_data.types import MarketType, Money, Quote, QuoteType
 
     def _money(m: Any) -> Money | None:
         if m is None:
@@ -130,7 +131,7 @@ def quote_from_dict(d: dict[str, Any]) -> Any:
     )
 
 
-def _dec_or_none(v: Any) -> Decimal | None:  # type: ignore[no-untyped-def]
+def _dec_or_none(v: Any) -> Decimal | None:
     if v is None:
         return None
     return Decimal(str(v))

@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
 from mommy_chaogu.cli_support import *
+
+if TYPE_CHECKING:
+    from mommy_chaogu.semicon import SemiconStore
+    from mommy_chaogu.semicon.models import SemiconStock
 
 # ============================================================
 # semicon 子命令
 # ============================================================
 
 
-def _semicon_store(args: argparse.Namespace) -> object:
+def _semicon_store(args: argparse.Namespace) -> SemiconStore:
     from mommy_chaogu.semicon import SemiconStore
 
     return SemiconStore(Path(args.db))
@@ -26,7 +32,7 @@ def cmd_semicon_seed(args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_stocks(stocks: list[object]) -> None:
+def _print_stocks(stocks: list[SemiconStock]) -> None:
     if not stocks:
         print("（暂无数据）")
         return

@@ -394,7 +394,7 @@ class EpisodicMemory(EngineOwner):
                         "WHERE event_id NOT IN (SELECT id FROM episodic_events)"
                     )
                 )
-            import sqlite_vec  # type: ignore[import-untyped]
+            import sqlite_vec
 
             with self.engine.raw_connection() as raw_conn:
                 raw_conn.enable_load_extension(True)

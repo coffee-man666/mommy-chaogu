@@ -7,7 +7,12 @@ import logging
 
 # Shared CLI dependencies are deliberately exported by cli_support.
 # ruff: noqa: F403,F405
+from typing import TYPE_CHECKING
+
 from mommy_chaogu.cli_support import *
+
+if TYPE_CHECKING:
+    from mommy_chaogu.agent.memory_pipeline import MemoryPipeline
 from mommy_chaogu.db_paths import MARKET_DB
 
 # ============================================================
@@ -150,7 +155,7 @@ def cmd_memory_history(args: argparse.Namespace) -> int:
     return 0
 
 
-def _memory_pipeline(db_path: Path):
+def _memory_pipeline(db_path: Path) -> MemoryPipeline:
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
     from mommy_chaogu.agent.mcp_server import _build_llm
     from mommy_chaogu.agent.memory_pipeline import MemoryPipeline

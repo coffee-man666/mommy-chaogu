@@ -26,12 +26,18 @@ from zoneinfo import ZoneInfo
 import requests
 
 from mommy_chaogu.market_data.types import (
+    AdjustmentType,
+    Bar,
+    BarInterval,
+    Board,
     MarketType,
     Money,
+    MoneyFlow,
     OrderBook,
     OrderBookLevel,
     Quote,
     QuoteType,
+    Tick,
 )
 
 _log = logging.getLogger(__name__)
@@ -353,19 +359,25 @@ class TencentAdapter:
 
     # ---------- 不支持的方法（返回空 / 抛 NotImplementedError） ----------
 
-    def get_bars(self, code, interval=None, adjustment=None, **kw):
+    def get_bars(
+        self,
+        code: str,
+        interval: BarInterval | None = None,
+        adjustment: AdjustmentType | None = None,
+        **kw: object,
+    ) -> list[Bar]:
         return []
 
-    def get_ticks(self, code, limit=None):
+    def get_ticks(self, code: str, limit: int | None = None) -> list[Tick]:
         return []
 
-    def get_today_money_flow(self, code):
+    def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
         return []
 
-    def get_history_money_flow(self, code, days=30):
+    def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
         return []
 
-    def get_belonging_boards(self, code):
+    def get_belonging_boards(self, code: str) -> list[Board]:
         return []
 
     def health_check(self) -> bool:

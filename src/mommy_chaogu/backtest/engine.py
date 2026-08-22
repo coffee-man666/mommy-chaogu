@@ -15,6 +15,7 @@ import math
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from mommy_chaogu.cache.store import CacheStore
 
@@ -37,7 +38,7 @@ class BacktestResult:
     avg_return_pct: float
     max_drawdown_pct: float
     sharpe_ratio: float
-    signals_detail: list[dict] = field(default_factory=list)
+    signals_detail: list[dict[str, Any]] = field(default_factory=list)
     message: str = ""
 
 
@@ -52,7 +53,7 @@ class BacktestEngine:
     # 数据加载
     # ------------------------------------------------------------------
 
-    def _load_code_data(self, code: str, start_date: str, end_date: str) -> dict | None:
+    def _load_code_data(self, code: str, start_date: str, end_date: str) -> dict[str, Any] | None:
         """加载单只 code 的历史数据，返回 None 表示数据不足。"""
         # ---- 流通市值（从 quote_cache 取当前值做近似）----
         quote_entry = self.cache.get_quote(code)
@@ -66,7 +67,7 @@ class BacktestEngine:
         bars = self.cache.get_bars(code, "1d", "forward", start_date, end_date)
         if not bars:
             return None
-        bar_by_date: dict[str, dict] = {}
+        bar_by_date: dict[str, dict[str, Any]] = {}
         for b in bars:
             ts = b["timestamp"]
             date = ts[:10]  # "2026-06-01T..." → "2026-06-01"
@@ -106,7 +107,7 @@ class BacktestEngine:
 
     @staticmethod
     def _compute_returns(
-        bar_by_date: dict[str, dict],
+        bar_by_date: dict[str, dict[str, Any]],
         sorted_dates: list[str],
         signal_date: str,
         entry_close: Decimal,
@@ -152,7 +153,7 @@ class BacktestEngine:
             BacktestResult 汇总结果
         """
         # 1. 加载所有 code 的数据
-        all_data: dict[str, dict] = {}
+        all_data: dict[str, dict[str, Any]] = {}
         for code in codes:
             data = self._load_code_data(code, start_date, end_date)
             if data is not None:
@@ -179,7 +180,7 @@ class BacktestEngine:
 
         # 3. 回放
         horizons = [1, 3, 5]
-        signals_detail: list[dict] = []
+        signals_detail: list[dict[str, Any]] = []
 
         for date in trading_days:
             for code, data in all_data.items():
@@ -236,7 +237,7 @@ class BacktestEngine:
         winning = [s for s in completed if s["return_after_hold_pct"] > 0]
         losing = [s for s in completed if s["return_after_hold_pct"] <= 0]
 
-        returns_pct = [s["return_after_hold_pct"] for s in completed]  # type: ignore[misc]
+        returns_pct = [s["return_after_hold_pct"] for s in completed]
         total = len(signals_detail)
 
         if returns_pct:

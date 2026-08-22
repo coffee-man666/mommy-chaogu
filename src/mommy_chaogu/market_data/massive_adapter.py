@@ -14,17 +14,21 @@ from __future__ import annotations
 import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, cast
 
 from mommy_chaogu.market_data.massive_client import MassiveClient
 from mommy_chaogu.market_data.types import (
     AdjustmentType,
     Bar,
     BarInterval,
+    Board,
     MarketType,
     Money,
+    MoneyFlow,
+    OrderBook,
     Quote,
     QuoteType,
+    Tick,
 )
 
 _log = logging.getLogger(__name__)
@@ -328,9 +332,7 @@ class MassiveAdapter:
     def get_quotes(self, codes: list[str]) -> list[Quote]:
         if not self._enabled:
             return []
-        us_codes = [c.upper() for c in codes if _is_us_code(c)]
-        seen: set[str] = set()
-        us_codes = [c for c in us_codes if not (c in seen or seen.add(c))]
+        us_codes = list(dict.fromkeys(c.upper() for c in codes if _is_us_code(c)))
         if not us_codes:
             return []
 
@@ -423,22 +425,22 @@ class MassiveAdapter:
             bars = bars[-limit:]
         return bars
 
-    def get_ticks(self, code, limit=None):
+    def get_ticks(self, code: str, limit: int | None = None) -> list[Tick]:
         """美股 Tick 需 Developer+ 套餐，暂不支持。"""
         return []
 
-    def get_order_book(self, code: str):
+    def get_order_book(self, code: str) -> OrderBook | None:
         """美股 NBBO 需 Advanced+ 套餐，暂不支持。"""
         return None
 
-    def get_today_money_flow(self, code):
+    def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
         """资金流是 A 股特有概念，美股无对应数据。"""
         return []
 
-    def get_history_money_flow(self, code, days=30):
+    def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
         return []
 
-    def get_belonging_boards(self, code):
+    def get_belonging_boards(self, code: str) -> list[Board]:
         """板块是 A 股特有概念，美股无对应数据。"""
         return []
 
@@ -464,7 +466,7 @@ class MassiveAdapter:
         data = self._client.get_dividends(code, limit=limit)
         if data is None:
             return []
-        return data.get("results", [])  # type: ignore[return-value]
+        return cast("list[dict[str, Any]]", data.get("results", []))
 
     def get_splits(self, code: str, limit: int = 50) -> list[dict[str, Any]]:
         """拆股历史。"""
@@ -473,7 +475,7 @@ class MassiveAdapter:
         data = self._client.get_splits(code, limit=limit)
         if data is None:
             return []
-        return data.get("results", [])  # type: ignore[return-value]
+        return cast("list[dict[str, Any]]", data.get("results", []))
 
     def get_short_interest(self, code: str) -> list[dict[str, Any]]:
         """空头持仓（FINRA 双周数据）。"""
@@ -482,7 +484,7 @@ class MassiveAdapter:
         data = self._client.get_short_interest(code)
         if data is None:
             return []
-        return data.get("results", [])  # type: ignore[return-value]
+        return cast("list[dict[str, Any]]", data.get("results", []))
 
     def get_float(self, code: str) -> dict[str, Any] | None:
         """流通股数。"""
@@ -506,7 +508,7 @@ class MassiveAdapter:
         data = self._client.get_news(code, limit=limit)
         if data is None:
             return []
-        return data.get("results", [])  # type: ignore[return-value]
+        return cast("list[dict[str, Any]]", data.get("results", []))
 
     def get_technical_indicator(
         self,
@@ -546,9 +548,9 @@ class MassiveAdapter:
         if isinstance(results, dict):
             vals = results.get("values", [])
             if isinstance(vals, list):
-                return vals  # type: ignore[return-value]
+                return cast("list[dict[str, Any]]", vals)
         if isinstance(results, list):
-            return results  # type: ignore[return-value]
+            return cast("list[dict[str, Any]]", results)
         return []
 
     def get_market_status(self) -> dict[str, Any] | None:
@@ -562,4 +564,4 @@ class MassiveAdapter:
         data = self._client.get_gainers_losers(direction)
         if data is None:
             return []
-        return data.get("tickers", [])  # type: ignore[return-value]
+        return cast("list[dict[str, Any]]", data.get("tickers", []))

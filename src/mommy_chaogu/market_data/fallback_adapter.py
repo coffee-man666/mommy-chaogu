@@ -27,10 +27,21 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from mommy_chaogu.market_data.adapter import MarketDataAdapter
+
+from mommy_chaogu.market_data.types import (
+    AdjustmentType,
+    Bar,
+    BarInterval,
+    Board,
+    MoneyFlow,
+    OrderBook,
+    Quote,
+    Tick,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -68,7 +79,7 @@ class FallbackAdapter:
     def stats(self) -> dict[str, dict[str, int]]:
         return self._stats
 
-    def _try_call(self, method_name: str, *args, **kwargs):
+    def _try_call(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
         """按顺序尝试每个 adapter 的 method_name。
 
         返回：第一个非 None 的结果；如果全部 None/异常 → 返回 None。
@@ -124,7 +135,7 @@ class FallbackAdapter:
             )
         return None
 
-    def _try_call_batch(self, method_name: str, codes: list):
+    def _try_call_batch(self, method_name: str, codes: list[str]) -> list[Quote] | None:
         """批量接口：按 code 缺口在 adapter 链上续拉合并。
 
         单个 adapter 可能只覆盖部分市场（如 Massive 只认美股代码），
@@ -134,7 +145,7 @@ class FallbackAdapter:
         """
         requested = list(dict.fromkeys(codes))
         remaining = list(requested)
-        merged: dict = {}
+        merged: dict[str, Quote] = {}
         any_ok = False
         for idx, adapter in enumerate(self.adapters):
             if not remaining:
@@ -194,39 +205,48 @@ class FallbackAdapter:
 
     # ---------- MarketDataAdapter 接口实现 ----------
 
-    def get_quote(self, code: str):
-        return self._try_call("get_quote", code)
+    def get_quote(self, code: str) -> Quote | None:
+        return cast("Quote | None", self._try_call("get_quote", code))
 
-    def get_quotes(self, codes: list[str]):
+    def get_quotes(self, codes: list[str]) -> list[Quote]:
         result = self._try_call_batch("get_quotes", codes)
         return result if result is not None else []
 
-    def list_market_quotes(self):
-        result = self._try_call("list_market_quotes")
+    def list_market_quotes(self) -> list[Quote]:
+        result = cast("list[Quote] | None", self._try_call("list_market_quotes"))
         return result if result is not None else []
 
-    def get_order_book(self, code: str):
-        return self._try_call("get_order_book", code)
+    def get_order_book(self, code: str) -> OrderBook | None:
+        return cast("OrderBook | None", self._try_call("get_order_book", code))
 
-    def get_bars(self, code, interval=None, adjustment=None, **kwargs):
+    def get_bars(
+        self,
+        code: str,
+        interval: BarInterval | None = None,
+        adjustment: AdjustmentType | None = None,
+        **kwargs: Any,
+    ) -> list[Bar]:
         """K 线：fallback 链中任何一个能返回就用。"""
         if interval is not None and adjustment is not None:
-            return self._try_call(
-                "get_bars", code, interval=interval, adjustment=adjustment, **kwargs
+            return cast(
+                "list[Bar]",
+                self._try_call(
+                    "get_bars", code, interval=interval, adjustment=adjustment, **kwargs
+                ),
             )
-        return self._try_call("get_bars", code, **kwargs)
+        return cast("list[Bar]", self._try_call("get_bars", code, **kwargs))
 
-    def get_ticks(self, code, limit=None):
-        return self._try_call("get_ticks", code, limit=limit)
+    def get_ticks(self, code: str, limit: int | None = None) -> list[Tick]:
+        return cast("list[Tick]", self._try_call("get_ticks", code, limit=limit))
 
-    def get_today_money_flow(self, code):
-        return self._try_call("get_today_money_flow", code)
+    def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
+        return cast("list[MoneyFlow]", self._try_call("get_today_money_flow", code))
 
-    def get_history_money_flow(self, code, days=30):
-        return self._try_call("get_history_money_flow", code, days=days)
+    def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
+        return cast("list[MoneyFlow]", self._try_call("get_history_money_flow", code, days=days))
 
-    def get_belonging_boards(self, code):
-        return self._try_call("get_belonging_boards", code)
+    def get_belonging_boards(self, code: str) -> list[Board]:
+        return cast("list[Board]", self._try_call("get_belonging_boards", code))
 
     def health_check(self) -> bool:
         """任何一个 adapter 健康就算健康。"""

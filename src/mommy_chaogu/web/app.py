@@ -129,7 +129,7 @@ def create_app(
         alerter = get_alerter()
         if session_retention_days > 0:
             memory = get_agent_memory()
-            pruned = memory.prune_inactive_sessions(session_retention_days)  # type: ignore[attr-defined]
+            pruned = memory.prune_inactive_sessions(session_retention_days)
             if pruned:
                 _log.info("pruned %d inactive conversation messages", pruned)
 

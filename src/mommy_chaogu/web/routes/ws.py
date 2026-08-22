@@ -59,7 +59,7 @@ async def ws_quotes(
     if not await _authorize(websocket):
         return
     await websocket.accept()
-    await service.add_quote_subscriber(websocket)  # type: ignore[arg-type]
+    await service.add_quote_subscriber(websocket)
     try:
         # 保持连接，接收客户端心跳（无业务消息，只是 keep-alive）
         while True:
@@ -70,7 +70,7 @@ async def ws_quotes(
     except WebSocketDisconnect:
         pass
     finally:
-        service.remove_quote_subscriber(websocket)  # type: ignore[arg-type]
+        service.remove_quote_subscriber(websocket)
 
 
 @router.websocket("/ws/signals")
@@ -82,7 +82,7 @@ async def ws_signals(
     if not await _authorize(websocket):
         return
     await websocket.accept()
-    await service.add_signal_subscriber(websocket)  # type: ignore[arg-type]
+    await service.add_signal_subscriber(websocket)
     try:
         while True:
             msg = await websocket.receive_text()
@@ -91,7 +91,7 @@ async def ws_signals(
     except WebSocketDisconnect:
         pass
     finally:
-        service.remove_signal_subscriber(websocket)  # type: ignore[arg-type]
+        service.remove_signal_subscriber(websocket)
 
 
 # ---------- Agent 流式对话 WebSocket ----------
