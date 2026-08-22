@@ -22,8 +22,7 @@ env/
 htmlcov/
 coverage.json
 coverage.xml
-output/playwright/
-output/semicon_watch/
+output/
 reports/
 .mypy_cache/
 .ruff_cache/
@@ -59,11 +58,10 @@ data/flows_report_*.md
 !data/supply_chains/
 
 
-# frontend/ (废弃的 Taro 目录，保留作 mini program 参考)
-frontend/dist/
 node_modules/
-frontend/.swc/
-*.swc
+
+# 本地实验数据库归档（bt_* 回测 / eval-* 实验，2026-08-22 从 data/ 顶层迁入）
+data/archive/
 
 # ZCode 本机配置（含个人绝对路径 / 软链，不入仓）
 .zcode/config.json

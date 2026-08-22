@@ -21,7 +21,7 @@
 
 ## 其他遗留（随手记，不紧急）
 
-- [ ] 根目录 `node_modules/` 未被 `.gitignore` 忽略（当前只忽略 `frontend/node_modules/`）；
-      如不需要可加一条 `node_modules/` 规则。
+- [x] 根目录 `node_modules/` 未被 `.gitignore` 忽略（2026-08-22 已改为全局
+      `node_modules/` 规则，同时移除了废弃 Taro 目录的专属规则）。
 - [ ] `reports/` 已在 `.gitignore` 忽略（2026-08-06）；已跟踪的 `reports/README.md`、
       `reports/index.html` 等仍留在仓库，需确认是否长期保留。
