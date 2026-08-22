@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -34,6 +35,8 @@ from mommy_chaogu.market_data.types import (
 
 warnings.filterwarnings("ignore")
 
+_log = logging.getLogger(__name__)
+
 # 东财接口返回的墙时间均为北京时间语义
 _TZ_BEIJING = ZoneInfo("Asia/Shanghai")
 
@@ -43,6 +46,18 @@ def _beijing_ts_to_utc(ts: datetime) -> datetime:
     if ts.tzinfo is None:
         return ts.replace(tzinfo=_TZ_BEIJING).astimezone(UTC)
     return ts.astimezone(UTC)
+
+
+def _parse_ts(raw: Any, *, code: str, field: str) -> datetime | None:
+    """行级时间戳解析：北京时间语义 → aware UTC。
+
+    解析失败记 warning（用户需要知道数据有缺口）并返回 None，调用方跳过该行。
+    """
+    try:
+        return _beijing_ts_to_utc(pd.to_datetime(raw).to_pydatetime())
+    except Exception as e:
+        _log.warning("时间戳解析失败，跳过该行（code=%s, %s=%r): %s", code, field, raw, e)
+        return None
 
 
 # ---------- 内部工具 ----------
@@ -144,6 +159,8 @@ class EfinanceAdapter:
         try:
             ts = _beijing_ts_to_utc(pd.to_datetime(ts_str).to_pydatetime())
         except Exception:
+            # 东财偶发空/NaT 更新时间，兜底当前时刻保住价格字段可用（常见故只记 debug）
+            _log.debug("quote 时间戳缺失，兜底 now(UTC)（code=%s, raw=%r)", code, ts_str)
             ts = datetime.now(UTC)
 
         market_str = str(g("市场类型") or "")
@@ -202,20 +219,14 @@ class EfinanceAdapter:
                 _time.sleep(0.5 * (attempt + 1))
         if df is None or df.empty:
             if last_err is not None:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "get_quote(%s) failed after 3 retries: %s",
-                    code,
-                    last_err,
-                )
+                _log.warning("get_quote(%s) failed after 3 retries: %s", code, last_err)
+            else:
+                _log.warning("get_quote(%s) 返回空数据（重试 3 次后仍为空）", code)
             return None
         try:
             return self._row_to_quote(df.iloc[0])
         except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).warning("_row_to_quote(%s) failed: %s", code, e)
+            _log.warning("_row_to_quote(%s) failed: %s", code, e)
             return None
 
     def get_quotes(self, codes: list[str]) -> list[Quote]:
@@ -233,11 +244,12 @@ class EfinanceAdapter:
         try:
             df = ef.stock.get_realtime_quotes()
         except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).warning("get_quotes batch failed: %s", e)
+            _log.warning(
+                "get_quotes 全市场快照拉取失败（%d 个代码全部缺失）: %s", len(requested), e
+            )
             return []
         if df is None or df.empty:
+            _log.warning("get_quotes 全市场快照为空（%d 个代码全部缺失）", len(requested))
             return []
 
         requested_set = set(requested)
@@ -252,9 +264,7 @@ class EfinanceAdapter:
             try:
                 found[code] = self._row_to_quote(row)
             except Exception as e:
-                import logging
-
-                logging.getLogger(__name__).warning("_row_to_quote(%s) failed: %s", code, e)
+                _log.warning("_row_to_quote(%s) failed: %s", code, e)
 
         return [found[code] for code in requested if code in found]
 
@@ -262,16 +272,22 @@ class EfinanceAdapter:
         """全市场实时快照（~5000+ 条）。"""
         try:
             df = ef.stock.get_realtime_quotes()
-        except Exception:
+        except Exception as e:
+            _log.warning("list_market_quotes 快照拉取失败: %s", e)
             return []
         if df is None or df.empty:
+            _log.warning("list_market_quotes 快照为空")
             return []
         out: list[Quote] = []
+        skipped = 0
         for _, row in df.iterrows():
             try:
                 out.append(self._row_to_quote(row))
             except Exception:
-                continue
+                skipped += 1
+        if skipped:
+            # 上游列结构变更时可能整批失败，汇总一条而不是每行刷日志
+            _log.warning("list_market_quotes 有 %d/%d 行解析失败被跳过", skipped, len(df))
         return out
 
     # ---------- 盘口 ----------
@@ -283,9 +299,11 @@ class EfinanceAdapter:
         """
         try:
             ser = ef.stock.get_quote_snapshot(code)
-        except Exception:
+        except Exception as e:
+            _log.warning("get_order_book(%s) 快照拉取失败: %s", code, e)
             return None
         if ser is None or len(ser) == 0:
+            _log.warning("get_order_book(%s) 快照为空", code)
             return None
 
         bids: list[OrderBookLevel] = []
@@ -307,6 +325,7 @@ class EfinanceAdapter:
         try:
             ts = _beijing_ts_to_utc(pd.to_datetime(str(ts_raw)).to_pydatetime())
         except Exception:
+            _log.debug("order book 时间戳缺失，兜底 now(UTC)（code=%s, raw=%r)", code, ts_raw)
             ts = datetime.now(UTC)
 
         return OrderBook(
@@ -344,6 +363,7 @@ class EfinanceAdapter:
         beg, end_ymd = self._resolve_kline_range(interval, start, end, limit)
 
         df = None
+        last_err: Exception | None = None
         for attempt in range(3):
             try:
                 df = ef.stock.get_quote_history(
@@ -355,16 +375,20 @@ class EfinanceAdapter:
                 )
                 if df is not None and not df.empty:
                     break
-            except Exception:
+            except Exception as e:
+                last_err = e
                 _time.sleep(0.5 * (attempt + 1))
         if df is None or df.empty:
+            if last_err is not None:
+                _log.warning("get_bars(%s) 重试 3 次后失败: %s", code, last_err)
+            else:
+                _log.warning("get_bars(%s) 返回空 K 线（beg=%s end=%s）", code, beg, end_ymd)
             return []
 
         bars: list[Bar] = []
         for _, row in df.iterrows():
-            try:
-                ts = _beijing_ts_to_utc(pd.to_datetime(row.get("日期")).to_pydatetime())
-            except Exception:
+            ts = _parse_ts(row.get("日期"), code=code, field="日期")
+            if ts is None:
                 continue
             # 应用调用方的 start/end 二次过滤（K 线日期是北京交易日历，按北京日比较）
             bar_date = ts.astimezone(_TZ_BEIJING).date()
@@ -451,22 +475,26 @@ class EfinanceAdapter:
         # limit 转为 max_count（多取一些保证 limit 够用）
         max_count = 5000 if limit is None else min(limit * 4, 5000)
         df = None
+        last_err: Exception | None = None
         for attempt in range(2):
             try:
                 df = ef.stock.get_deal_detail(code, max_count=max_count)
                 if df is not None and not df.empty:
                     break
-            except Exception:
+            except Exception as e:
+                last_err = e
                 _time.sleep(0.5 * (attempt + 1))
         if df is None or df.empty:
+            if last_err is not None:
+                _log.warning("get_ticks(%s) 重试 2 次后失败: %s", code, last_err)
+            else:
+                _log.warning("get_ticks(%s) 返回空成交明细", code)
             return []
 
         ticks: list[Tick] = []
         for _, row in df.iterrows():
-            ts_raw = str(row.get("时间", ""))
-            try:
-                ts = _beijing_ts_to_utc(pd.to_datetime(ts_raw).to_pydatetime())
-            except Exception:
+            ts = _parse_ts(row.get("时间", ""), code=code, field="时间")
+            if ts is None:
                 continue
             ticks.append(
                 Tick(
@@ -490,10 +518,8 @@ class EfinanceAdapter:
             return []
         flows: list[MoneyFlow] = []
         for _, row in df.iterrows():
-            ts_raw = str(row.get("时间", row.get("日期", "")))
-            try:
-                ts = _beijing_ts_to_utc(pd.to_datetime(ts_raw).to_pydatetime())
-            except Exception:
+            ts = _parse_ts(row.get("时间", row.get("日期", "")), code=code, field="时间")
+            if ts is None:
                 continue
             flows.append(
                 MoneyFlow(
@@ -513,14 +539,16 @@ class EfinanceAdapter:
     def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
         try:
             df = ef.stock.get_today_bill(code)
-        except Exception:
+        except Exception as e:
+            _log.warning("get_today_money_flow(%s) 拉取失败: %s", code, e)
             return []
         return self._bill_rows_to_flow(df, code)
 
     def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
         try:
             df = ef.stock.get_history_bill(code)
-        except Exception:
+        except Exception as e:
+            _log.warning("get_history_money_flow(%s) 拉取失败: %s", code, e)
             return []
         flows = self._bill_rows_to_flow(df, code)
         # 只取最近 N 天
@@ -532,7 +560,8 @@ class EfinanceAdapter:
     def get_belonging_boards(self, code: str) -> list[Board]:
         try:
             df = ef.stock.get_belong_board(code)
-        except Exception:
+        except Exception as e:
+            _log.warning("get_belonging_boards(%s) 拉取失败: %s", code, e)
             return []
         if df is None or df.empty:
             return []
@@ -559,5 +588,7 @@ class EfinanceAdapter:
         try:
             df = ef.stock.get_realtime_quotes()
             return df is not None and not df.empty
-        except Exception:
+        except Exception as e:
+            # 健康检查失败本身即返回值，debug 级避免轮询场景刷屏
+            _log.debug("efinance health_check 失败: %s", e)
             return False

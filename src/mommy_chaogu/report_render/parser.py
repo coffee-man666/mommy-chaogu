@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,8 +197,9 @@ def parse_markdown_report(path: str | Path) -> ReportData:
                     extra["today_net"] = _decimal(rest[2])
                     if len(rest) >= 4:
                         extra["days_30_net"] = _decimal(rest[3])
-            except Exception:
-                pass
+            except Exception as e:
+                # 数值列解析失败保留 None 继续输出，但数据缺口必须可见
+                _log.warning("个股行数值解析失败（code=%s name=%s）: %s", code, name, e)
             out.append(
                 StockRow(
                     rank=rank,
