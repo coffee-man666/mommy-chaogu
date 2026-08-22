@@ -3,7 +3,7 @@
 纯 HTTP 客户端，不做业务模型映射。每个方法返回原始 JSON (dict/list) 或 None。
 覆盖所有 Basic+ 免费 tier 端点（约 21 个方法）。
 
-参考文档：/Users/hanyan/Cursor/_context/massive_source_of_truth.md
+参考文档：docs/massive-api-notes.md（本仓库）
 - Base URL: https://api.massive.com（兼容 https://api.polygon.io）
 - 认证：Bearer token header
 - 分页：cursor-based，response.next_url 指向下一页

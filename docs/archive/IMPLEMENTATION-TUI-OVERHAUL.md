@@ -1,7 +1,7 @@
 # TUI Overhaul — Implementation Tracker
 
 > Branch: `tui-overhaul`
-> Design doc: `/Users/hanyan/Downloads/tui-design.md`
+> Design source: original TUI design session; this tracker is the surviving record.
 > Goal: Replace current TUI with the PRD design, phase by phase.
 
 ---
