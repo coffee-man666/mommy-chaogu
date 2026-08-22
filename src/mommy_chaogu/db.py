@@ -16,6 +16,10 @@ from typing import Self
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 
+from mommy_chaogu.db_paths import register_sqlite3_adapters
+
+register_sqlite3_adapters()
+
 
 def create_sqlite_engine(db_path: Path) -> Engine:
     """Create a consistently configured SQLAlchemy SQLite engine."""

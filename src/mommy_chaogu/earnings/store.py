@@ -13,6 +13,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from mommy_chaogu.db_paths import register_sqlite3_adapters
 from mommy_chaogu.earnings.schema import SCHEMA_SQL
 from mommy_chaogu.earnings.types import (
     EarningsActual,
@@ -20,6 +21,8 @@ from mommy_chaogu.earnings.types import (
     EarningsScore,
     EarningsVerdict,
 )
+
+register_sqlite3_adapters()
 
 
 def _utcnow() -> datetime:

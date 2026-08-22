@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date
 from typing import ClassVar, Protocol, runtime_checkable
 
 from mommy_chaogu.earnings.types import EarningsActual, EarningsCalendar, EarningsSource
@@ -136,7 +136,7 @@ class MockEarningsAdapter:
                 disclosure_date=date(2026, 7, 20),
                 source=EarningsSource.FORECAST,
                 note=f"Mock: {code} {period} 业绩预告",
-                fetched_at=datetime.utcnow(),
+                fetched_at=datetime.now(UTC),
             )
         ]
 

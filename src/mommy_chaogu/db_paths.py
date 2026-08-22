@@ -13,7 +13,30 @@
 from __future__ import annotations
 
 import os
+import sqlite3
+from datetime import date, datetime
 from pathlib import Path
+
+
+def register_sqlite3_adapters() -> None:
+    """注册 sqlite3 的 datetime/date adapter 与 converter。
+
+    Python 3.12 起默认实现弃用（未来版本移除）。此处注册的输出格式与旧默认
+    逐字节一致（datetime 用空格分隔的 ISO 格式），旧库数据无需迁移即可继续
+    读写。幂等，可安全重复调用。
+    """
+    sqlite3.register_adapter(datetime, lambda v: v.isoformat(sep=" "))
+    sqlite3.register_adapter(date, lambda v: v.isoformat())
+
+    def _convert_timestamp(val: bytes) -> datetime:
+        return datetime.fromisoformat(val.decode("ascii"))
+
+    sqlite3.register_converter("TIMESTAMP", _convert_timestamp)
+    sqlite3.register_converter("DATETIME", _convert_timestamp)
+    sqlite3.register_converter("DATE", lambda v: date.fromisoformat(v.decode("ascii")))
+
+
+register_sqlite3_adapters()
 
 
 def default_data_dir() -> Path:
