@@ -17,18 +17,21 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from typing import Any, ClassVar
 
+from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.reactive import reactive
-from textual.widgets import Footer
+from textual.widgets import Footer, Static
 
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.screens.help import HelpScreen
 from mommy_chaogu.tui.services.bootstrap import Services
 from mommy_chaogu.tui.services.errors import friendly_error
+from mommy_chaogu.tui.services.session_journal import SessionJournal
 from mommy_chaogu.tui.views.chat import ChatView
 from mommy_chaogu.tui.widgets.top_bar import TopBar
 
@@ -139,6 +142,16 @@ class MommyTuiApp(App[None]):
         self._turn_seq: int = 0
         self._active_turn_id: int | None = None
         self._conversation_history: list[dict[str, str]] = []
+        # 会话级写操作放行（确认条按 a 后记住的工具名，Esc/清屏不重置，
+        # 退出 TUI 才失效——对标 Claude Code 的 "always allow"）
+        self._session_allowed_tools: set[str] = set()
+        # 会话恢复门面（memory 未配置时为 None，/resume /new 优雅降级）
+        agent_memory = getattr(self.services.agent, "_memory", None)
+        self._journal: SessionJournal | None = (
+            SessionJournal(agent_memory) if agent_memory is not None else None
+        )
+        # 本会话累计 token（每轮结束累加，TopBar 常驻显示）
+        self._session_tokens: int = 0
 
     def compose(self) -> ComposeResult:
         """单屏：TopBar + ChatView + Footer。"""
@@ -159,6 +172,90 @@ class MommyTuiApp(App[None]):
             self.query_one(ChatView).append_hint(
                 f"部分服务初始化失败，已进入降级模式：{self._startup_error}"
             )
+        if not self.services.agent.has_agent():
+            self.query_one(ChatView).mount_onboarding()
+        # 会话自动恢复（MOMMY_TUI_RESUME=off 关闭；/resume 仍可用）
+        if self._journal is not None and (
+            os.environ.get("MOMMY_TUI_RESUME", "").strip().lower() != "off"
+        ):
+            self.run_worker(self._recover_session_worker, name="session-recover", thread=True)
+
+    # ------------------------------------------------------------------
+    # 会话恢复（SessionJournal 驱动）
+    # ------------------------------------------------------------------
+
+    def _recover_session_worker(self) -> None:
+        """worker 线程：解析上次会话（SQL 不占主线程），回主线程渲染。"""
+        if self._journal is None:
+            return
+        try:
+            rec = self._journal.recover_latest()
+        except Exception as e:
+            _log.warning("会话恢复失败: %s", e)
+            return
+        self.call_from_thread(self._apply_recovery, rec)
+
+    def _apply_recovery(self, rec: Any) -> None:
+        """主线程：重放尾窗 + 横幅 + 换绑续聊记忆视图。"""
+        if rec is None or rec.session_id is None:
+            return  # 冷启动：欢迎卡即终态，零仪式
+        if self._active_turn_id is not None:
+            return  # 极端竞态：活动轮次进行中不插入历史
+        chat = self.query_one(ChatView)
+        chat.replay_entries(rec.entries, more_older=rec.more_older)
+        chat.show_resume_banner(rec.session_id, len(rec.entries))
+        if self._journal is not None:
+            self.services.agent.bind_conversation_memory(self._journal.bound_memory_for_agent())
+
+    def action_new_session(self) -> None:
+        """/new：分配新会话并换绑；旧会话保留在 /resume 列表。"""
+        chat = self.query_one(ChatView)
+        if self._journal is None:
+            chat.append_hint("会话恢复未启用（记忆未配置），无法开新会话")
+            return
+        new_id = self._journal.begin_next()
+        self.services.agent.bind_conversation_memory(self._journal.bound_memory_for_agent())
+        chat.append_hint(f"已开新会话 {new_id}（旧会话保留在 /resume 列表）")
+
+    def action_resume(self, args: str = "") -> None:
+        """/resume：无参列历史会话；带 id 切换并重放。"""
+        chat = self.query_one(ChatView)
+        if self._journal is None:
+            chat.append_hint("会话恢复未启用（记忆未配置）")
+            return
+        target = args.strip()
+        if not target:
+            sessions = self._journal.sessions()
+            if not sessions:
+                chat.append_hint("暂无可恢复的会话")
+                return
+            lines = ["[bold]📜 历史会话[/]"]
+            for i, info in enumerate(sessions, 1):
+                ts = info.last_active.strftime("%m-%d %H:%M")
+                preview = escape(info.preview) or "—"
+                lines.append(
+                    f"  [b]{i}.[/] [cyan]{info.session_id}[/] · {info.n_messages} 条"
+                    f" · {ts} · {preview}"
+                )
+            lines.append("[dim]/resume <会话id> 继续对话[/]")
+            chat.mount_card(Static("\n".join(lines), classes="card"))
+            return
+        # 切换含 DOM 清屏重放，走事件循环 worker（SQLite 读为毫秒级）
+        self.run_worker(self._switch_session_worker(target), name="session-switch")
+
+    async def _switch_session_worker(self, target: str) -> None:
+        """切换会话：清当前对话流（复用清屏协议）→ 重放目标会话。"""
+        chat = self.query_one(ChatView)
+        await chat._clear_messages()
+        if self._journal is None:
+            return
+        try:
+            rec = self._journal.switch(target)
+        except Exception as e:
+            _log.warning("切换会话失败: %s", e)
+            chat.append_hint(friendly_error(e))
+            return
+        self._apply_recovery(rec)
 
     # ------------------------------------------------------------------
     # 全局动作
@@ -381,6 +478,35 @@ class MommyTuiApp(App[None]):
         def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None:
             self.call_from_thread(self._post_tool_result, turn_id, fn_name, ok, elapsed_ms, result)
 
+        def on_confirm(fn_name: str, fn_args: dict[str, Any]) -> bool:
+            """写操作确认：worker 线程内阻塞等待用户在确认条上决定。
+
+            会话级放行的工具直接通过；决定通过 threading.Event 传回。
+            取消整轮（Esc/清屏）按拒绝处理，避免 worker 悬空。
+            """
+            if fn_name in self._session_allowed_tools:
+                return True
+            decided = threading.Event()
+            decision: list[str] = []
+
+            def _record(choice: str) -> None:
+                decision.append(choice)
+                decided.set()
+
+            # 挂载确认条必须在主线程；等待留在 worker 线程，UI 不被阻塞
+            self.call_from_thread(self._show_confirm, fn_name, fn_args, _record)
+            while not decided.is_set():
+                cancel = self._cancel_event
+                if cancel is not None and cancel.is_set():
+                    self.call_from_thread(self._force_resolve_confirm)
+                    return False
+                decided.wait(0.2)
+            choice = decision[0] if decision else "deny"
+            if choice == "always":
+                self._session_allowed_tools.add(fn_name)
+                return True
+            return choice == "allow"
+
         def on_status(status: str, info: dict[str, Any]) -> None:
             if status == "retry":
                 attempt = int(info.get("attempt", 1))
@@ -398,17 +524,37 @@ class MommyTuiApp(App[None]):
 
             self.call_from_thread(self._append_stream_chunk, turn_id, delta)
 
+        # 思考流回调（推理模型才有 delta；普通轮永不触发）
+        thinking_started = threading.Event()
+
+        def on_thinking(delta: str) -> None:
+            if not thinking_started.is_set():
+                thinking_started.set()
+                self.call_from_thread(self._start_thinking_block, turn_id)
+
+            self.call_from_thread(self._append_thinking_delta, delta)
+
+        chat_kwargs: dict[str, Any] = dict(
+            history=list(self._conversation_history[-20:]),
+            on_tool_call=on_tool_call,
+            on_tool_result=on_tool_result,
+            on_chunk=on_chunk,
+            cancel_event=cancel_event,
+            usage_out=usage_out,
+            on_status=on_status,
+            on_thinking=on_thinking,
+        )
         try:
-            resp = self.services.agent.chat(
-                text,
-                history=list(self._conversation_history[-20:]),
-                on_tool_call=on_tool_call,
-                on_tool_result=on_tool_result,
-                on_chunk=on_chunk,
-                cancel_event=cancel_event,
-                usage_out=usage_out,
-                on_status=on_status,
-            )
+            resp = self.services.agent.chat(text, on_confirm=on_confirm, **chat_kwargs)
+        except TypeError as e:
+            # 兼容旧 AgentBridge（测试桩 / 外部实现）：不认识任一新参数
+            # （on_confirm / on_thinking）时，整体剔除后重试一次——
+            # 能力协商从「全有」降到「基础」，而不是半个坏掉的组合
+            if not any(k in str(e) for k in ("on_thinking", "on_confirm")):
+                raise
+            chat_kwargs.pop("on_confirm", None)
+            chat_kwargs.pop("on_thinking", None)
+            resp = self.services.agent.chat(text, **chat_kwargs)
         except Exception as e:
             _log.warning("Agent chat 失败: %s", e)
             self.call_from_thread(self._on_chat_error, turn_id, friendly_error(e))
@@ -423,6 +569,19 @@ class MommyTuiApp(App[None]):
             reply = getattr(resp, "text", "") or ""
 
         self.call_from_thread(self._on_agent_done, turn_id, text, reply, interrupted, usage)
+
+    def _show_confirm(
+        self,
+        fn_name: str,
+        fn_args: dict[str, Any],
+        record: Callable[[str], None],
+    ) -> None:
+        """主线程：挂载内联确认条（决定经 record 回传 worker 线程）。"""
+        self.query_one(ChatView).request_confirm(fn_name, fn_args, record)
+
+    def _force_resolve_confirm(self) -> None:
+        """主线程：取消整轮时把悬空确认条强制落定为拒绝。"""
+        self.query_one(ChatView).force_resolve_confirm("deny")
 
     def _post_tool_started(self, turn_id: int, name: str, args: dict[str, Any]) -> None:
         """主线程：分配 call_id 并通知 ChatView 挂载 ToolIndicator。"""
@@ -453,6 +612,16 @@ class MommyTuiApp(App[None]):
             return
         chat = self.query_one(ChatView)
         chat.set_retry_status(attempt, max_retries)
+
+    def _start_thinking_block(self, turn_id: int) -> None:
+        """主线程：首个思考 delta 到达时挂载思考块。"""
+        if turn_id != self._active_turn_id:
+            return
+        self.query_one(ChatView).start_thinking()
+
+    def _append_thinking_delta(self, delta: str) -> None:
+        """主线程：追加思考 delta。"""
+        self.query_one(ChatView).append_thinking(delta)
 
     def _start_streaming(self, turn_id: int) -> None:
         """主线程：首个 chunk 到达时挂载流式 widget + 启动 50ms 节流 timer。"""
@@ -502,6 +671,11 @@ class MommyTuiApp(App[None]):
         if turn_id != self._active_turn_id:
             return
         self._stream_usage = usage or {}
+        tokens = int((usage or {}).get("total_tokens") or 0)
+        if tokens > 0:
+            self._session_tokens += tokens
+            with contextlib.suppress(Exception):
+                self.query_one(TopBar).set_session_usage(self._session_tokens)
         chat = self.query_one(ChatView)
 
         # 如果流式 widget 存在，收尾它（最终刷新 + 拿到流式文本）

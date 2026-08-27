@@ -70,6 +70,11 @@ class HintBar(Static):
         self._mode = "code-hint"
         self.update(f"[#8a8f98] ⏎ 查看 {escape(code)} 报价[/]")
 
+    def show_confirm(self) -> None:
+        """写操作确认条等待决定时的按键提示。"""
+        self._mode = "confirm"
+        self.update("[#f5a524]⏸ 等待确认[/][#8a8f98] · y 允许 · n 拒绝 · a 本会话不再询问[/]")
+
     @property
     def mode(self) -> str:
         return self._mode

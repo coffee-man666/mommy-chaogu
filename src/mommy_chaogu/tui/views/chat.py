@@ -11,10 +11,11 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import re
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -26,17 +27,22 @@ from textual.containers import Vertical, VerticalScroll
 from textual.suggester import Suggester
 from textual.widgets import Input, Markdown, Static
 
+from mommy_chaogu.agent.service import DENIAL_RESULT_MESSAGE
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.services.errors import friendly_error
 from mommy_chaogu.tui.services.renderers import is_truncated, render_tool_result
+from mommy_chaogu.tui.services.session_journal import JournalEntry
 from mommy_chaogu.tui.views.slash_cards import SlashCardFactory
 from mommy_chaogu.tui.widgets import cards
+from mommy_chaogu.tui.widgets.confirm_bar import ConfirmBar
 from mommy_chaogu.tui.widgets.hint_bar import HintBar
+from mommy_chaogu.tui.widgets.thinking import ThinkingBlock
 from mommy_chaogu.tui.widgets.tool_indicator import (
     ToolIndicator,
+    format_digest,
     format_elapsed,
-    format_result_digest,
     format_tool_args,
+    tool_display_name,
 )
 from mommy_chaogu.tui.widgets.working_indicator import WorkingIndicator
 
@@ -44,6 +50,9 @@ _log = logging.getLogger(__name__)
 
 _CODE_RE = re.compile(r"(?:[0-9]{6}|[A-Z]{1,6})")
 _AT_TOKEN_RE = re.compile(r"@([^\s@]*)$")
+
+# service 层写操作被拒绝时 on_tool_result 收到的固定文案（红线 → 已拒绝样式）
+DENIED_RESULT_TEXT = DENIAL_RESULT_MESSAGE
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +81,8 @@ SLASH_COMMANDS: dict[str, SlashCommand] = {
         SlashCommand("predictions", "预测跟踪"),
         SlashCommand("signals", "近期信号"),
         SlashCommand("memory", "记忆系统"),
+        SlashCommand("resume", "恢复历史会话（/resume [id]）", has_args=True),
+        SlashCommand("new", "开新会话（旧会话保留在 /resume）"),
         SlashCommand("status", "服务状态"),
         SlashCommand("help", "按键速查"),
         SlashCommand("clear", "清空对话"),
@@ -186,6 +197,11 @@ class ChatView(Vertical):
         self._stream_widget: Markdown | None = None
         self._stream_buffer: str = ""
         self._stream_dirty: bool = False
+        # 内联写操作确认条（同一时刻至多一个）
+        self._confirm_bar: ConfirmBar | None = None
+        # 思考过程块（推理模型才有；普通轮恒为 None）
+        self._thinking: ThinkingBlock | None = None
+        self._pending_confirm_cb: Callable[[str], None] | None = None
         # 取消回调（app.py 设置，Esc 触发真取消）
         self._cancel_callback: Callable[[], None] | None = None
         # 斜杠命令卡片构建器（数据拉取 + 渲染；挂载与线程调度留在这里）
@@ -251,6 +267,10 @@ class ChatView(Vertical):
                 self._working.stop_timer()
                 self._working.remove()
                 self._working = None
+            # 中断兜底：思考块不能悬空在活动态
+            if self._thinking is not None and self._thinking.is_active:
+                self._thinking.finish()
+            self._thinking = None
             self._refresh_hint_bar()
 
     def is_cancelled(self) -> bool:
@@ -497,6 +517,10 @@ class ChatView(Vertical):
             self._run_card_worker(self._card_factory.signals_card)
         elif cmd == "memory":
             self._run_card_worker(self._card_factory.memory_card)
+        elif cmd == "resume":
+            self.app.action_resume(args)  # type: ignore[attr-defined]
+        elif cmd == "new":
+            self.app.action_new_session()  # type: ignore[attr-defined]
         elif cmd == "status":
             self._show_status_card()
 
@@ -580,17 +604,18 @@ class ChatView(Vertical):
 
     def tool_call_started(self, call_id: int, name: str, args: dict[str, Any]) -> None:
         """工具调用开始：挂载呼吸闪烁的 ToolIndicator。"""
+        self.finalize_thinking()
         if self._working is not None:
             self._working.clear_retry()
         log = self.query_one("#chat-log", VerticalScroll)
-        indicator = ToolIndicator(name, format_tool_args(args))
+        indicator = ToolIndicator(name, format_tool_args(args), args=args)
         self._tool_widgets[call_id] = indicator
         self._tool_names[call_id] = name
         log.mount(indicator)
         log.scroll_end(animate=False)
 
     def tool_call_finished(self, call_id: int, ok: bool, elapsed_ms: int, result: str) -> None:
-        """工具调用完成/失败：更新指示器；可渲染的结果追加富卡片。"""
+        """工具调用完成/失败/被拒：更新指示器；可渲染的结果追加富卡片。"""
         indicator = self._tool_widgets.pop(call_id, None)
         name = self._tool_names.pop(call_id, "")
         if indicator is None:
@@ -598,11 +623,17 @@ class ChatView(Vertical):
         log = self.query_one("#chat-log", VerticalScroll)
         if ok:
             indicator.set_complete(
-                format_result_digest(result), elapsed_ms, truncated=is_truncated(result)
+                format_digest(name, result),
+                elapsed_ms,
+                truncated=is_truncated(result),
+                result=result,
             )
             card = render_tool_result(name, result, self._theme())
             if card is not None:
                 log.mount(card)
+        elif result == DENIED_RESULT_TEXT:
+            # 用户在内联确认条拒绝：黄色「已拒绝」行（区别于执行出错）
+            indicator.set_denied()
         else:
             indicator.set_error(result, elapsed_ms)
         log.scroll_end(animate=False)
@@ -636,6 +667,48 @@ class ChatView(Vertical):
         )
         log.scroll_end(animate=False)
 
+    # ------------------------------------------------------------------
+    # 会话恢复渲染（SessionJournal 驱动，纯渲染无 IO）
+    # ------------------------------------------------------------------
+
+    def replay_entries(self, entries: Sequence[JournalEntry], *, more_older: int = 0) -> None:
+        """把恢复的历史消息重放进对话流（正序，复用既有消息样式）。"""
+        log = self.query_one("#chat-log", VerticalScroll)
+        with contextlib.suppress(Exception):
+            log.query_one("#chat-welcome").remove()
+        if more_older > 0:
+            # 如实告知省略，不假装展示完整历史
+            log.mount(
+                Static(
+                    f"[#8a8f98]↩ 已省略更早的 {more_older} 条…[/]",
+                    classes="resume-omitted",
+                )
+            )
+        for entry in entries:
+            if entry.role == "user":
+                log.mount(Static(f"[bold]❯ {escape(entry.content)}[/]", classes="user-msg"))
+            else:
+                log.mount(Markdown(f"⏺ {entry.content.lstrip(chr(10))}", classes="assistant-msg"))
+        log.scroll_end(animate=False)
+
+    def mount_onboarding(self) -> None:
+        """未配置 AI 时的首启引导卡（app.on_mount 调用一次）。"""
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(Static(cards.onboarding_text(), classes="onboarding-card"))
+        log.scroll_end(animate=False)
+
+    def show_resume_banner(self, session_id: str, n_messages: int) -> None:
+        """恢复完成提示行（挂在对话流尾部）。"""
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(
+            Static(
+                f"[#8a8f98]↩ 已恢复会话 {escape(session_id)} · {n_messages} 条"
+                f"（/new 开新对话 · /resume 切换）[/]",
+                classes="resume-banner",
+            )
+        )
+        log.scroll_end(animate=False)
+
     def set_retry_status(self, attempt: int, max_retries: int) -> None:
         """重试状态（app 经 on_status 回调转发）：工作行显示重试进度。"""
         if self._working is not None:
@@ -661,6 +734,33 @@ class ChatView(Vertical):
         )
 
     # ------------------------------------------------------------------
+    # 思考过程（推理模型 delta.reason_content；普通轮不出现）
+    # ------------------------------------------------------------------
+
+    def start_thinking(self) -> None:
+        """首个思考 delta 到达前挂载思考块（普通模型永远不调用）。"""
+        if self._thinking is not None:
+            return
+        if self._working is not None:
+            self._working.clear_retry()
+        block = ThinkingBlock()
+        self._thinking = block
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(block)
+        log.scroll_end(animate=False)
+
+    def append_thinking(self, delta: str) -> None:
+        """追加思考 delta（活动态零渲染成本）。"""
+        if self._thinking is not None:
+            self._thinking.append(delta)
+
+    def finalize_thinking(self) -> None:
+        """收起思考块（首个正文/工具调用/中断时调用，幂等）。"""
+        if self._thinking is not None:
+            self._thinking.finish()
+            self._thinking = None
+
+    # ------------------------------------------------------------------
     # 流式渲染（逐 delta 更新 Markdown，50ms 节流）
     # ------------------------------------------------------------------
 
@@ -680,6 +780,7 @@ class ChatView(Vertical):
 
     def append_chunk(self, delta: str) -> None:
         """追加一个流式 chunk 到缓冲区，标记 dirty 等待节流刷新。"""
+        self.finalize_thinking()
         self._stream_buffer += delta
         self._stream_dirty = True
 
@@ -708,6 +809,68 @@ class ChatView(Vertical):
     def set_cancel_callback(self, callback: Callable[[], None]) -> None:
         """注册真取消回调（app.py 传入，Esc 时触发 cancel_event.set()）。"""
         self._cancel_callback = callback
+
+    # ------------------------------------------------------------------
+    # 内联写操作确认（Kimi Code 式 y/n/a）
+    # ------------------------------------------------------------------
+
+    def _focus_prompt(self) -> None:
+        """确认条决定后把焦点交回输入框。"""
+        self.query_one("#prompt", ChatInput).focus()
+
+    def request_confirm(
+        self,
+        name: str,
+        args: dict[str, Any],
+        on_decision: Callable[[str], None],
+    ) -> None:
+        """挂载内联确认条并抢焦点（app 经 call_from_thread 在主线程调用）。
+
+        *on_decision* 在用户按 y/n/a（或外部强制落定）时以
+        "allow" / "deny" / "always" 回调一次。
+        """
+        if self._confirm_bar is not None:
+            # 已有未决确认：直接拒绝新的（正常 agent 循环串行，不会走到）
+            on_decision("deny")
+            return
+        args_pretty = ""
+        if args:
+            raw = json.dumps(args, ensure_ascii=False, indent=2)
+            lines = raw.splitlines()
+            args_pretty = "\n".join(lines[:6]) + (" …" if len(lines) > 6 else "")
+        bar = ConfirmBar(
+            display_name=tool_display_name(name),
+            args_summary=format_tool_args(args),
+            args_pretty=args_pretty,
+            on_decision=self._handle_confirm_decision,
+            focus_back=lambda: self._focus_prompt(),
+        )
+        self._confirm_bar = bar
+        self._pending_confirm_cb = on_decision
+        log = self.query_one("#chat-log", VerticalScroll)
+        log.mount(bar)
+        log.scroll_end(animate=False)
+        self.query_one(HintBar).show_confirm()
+
+    def _handle_confirm_decision(self, decision: str) -> None:
+        """确认条决定统一入口：恢复提示栏 + 通知等待方（app 的 worker）。"""
+        self._confirm_bar = None
+        callback = self._pending_confirm_cb
+        self._pending_confirm_cb = None
+        self._refresh_hint_bar()
+        if callback is not None:
+            callback(decision)
+
+    def force_resolve_confirm(self, decision: str = "deny") -> None:
+        """外部强制落定当前确认（/clear、取消整轮时），不留给悬空等待。"""
+        if self._confirm_bar is None:
+            return
+        self._confirm_bar.resolve_external(decision)
+        self._handle_confirm_decision(decision)
+
+    def has_pending_confirm(self) -> bool:
+        """当前是否有等待用户决定的确认条。"""
+        return self._confirm_bar is not None
 
     # ------------------------------------------------------------------
     # 工作流步骤进度（StepStatus 消息驱动）
@@ -741,6 +904,8 @@ class ChatView(Vertical):
         if self._cancel_callback is not None:
             with contextlib.suppress(Exception):
                 self._cancel_callback()
+        # 悬空的确认条必须落定（等价拒绝），否则 agent worker 会一直等决定
+        self.force_resolve_confirm("deny")
         if self._working is not None:
             self._working.stop_timer()
             self._working = None

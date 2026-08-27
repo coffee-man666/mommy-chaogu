@@ -69,6 +69,37 @@ ToolIndicator .ti-detail {
     color: $text-muted;
 }
 
+/* 展开详情（点击/Enter 切换）：默认隐藏 */
+ToolIndicator .ti-more {
+    display: none;
+    padding: 0 0 0 4;
+    color: $text-muted;
+}
+
+ToolIndicator.-expanded .ti-more {
+    display: block;
+}
+
+ToolIndicator.-expanded {
+    background: $surface-darken-1;
+}
+
+/* ConfirmBar：内联写操作确认（等待决定时黄框高亮） */
+ConfirmBar {
+    height: auto;
+    border: round $warning;
+    padding: 0 2;
+    margin: 1 1 1 1;
+}
+
+ConfirmBar.-pending {
+    background: $surface-darken-1;
+}
+
+ConfirmBar .cb-body {
+    width: 1fr;
+}
+
 /* WorkingIndicator：思考中 spinner / 重试态 */
 WorkingIndicator {
     height: 1;
@@ -86,6 +117,17 @@ WorkingIndicator {
 }
 
 .memory-receipt {
+    height: 1;
+    padding: 0 1;
+}
+
+.resume-omitted {
+    height: 1;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+.resume-banner {
     height: 1;
     padding: 0 1;
 }
@@ -129,4 +171,32 @@ WorkingIndicator {
     padding: 1 2;
     margin: 1 0;
     height: auto;
+}
+
+/* 首启引导卡（未配置 AI 时） */
+.onboarding-card {
+    border: round $accent;
+    padding: 1 2;
+    margin: 1 0;
+    height: auto;
+}
+
+/* ThinkingBlock：推理模型思考过程 */
+ThinkingBlock {
+    height: auto;
+    padding: 0 1;
+}
+
+ThinkingBlock .th-header {
+    height: 1;
+}
+
+ThinkingBlock .th-body {
+    padding: 0 0 0 2;
+    margin: 0 0 1 0;
+    color: $text-muted;
+}
+
+ThinkingBlock.-expanded {
+    background: $surface-darken-1;
 }

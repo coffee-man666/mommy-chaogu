@@ -526,3 +526,16 @@ def welcome_text(
     if not has_agent:
         lines.append("  [yellow]AI 未配置：仅数据命令可用，配置见 .env[/]")
     return "\n".join(lines)
+
+
+def onboarding_text() -> str:
+    """未配置 AI 时的首启引导卡：先给立刻能用的，再给一分钟配置路径。"""
+    return (
+        "[bold cyan]👋 三步开始用[/]\n"
+        "  [bold]现在就能用[/]（无需任何 Key）：\n"
+        "    /today 今日总览 · /quote 600519 个股报价 · /flows 资金流 · /watch 自选股\n"
+        "  [bold]让 AI 干活（约 1 分钟）[/]：\n"
+        "    [reverse] uv run mommy setup [/]  ← 交互式选 Provider / 填 Key / 验证\n"
+        "    然后重启 [i]mommy-tui[/]，即可流式对话 + 工具调用 + 策略卡确认\n"
+        "  [dim]也可直接编辑 .env 填 DEEPSEEK_API_KEY 后重启[/]"
+    )

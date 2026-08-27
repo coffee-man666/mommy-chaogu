@@ -44,10 +44,13 @@ class TestToolDisplayName:
         assert tool_display_name("get_money_flow_today") == "查今日资金流"
         assert tool_display_name("search_similar_events") == "搜相似事件"
 
-    def test_all_25_tools_mapped(self) -> None:
+    def test_all_tools_mapped(self) -> None:
         from mommy_chaogu.tui.widgets.tool_indicator import TOOL_DISPLAY_NAMES
 
-        assert len(TOOL_DISPLAY_NAMES) == 25
+        # 25 个行情/数据工具 + 7 个策略卡工具（写操作确认条需要中文名）
+        assert len(TOOL_DISPLAY_NAMES) == 32
+        for name in ("strategy_save", "strategy_archive", "strategy_activate_monitor"):
+            assert name in TOOL_DISPLAY_NAMES
 
     def test_fallback(self) -> None:
         assert tool_display_name("some_unknown_tool") == "some unknown tool"
@@ -108,7 +111,7 @@ class TestTruncateAtWord:
 
 class TestMatchSlashCommands:
     def test_all_on_bare_slash(self) -> None:
-        assert len(match_slash_commands("/")) == 14
+        assert len(match_slash_commands("/")) == 16
 
     def test_prefix(self) -> None:
         names = [c.name for c in match_slash_commands("/to")]
@@ -462,7 +465,7 @@ class TestSlashCycling:
                 prompt.value = "/"
                 await pilot.pause()
 
-                assert len(chat._slash_matches) == 14
+                assert len(chat._slash_matches) == 16
                 assert chat._slash_sel == 0
 
                 await pilot.press("down")
@@ -477,7 +480,7 @@ class TestSlashCycling:
                 # 继续 up → 环绕到最后一项
                 await pilot.press("up")
                 await pilot.pause()
-                assert chat._slash_sel == 13
+                assert chat._slash_sel == 15
                 assert chat.selected_completion() == "/quit"
 
         _run(_test())

@@ -79,3 +79,10 @@ def change_color(
             return "blue"
         return "red" if us else "green"  # A 股绿跌 / 美股红跌
     return "dim"
+
+
+def format_tokens_compact(n: int) -> str:
+    """token 数 → 紧凑显示（1.2k / 850）。"""
+    if n >= 1000:
+        return f"{n / 1000:.1f}k"
+    return str(n)

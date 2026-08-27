@@ -200,6 +200,14 @@ class AgentBridge:
         threading.Thread(target=_watch, daemon=True).start()
         return True
 
+    def bind_conversation_memory(self, memory: Any) -> None:
+        """切换后续 chat() 注入的会话作用域记忆（会话恢复 /resume 用）。
+
+        SessionMemory 满足 AgentService 的协议；换绑后读上下文与写回
+        都落在目标会话，写路径仍是 agent 层唯一的 memory.add。
+        """
+        self._memory = memory
+
     def chat(
         self,
         message: str,
@@ -210,6 +218,8 @@ class AgentBridge:
         cancel_event: Any = None,
         usage_out: Any = None,
         on_status: Any = None,
+        on_confirm: Any = None,
+        on_thinking: Any = None,
     ) -> Any:
         if self._agent is None:
             return None
@@ -222,6 +232,12 @@ class AgentBridge:
             "usage_out": usage_out,
             "on_status": on_status,
         }
+        # 只在需要时注入新键：旧签名的 agent 实现（测试桩 / 外部包装）
+        # 不认识 on_confirm / on_thinking，None 也会触发 TypeError
+        if on_confirm is not None:
+            kwargs["on_confirm"] = on_confirm
+        if on_thinking is not None:
+            kwargs["on_thinking"] = on_thinking
         if self._memory is not None:
             kwargs["memory"] = self._memory
         return self._agent.chat(message, **kwargs)

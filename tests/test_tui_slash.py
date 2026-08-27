@@ -54,6 +54,8 @@ class TestSlashRegistry:
             "predictions",
             "signals",
             "memory",
+            "resume",
+            "new",
             "status",
             "help",
             "clear",
@@ -72,7 +74,7 @@ class TestSlashRegistry:
 
     def test_no_arg_commands(self) -> None:
         for name, cmd in SLASH_COMMANDS.items():
-            if name in ("flows", "quote"):
+            if name in ("flows", "quote", "resume"):
                 continue
             assert cmd.has_args is False, f"{name} should not have args"
 

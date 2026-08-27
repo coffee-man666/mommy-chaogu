@@ -16,7 +16,12 @@ from zoneinfo import ZoneInfo
 from textual.reactive import reactive
 from textual.widgets import Static
 
-from mommy_chaogu.tui.services.formatting import change_arrow, change_color, format_change_pct
+from mommy_chaogu.tui.services.formatting import (
+    change_arrow,
+    change_color,
+    format_change_pct,
+    format_tokens_compact,
+)
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -48,6 +53,7 @@ class TopBar(Static):
         self._clock = ""
         self._index: dict[str, Any] | None = None
         self._theme = "dark"
+        self._session_tokens = 0
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._tick)
@@ -62,6 +68,11 @@ class TopBar(Static):
     def set_index(self, name: str, price: Any, change_pct: Any) -> None:
         """喂入指数快照（app 的 worker 线程经 call_from_thread 调用）。"""
         self._index = {"name": name, "price": price, "change_pct": change_pct}
+        self._refresh_display()
+
+    def set_session_usage(self, total_tokens: int) -> None:
+        """喂入本会话累计 token（app 在每轮结束后调用）。0 时不占位。"""
+        self._session_tokens = max(0, int(total_tokens))
         self._refresh_display()
 
     def set_theme(self, theme: str) -> None:
@@ -85,6 +96,8 @@ class TopBar(Static):
         parts = [
             self._index_text(),
             f"[dim]·[/] {self.ai_label}",
-            f"[dim]· {self._clock}[/]",
         ]
+        if self._session_tokens > 0:
+            parts.append(f"[dim]· ∑ {format_tokens_compact(self._session_tokens)} tok[/]")
+        parts.append(f"[dim]· {self._clock}[/]")
         self.update(" ".join(parts))
