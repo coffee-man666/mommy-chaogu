@@ -36,6 +36,39 @@ from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 _log = logging.getLogger(__name__)
 
 
+# ── 写操作确认 ────────────────────────────────────────────────────────
+# 这些工具会修改用户数据（策略卡 / 自定义告警 / 自选股）。宿主 UI 可通过
+# on_confirm 回调请求用户逐次授权；只读工具和查询类 action 不打扰。
+# 授权语义是三次独立授权之一（确认含义 / 保存 / 启用监控见产品文档），
+# 这里只负责「执行前把决定权交给用户」。
+CONFIRM_ALWAYS: frozenset[str] = frozenset(
+    {"strategy_save", "strategy_archive", "strategy_activate_monitor"}
+)
+CONFIRM_BY_ACTION: dict[str, frozenset[str]] = {
+    "manage_alert": frozenset({"add", "remove"}),
+    "manage_watchlist": frozenset({"add", "remove"}),
+}
+
+# 拒绝时 on_tool_result 收到的固定文案（TUI 据此渲染「已拒绝」红线）
+DENIAL_RESULT_MESSAGE = "用户拒绝了该操作"
+
+_DENIAL_RESULT = json.dumps(
+    {
+        "error": DENIAL_RESULT_MESSAGE,
+        "hint": "不要重试同一操作；向用户说明情况并等待新的指示",
+    },
+    ensure_ascii=False,
+)
+
+
+def requires_confirmation(fn_name: str, fn_args: dict[str, Any]) -> bool:
+    """判断一个工具调用是否属于需要用户确认的写操作。"""
+    actions = CONFIRM_BY_ACTION.get(fn_name)
+    if actions is not None:
+        return str(fn_args.get("action", "")).lower() in actions
+    return fn_name in CONFIRM_ALWAYS
+
+
 class _RetryCancelledError(Exception):
     """重试等待期间被 cancel_event 中断（内部使用，_run_loop 捕获）。"""
 
@@ -63,6 +96,7 @@ class _LoopMessage:
 
     content: str | None
     tool_calls: list[_LoopToolCall] | None
+    reasoning: str | None = None  # 推理模型思考文本；to_history 有意排除
 
     @classmethod
     def from_response(cls, response: Any) -> _LoopMessage:
@@ -117,6 +151,7 @@ class AgentResponse:
     rounds: int = 0  # LLM 调用轮数
     usage: dict[str, int] = field(default_factory=dict)  # prompt/completion/total tokens
     interrupted: bool = False  # 被 cancel_event 中断
+    reasoning: str = ""  # 推理模型思考文本（仅供 UI 展示，绝不回流对话历史）
 
 
 class AgentService:
@@ -234,8 +269,17 @@ class AgentService:
         on_status: Callable[[str, dict[str, Any]], None] | None = None,
         system_addendum: str | None = None,
         on_predictions_created: Callable[[list[dict[str, Any]]], None] | None = None,
+        on_confirm: Callable[[str, dict[str, Any]], bool] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
+
+        思考过程：
+        - 如果传入 *on_thinking*，推理模型（如 deepseek-reasoner）流式输出的
+          ``delta.reason_content`` 逐段回调它；完整思考文本在
+          ``AgentResponse.reasoning`` 返回。思考文本只供 UI 展示，
+          永不进入对话历史（OpenAI/DeepSeek 协议要求）。
+
 
         记忆行为：
         - 如果传入 *memory*，用它做跨轮次对话上下文 + 持久化
@@ -306,6 +350,8 @@ class AgentService:
             cancel_event=cancel_event,
             usage_out=usage_out,
             on_status=on_status,
+            on_confirm=on_confirm,
+            on_thinking=on_thinking,
         )
 
         # 3. 对话后记录 + 提取
@@ -379,6 +425,8 @@ class AgentService:
         cancel_event: threading.Event | None = None,
         usage_out: dict[str, int] | None = None,
         on_status: Callable[[str, dict[str, Any]], None] | None = None,
+        on_confirm: Callable[[str, dict[str, Any]], bool] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
     ) -> AgentResponse:
         """直接传入完整 messages 列表（灵活但需自己构造格式）。"""
         return self._run_loop(
@@ -389,6 +437,8 @@ class AgentService:
             cancel_event=cancel_event,
             usage_out=usage_out,
             on_status=on_status,
+            on_confirm=on_confirm,
+            on_thinking=on_thinking,
         )
 
     def _create_with_retry(
@@ -485,6 +535,8 @@ class AgentService:
         cancel_event: threading.Event | None = None,
         usage_out: dict[str, int] | None = None,
         on_status: Callable[[str, dict[str, Any]], None] | None = None,
+        on_confirm: Callable[[str, dict[str, Any]], bool] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
     ) -> AgentResponse:
         """核心 agent 循环：LLM → tool_calls → execute → LLM → ...
 
@@ -495,6 +547,13 @@ class AgentService:
         on_chunk：若提供，每轮 LLM 调用直接走 stream=True（带 tools）——
         文本 delta 逐段回调，tool_calls delta 同步拼接；最终回答的「出答案」
         与「流式输出」是同一次调用。provider 不支持 stream 时回退非流式。
+
+        on_confirm：若提供，写操作工具（requires_confirmation 命中）执行前
+        回调 (fn_name, fn_args) -> bool；返回 False 表示用户拒绝，工具不执行，
+        以 {"error": 用户拒绝...} 形式回传 LLM。回调在 worker 线程阻塞执行，
+        宿主 UI 负责转到用户线程弹确认并等待决定。回调抛异常按拒绝处理
+        （fail-closed）。不提供则不询问，行为与旧版一致（MCP 宿主用自己的
+        权限体系）。
 
         cancel_event：每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中 +
         重试等待期间检查 is_set()，命中即返回 interrupted=True 的 AgentResponse。
@@ -529,6 +588,7 @@ class AgentService:
                     cancel_event=cancel_event,
                     total_usage=total_usage,
                     on_status=on_status,
+                    on_thinking=on_thinking,
                 )
             except _RetryCancelledError:
                 # 重试等待期间被 Esc 中断
@@ -558,6 +618,7 @@ class AgentService:
                     tool_calls=all_tool_calls,
                     rounds=rounds,
                     usage=total_usage,
+                    reasoning=msg.reasoning or "",
                 )
 
             # 把 LLM 的 tool_call 消息加入历史（只保留协议字段，不带
@@ -583,6 +644,31 @@ class AgentService:
                     fn_args = {}
 
                 _log.info("tool_call: %s(%s)", fn_name, fn_args)
+
+                # 写操作确认：先问用户，再展示执行轨迹。拒绝时不执行工具，
+                # 拒绝原因作为 tool 结果回传 LLM（ok=False 走 UI 红线）。
+                if on_confirm is not None and requires_confirmation(fn_name, fn_args):
+                    allowed = False
+                    try:
+                        allowed = bool(on_confirm(fn_name, fn_args))
+                    except Exception:
+                        _log.warning("on_confirm 回调异常，按拒绝处理: %s", fn_name, exc_info=True)
+                    if not allowed:
+                        if on_tool_call is not None:
+                            with contextlib.suppress(Exception):
+                                on_tool_call(fn_name, fn_args)
+                        if on_tool_result is not None:
+                            with contextlib.suppress(Exception):
+                                on_tool_result(fn_name, False, 0, DENIAL_RESULT_MESSAGE)
+                        all_tool_calls.append(ToolCallRecord(fn_name, fn_args, _DENIAL_RESULT))
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": _DENIAL_RESULT,
+                            }
+                        )
+                        continue
 
                 if on_tool_call is not None:
                     on_tool_call(fn_name, fn_args)
@@ -671,6 +757,7 @@ class AgentService:
         cancel_event: threading.Event | None,
         total_usage: dict[str, int],
         on_status: Callable[[str, dict[str, Any]], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
     ) -> _LoopMessage:
         """发起一轮 LLM 调用并返回统一形态的消息。
 
@@ -684,7 +771,7 @@ class AgentService:
         """
         if on_chunk is not None:
             streamed = self._create_stream_with_retry(
-                messages, on_chunk, cancel_event, total_usage, on_status
+                messages, on_chunk, cancel_event, total_usage, on_status, on_thinking
             )
             if streamed is not None:
                 return streamed
@@ -715,6 +802,7 @@ class AgentService:
         cancel_event: threading.Event | None,
         total_usage: dict[str, int],
         on_status: Callable[[str, dict[str, Any]], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
     ) -> _LoopMessage | None:
         """stream=True（带 tools）调用：文本 delta 回调 + tool_calls 拼接。
 
@@ -777,6 +865,7 @@ class AgentService:
             return None
 
         collected: list[str] = []
+        reasoning: list[str] = []
         tool_acc: dict[int, dict[str, Any]] = {}  # index → {id, name, arguments 分片}
         usage_chunk: Any | None = None
         try:
@@ -795,6 +884,14 @@ class AgentService:
                     collected.append(text)
                     with contextlib.suppress(Exception):
                         on_chunk(text)
+                # 推理模型思考流（deepseek-reasoner 等）：只回调 UI，
+                # 不进 collected（永不回流对话历史）
+                reason = getattr(delta, "reason_content", None)
+                if isinstance(reason, str) and reason:
+                    reasoning.append(reason)
+                    if on_thinking is not None:
+                        with contextlib.suppress(Exception):
+                            on_thinking(reason)
                 for tc_delta in getattr(delta, "tool_calls", None) or []:
                     slot = tool_acc.setdefault(
                         tc_delta.index, {"id": "", "name": "", "arguments": []}
@@ -825,7 +922,11 @@ class AgentService:
             )
             for index, slot in sorted(tool_acc.items())
         ] or None
-        return _LoopMessage(content="".join(collected) or None, tool_calls=tool_calls)
+        return _LoopMessage(
+            content="".join(collected) or None,
+            tool_calls=tool_calls,
+            reasoning="".join(reasoning) or None,
+        )
 
     @property
     def tools(self) -> ToolRegistry:

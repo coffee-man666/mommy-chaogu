@@ -409,3 +409,79 @@ class TestUsageAccumulation:
 
         assert resp.usage is shared
         assert shared["total_tokens"] == 150
+
+
+def _reasoning_stream(
+    reason_deltas: list[str], text_deltas: list[str], usage: Any = None
+) -> MagicMock:
+    """模拟 DeepSeek 推理模型流：先 reason_content delta，后 content delta。"""
+    chunks = []
+    for d in reason_deltas:
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = None
+        chunk.choices[0].delta.reason_content = d
+        chunk.choices[0].delta.tool_calls = None
+        chunk.usage = None
+        chunks.append(chunk)
+    for d in text_deltas:
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = d
+        chunk.choices[0].delta.reason_content = None
+        chunk.choices[0].delta.tool_calls = None
+        chunk.usage = None
+        chunks.append(chunk)
+    if usage is not None and chunks:
+        chunks[-1].usage = usage
+    stream = MagicMock()
+    stream.__iter__ = lambda self: iter(chunks)  # type: ignore[misc]
+    return stream
+
+
+class TestThinkingStream:
+    """DeepSeek 推理模型：delta.reason_content → on_thinking 回调。"""
+
+    @patch("openai.OpenAI")
+    def test_on_thinking_called_per_reasoning_delta(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.return_value = _reasoning_stream(
+            ["先想", "一下"], ["答案"]
+        )
+
+        thinking: list[str] = []
+        chunks: list[str] = []
+        resp = svc.chat("hi", on_chunk=chunks.append, on_thinking=thinking.append)
+
+        assert "".join(thinking) == "先想一下"
+        assert "".join(chunks) == "答案"
+        assert resp.text == "答案"
+        assert resp.reasoning == "先想一下"
+
+    @patch("openai.OpenAI")
+    def test_reasoning_never_enters_llm_history(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """reasoning 只给 UI/返回值，不得混进对话历史（协议要求）。"""
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.return_value = _reasoning_stream(["思路"], ["结论"])
+        svc.chat("hi", on_chunk=lambda s: None, on_thinking=lambda s: None)
+        # 单轮文本回答只调用一次 create；检查请求里没有 reasoning 概念
+        kwargs = svc._client.chat.completions.create.call_args.kwargs
+        assert "reason_content" not in str(kwargs.get("messages"))
+
+    @patch("openai.OpenAI")
+    def test_plain_stream_leaves_reasoning_empty(
+        self, _mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        """非推理模型：不触发 on_thinking，resp.reasoning 为空。"""
+        svc = AgentService(mock_ctx, api_key="sk-test")
+        svc._client.chat.completions.create.return_value = _stream_response(["你", "好"])
+
+        thinking: list[str] = []
+        resp = svc.chat("hi", on_chunk=lambda s: None, on_thinking=thinking.append)
+
+        assert thinking == []
+        assert resp.reasoning == ""
