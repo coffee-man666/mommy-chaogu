@@ -141,15 +141,28 @@ def create_client(
     """
     from openai import OpenAI
 
-    config = provider_config(provider)
     kwargs: dict[str, Any] = {
         "api_key": resolve_api_key(provider, api_key),
         "timeout": timeout,
         "max_retries": 0,
     }
-    if config["base_url"]:
-        kwargs["base_url"] = config["base_url"]
+    base_url = resolve_base_url(provider)
+    if base_url:
+        kwargs["base_url"] = base_url
     return OpenAI(**kwargs)
+
+
+def resolve_base_url(provider: str) -> str | None:
+    """base_url 解析：``{PROVIDER}_BASE_URL`` 环境覆盖 > provider 配置表。
+
+    环境覆盖用于自建网关 / 本地代理 / OpenAI 兼容网关场景
+    （如 ``DEEPSEEK_BASE_URL``）。空串视为未设置。
+    """
+    override = os.environ.get(f"{provider.upper()}_BASE_URL", "").strip()
+    if override:
+        return override
+    value = provider_config(provider)["base_url"]
+    return str(value) if value is not None else None
 
 
 def embedding_model_for(provider: str) -> str | None:

@@ -367,9 +367,14 @@ class ChatView(Vertical):
         return None
 
     def action_accept_completion(self) -> None:
-        """Tab 接受当前补全（slash 命令或 @ 股票代码）。"""
+        """Tab 接受当前补全（slash 命令或 @ 股票代码）。
+
+        无候选时把焦点让给对话流 widget（思考块 / 工具轨迹可 Enter 展开）——
+        键盘用户也能触发展开，不靠鼠标。
+        """
         completion = self.selected_completion()
         if completion is None:
+            self.app.action_focus_next()
             return
         prompt = self.query_one("#prompt", ChatInput)
         prompt.value = completion

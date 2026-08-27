@@ -158,3 +158,36 @@ class TestAppThinkingWiring:
                 assert "6" in str(block.query_one(".th-header").content)  # type: ignore[attr-defined]
 
         _run(_test())
+
+
+class TestKeyboardFocusCycle:
+    """无候选时 Tab 把焦点让给对话流 widget（键盘可展开思考块）。"""
+
+    def test_tab_moves_focus_to_thinking_block_and_enter_expands(self) -> None:
+        async def _test() -> None:
+            app = MommyTuiApp(services=FakeServices.create())  # type: ignore[arg-type]
+            async with app.run_test(size=(110, 30)) as pilot:
+                chat = app.query_one(ChatView)
+                chat.start_thinking()
+                chat.append_thinking("键盘展开验证")
+                chat.append_chunk("答")
+                chat.flush_stream()
+                await pilot.pause()
+
+                prompt = app.query_one("ChatInput")
+                prompt.focus()
+                # 第一次 Tab 落到 chat-log 滚动容器（容器导航），第二次进思考块
+                await pilot.press("tab")
+                await pilot.press("tab")
+                from textual.widgets import Input
+
+                assert not isinstance(app.focused, Input)
+                focused = app.focused
+                assert focused is not None and focused.has_class("thinking-block")
+                await pilot.press("enter")
+                await pilot.pause()
+                assert focused.has_class("-expanded")  # type: ignore[union-attr]
+                body = focused.query_one(".th-body").content  # type: ignore[union-attr]
+                assert "键盘展开验证" in str(body)
+
+        _run(_test())

@@ -298,3 +298,21 @@ class TestPredictionsCreatedCallback:
         resp = svc.chat("茅台怎么样", on_predictions_created=_raising)
         svc.flush(timeout=5)  # 不抛异常
         assert resp.text == "茅台看涨"
+
+
+class TestBaseUrlOverride:
+    """{PROVIDER}_BASE_URL 环境覆盖：自建网关 / 本地代理场景。"""
+
+    @patch("openai.OpenAI")
+    def test_env_override_wins(self, mock_openai: MagicMock, mock_ctx: ToolContext) -> None:
+        with patch.dict("os.environ", {"DEEPSEEK_BASE_URL": "http://127.0.0.1:8399/v1"}):
+            AgentService(mock_ctx, api_key="sk-test")
+        assert mock_openai.call_args.kwargs["base_url"] == "http://127.0.0.1:8399/v1"
+
+    @patch("openai.OpenAI")
+    def test_default_from_provider_table(
+        self, mock_openai: MagicMock, mock_ctx: ToolContext
+    ) -> None:
+        with patch.dict("os.environ", {"DEEPSEEK_BASE_URL": ""}):
+            AgentService(mock_ctx, api_key="sk-test")
+        assert mock_openai.call_args.kwargs["base_url"] == "https://api.deepseek.com"
