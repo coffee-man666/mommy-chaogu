@@ -75,3 +75,7 @@ tui/
 uv run pytest -m "not network"   # 全量离线用例（TUI 相关见 tests/test_tui_*.py）
 uv run mommy-tui                 # 亲手跑一轮：提问 → 轨迹 → 确认 → 恢复
 ```
+
+最近一次真机验收记录（含逐步骤证据与遗留观察项）：
+`docs/TUI-ACCEPTANCE-2026-08-27.md`；更早的体检见
+`docs/TUI-AUDIT-2026-07-25.md`。
