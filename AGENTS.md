@@ -126,11 +126,28 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 
 - 对话流内渲染富卡片（不跳屏）：slash 命令 `/today` `/watch` `/portfolio`
   `/flows [code]` `/quote <code>` `/predictions` `/signals` `/memory` `/status`
-  `/help` `/clear` `/theme` `/quit`
+  `/resume [id]` `/new` `/help` `/clear` `/theme` `/quit`
+- 会话恢复（`tui/services/session_journal.py`）：启动自动恢复上次会话
+  （`MOMMY_TUI_RESUME=off` 关闭）；`/resume` 列出历史会话、`/resume <id>` 切换、
+  `/new` 开新会话。数据源是 agent_memory 既有持久化（事件溯源派生，零新表、
+  模块对表严格只读）；续聊经 `AgentBridge.bind_conversation_memory` 换绑
+  SessionMemory 视图，写路径仍是 agent 层唯一 memory.add。
+  已知取舍：工具轨迹/富卡片/工作流轮次不回放（未持久化）
 - `@` 股票联想（自选股 + 半导体库 + quote_cache 名称模糊匹配，Tab 插入代码）；
   直接输入 6 位代码 Enter 看报价卡
 - agent 工具结果 → 富卡片渲染器（`tui/services/renderers.py`）：get_quote→报价卡、
   get_money_flow_today→资金流卡、get_bars→迷你表、get_prediction_history→预测卡
+- 工具轨迹（`tui/widgets/tool_indicator.py`）：呼吸圈→语义摘要行（人话，非原始 JSON）；
+  点击/Enter 展开参数与结果预览
+- 思考折叠（`tui/widgets/thinking.py`）：推理模型思考流式展示，正文到达自动
+  收起为「✻ 思考完成 · N 字」，Enter/点击展开；service 层入口
+  `AgentService.chat(on_thinking=...)`，思考文本永不回流对话历史
+- 顶栏会话用量：每轮结束累计 token，TopBar 常驻「∑ 1.2k tok」
+- 首启引导：未配置 AI 时渲染三步引导卡（`cards.onboarding_text`）
+- 写操作内联确认（`tui/widgets/confirm_bar.py`）：策略卡保存/归档/启用监控、
+  告警与自选股增删前，对话流内弹确认条——`y` 允许 / `n` 拒绝 / `a` 本会话该工具不再问；
+  决定后定格为审计行。服务层入口 `AgentService.chat(on_confirm=...)`
+  （`agent/service.py` 的 `requires_confirmation` 白名单），不传则行为同旧版
 - 键盘：Enter 发送（busy 时排队，轮次结束自动发）；Esc 中断当前轮（保留已流部分）；
   PgUp/PgDn 滚动；Ctrl+P 命令面板；Ctrl+C 双击退出
 
