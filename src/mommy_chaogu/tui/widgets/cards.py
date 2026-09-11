@@ -16,6 +16,7 @@ from typing import Any
 from rich.markup import escape
 from textual.widgets import Static
 
+from mommy_chaogu.tui.services.colors import color
 from mommy_chaogu.tui.services.formatting import (
     change_arrow,
     change_color,
@@ -385,10 +386,15 @@ def predictions_tool_card(preds: list[dict[str, Any]], theme: str = "dark") -> S
 # ---------------------------------------------------------------------------
 
 _SEVERITY_BADGE = {
-    "critical": "[red]🔴 紧急[/]",
-    "warning": "[yellow]⚠️  注意[/]",
-    "info": "[#8a8f98]📊 提示[/]",
+    "critical": ("danger", "🔴 紧急"),
+    "warning": ("warning", "⚠️  注意"),
+    "info": ("muted", "📊 提示"),
 }
+
+
+def _severity_badge(theme: str, severity: str) -> str:
+    role, label = _SEVERITY_BADGE.get(severity, ("muted", "📊 提示"))
+    return f"[{color(theme, role)}]{label}[/]"
 
 
 def signals_card(signals: list[dict[str, Any]], theme: str = "dark") -> Static:
@@ -397,7 +403,7 @@ def signals_card(signals: list[dict[str, Any]], theme: str = "dark") -> Static:
     if not signals:
         lines.append("  [dim]暂无信号记录[/]")
     for s in signals[:8]:
-        badge = _SEVERITY_BADGE.get(str(s.get("severity", "")), "[#8a8f98]📊 提示[/]")
+        badge = _severity_badge(theme, str(s.get("severity", "")))
         ts = _text(str(s.get("timestamp", ""))[5:16])
         name = _text(s.get("name") or s.get("code", ""))
         title = _text(str(s.get("title", ""))[:28])

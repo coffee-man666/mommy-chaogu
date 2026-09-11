@@ -26,6 +26,8 @@ from textual.containers import Vertical
 from textual.timer import Timer
 from textual.widgets import Static
 
+from mommy_chaogu.tui.services.colors import color, current_theme
+
 # 工具名 → 中文显示名（覆盖 agent/tools/ 的全部工具）
 TOOL_DISPLAY_NAMES: dict[str, str] = {
     "get_quote": "查行情",
@@ -65,10 +67,11 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
 _CIRCLE = "⏺"
 _DETAIL_PREFIX = "⎿  "
 
-_COLOR_ACTIVE = "#79b8ff"
-_COLOR_OK = "#8a8f98"
-_COLOR_ERROR = "#e5484d"
-_COLOR_DENY = "#f5a524"
+
+def _c(role: str) -> str:
+    """当前主题的语义色（渲染时解析，支持中途 Ctrl+T 切主题）。"""
+    return color(current_theme(), role)
+
 
 _BLINK_INTERVAL_S = 0.6
 
@@ -283,12 +286,12 @@ class ToolIndicator(Vertical):
         yield Static(classes="ti-more")
 
     def on_mount(self) -> None:
-        self._render_header(_COLOR_ACTIVE, blink=True)
+        self._render_header(_c("info"), blink=True)
         self._timer = self.set_interval(_BLINK_INTERVAL_S, self._blink)
 
     def _blink(self) -> None:
         self._blink_on = not self._blink_on
-        self._render_header(_COLOR_ACTIVE, blink=True)
+        self._render_header(_c("info"), blink=True)
 
     def _render_header(self, color: str, *, blink: bool = False) -> None:
         circle = _CIRCLE if (not blink or self._blink_on) else " "
@@ -324,12 +327,12 @@ class ToolIndicator(Vertical):
             args_text = json.dumps(self._args, ensure_ascii=False, indent=2)
             clipped, cut = _clip_lines(args_text, _MAX_ARG_LINES)
             note = " …（参数已截断）" if cut else ""
-            content.append("参数:\n", style=_COLOR_OK)
+            content.append("参数:\n", style=_c("muted"))
             content.append(f"{clipped}{note}\n", style="dim")
         pretty = _pretty_result(self._result)
         clipped, cut = _clip_lines(pretty, _MAX_RESULT_LINES)
         note = " …（预览已截断，仅展示前 30 行）" if cut else ""
-        content.append("结果:\n", style=_COLOR_OK)
+        content.append("结果:\n", style=_c("muted"))
         content.append(f"{clipped}{note}", style="dim")
         return content
 
@@ -350,9 +353,9 @@ class ToolIndicator(Vertical):
         """
         self._stop_timer()
         self._result = result
-        self._render_header(_COLOR_OK)
+        self._render_header(_c("muted"))
         note = "（结果过大已截断）" if truncated else ""
-        line = Text(_DETAIL_PREFIX, style=_COLOR_OK)
+        line = Text(_DETAIL_PREFIX, style=_c("muted"))
         line.append(digest)
         if note:
             line.append(note)
@@ -363,19 +366,19 @@ class ToolIndicator(Vertical):
         """失败：红圈 + 追加 ⎿ Error 行。"""
         self._stop_timer()
         self._result = error
-        self._render_header(_COLOR_ERROR)
+        self._render_header(_c("danger"))
         detail = truncate_at_word(" ".join(error.split()), 80)
-        line = Text(_DETAIL_PREFIX, style=_COLOR_OK)
-        line.append(f"Error: {detail}", style=_COLOR_ERROR)
-        line.append(f" · {format_elapsed(elapsed_ms)}", style=_COLOR_OK)
+        line = Text(_DETAIL_PREFIX, style=_c("muted"))
+        line.append(f"Error: {detail}", style=_c("danger"))
+        line.append(f" · {format_elapsed(elapsed_ms)}", style=_c("muted"))
         self.mount(Static(line, classes="ti-detail"))
 
     def set_denied(self) -> None:
         """用户在内联确认条拒绝了本次调用：黄圈 + ⎿ 已拒绝。"""
         self._stop_timer()
-        self._render_header(_COLOR_DENY)
-        line = Text(_DETAIL_PREFIX, style=_COLOR_OK)
-        line.append("已拒绝（用户）", style=_COLOR_DENY)
+        self._render_header(_c("warning"))
+        line = Text(_DETAIL_PREFIX, style=_c("muted"))
+        line.append("已拒绝（用户）", style=_c("warning"))
         self.mount(Static(line, classes="ti-detail"))
 
     def _stop_timer(self) -> None:

@@ -18,8 +18,13 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import Static
 
-_COLOR = "#a371f7"
-_COLOR_DIM = "#8a8f98"
+from mommy_chaogu.tui.services.colors import color, current_theme
+
+
+def _c(role: str) -> str:
+    return color(current_theme(), role)
+
+
 _MAX_LINES = 60
 
 
@@ -75,14 +80,14 @@ class ThinkingBlock(Vertical):
             self.call_after_refresh(self._render_header)
             return
         if self._active:
-            header.update(Text("✻ 思考中…", style=_COLOR))
+            header.update(Text("✻ 思考中…", style=_c("thinking")))
             return
         n = sum(len(p) for p in self._parts)
-        line = Text(f"✻ 思考完成 · {n} 字", style=_COLOR)
+        line = Text(f"✻ 思考完成 · {n} 字", style=_c("thinking"))
         if n > 0:
-            line.append("（Enter 展开查看）", style=_COLOR_DIM)
+            line.append("（Enter 展开查看）", style=_c("muted"))
         else:
-            line.append("（空）", style=_COLOR_DIM)
+            line.append("（空）", style=_c("muted"))
         header.update(line)
 
     # ── 展开 / 收起 ────────────────────────────────────────────
@@ -102,7 +107,7 @@ class ThinkingBlock(Vertical):
             clipped = "\n".join(lines[:_MAX_LINES])
             if len(lines) > _MAX_LINES:
                 clipped += f"\n…（已截断，共 {len(lines)} 行）"
-            body.update(Text(clipped, style=_COLOR_DIM))
+            body.update(Text(clipped, style=_c("muted")))
             body.display = True
         else:
             body.update(Text(""))

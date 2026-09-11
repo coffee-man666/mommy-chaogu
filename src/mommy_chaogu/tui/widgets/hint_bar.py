@@ -13,6 +13,8 @@ from __future__ import annotations
 from rich.markup import escape
 from textual.widgets import Static
 
+from mommy_chaogu.tui.services.colors import color, current_theme
+
 _MAX_SUGGESTIONS = 5
 
 
@@ -23,16 +25,19 @@ class HintBar(Static):
         super().__init__(classes="hint-bar")
         self._mode = "default"
 
+    def _c(self, role: str) -> str:
+        return color(current_theme(), role)
+
     def on_mount(self) -> None:
         self.show_default()
 
     def show_default(self) -> None:
         self._mode = "default"
-        self.update("[#8a8f98] / 命令 · @ 股票 · Enter 发送 · ↑ 历史 · Esc 中断[/]")
+        self.update(f"[{self._c('muted')}] / 命令 · @ 股票 · Enter 发送 · ↑ 历史 · Esc 中断[/]")
 
     def show_busy(self) -> None:
         self._mode = "busy"
-        self.update("[#8a8f98] Esc 中断 · Enter 排队[/]")
+        self.update(f"[{self._c('muted')}] Esc 中断 · Enter 排队[/]")
 
     def show_suggestions(self, matches: list[tuple[str, str]], selected: int = 0) -> None:
         """slash 输入时展示候选命令（name, description 列表），高亮选中项。"""
@@ -44,9 +49,11 @@ class HintBar(Static):
         )
         for i, (name, desc) in enumerate(matches[start : start + _MAX_SUGGESTIONS], start=start):
             if i == selected:
-                lines.append(f"[#79b8ff]> /{escape(name)}[/][#8a8f98] — {escape(desc)}[/]")
+                lines.append(
+                    f"[{self._c('info')}]> /{escape(name)}[/][{self._c('muted')}] — {escape(desc)}[/]"
+                )
             else:
-                lines.append(f"[#8a8f98]  /{escape(name)} — {escape(desc)}[/]")
+                lines.append(f"[{self._c('muted')}]  /{escape(name)} — {escape(desc)}[/]")
         self.update("\n".join(lines))
 
     def show_stock_suggestions(self, matches: list[tuple[str, str]], selected: int = 0) -> None:
@@ -60,20 +67,22 @@ class HintBar(Static):
         for i, (code, name) in enumerate(matches[start : start + _MAX_SUGGESTIONS], start=start):
             label = escape(f"{code} {name}".rstrip())
             if i == selected:
-                lines.append(f"[#79b8ff]> {label}[/]")
+                lines.append(f"[{self._c('info')}]> {label}[/]")
             else:
-                lines.append(f"[#8a8f98]  {label}[/]")
+                lines.append(f"[{self._c('muted')}]  {label}[/]")
         self.update("\n".join(lines))
 
     def show_code_hint(self, code: str) -> None:
         """输入完整 6 位代码时提示 Enter 直接看报价。"""
         self._mode = "code-hint"
-        self.update(f"[#8a8f98] ⏎ 查看 {escape(code)} 报价[/]")
+        self.update(f"[{self._c('muted')}] ⏎ 查看 {escape(code)} 报价[/]")
 
     def show_confirm(self) -> None:
         """写操作确认条等待决定时的按键提示。"""
         self._mode = "confirm"
-        self.update("[#f5a524]⏸ 等待确认[/][#8a8f98] · y 允许 · n 拒绝 · a 本会话不再询问[/]")
+        self.update(
+            f"[{self._c('warning')}]⏸ 等待确认[/][{self._c('muted')}] · y 允许 · n 拒绝 · a 本会话不再询问[/]"
+        )
 
     @property
     def mode(self) -> str:

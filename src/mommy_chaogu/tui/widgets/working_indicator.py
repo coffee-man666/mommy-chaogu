@@ -17,6 +17,8 @@ from typing import Any
 from textual.timer import Timer
 from textual.widgets import Static
 
+from mommy_chaogu.tui.services.colors import color, current_theme
+
 # 中文思考动词表（对标 dexter THINKING_VERBS，贴合 A 股语境）
 THINKING_VERBS: list[str] = [
     "盯盘中",
@@ -99,9 +101,11 @@ class WorkingIndicator(Static):
         elapsed = int(time.monotonic() - self._started)
         if self._retry is not None:
             attempt, max_retries = self._retry
-            parts: list[str] = [f"[#f5a524]⏳ 网络较慢，正在重试 ({attempt}/{max_retries})…[/]"]
+            parts: list[str] = [
+                f"[{self._c('warning')}]⏳ 网络较慢，正在重试 ({attempt}/{max_retries})…[/]"
+            ]
         else:
-            parts = [f"[#79b8ff]{frame} {self._verb}…[/]"]
+            parts = [f"[{self._c('info')}]{frame} {self._verb}…[/]"]
         # 后缀：耗时 + 可选 token 统计 + 排队数 + Esc 提示
         suffix_parts: list[str] = []
         if elapsed >= 1:
@@ -116,8 +120,11 @@ class WorkingIndicator(Static):
             suffix_parts.append(f"已排队 {self._queued} 条")
         suffix_parts.append("Esc 中断")
         if suffix_parts:
-            parts.append(f"[#8a8f98]({' · '.join(suffix_parts)})[/]")
+            parts.append(f"[{self._c('muted')}]({' · '.join(suffix_parts)})[/]")
         self.update("".join(parts))
+
+    def _c(self, role: str) -> str:
+        return color(current_theme(), role)
 
     def stop_timer(self) -> None:
         """停止帧动画（移除前调用，避免 timer 泄漏）。"""

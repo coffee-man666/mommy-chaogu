@@ -29,6 +29,7 @@ from textual.widgets import Input, Markdown, Static
 
 from mommy_chaogu.agent.service import DENIAL_RESULT_MESSAGE
 from mommy_chaogu.tui.messages import StepStatus
+from mommy_chaogu.tui.services.colors import color
 from mommy_chaogu.tui.services.errors import friendly_error
 from mommy_chaogu.tui.services.renderers import is_truncated, render_tool_result
 from mommy_chaogu.tui.services.session_journal import JournalEntry
@@ -652,7 +653,7 @@ class ChatView(Vertical):
             parts.append(f"↓ {_format_tokens_compact(tokens)} tokens")
         suffix = " · ".join(parts)
         log = self.query_one("#chat-log", VerticalScroll)
-        log.mount(Static(f"[#8a8f98]✻ {suffix}[/]", classes="turn-stats"))
+        log.mount(Static(f"[{color(self._theme(), 'muted')}]✻ {suffix}[/]", classes="turn-stats"))
         log.scroll_end(animate=False)
 
     def append_hint(self, text: str) -> None:
@@ -666,7 +667,7 @@ class ChatView(Vertical):
         log = self.query_one("#chat-log", VerticalScroll)
         log.mount(
             Static(
-                "[#8a8f98]  ✎ 已记住本轮要点（/memory 查看）[/]",
+                f"[{color(self._theme(), 'muted')}]  ✎ 已记住本轮要点（/memory 查看）[/]",
                 classes="memory-receipt",
             )
         )
@@ -685,7 +686,7 @@ class ChatView(Vertical):
             # 如实告知省略，不假装展示完整历史
             log.mount(
                 Static(
-                    f"[#8a8f98]↩ 已省略更早的 {more_older} 条…[/]",
+                    f"[{color(self._theme(), 'muted')}]↩ 已省略更早的 {more_older} 条…[/]",
                     classes="resume-omitted",
                 )
             )
@@ -707,7 +708,7 @@ class ChatView(Vertical):
         log = self.query_one("#chat-log", VerticalScroll)
         log.mount(
             Static(
-                f"[#8a8f98]↩ 已恢复会话 {escape(session_id)} · {n_messages} 条"
+                f"[{color(self._theme(), 'muted')}]↩ 已恢复会话 {escape(session_id)} · {n_messages} 条"
                 f"（/new 开新对话 · /resume 切换）[/]",
                 classes="resume-banner",
             )
@@ -966,7 +967,7 @@ class ChatView(Vertical):
             log = self.query_one("#chat-log", VerticalScroll)
             log.mount(
                 Static(
-                    "[#8a8f98]⎿  （已中断）[/]",
+                    f"[{color(self._theme(), 'muted')}]⎿  （已中断）[/]",
                     classes="interrupted-line",
                 )
             )

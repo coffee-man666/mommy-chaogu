@@ -24,10 +24,12 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import Static
 
-_COLOR_PROMPT = "#f5a524"
-_COLOR_ALLOW = "#2f9e6e"
-_COLOR_DENY = "#e5484d"
-_COLOR_SESSION = "#79b8ff"
+from mommy_chaogu.tui.services.colors import color, current_theme
+
+
+def _c(role: str) -> str:
+    return color(current_theme(), role)
+
 
 Decision = str  # "allow" | "deny" | "always"
 
@@ -73,14 +75,14 @@ class ConfirmBar(Vertical):
         # 用户数据（参数 JSON）一律走 Text 分段，不走 console markup——
         # Textual Content 解析器对「行尾 \\[ 转义 + 闭合标签」有吞标签的
         # 怪癖，且任意参数内容不该被当标记解析（防注入）。
-        body = Text("⏸ 允许执行写操作？  ", style=_COLOR_PROMPT)
+        body = Text("⏸ 允许执行写操作？  ", style=_c("warning"))
         body.append(title, style="bold")
         body.append("\n")
-        body.append("[y]", style=_COLOR_PROMPT)
+        body.append("[y]", style=_c("warning"))
         body.append(" 允许   ")
-        body.append("[n]", style=_COLOR_DENY)
+        body.append("[n]", style=_c("danger"))
         body.append(" 拒绝   ")
-        body.append("[a]", style=_COLOR_SESSION)
+        body.append("[a]", style=_c("info"))
         body.append(" 本会话不再询问")
         self.query_one(".cb-body", Static).update(body)
         args_widget = self.query_one(".cb-args", Static)
@@ -112,16 +114,16 @@ class ConfirmBar(Vertical):
 
     def _render_resolved(self, decision: Decision) -> None:
         label, color = {
-            "allow": ("✓ 已允许", _COLOR_ALLOW),
-            "deny": ("✗ 已拒绝", _COLOR_DENY),
-            "always": ("✓ 已允许（本会话不再询问）", _COLOR_ALLOW),
+            "allow": ("✓ 已允许", _c("success")),
+            "deny": ("✗ 已拒绝", _c("danger")),
+            "always": ("✓ 已允许（本会话不再询问）", _c("success")),
         }[decision]
         title = (
             f"{self._display_name}({self._args_summary})"
             if self._args_summary
             else (self._display_name)
         )
-        body = Text("⏸ ", style=_COLOR_PROMPT)
+        body = Text("⏸ ", style=_c("warning"))
         body.append(title)
         body.append(f"  {label}", style=color)
         self.query_one(".cb-body", Static).update(body)
