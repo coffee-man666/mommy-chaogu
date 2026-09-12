@@ -31,6 +31,7 @@ from mommy_chaogu.db_paths import DEFAULT_DATA_DIR
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.screens.help import HelpScreen
 from mommy_chaogu.tui.services.bootstrap import Services
+from mommy_chaogu.tui.services.colors import GITHUB_TEXTUAL_THEMES
 from mommy_chaogu.tui.services.errors import friendly_error
 from mommy_chaogu.tui.services.session_journal import SessionJournal
 from mommy_chaogu.tui.views.chat import ChatView
@@ -115,8 +116,21 @@ class MommyTuiApp(App[None]):
 
     services: Services
     ui_theme: reactive[str] = reactive("dark")
-    _THEMES: ClassVar[list[str]] = ["dark", "light", "colorblind", "solarized", "nord", "latte"]
-    # ui_theme 名 → textual 主题名（CSS token 跟随后者）
+    _THEMES: ClassVar[list[str]] = [
+        "dark",
+        "light",
+        "colorblind",
+        "solarized",
+        "nord",
+        "latte",
+        "atom",
+        "github",
+        "github-light",
+        "dracula",
+        "tokyo",
+    ]
+    # ui_theme 名 → textual 主题名（CSS token 跟随后者）；github 两套
+    # 是本应用自定义注册的（textual 无内置），见 _register_github_themes
     _TEXTUAL_THEMES: ClassVar[dict[str, str]] = {
         "dark": "textual-dark",
         "light": "textual-light",
@@ -124,6 +138,11 @@ class MommyTuiApp(App[None]):
         "solarized": "solarized-light",
         "nord": "nord",
         "latte": "catppuccin-latte",
+        "atom": "atom-one-dark",
+        "github": "mommy-github-dark",
+        "github-light": "mommy-github-light",
+        "dracula": "dracula",
+        "tokyo": "tokyo-night",
     }
     _THEME_LABELS: ClassVar[dict[str, str]] = {
         "dark": "深色",
@@ -132,6 +151,11 @@ class MommyTuiApp(App[None]):
         "solarized": "日光",
         "nord": "极夜",
         "latte": "拿铁",
+        "atom": "Atom",
+        "github": "GitHub",
+        "github-light": "GitHub 浅色",
+        "dracula": "Dracula",
+        "tokyo": "Tokyo Night",
     }
     _INDEX_REFRESH_S: ClassVar[float] = 60.0
 
@@ -179,6 +203,7 @@ class MommyTuiApp(App[None]):
 
     def on_mount(self) -> None:
         """设置主题 / AI 状态点，启动行情回填 worker + 周期刷新。"""
+        self._register_github_themes()
         self.ui_theme = os.environ.get("MOMMY_TUI_THEME", "dark")
         self._apply_theme(notify=False)
         provider = self.services.agent.provider_name()
@@ -317,6 +342,11 @@ class MommyTuiApp(App[None]):
             idx = -1
         self.ui_theme = self._THEMES[(idx + 1) % len(self._THEMES)]
         self._apply_theme()
+
+    def _register_github_themes(self) -> None:
+        """注册 GitHub Primer 官方配色（色值定义在 colors.py，on_mount 时执行）。"""
+        for theme in GITHUB_TEXTUAL_THEMES:
+            self.register_theme(theme)
 
     def _apply_theme(self, notify: bool = True) -> None:
         """应用当前主题：映射到对应 textual 主题（CSS token 跟随）。
