@@ -226,3 +226,69 @@ def test_invalid_position_size_raises() -> None:
     bt = PortfolioBacktester()
     with pytest.raises(ValueError):
         bt.simulate([_bull("2026-06-01", 1.0)], position_size="momentum")
+
+
+# ---------- 资金 Decimal 化 + 分配模式 ----------
+
+
+def test_decimal_capital_avoids_float_drift() -> None:
+    """资金全程 Decimal：0.1 + 0.2 类精度问题不出现在净值曲线上。"""
+    from decimal import Decimal
+
+    bt = PortfolioBacktester()
+    preds = [_bull("2026-06-01", 5.0), _bull("2026-06-02", 5.0)]
+    res = bt.simulate(preds, initial_capital=Decimal("1000000.00"))
+    # 初始点两位小数精确
+    assert res.equity_curve[0]["equity"] == 1_000_000.0
+    # 等权分配后每笔 50 万，净值增长来自收益本身
+    assert res.equity_curve[1]["equity"] == round(
+        500_000 * (1 + apply_costs(5.0, "bullish") / 100) + 500_000, 2
+    )
+
+
+def test_equal_mode_flags_lookahead_caveat() -> None:
+    """equal 分配用全样本笔数（前视），caveats 必须显式标注。"""
+    bt = PortfolioBacktester()
+    res = bt.simulate([_bull("2026-06-01", 5.0)], position_size="equal")
+    assert any("前视" in c for c in res.caveats)
+
+
+def test_sequential_mode_has_no_lookahead_caveat() -> None:
+    """sequential 按当时净值固定比例分配，无前视，无 caveat。"""
+    bt = PortfolioBacktester()
+    res = bt.simulate([_bull("2026-06-01", 5.0)], position_size="sequential")
+    assert res.caveats == []
+
+
+def test_sequential_sizing_matches_hand_computation() -> None:
+    """sequential：每笔投入当时净值的 10%，手算对照。
+
+    +10% → -10% 两笔（默认成本下）：
+      t1: alloc = 100_000, pnl = +net → equity = 1_000_000 + 100_000×net/100
+      t2: alloc = equity×0.1, pnl = -… → 只断言与公式一致的方向与数值。
+    """
+    bt = PortfolioBacktester()
+    net_up = apply_costs(10.0, "bullish")
+    net_down = apply_costs(-10.0, "bullish")
+    preds = [_bull("2026-06-01", 10.0), _bull("2026-06-02", -10.0)]
+    res = bt.simulate(preds, initial_capital=1_000_000, position_size="sequential")
+
+    eq1 = 1_000_000 + 1_000_000 * 0.1 * net_up / 100
+    eq2 = eq1 + eq1 * 0.1 * net_down / 100
+    assert res.equity_curve[1]["equity"] == round(eq1, 2)
+    assert res.equity_curve[2]["equity"] == round(eq2, 2)
+    assert res.total_return_pct == round((eq2 - 1_000_000) / 1_000_000 * 100, 4)
+
+
+def test_sequential_differs_from_equal_when_trades_vary() -> None:
+    """盈亏交替时，按当时净值比例分配与等权分配结果不同（复利效应）。"""
+    bt = PortfolioBacktester()
+    preds = [
+        _bull("2026-06-01", 20.0),
+        _bull("2026-06-02", -20.0),
+        _bull("2026-06-03", 20.0),
+        _bull("2026-06-04", -20.0),
+    ]
+    res_equal = bt.simulate(preds, position_size="equal")
+    res_seq = bt.simulate(preds, position_size="sequential")
+    assert res_equal.total_return_pct != res_seq.total_return_pct

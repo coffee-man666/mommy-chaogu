@@ -73,6 +73,8 @@ def get_stock_backtest(
             sharpe_ratio=result.sharpe_ratio,
             avg_gross_return_pct=result.avg_gross_return_pct,
             cost_model=result.cost_model,
+            mcap_as_of=result.mcap_as_of or None,
+            caveats=result.caveats,
             message=None,
         )
     return StockBacktestOut(

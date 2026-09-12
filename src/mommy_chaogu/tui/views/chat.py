@@ -283,8 +283,15 @@ class ChatView(Vertical):
         self._cancelled = False
 
     def _refresh_hint_bar(self) -> None:
-        """根据当前输入内容刷新 HintBar（slash/@ 候选、代码提示或默认）。"""
-        hint = self.query_one(HintBar)
+        """根据当前输入内容刷新 HintBar（slash/@ 候选、代码提示或默认）。
+
+        agent worker 的迟到回调可能在视图拆除后到达（此时 HintBar 已不在
+        树上）——刷新提示条是尽力而为，找不到就直接跳过，不让迟到的
+        回调把应用/测试炸掉（NoMatches）。
+        """
+        hint = self.query(HintBar).first()
+        if hint is None:
+            return
         if self._busy:
             hint.show_busy()
             return

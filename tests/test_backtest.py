@@ -198,6 +198,20 @@ def test_default_run_reports_cost_model(engine: BacktestEngine, store: CacheStor
     )
 
 
+def test_mcap_approximation_flagged_in_caveats(engine: BacktestEngine, store: CacheStore):
+    """市值取当前缓存值的近似必须在 caveats 里显式标注（含缓存时点）。"""
+    code = "600519"
+    store.set_quote(code, _make_quote(code))
+    _seed_bars(store, code, ["10", "10", "10", "11", "11"])
+    _seed_flows(store, code, "2026-06-01", 500_000_000)
+
+    result = engine.run([code], "2026-06-01", "2026-06-05", hold_days=3)
+    assert result.mcap_as_of  # 报价缓存的日期（写入刚发生，即今天）
+    assert len(result.caveats) == 1
+    assert "前视" in result.caveats[0]
+    assert result.mcap_as_of in result.caveats[0]
+
+
 def test_win_rate_calculation(engine: BacktestEngine, store: CacheStore):
     """3 个信号：2 赢 1 输 → 胜率 2/3。"""
     # Code A: 赢 (+10%)

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from mommy_chaogu.backtest.metrics import drawdown_fraction
 from mommy_chaogu.portfolio.analysis import PortfolioAnalyzer
 from mommy_chaogu.portfolio.store import (
     PortfolioError,
@@ -165,4 +166,4 @@ def test_analyzer_empty_and_math_boundaries(store: PortfolioStore) -> None:
     }
     assert analyzer._pearson([1.0], [1.0]) == 0
     assert analyzer._pearson([1.0, 1.0], [2.0, 2.0]) == 0
-    assert analyzer._max_drawdown([0.1, -0.2, 0.1]) > 0
+    assert drawdown_fraction(analyzer._cumulative_equity([0.1, -0.2, 0.1])) > 0

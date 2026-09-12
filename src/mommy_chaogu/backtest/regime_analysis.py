@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from mommy_chaogu.backtest.metrics import drawdown_fraction
 from mommy_chaogu.backtest.scoring import score_direction
 
 __all__ = [
@@ -84,18 +85,6 @@ def _daily_returns(closes: list[float]) -> list[float]:
     ]
 
 
-def _max_drawdown(closes: list[float]) -> float:
-    """从收盘价序列计算最大回撤（小数，正数）。"""
-    peak = closes[0] if closes else 0.0
-    max_dd = 0.0
-    for px in closes:
-        if px > peak:
-            peak = px
-        if peak > 0:
-            dd = (px - peak) / peak
-            if dd < max_dd:
-                max_dd = dd
-    return abs(max_dd)
 
 
 def classify_market_regime(bars: list[dict[str, Any]]) -> str:
@@ -127,7 +116,7 @@ def classify_market_regime(bars: list[dict[str, Any]]) -> str:
     ma_long = _mean(window)
 
     vol = _std(_daily_returns(window))
-    dd = _max_drawdown(window)
+    dd = drawdown_fraction(window)
 
     if ma_short > ma_long and vol <= BULL_VOL_THRESHOLD:
         return "bull"

@@ -10,16 +10,16 @@ import math
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from mommy_chaogu.backtest.metrics import (
+    annualized_vol_pct,
+    daily_sharpe_ratio,
+    drawdown_fraction,
+)
+
 if TYPE_CHECKING:
     from mommy_chaogu.cache.store import CacheStore
     from mommy_chaogu.market_data.adapter import MarketDataAdapter
     from mommy_chaogu.portfolio.store import PortfolioStore
-
-
-# 无风险年利率（2%）
-_RISK_FREE_ANNUAL = 0.02
-# 年交易日
-_TRADING_DAYS = 252
 
 
 class PortfolioAnalyzer:
@@ -122,19 +122,14 @@ class PortfolioAnalyzer:
         return cov / denom
 
     @staticmethod
-    def _max_drawdown(returns: list[float]) -> float:
-        """从日收益率序列计算最大回撤比例（0~1）。"""
-        cumulative = 1.0
-        peak = 1.0
-        max_dd = 0.0
+    def _cumulative_equity(returns: list[float]) -> list[float]:
+        """从日收益率序列（小数）算复利净值序列（起始 1.0）。"""
+        equity = 1.0
+        curve: list[float] = []
         for r in returns:
-            cumulative *= 1 + r
-            if cumulative > peak:
-                peak = cumulative
-            dd = (peak - cumulative) / peak if peak > 0 else 0.0
-            if dd > max_dd:
-                max_dd = dd
-        return max_dd
+            equity *= 1 + r
+            curve.append(equity)
+        return curve
 
     # ---------- 公共 API ----------
 
@@ -242,23 +237,15 @@ class PortfolioAnalyzer:
         if not portfolio_returns:
             return default
 
-        # 最大回撤
-        max_dd = self._max_drawdown(portfolio_returns)
+        # 最大回撤（复利净值 → 回撤比例）
+        max_dd = drawdown_fraction(self._cumulative_equity(portfolio_returns))
 
-        # 波动率（年化）
-        mean_ret = sum(portfolio_returns) / len(portfolio_returns)
-        variance = sum((r - mean_ret) ** 2 for r in portfolio_returns) / len(portfolio_returns)
-        daily_vol = math.sqrt(variance)
-        annual_vol = daily_vol * math.sqrt(_TRADING_DAYS)
-
-        # 夏普比率（年化）
-        rf_daily = (1 + _RISK_FREE_ANNUAL) ** (1 / _TRADING_DAYS) - 1
-        excess = [r - rf_daily for r in portfolio_returns]
-        mean_excess = sum(excess) / len(excess)
-        sharpe = (mean_excess * _TRADING_DAYS) / annual_vol if annual_vol > 0 else 0.0
+        # 波动率 / 夏普（统一口径见 backtest.metrics）
+        annual_vol_pct = annualized_vol_pct(portfolio_returns)
+        sharpe = daily_sharpe_ratio(portfolio_returns)
 
         return {
             "max_drawdown_pct": round(max_dd * 100, 2),
-            "volatility_pct": round(annual_vol * 100, 2),
+            "volatility_pct": round(annual_vol_pct, 2),
             "sharpe_ratio": round(sharpe, 4),
         }

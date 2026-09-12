@@ -9,33 +9,52 @@
 - **bearish** → A 股不能做空，按「空仓回避」处理，不产生交易
 - **neutral** → 方向不明，不产生交易
 
-资金分配（``position_size="equal"``）: 每个实际开仓信号分到
-``initial_capital / 实际交易笔数`` 的等额资金。
+资金分配（``position_size``）:
 
-净值曲线按信号 ``date`` 排序后顺序累加每笔 P&L 得到，用于计算最大回撤；
-夏普比率复用 :mod:`backtest.engine` 的年化口径（无风险利率 2%，年化系数
-``sqrt(252 / hold_days)``）。交易成本走 :func:`backtest.costs.apply_costs`。
+- ``"equal"``: 每个实际开仓信号分到 ``initial_capital / 实际交易笔数`` 的
+  等额资金。**注意**：总笔数在回看全样本后才知道，属于前视——结果偏乐观，
+  返回值 ``caveats`` 会显式标注。
+- ``"sequential"``: 按日期顺序执行，每笔开仓投入**当时净值**的固定比例
+  ``sequential_fraction``（默认 10%）。只依赖已发生的信息，无前视。
+
+资金金额（initial_capital / equity / P&L）全程 :class:`~decimal.Decimal`，
+输出时 quantize 到分。净值曲线按信号 ``date`` 排序后顺序累加每笔 P&L，
+用于计算最大回撤；夏普比率复用 :mod:`backtest.metrics` 的统一口径
+（无风险利率 2%、ddof=1）。交易成本走 :func:`backtest.costs.apply_costs`。
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from mommy_chaogu.backtest.costs import apply_costs
+from mommy_chaogu.backtest.metrics import drawdown_fraction, sharpe_ratio
 from mommy_chaogu.backtest.scoring import score_direction
 
-__all__ = ["PortfolioBacktester", "PortfolioResult"]
+__all__ = ["EQUAL_LOOKAHEAD_CAVEAT", "PortfolioBacktester", "PortfolioResult"]
 
-# 无风险年化利率 2%（与 backtest.engine 保持一致）
-RISK_FREE_ANNUAL = 0.02
-_TRADING_DAYS = 252
+_TWO_PLACES = Decimal("0.01")
+
+EQUAL_LOOKAHEAD_CAVEAT = (
+    "equal 等权分配按全样本交易笔数切分初始资金（前视）：实盘按日期滚动执行时"
+    "无法预知总笔数，结果偏乐观。无前视口径用 position_size='sequential'。"
+)
+
+
+def _q2(value: Decimal) -> float:
+    """Decimal → 保留两位小数的 float（净值曲线 / API 输出用）。"""
+    return float(value.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP))
 
 
 @dataclass
 class PortfolioResult:
-    """组合回测汇总结果。"""
+    """组合回测汇总结果。
+
+    Attributes:
+        caveats: 口径警示（如 equal 分配的前视标注），调用方应展示给用户。
+    """
 
     total_return_pct: float
     max_drawdown_pct: float
@@ -43,6 +62,7 @@ class PortfolioResult:
     win_rate: float
     num_trades: int
     equity_curve: list[dict[str, Any]] = field(default_factory=list)
+    caveats: list[str] = field(default_factory=list)
 
 
 class PortfolioBacktester:
@@ -63,8 +83,9 @@ class PortfolioBacktester:
     def simulate(
         self,
         predictions: list[dict[str, Any]],
-        initial_capital: float = 1_000_000,
+        initial_capital: Decimal | float | int = Decimal("1000000"),
         position_size: str = "equal",
+        sequential_fraction: float = 0.1,
     ) -> PortfolioResult:
         """对一组已验证的预测模拟组合操作。
 
@@ -75,14 +96,25 @@ class PortfolioBacktester:
                 - 到期涨跌幅（任一）: ``change_pct``（%，已算好），
                   或 ``entry`` + ``actual`` / ``exit_price``（价格）
                 - ``date``: 开仓日期（可选，用于净值曲线排序）
-            initial_capital: 初始资金（元）
-            position_size: 资金分配策略，目前仅支持 ``"equal"``（等权）
+            initial_capital: 初始资金（元）；接受 Decimal / float / int，
+                内部统一转 Decimal 精确累加
+            position_size: 资金分配策略——``"equal"``（等权，含前视，见模块
+                docstring）或 ``"sequential"``（按当时净值固定比例，无前视）
+            sequential_fraction: ``"sequential"`` 模式下每笔投入当时净值的
+                比例（默认 0.1）
 
         Returns:
             :class:`PortfolioResult`
         """
-        if position_size != "equal":
-            raise ValueError(f"不支持的 position_size: {position_size!r}（目前仅支持 'equal'）")
+        if position_size not in ("equal", "sequential"):
+            raise ValueError(
+                f"不支持的 position_size: {position_size!r}（支持 'equal' / 'sequential'）"
+            )
+
+        capital = Decimal(str(initial_capital))
+        caveats: list[str] = []
+        if position_size == "equal":
+            caveats.append(EQUAL_LOOKAHEAD_CAVEAT)
 
         # 空输入边界：净值曲线只含初始点
         if not predictions:
@@ -92,7 +124,8 @@ class PortfolioBacktester:
                 sharpe_ratio=0.0,
                 win_rate=0.0,
                 num_trades=0,
-                equity_curve=[{"date": "", "equity": round(initial_capital, 2)}],
+                equity_curve=[{"date": "", "equity": _q2(capital)}],
+                caveats=caveats,
             )
 
         # 1. 只对 bullish 开多；bearish / neutral = 空仓回避
@@ -106,27 +139,31 @@ class PortfolioBacktester:
                 sharpe_ratio=0.0,
                 win_rate=0.0,
                 num_trades=0,
-                equity_curve=[{"date": "", "equity": round(initial_capital, 2)}],
+                equity_curve=[{"date": "", "equity": _q2(capital)}],
+                caveats=caveats,
             )
 
-        # 2. 等权分配：每个实际交易分到等额资金
-        allocated = initial_capital / len(trades)
-
-        # 3. 按日期排序，顺序累加 P&L 构建净值曲线
+        # 2. 按日期排序，顺序累加 P&L 构建净值曲线
         trades.sort(key=lambda t: t["date"])
-        equity = initial_capital
-        equity_curve: list[dict[str, Any]] = [{"date": "", "equity": round(equity, 2)}]
+        equal_alloc = capital / Decimal(len(trades))
+        equity = capital
+        equity_curve: list[dict[str, Any]] = [{"date": "", "equity": _q2(equity)}]
         net_returns: list[float] = []
         for t in trades:
-            pnl = allocated * t["net_return_pct"] / 100
+            if position_size == "equal":
+                allocated = equal_alloc
+            else:
+                # sequential：每笔投入当时净值的固定比例，只依赖已发生信息
+                allocated = equity * Decimal(str(sequential_fraction))
+            pnl = allocated * Decimal(str(t["net_return_pct"])) / Decimal("100")
             equity += pnl
-            equity_curve.append({"date": t["date"], "equity": round(equity, 2)})
+            equity_curve.append({"date": t["date"], "equity": _q2(equity)})
             net_returns.append(t["net_return_pct"])
 
-        # 4. 组合统计
-        total_return_pct = (equity - initial_capital) / initial_capital * 100
-        max_dd = _max_drawdown_from_curve(equity_curve)
-        sharpe = _sharpe_ratio(net_returns, self.default_horizon)
+        # 3. 组合统计
+        total_return_pct = float((equity - capital) / capital * Decimal("100"))
+        max_dd = drawdown_fraction([p["equity"] for p in equity_curve]) * 100
+        sharpe = sharpe_ratio(net_returns, self.default_horizon)
         wins = sum(1 for r in net_returns if r > 0)
         win_rate = wins / len(net_returns) if net_returns else 0.0
 
@@ -137,6 +174,7 @@ class PortfolioBacktester:
             win_rate=round(win_rate, 4),
             num_trades=len(trades),
             equity_curve=equity_curve,
+            caveats=caveats,
         )
 
     # ------------------------------------------------------------------
@@ -205,39 +243,3 @@ def _extract_change_pct(pred: dict[str, Any]) -> float | None:
     if entry and exit_price is not None and entry > 0:
         return (float(exit_price) - float(entry)) / float(entry) * 100
     return None
-
-
-def _max_drawdown_from_curve(curve: list[dict[str, Any]]) -> float:
-    """从净值曲线计算最大回撤（%，返回正数）。"""
-    if not curve:
-        return 0.0
-    peak = float(curve[0]["equity"])
-    max_dd = 0.0
-    for point in curve:
-        eq = float(point["equity"])
-        if eq > peak:
-            peak = eq
-        if peak > 0:
-            dd = (eq - peak) / peak
-            if dd < max_dd:
-                max_dd = dd
-    return abs(max_dd) * 100
-
-
-def _sharpe_ratio(returns_pct: list[float], hold_days: int) -> float:
-    """年化夏普比率（与 :mod:`backtest.engine` 同口径）。"""
-    n = len(returns_pct)
-    if n < 2:
-        return 0.0
-
-    daily_returns = [r / 100 for r in returns_pct]
-    mean_r = sum(daily_returns) / n
-    variance = sum((r - mean_r) ** 2 for r in daily_returns) / (n - 1)
-    std_r = math.sqrt(variance)
-    if std_r == 0:
-        return 0.0
-
-    rf_per_trade = RISK_FREE_ANNUAL * hold_days / _TRADING_DAYS
-    excess = mean_r - rf_per_trade
-    annualization = math.sqrt(_TRADING_DAYS / hold_days)
-    return (excess / std_r) * annualization

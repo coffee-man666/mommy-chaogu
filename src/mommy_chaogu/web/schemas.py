@@ -314,6 +314,8 @@ class StockBacktestOut(BaseModel):
     sharpe_ratio: float | None = None
     avg_gross_return_pct: float | None = None  # 毛收益（不扣成本），对照用
     cost_model: str | None = None  # 成本模型明细（多行文本）
+    mcap_as_of: str | None = None  # 流通市值取自哪一天的报价缓存
+    caveats: list[str] = Field(default_factory=list)  # 口径警示，应展示给用户
     message: str | None = None  # 无信号/数据不足时的中文提示，成功为 null
 
 

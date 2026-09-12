@@ -927,11 +927,15 @@ onUnmounted(() => {
                         <div class="font-mono text-xs font-bold">{{ fmtWinRate(backtest.win_rate) }}</div>
                       </div>
                       <div class="rounded-md bg-muted/40 p-2">
-                        <div class="mb-1 text-[10px] text-muted-foreground">平均收益</div>
+                        <div class="mb-1 text-[10px] text-muted-foreground">平均净收益</div>
                         <div
                           class="font-mono text-xs font-bold"
                           :class="backtest.avg_return_pct != null ? dirClass(backtest.avg_return_pct) : ''"
                         >{{ fmtReturnPct(backtest.avg_return_pct) }}</div>
+                        <div
+                          v-if="backtest.avg_gross_return_pct != null"
+                          class="mt-0.5 text-[9px] text-muted-foreground"
+                        >毛 {{ fmtReturnPct(backtest.avg_gross_return_pct) }}</div>
                       </div>
                       <div class="rounded-md bg-muted/40 p-2">
                         <div class="mb-1 text-[10px] text-muted-foreground">最大回撤</div>
@@ -942,6 +946,18 @@ onUnmounted(() => {
                         <div class="font-mono text-xs font-bold">{{ fmtSharpe(backtest.sharpe_ratio) }}</div>
                       </div>
                     </div>
+                    <p class="text-[10px] text-muted-foreground">
+                      净收益已扣往返交易成本；胜率/回撤/夏普同为净口径
+                    </p>
+                    <ul v-if="backtest.caveats?.length" class="space-y-0.5">
+                      <li
+                        v-for="(caveat, i) in backtest.caveats"
+                        :key="i"
+                        class="text-[10px] text-amber-600 dark:text-amber-400"
+                      >
+                        ⚠ {{ caveat }}
+                      </li>
+                    </ul>
                   </template>
                 </template>
               </CardContent>

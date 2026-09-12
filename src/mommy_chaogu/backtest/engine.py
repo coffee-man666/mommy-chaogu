@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -25,14 +24,11 @@ from mommy_chaogu.backtest.costs import (
     apply_costs,
     format_cost_breakdown,
 )
+from mommy_chaogu.backtest.metrics import max_drawdown_pct, sharpe_ratio
 from mommy_chaogu.cache.store import CacheStore
 
 # flow_in_spike 阈值 5bp = 0.0005
 SPIKE_THRESHOLD = Decimal("0.0005")
-
-# 无风险年化利率 2%
-RISK_FREE_ANNUAL = 0.02
-_TRADING_DAYS = 252
 
 NO_COSTS_LABEL = "未扣减交易成本"
 
@@ -58,6 +54,10 @@ class BacktestResult:
     message: str = ""
     avg_gross_return_pct: float = 0.0
     cost_model: str = ""
+    #: 市值取自哪一天的报价缓存（多 code 取最旧，保守）
+    mcap_as_of: str = ""
+    #: 口径警示（市值前视近似等），调用方应展示给用户
+    caveats: list[str] = field(default_factory=list)
 
 
 class BacktestEngine:
@@ -76,8 +76,10 @@ class BacktestEngine:
         # ---- 流通市值（从 quote_cache 取当前值做近似）----
         quote_entry = self.cache.get_quote(code)
         float_mcap: Decimal | None = None
+        mcap_as_of: Any = None
         if quote_entry and quote_entry.quote.circulating_market_cap:
             float_mcap = quote_entry.quote.circulating_market_cap.amount
+            mcap_as_of = quote_entry.fetched_at
         if float_mcap is None or float_mcap <= 0:
             return None
 
@@ -115,6 +117,7 @@ class BacktestEngine:
             "code": code,
             "name": bars[0].get("name", code),
             "float_mcap": float_mcap,
+            "mcap_as_of": mcap_as_of,
             "bar_by_date": bar_by_date,
             "flow_by_date": flow_by_date,
         }
@@ -196,10 +199,22 @@ class BacktestEngine:
                 cost_model=cost_model,
             )
 
-        # 2. 收集所有交易日（取并集）
+        # 2. 收集所有交易日（取并集），并确定市值时点与口径警示
         all_dates: set[str] = set()
         for data in all_data.values():
             all_dates.update(data["flow_by_date"].keys())
+        mcap_dates = [
+            data["mcap_as_of"]
+            for data in all_data.values()
+            if data.get("mcap_as_of") is not None
+        ]
+        mcap_as_of = min(mcap_dates).strftime("%Y-%m-%d") if mcap_dates else ""
+        caveats: list[str] = []
+        if mcap_as_of:
+            caveats.append(
+                f"流通市值取自 {mcap_as_of} 的报价缓存：ratio=当日主力净流入÷当前市值，"
+                "历史区间内市值变动会使 ratio 存在前视近似（无历史市值数据）"
+            )
         trading_days = sorted(all_dates)
 
         # 3. 回放
@@ -279,8 +294,8 @@ class BacktestEngine:
         if returns_pct:
             avg_return = sum(returns_pct) / len(returns_pct)
             avg_gross_return = sum(gross_returns_pct) / len(gross_returns_pct)
-            max_dd = _max_drawdown(returns_pct)
-            sharpe = _sharpe_ratio(returns_pct, hold_days)
+            max_dd = max_drawdown_pct(returns_pct)
+            sharpe = sharpe_ratio(returns_pct, hold_days)
         else:
             avg_return = 0.0
             avg_gross_return = 0.0
@@ -298,47 +313,11 @@ class BacktestEngine:
             signals_detail=signals_detail,
             avg_gross_return_pct=round(avg_gross_return, 4),
             cost_model=cost_model,
+            mcap_as_of=mcap_as_of,
+            caveats=caveats,
         )
 
 
 # ----------------------------------------------------------------------
-# 辅助统计函数
+# 辅助统计：见 backtest.metrics（单一真相源）
 # ----------------------------------------------------------------------
-
-
-def _max_drawdown(returns_pct: list[float]) -> float:
-    """从交易收益序列计算最大回撤（%，返回正数）。"""
-    equity = 1.0
-    peak = 1.0
-    max_dd = 0.0
-    for r in returns_pct:
-        equity *= 1 + r / 100
-        if equity > peak:
-            peak = equity
-        dd = (equity - peak) / peak
-        if dd < max_dd:
-            max_dd = dd
-    return abs(max_dd) * 100
-
-
-def _sharpe_ratio(returns_pct: list[float], hold_days: int) -> float:
-    """年化夏普比率。
-
-    rf = 2% 年化，转换为每笔交易的无风险收益。
-    """
-    n = len(returns_pct)
-    if n < 2:
-        return 0.0
-
-    daily_returns = [r / 100 for r in returns_pct]
-    mean_r = sum(daily_returns) / n
-    variance = sum((r - mean_r) ** 2 for r in daily_returns) / (n - 1)
-    std_r = math.sqrt(variance)
-    if std_r == 0:
-        return 0.0
-
-    rf_per_trade = RISK_FREE_ANNUAL * hold_days / _TRADING_DAYS
-    excess = mean_r - rf_per_trade
-    # 年化：每笔交易覆盖 hold_days 天
-    annualization = math.sqrt(_TRADING_DAYS / hold_days)
-    return (excess / std_r) * annualization
