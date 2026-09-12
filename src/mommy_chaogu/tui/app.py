@@ -115,7 +115,24 @@ class MommyTuiApp(App[None]):
 
     services: Services
     ui_theme: reactive[str] = reactive("dark")
-    _THEMES: ClassVar[list[str]] = ["dark", "light", "colorblind"]
+    _THEMES: ClassVar[list[str]] = ["dark", "light", "colorblind", "solarized", "nord", "latte"]
+    # ui_theme 名 → textual 主题名（CSS token 跟随后者）
+    _TEXTUAL_THEMES: ClassVar[dict[str, str]] = {
+        "dark": "textual-dark",
+        "light": "textual-light",
+        "colorblind": "textual-dark",
+        "solarized": "solarized-light",
+        "nord": "nord",
+        "latte": "catppuccin-latte",
+    }
+    _THEME_LABELS: ClassVar[dict[str, str]] = {
+        "dark": "深色",
+        "light": "浅色",
+        "colorblind": "色盲友好",
+        "solarized": "日光",
+        "nord": "极夜",
+        "latte": "拿铁",
+    }
     _INDEX_REFRESH_S: ClassVar[float] = 60.0
 
     def __init__(self, services: Services | None = None) -> None:
@@ -284,8 +301,16 @@ class MommyTuiApp(App[None]):
     # 主题切换
     # ------------------------------------------------------------------
 
-    def action_cycle_theme(self) -> None:
-        """Ctrl+T：在 dark / light / colorblind 之间循环。"""
+    def action_cycle_theme(self, name: str = "") -> None:
+        """Ctrl+T 循环切换；`/theme <名称>` 直接选中（如 /theme nord）。"""
+        if name:
+            candidates = {t.lower(): t for t in self._THEMES}
+            aliases = {"日光": "solarized", "极夜": "nord", "拿铁": "latte", "浅色": "light", "深色": "dark"}
+            key = aliases.get(name, aliases.get(name.lower(), name.lower()))
+            if key in candidates:
+                self.ui_theme = candidates[key]
+                self._apply_theme()
+                return
         try:
             idx = self._THEMES.index(self.ui_theme)
         except ValueError:
@@ -294,22 +319,18 @@ class MommyTuiApp(App[None]):
         self._apply_theme()
 
     def _apply_theme(self, notify: bool = True) -> None:
-        """应用当前主题：dark → textual-dark；light → textual-light。
+        """应用当前主题：映射到对应 textual 主题（CSS token 跟随）。
 
-        colorblind 模式下保留深色底，实际颜色重映射由
+        colorblind 保留深色底，涨跌色重映射由
         formatting.change_color() 检查 ui_theme 后处理。
         """
         theme = self.ui_theme
-        if theme == "light":
-            self.theme = "textual-light"
-        else:
-            self.theme = "textual-dark"
+        self.theme = self._TEXTUAL_THEMES.get(theme, "textual-dark")
         with contextlib.suppress(Exception):
             self.query_one(TopBar).set_theme(theme)
         if not notify:
             return
-        labels = {"dark": "深色", "light": "浅色", "colorblind": "色盲友好"}
-        label = labels.get(theme, theme)
+        label = self._THEME_LABELS.get(theme, theme)
         self.notify(f"主题已切换：{label}", timeout=3)
 
     # ------------------------------------------------------------------

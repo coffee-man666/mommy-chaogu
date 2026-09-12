@@ -14,7 +14,12 @@ from typing import ClassVar
 
 import pytest
 
-from mommy_chaogu.tui.services.colors import ROLES, THEMES, color
+from mommy_chaogu.tui.services.colors import (
+    LIGHT_BG_THEMES,
+    ROLES,
+    THEMES,
+    color,
+)
 
 _TUI_DIR = (Path(__file__).parent.parent / "src" / "mommy_chaogu" / "tui").resolve()
 
@@ -27,11 +32,13 @@ class TestPalette:
                 assert value.startswith("#"), f"{theme}/{role} -> {value}"
                 assert len(value) == 7
 
-    def test_light_palette_differs_from_dark(self) -> None:
-        """浅色主题必须有更深的前景色，否则白底不可读。"""
-        diffs = {role for role in ROLES if color("light", role) != color("dark", role)}
-        # 至少 muted/info/success/danger 要换深色变体
-        assert {"muted", "info", "success", "danger"} <= diffs
+    def test_light_palettes_differ_from_dark(self) -> None:
+        """所有浅底主题必须换深色前景，否则白底不可读。"""
+        assert set(LIGHT_BG_THEMES) <= set(THEMES)
+        for theme in LIGHT_BG_THEMES:
+            diffs = {role for role in ROLES if color(theme, role) != color("dark", role)}
+            # 至少 muted/info/success/danger 要换深色变体
+            assert {"muted", "info", "success", "danger"} <= diffs, theme
 
     def test_unknown_role_raises(self) -> None:
         with pytest.raises(KeyError):

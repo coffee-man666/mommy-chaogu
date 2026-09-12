@@ -6,16 +6,19 @@ Python 侧的 inline markup。**数据红绿（A股涨跌）不在这里**——
 ``formatting.change_color``（含色盲映射，深浅主题由 CSS token 管）。
 
 色板约定：
-- ``dark`` / ``colorblind``：深底亮字。colorblind 的 chrome 色沿用 dark——
-  这里的色表达的是 UI 语义（允许/拒绝/警告），不是涨跌数据。
-- ``light``：白底需要更深的前景色，否则对比度不可读。
+- ``dark`` / ``colorblind`` / ``nord``：深底亮字。colorblind 的 chrome 色沿用
+  dark——这里的色表达的是 UI 语义（允许/拒绝/警告），不是涨跌数据。
+- ``light`` / ``solarized`` / ``latte``：白底需要更深的前景色，否则对比度不可读。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-THEMES = ("dark", "light", "colorblind")
+THEMES = ("dark", "light", "colorblind", "solarized", "nord", "latte")
+
+# 浅底主题：前景必须用深色变体（守卫测试据此校验）
+LIGHT_BG_THEMES = ("light", "solarized", "latte")
 
 ROLES = ("info", "success", "danger", "warning", "muted", "thinking")
 
@@ -35,6 +38,33 @@ _PALETTES: dict[str, dict[str, str]] = {
         "warning": "#9a6700",
         "muted": "#57606a",
         "thinking": "#8250df",
+    },
+    # Solarized Light（日光）：暖白底 #fdf6e3，按 Solarized 色系加深保证对比度
+    "solarized": {
+        "info": "#268bd2",
+        "success": "#5c7a10",
+        "danger": "#cb2b28",
+        "warning": "#9a6700",
+        "muted": "#657b83",
+        "thinking": "#5b53a8",
+    },
+    # Nord（极夜）：冷色深底 #2e3440，前景取 Nord 亮色阶
+    "nord": {
+        "info": "#88c0d0",
+        "success": "#a3be8c",
+        "danger": "#bf616a",
+        "warning": "#ebcb8b",
+        "muted": "#8792a8",
+        "thinking": "#b48ead",
+    },
+    # Catppuccin Latte（拿铁）：暖浅底 #eff1f5，按 Latte 色系加深
+    "latte": {
+        "info": "#1e66f5",
+        "success": "#2f7d1f",
+        "danger": "#d20f39",
+        "warning": "#9a6700",
+        "muted": "#626379",
+        "thinking": "#8839ef",
     },
 }
 _PALETTES["colorblind"] = _PALETTES["dark"]
