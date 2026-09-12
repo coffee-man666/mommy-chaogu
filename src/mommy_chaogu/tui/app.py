@@ -27,6 +27,7 @@ from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.reactive import reactive
 from textual.widgets import Footer, Static
 
+from mommy_chaogu.db_paths import DEFAULT_DATA_DIR
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.screens.help import HelpScreen
 from mommy_chaogu.tui.services.bootstrap import Services
@@ -790,9 +791,19 @@ def main() -> None:
     # Parse before setup/importing services so --help and --version are
     # guaranteed to be non-interactive CLI operations.
     build_tui_parser().parse_args()
+    # 备用屏由 Textual 全权重绘：stderr 的任何裸写（如后台行情线程的
+    # WARNING）都会落在终端光标处、把输入框区域涂花。TUI 模式日志改走
+    # 数据目录下的文件；文件不可写时退化为静默，绝不回退 stderr。
+    log_path = DEFAULT_DATA_DIR / "tui.log"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        _handler: logging.Handler = logging.FileHandler(log_path, encoding="utf-8")
+    except OSError:
+        _handler = logging.NullHandler()
     logging.basicConfig(
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        handlers=[_handler],
     )
     # 启动前检查项目级 / 用户级配置，未配置则进入统一 onboarding
     from mommy_chaogu.setup import check_and_run_setup
