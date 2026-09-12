@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from decimal import Decimal
 from typing import Any
 
 from pydantic import ValidationError
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.codes import STOCK_CODE_RE as _CODE_RE
 from mommy_chaogu.strategy.models import AutomationStatus, StrategyCard
 from mommy_chaogu.strategy.store import (
     StrategyConflictError,
@@ -16,7 +16,6 @@ from mommy_chaogu.strategy.store import (
     StrategyStoreError,
 )
 
-_CODE_RE = re.compile(r"^(?:[A-Z]{1,6}(?:[.-][A-Z])?|\d{6})$")
 _CARD_SCHEMA = StrategyCard.model_json_schema()
 # Pydantic emits references such as ``#/$defs/StrategySource``. The card
 # schema is nested under the tool's ``card`` property, so its definitions must

@@ -16,8 +16,7 @@ from typing import Any
 from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 from mommy_chaogu.agent.prediction_tracker import PredictionTracker
 from mommy_chaogu.agent.semantic_memory import SemanticMemory
-
-_CODE_RE = re.compile(r"(?<![A-Z0-9])(\^?[A-Z]{1,6}(?:[.-][A-Z])?|\d{6})(?![A-Z0-9])")
+from mommy_chaogu.codes import CODE_IN_TEXT_RE as _CODE_RE
 
 
 class ResearchContextService:

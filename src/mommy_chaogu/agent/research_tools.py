@@ -12,7 +12,6 @@ import hashlib
 import json
 import logging
 import math
-import re
 import threading
 import uuid
 from dataclasses import dataclass
@@ -23,6 +22,7 @@ from typing import Any, Literal
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 from mommy_chaogu.agent.tools.base import ToolDef, _json
 from mommy_chaogu.agent.tools.registry import is_truncated_result
+from mommy_chaogu.codes import INDEX_OR_STOCK_CODE_RE as _CODE_RE
 
 _log = logging.getLogger(__name__)
 
@@ -65,8 +65,6 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "strategy_activate_monitor",
     }
 )
-
-_CODE_RE = re.compile(r"^(\^[A-Z]{1,6}|[A-Z]{1,6}(?:[.-][A-Z])?|\d{6})$")
 
 _RESEARCH_CONTROL_PROPERTIES: dict[str, Any] = {
     "research_session_id": {"type": "string", "description": "重试同一研究时复用"},
