@@ -48,9 +48,10 @@ class _ReplayAgent:
         return False
 
     def chat(self, message: str, **kwargs: Any) -> Any:
-        on_confirm = kwargs.get("on_confirm")
-        on_tool_call = kwargs.get("on_tool_call")
-        on_tool_result = kwargs.get("on_tool_result")
+        cb = kwargs.get("callbacks")
+        on_confirm = cb.on_confirm if cb is not None else None
+        on_tool_call = cb.on_tool_call if cb is not None else None
+        on_tool_result = cb.on_tool_result if cb is not None else None
         assert on_confirm is not None, "app 必须向 agent 层传 on_confirm"
 
         time.sleep(0.1)

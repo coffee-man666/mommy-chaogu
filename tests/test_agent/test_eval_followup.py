@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mommy_chaogu.agent import llm as llm_provider
-from mommy_chaogu.agent.service import AgentService
+from mommy_chaogu.agent.service import AgentService, ChatCallbacks
 from mommy_chaogu.agent.tools import ToolContext
 
 
@@ -276,7 +276,7 @@ class TestRetryStatusAndCancel:
         svc._client.chat.completions.create.side_effect = [err, ok]
 
         events: list[tuple[str, dict[str, Any]]] = []
-        resp = svc.chat("hi", on_status=lambda kind, info: events.append((kind, info)))
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_status=lambda kind, info: events.append((kind, info))))
 
         assert resp.text == "好"
         assert len(events) == 1
@@ -307,7 +307,7 @@ class TestRetryStatusAndCancel:
             event.set()  # 100ms 后取消（sleep 是 30s）
 
         threading.Thread(target=watcher, daemon=True).start()
-        resp = svc.chat("hi", cancel_event=event)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(cancel_event=event))
         elapsed = time.monotonic() - started
 
         assert resp.interrupted is True

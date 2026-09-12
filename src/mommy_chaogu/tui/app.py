@@ -27,6 +27,7 @@ from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.reactive import reactive
 from textual.widgets import Footer, Static
 
+from mommy_chaogu.agent.service import ChatCallbacks
 from mommy_chaogu.db_paths import DEFAULT_DATA_DIR
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.screens.help import HelpScreen
@@ -623,8 +624,7 @@ class MommyTuiApp(App[None]):
 
             self.call_from_thread(self._append_thinking_delta, delta)
 
-        chat_kwargs: dict[str, Any] = dict(
-            history=list(self._conversation_history[-20:]),
+        chat_callbacks = ChatCallbacks(
             on_tool_call=on_tool_call,
             on_tool_result=on_tool_result,
             on_chunk=on_chunk,
@@ -632,18 +632,14 @@ class MommyTuiApp(App[None]):
             usage_out=usage_out,
             on_status=on_status,
             on_thinking=on_thinking,
+            on_confirm=on_confirm,
         )
         try:
-            resp = self.services.agent.chat(text, on_confirm=on_confirm, **chat_kwargs)
-        except TypeError as e:
-            # 兼容旧 AgentBridge（测试桩 / 外部实现）：不认识任一新参数
-            # （on_confirm / on_thinking）时，整体剔除后重试一次——
-            # 能力协商从「全有」降到「基础」，而不是半个坏掉的组合
-            if not any(k in str(e) for k in ("on_thinking", "on_confirm")):
-                raise
-            chat_kwargs.pop("on_confirm", None)
-            chat_kwargs.pop("on_thinking", None)
-            resp = self.services.agent.chat(text, **chat_kwargs)
+            resp = self.services.agent.chat(
+                text,
+                history=list(self._conversation_history[-20:]),
+                callbacks=chat_callbacks,
+            )
         except Exception as e:
             _log.warning("Agent chat 失败: %s", e)
             self.call_from_thread(self._on_chat_error, turn_id, friendly_error(e))

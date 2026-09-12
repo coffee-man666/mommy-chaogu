@@ -154,6 +154,35 @@ class AgentResponse:
     reasoning: str = ""  # 推理模型思考文本（仅供 UI 展示，绝不回流对话历史）
 
 
+@dataclass(frozen=True, slots=True)
+class ChatCallbacks:
+    """chat() 的 UI 回调与控制句柄（9 个可选事件 / 容器收敛为一）。
+
+    此前平铺在 ``AgentService.chat`` 签名里，一度 14 参；调用方已出现
+    位置参数连传 None 的用法（web/routes/ws.py）。全部字段可选，
+    不关心的事件留 None 即可。frozen + slots 便于跨线程共享。
+    """
+
+    #: 工具开始调用 (tool_name, args)
+    on_tool_call: Callable[[str, dict[str, Any]], None] | None = None
+    #: 工具结束 (tool_name, ok, elapsed_ms, result_preview)
+    on_tool_result: Callable[[str, bool, int, str], None] | None = None
+    #: 流式正文 delta（最终回答逐段输出）
+    on_chunk: Callable[[str], None] | None = None
+    #: 状态事件（"retry", {attempt, max, delay}）
+    on_status: Callable[[str, dict[str, Any]], None] | None = None
+    #: 后台记忆提取创建了预测 ([{id, code, name}, ...])
+    on_predictions_created: Callable[[list[dict[str, Any]]], None] | None = None
+    #: 写操作确认 (tool_name, args) → True 放行；回调异常按拒绝处理（fail-closed）
+    on_confirm: Callable[[str, dict[str, Any]], bool] | None = None
+    #: 推理模型思考流 delta
+    on_thinking: Callable[[str], None] | None = None
+    #: 取消信号；命中即 interrupted=True 返回（不写记忆）
+    cancel_event: threading.Event | None = None
+    #: token 累加容器（调用方可实时读取；与 resp.usage 同一 dict）
+    usage_out: dict[str, int] | None = None
+
+
 class AgentService:
     """LLM agent 服务。
 
@@ -258,25 +287,23 @@ class AgentService:
     def chat(
         self,
         user_message: str,
+        *,
         history: list[dict[str, str]] | None = None,
         system_override: str | None = None,
-        memory: ConversationMemoryLike | None = None,
-        on_tool_call: Callable[[str, dict[str, Any]], None] | None = None,
-        on_tool_result: Callable[[str, bool, int, str], None] | None = None,
-        on_chunk: Callable[[str], None] | None = None,
-        cancel_event: threading.Event | None = None,
-        usage_out: dict[str, int] | None = None,
-        on_status: Callable[[str, dict[str, Any]], None] | None = None,
         system_addendum: str | None = None,
-        on_predictions_created: Callable[[list[dict[str, Any]]], None] | None = None,
-        on_confirm: Callable[[str, dict[str, Any]], bool] | None = None,
-        on_thinking: Callable[[str], None] | None = None,
+        memory: ConversationMemoryLike | None = None,
+        callbacks: ChatCallbacks | None = None,
     ) -> AgentResponse:
         """单轮对话（可带历史），返回最终文本 + 工具调用日志。
 
+        UI 回调与控制句柄统一收在 ``callbacks``（:class:`ChatCallbacks`）：
+        工具轨迹、流式 chunk、思考流、重试状态、写操作确认、后台预测
+        通知，以及 cancel_event / usage_out。此前这 9 个参数平铺在签名
+        里（一度 14 参），调用方已经出现位置参数连传 None 的用法。
+
         思考过程：
-        - 如果传入 *on_thinking*，推理模型（如 deepseek-reasoner）流式输出的
-          ``delta.reason_content`` 逐段回调它；完整思考文本在
+        - 如果 ``callbacks.on_thinking``，推理模型（如 deepseek-reasoner）流式
+          输出的 ``delta.reason_content`` 逐段回调它；完整思考文本在
           ``AgentResponse.reasoning`` 返回。思考文本只供 UI 展示，
           永不进入对话历史（OpenAI/DeepSeek 协议要求）。
 
@@ -287,33 +314,34 @@ class AgentService:
           对话后提取 observations/predictions
 
         流式：
-        - 如果传入 *on_chunk*，每轮 LLM 调用直接走 stream=True（带 tools），
+        - 如果 ``callbacks.on_chunk``，每轮 LLM 调用直接走 stream=True（带 tools），
           最终回答的文本逐 delta 调 on_chunk——「出答案」与「流式输出」是
           同一次调用；provider 不支持 stream 时自动回退非流式。
 
         取消：
-        - 如果传入 *cancel_event*，每轮 LLM 调用前 + 每个工具执行前 + 流式输出途中
-          + 重试等待期间检查 is_set()，命中即立即返回 interrupted=True
+        - 如果 ``callbacks.cancel_event``，每轮 LLM 调用前 + 每个工具执行前 + 流式
+          输出途中 + 重试等待期间检查 is_set()，命中即立即返回 interrupted=True
           （中断的对话不写入记忆）。
 
         状态：
-        - 如果传入 *on_status*，LLM 重试时回调 ("retry", {attempt, max, delay})，
+        - 如果 ``callbacks.on_status``，LLM 重试时回调 ("retry", {attempt, max, delay})，
           供 UI 展示重试进度（而不是静止的"思考中"）。
 
         记忆：
         - 对话后的记录 + 提取（LLM 调用 + 报价补全）在后台 daemon 线程执行，
           不阻塞本次响应；单发进程（CLI 单次查询）退出前应调 flush() 等待完成。
-        - 如果传入 *on_predictions_created*，后台提取线程在 record_conversation
-          完成且本轮确实创建了预测时回调它（参数为 [{"id", "code", "name"}, ...]）；
-          回调本身抛异常只记日志，不影响后台线程。
+        - 如果 ``callbacks.on_predictions_created``，后台提取线程在
+          record_conversation 完成且本轮确实创建了预测时回调它（参数为
+          [{"id", "code", "name"}, ...]）；回调本身抛异常只记日志，不影响后台线程。
 
         token 统计：
-        - 如果传入 *usage_out*，它会被直接用作累加容器（worker 线程原地累加），
-          调用方可在对话进行中实时读取——TUI 的 WorkingIndicator 靠它显示
-          实时 token 数。resp.usage 与 usage_out 是同一个 dict。后台提取
+        - 如果 ``callbacks.usage_out``，它会被直接用作累加容器（worker 线程原地
+          累加），调用方可在对话进行中实时读取——TUI 的 WorkingIndicator 靠它
+          显示实时 token 数。resp.usage 与 usage_out 是同一个 dict。后台提取
           线程的 token 消耗也会累加进来（同一把锁保护）。
         """
         ms = self._memory_service
+        cb = callbacks if callbacks is not None else ChatCallbacks()
 
         # 1. 构造 system prompt（注入记忆）
         if system_override:
@@ -344,14 +372,14 @@ class AgentService:
 
         resp = self._run_loop(
             messages,
-            on_tool_call=on_tool_call,
-            on_tool_result=on_tool_result,
-            on_chunk=on_chunk,
-            cancel_event=cancel_event,
-            usage_out=usage_out,
-            on_status=on_status,
-            on_confirm=on_confirm,
-            on_thinking=on_thinking,
+            on_tool_call=cb.on_tool_call,
+            on_tool_result=cb.on_tool_result,
+            on_chunk=cb.on_chunk,
+            cancel_event=cb.cancel_event,
+            usage_out=cb.usage_out,
+            on_status=cb.on_status,
+            on_confirm=cb.on_confirm,
+            on_thinking=cb.on_thinking,
         )
 
         # 3. 对话后记录 + 提取
@@ -369,6 +397,8 @@ class AgentService:
             # 提取链（LLM 调用 + 逐条预测实时报价）是慢操作，放后台线程跑，
             # 不阻塞响应（P6）。write_messages=False 避免与上面 memory.add
             # 双写（外部 memory 与 MemoryService 内部 memory 并存时）。
+            on_predictions_created = cb.on_predictions_created
+
             def _record_and_notify() -> None:
                 created = ms.record_conversation(
                     user_message,

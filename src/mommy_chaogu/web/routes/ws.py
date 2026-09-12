@@ -13,6 +13,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from mommy_chaogu.agent.service import ChatCallbacks
 from mommy_chaogu.preferences import default_preferences
 from mommy_chaogu.web.agent_context import AgentPageContext, page_context_addendum
 from mommy_chaogu.web.background import BackgroundService, get_service
@@ -278,14 +279,14 @@ async def ws_agent(websocket: WebSocket) -> None:
                 resp = await asyncio.to_thread(
                     agent.chat,
                     user_message,
-                    None,
-                    None,
-                    session_memory,
-                    on_tool_call,
-                    on_tool_result,
-                    on_chunk,
+                    memory=session_memory,
                     system_addendum="\n\n".join(addenda),
-                    on_predictions_created=on_predictions_created,
+                    callbacks=ChatCallbacks(
+                        on_tool_call=on_tool_call,
+                        on_tool_result=on_tool_result,
+                        on_chunk=on_chunk,
+                        on_predictions_created=on_predictions_created,
+                    ),
                 )
             finally:
                 # 通知 drain 结束 + 等 drain 把剩余事件发完

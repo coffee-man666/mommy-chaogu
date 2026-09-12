@@ -369,8 +369,9 @@ class _StreamingAgent:
     """流式输出途中等待 cancel_event 的假 agent。"""
 
     def chat(self, message: str, **kwargs: Any) -> Any:  # type: ignore[no-untyped-def]
-        on_chunk = kwargs.get("on_chunk")
-        cancel_event = kwargs.get("cancel_event")
+        cb = kwargs.get("callbacks")
+        on_chunk = cb.on_chunk if cb is not None else None
+        cancel_event = cb.cancel_event if cb is not None else None
         if on_chunk is not None:
             on_chunk("分析报告：第一部分。")
         # 等 Esc 取消（真实 agent 在流式途中/重试等待中检查 cancel_event）
@@ -433,7 +434,8 @@ class _RetryAgent:
     """先回调 on_status('retry', ...) 再返回的假 agent。"""
 
     def chat(self, message: str, **kwargs: Any) -> Any:  # type: ignore[no-untyped-def]
-        on_status = kwargs.get("on_status")
+        cb = kwargs.get("callbacks")
+        on_status = cb.on_status if cb is not None else None
         if on_status is not None:
             on_status("retry", {"attempt": 1, "max": 4, "delay": 2.0})
             time.sleep(0.2)  # 给 UI 一拍渲染重试态

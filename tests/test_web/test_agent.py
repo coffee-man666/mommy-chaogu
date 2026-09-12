@@ -35,7 +35,8 @@ def test_chat_uses_requested_session() -> None:
     memory.for_session.assert_called_once_with("browser-one")
     agent.chat.assert_called_once()
     call = agent.chat.call_args
-    assert call.args == ("hello", None, None, session_memory)
+    assert call.args == ("hello",)
+    assert call.kwargs["memory"] is session_memory
     assert "用户偏好均衡分析" in call.kwargs["system_addendum"]
 
 

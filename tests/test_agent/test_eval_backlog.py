@@ -20,7 +20,7 @@ import pytest
 
 from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 from mommy_chaogu.agent.extractor import extract_from_conversation
-from mommy_chaogu.agent.service import AgentService
+from mommy_chaogu.agent.service import AgentService, ChatCallbacks
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
 
@@ -128,7 +128,7 @@ class TestBackgroundExtraction:
         event = threading.Event()
         event.set()  # LLM 调用前即取消
 
-        resp = svc.chat("hi", cancel_event=event)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(cancel_event=event))
 
         assert resp.interrupted is True
         svc.flush(timeout=5)

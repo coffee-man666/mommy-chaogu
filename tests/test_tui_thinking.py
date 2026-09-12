@@ -124,11 +124,12 @@ class TestAppThinkingWiring:
         services = FakeServices.create()
 
         def _chat(message: str, **kwargs: Any) -> Any:
-            on_thinking = kwargs.get("on_thinking")
+            cb = kwargs.get("callbacks")
+            on_thinking = cb.on_thinking if cb is not None else None
             assert on_thinking is not None, "app 必须向 agent 层传 on_thinking"
             on_thinking("思考甲")
             on_thinking("思考乙")
-            on_chunk = kwargs.get("on_chunk")
+            on_chunk = cb.on_chunk if cb is not None else None
             assert on_chunk is not None
             on_chunk("正式回答")
             return SimpleNamespace(

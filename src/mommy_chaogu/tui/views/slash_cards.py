@@ -19,6 +19,16 @@ from mommy_chaogu.tui.widgets import cards
 _log = logging.getLogger(__name__)
 
 
+def _fetch_flow_safe(data_svc: Any, code: str) -> Any:
+    """线程内安全拉当日主力净流（委托统一服务层；无 adapter 返回 None）。"""
+    adapter = getattr(data_svc, "adapter", None)
+    if adapter is None:
+        return None
+    from mommy_chaogu.services.watchlist_quote_service import WatchlistQuoteService
+
+    return WatchlistQuoteService(adapter)._fetch_flow_safe(code)
+
+
 class SlashCardFactory:
     """按需从服务容器拉数据并渲染斜杠命令卡片。"""
 
@@ -168,7 +178,7 @@ class SlashCardFactory:
             "volume_ratio": getattr(quote, "volume_ratio", None),
         }
         if data_svc is not None:
-            flow = data_svc._fetch_flow_safe(code)
+            flow = _fetch_flow_safe(data_svc, code)
             if flow is not None:
                 data["main_flow"] = flow
         return cards.quote_card(data, self._theme())

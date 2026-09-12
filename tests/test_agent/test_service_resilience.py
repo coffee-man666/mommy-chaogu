@@ -10,7 +10,7 @@ import httpx
 import pytest
 from openai import APIConnectionError, BadRequestError, RateLimitError
 
-from mommy_chaogu.agent.service import AgentService
+from mommy_chaogu.agent.service import AgentService, ChatCallbacks
 from mommy_chaogu.agent.tools import ToolContext
 
 
@@ -128,7 +128,9 @@ class TestToolErrorRecovery:
         events: list[tuple[str, bool, int, str]] = []
         svc.chat(
             "茅台多少钱",
-            on_tool_result=lambda name, ok, ms, res: events.append((name, ok, ms, res)),
+            callbacks=ChatCallbacks(
+                on_tool_result=lambda name, ok, ms, res: events.append((name, ok, ms, res)),
+            ),
         )
 
         assert len(events) == 1

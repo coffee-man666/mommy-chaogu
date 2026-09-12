@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mommy_chaogu.agent.service import AgentService
+from mommy_chaogu.agent.service import AgentService, ChatCallbacks
 from mommy_chaogu.agent.tools import ToolContext
 
 
@@ -84,7 +84,7 @@ class TestStreamingFinalAnswer:
         )
 
         chunks: list[str] = []
-        resp = svc.chat("hi", on_chunk=chunks.append)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=chunks.append))
 
         assert "".join(chunks) == "你好世界"
         assert resp.text == "你好世界"
@@ -119,7 +119,7 @@ class TestStreamingFinalAnswer:
         ]
 
         chunks: list[str] = []
-        resp = svc.chat("hi", on_chunk=chunks.append)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=chunks.append))
 
         # 流式失败 → chunks 为空，回退非流式拿到完整答案
         assert chunks == []
@@ -135,7 +135,7 @@ class TestStreamingFinalAnswer:
             ["你", "好"], usage=_usage(100, 50)
         )
 
-        resp = svc.chat("hi", on_chunk=lambda d: None)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=lambda d: None))
 
         # 单次流式调用的 usage 计入
         assert resp.usage["prompt_tokens"] == 100
@@ -160,7 +160,7 @@ class TestStreamingFinalAnswer:
         ]
 
         chunks: list[str] = []
-        resp = svc.chat("hi", on_chunk=chunks.append)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=chunks.append))
 
         assert chunks == []
         assert resp.text == "完整的非流式答案"
@@ -175,7 +175,7 @@ class TestStreamingFinalAnswer:
             ["你", "好"], usage=None
         )
 
-        resp = svc.chat("hi", on_chunk=lambda d: None)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=lambda d: None))
 
         assert resp.text == "你好"
         assert resp.usage == {}
@@ -221,7 +221,7 @@ class TestStreamingFinalAnswer:
         svc._tools.call.return_value = '{"price": 1680}'
 
         chunks: list[str] = []
-        resp = svc.chat("hi", on_chunk=chunks.append)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=chunks.append))
 
         # tool_calls 拼接正确并执行
         svc._tools.call.assert_called_once_with("get_quote", {"code": "600519"})
@@ -238,7 +238,7 @@ class TestCancelEvent:
         event = threading.Event()
         event.set()
 
-        resp = svc.chat("hi", cancel_event=event)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(cancel_event=event))
 
         assert resp.interrupted is True
         assert resp.text == "（已中断）"
@@ -277,7 +277,7 @@ class TestCancelEvent:
 
         svc._tools.call.side_effect = fake_call
 
-        resp = svc.chat("hi", cancel_event=event)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(cancel_event=event))
 
         assert resp.interrupted is True
         # 唯一的工具执行了一次（set 发生在执行期间），
@@ -318,7 +318,7 @@ class TestCancelEvent:
             # 工具完成后、下一轮 LLM 前 set cancel
             event.set()
 
-        resp = svc.chat("hi", on_tool_result=on_tool_result, cancel_event=event)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_tool_result=on_tool_result, cancel_event=event))
 
         assert resp.interrupted is True
         assert resp.text == "（已中断）"
@@ -343,7 +343,7 @@ class TestCancelEvent:
             # 收到第一个 delta 后取消
             event.set()
 
-        resp = svc.chat("hi", on_chunk=on_chunk, cancel_event=event)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=on_chunk, cancel_event=event))
 
         assert resp.interrupted is True
         # 已流出的部分保留
@@ -405,7 +405,7 @@ class TestUsageAccumulation:
         ]
 
         shared: dict[str, int] = {}
-        resp = svc.chat("hi", usage_out=shared)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(usage_out=shared))
 
         assert resp.usage is shared
         assert shared["total_tokens"] == 150
@@ -453,7 +453,7 @@ class TestThinkingStream:
 
         thinking: list[str] = []
         chunks: list[str] = []
-        resp = svc.chat("hi", on_chunk=chunks.append, on_thinking=thinking.append)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=chunks.append, on_thinking=thinking.append))
 
         assert "".join(thinking) == "先想一下"
         assert "".join(chunks) == "答案"
@@ -467,7 +467,7 @@ class TestThinkingStream:
         """reasoning 只给 UI/返回值，不得混进对话历史（协议要求）。"""
         svc = AgentService(mock_ctx, api_key="sk-test")
         svc._client.chat.completions.create.return_value = _reasoning_stream(["思路"], ["结论"])
-        svc.chat("hi", on_chunk=lambda s: None, on_thinking=lambda s: None)
+        svc.chat("hi", callbacks=ChatCallbacks(on_chunk=lambda s: None, on_thinking=lambda s: None))
         # 单轮文本回答只调用一次 create；检查请求里没有 reasoning 概念
         kwargs = svc._client.chat.completions.create.call_args.kwargs
         assert "reason_content" not in str(kwargs.get("messages"))
@@ -481,7 +481,7 @@ class TestThinkingStream:
         svc._client.chat.completions.create.return_value = _stream_response(["你", "好"])
 
         thinking: list[str] = []
-        resp = svc.chat("hi", on_chunk=lambda s: None, on_thinking=thinking.append)
+        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=lambda s: None, on_thinking=thinking.append))
 
         assert thinking == []
         assert resp.reasoning == ""

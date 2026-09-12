@@ -174,9 +174,10 @@ class TestAgentWebSocket:
 
         agent = MagicMock()
 
-        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
+        def fake_chat(message, *args, **kwargs):
             # 模拟 agent 层通过 on_chunk 回调推送真实 delta（#4 真流式）
-            on_chunk = args[2] if len(args) > 2 else kwargs.get("on_chunk")
+            cb = kwargs.get("callbacks")
+            on_chunk = cb.on_chunk if cb is not None else None
             if on_chunk is not None:
                 on_chunk("abcdefghijkl")
                 on_chunk("mnop")
@@ -227,7 +228,7 @@ class TestAgentWebSocket:
         agent.chat.assert_called_once()
         call = agent.chat.call_args
         assert call.args[0] == "hello"
-        assert call.args[2] is None
+        assert call.kwargs.get("system_override") is None
         assert "用户偏好均衡分析" in call.kwargs["system_addendum"]
         assert "<page_context>600519:flow</page_context>" in call.kwargs["system_addendum"]
 
@@ -257,7 +258,7 @@ class TestAgentWebSocket:
 
         call = agent.chat.call_args
         assert call.args[0] == "看看风险"
-        assert call.args[2] is None
+        assert call.kwargs.get("system_override") is None
         assert "稳健投资" in call.kwargs["system_addendum"]
         assert "积极策略" not in call.kwargs["system_addendum"]
 
@@ -267,11 +268,11 @@ class TestAgentWebSocket:
 
         agent = MagicMock()
 
-        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
-            # 位置参数顺序: on_tool_call, on_tool_result, on_chunk
-            on_tool_call = args[0] if len(args) > 0 else kwargs.get("on_tool_call")
-            on_tool_result = args[1] if len(args) > 1 else kwargs.get("on_tool_result")
-            on_chunk = args[2] if len(args) > 2 else kwargs.get("on_chunk")
+        def fake_chat(message, *args, **kwargs):
+            cb = kwargs.get("callbacks")
+            on_tool_call = cb.on_tool_call if cb is not None else None
+            on_tool_result = cb.on_tool_result if cb is not None else None
+            on_chunk = cb.on_chunk if cb is not None else None
             # 模拟一次工具调用：started → finished(done)
             if on_tool_call is not None:
                 on_tool_call("get_quote", {"code": "600519"})
@@ -386,8 +387,9 @@ class TestAgentWebSocketPredictionsCreated:
         predictions = [{"id": 12, "code": "600519", "name": "贵州茅台"}]
         done = threading.Event()
 
-        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
-            cb = kwargs.get("on_predictions_created")
+        def fake_chat(message, *args, **kwargs):
+            _cb = kwargs.get("callbacks")
+            cb = _cb.on_predictions_created if _cb is not None else None
 
             def _bg() -> None:
                 # 模拟真实时序：done 帧发出后，后台提取线程才完成
@@ -422,8 +424,9 @@ class TestAgentWebSocketPredictionsCreated:
 
         captured: dict[str, object] = {}
 
-        def fake_chat(message, history, system_override, sess_memory, *args, **kwargs):
-            captured["cb"] = kwargs.get("on_predictions_created")
+        def fake_chat(message, *args, **kwargs):
+            _cb = kwargs.get("callbacks")
+            captured["cb"] = _cb.on_predictions_created if _cb is not None else None
             return SimpleNamespace(text="ok", tool_calls=[], rounds=1)
 
         agent = MagicMock()

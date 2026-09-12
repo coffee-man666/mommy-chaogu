@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mommy_chaogu.agent.prompt import SYSTEM_PROMPT
-from mommy_chaogu.agent.service import SUPPORTED_PROVIDERS, AgentService
+from mommy_chaogu.agent.service import SUPPORTED_PROVIDERS, AgentService, ChatCallbacks
 from mommy_chaogu.agent.tools import ToolContext
 
 
@@ -241,7 +241,7 @@ class TestPredictionsCreatedCallback:
         svc._client.chat.completions.create.return_value = self._make_text_response("茅台看涨")
 
         got: list[list[dict]] = []
-        svc.chat("茅台怎么样", on_predictions_created=got.append)
+        svc.chat("茅台怎么样", callbacks=ChatCallbacks(on_predictions_created=got.append))
         svc.flush(timeout=5)
 
         assert got == [created]
@@ -274,7 +274,7 @@ class TestPredictionsCreatedCallback:
         svc._client.chat.completions.create.return_value = self._make_text_response("随便聊聊")
 
         got: list[list[dict]] = []
-        svc.chat("你好", on_predictions_created=got.append)
+        svc.chat("你好", callbacks=ChatCallbacks(on_predictions_created=got.append))
         svc.flush(timeout=5)
 
         assert got == []
@@ -295,7 +295,7 @@ class TestPredictionsCreatedCallback:
         def _raising(_preds: list[dict]) -> None:
             raise RuntimeError("boom")
 
-        resp = svc.chat("茅台怎么样", on_predictions_created=_raising)
+        resp = svc.chat("茅台怎么样", callbacks=ChatCallbacks(on_predictions_created=_raising))
         svc.flush(timeout=5)  # 不抛异常
         assert resp.text == "茅台看涨"
 

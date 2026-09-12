@@ -353,13 +353,10 @@ class _FakeAgent:
         self,
         message,
         history=None,
-        on_tool_call=None,
-        on_tool_result=None,
-        on_chunk=None,
-        cancel_event=None,
-        usage_out=None,
-        on_status=None,
+        callbacks=None,
     ):
+        on_tool_call = callbacks.on_tool_call if callbacks is not None else None
+        on_tool_result = callbacks.on_tool_result if callbacks is not None else None
         if on_tool_call is not None:
             on_tool_call("get_quote", {"code": "600519"})
         if on_tool_result is not None:

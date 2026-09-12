@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 # The facade intentionally re-exports the established command API.
 from mommy_chaogu.cli_support import *
+from mommy_chaogu.agent.service import ChatCallbacks
 from mommy_chaogu.cli_commands.agent import *
 from mommy_chaogu.cli_commands.agent_managed import main_doctor
 from mommy_chaogu.cli_commands.cache import *
@@ -353,7 +354,7 @@ def _run_single_query(
                     print(f"  🔧 调用: {name}...")
 
             try:
-                resp = agent.chat(query, on_tool_call=_on_tool)
+                resp = agent.chat(query, callbacks=ChatCallbacks(on_tool_call=_on_tool))
                 print(f"\n{resp.text}\n")
                 if resp.tool_calls and not verbose:
                     tool_names = ", ".join(tc.name for tc in resp.tool_calls)

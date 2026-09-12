@@ -29,10 +29,11 @@ class _FakeAgent:
     _provider = "deepseek"
     _model = "deepseek-chat"
 
-    def chat(self, _message: str, **callbacks: object) -> SimpleNamespace:
-        on_tool = callbacks["on_tool_call"]
-        on_result = callbacks["on_tool_result"]
-        on_chunk = callbacks["on_chunk"]
+    def chat(self, _message: str, **kwargs: object) -> SimpleNamespace:
+        cb = kwargs["callbacks"]
+        on_tool = cb.on_tool_call
+        on_result = cb.on_tool_result
+        on_chunk = cb.on_chunk
         assert callable(on_tool)
         assert callable(on_result)
         assert callable(on_chunk)

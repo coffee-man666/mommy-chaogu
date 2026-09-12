@@ -25,6 +25,7 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
+from mommy_chaogu.agent.service import ChatCallbacks
 from mommy_chaogu.errors import friendly_error
 from mommy_chaogu.workflow.engine import WorkflowResult
 from mommy_chaogu.workflow.router import NLRouter, RouteResult
@@ -372,10 +373,12 @@ def run_agent_chat(
 
         resp = agent.chat(
             user_input,
-            on_tool_call=on_tool,
-            on_tool_result=on_tool_result,
-            on_chunk=on_chunk,
-            on_status=on_status,
+            callbacks=ChatCallbacks(
+                on_tool_call=on_tool,
+                on_tool_result=on_tool_result,
+                on_chunk=on_chunk,
+                on_status=on_status,
+            ),
         )
         if not view.answer_chunks and resp.text:
             view.answer_chunks.append(resp.text)

@@ -19,6 +19,7 @@ import pytest
 from mommy_chaogu.agent.service import (
     DENIAL_RESULT_MESSAGE,
     AgentService,
+    ChatCallbacks,
     requires_confirmation,
 )
 from mommy_chaogu.agent.tools import ToolContext
@@ -104,7 +105,7 @@ class TestOnConfirmDeny:
             results.append(True)
             return False
 
-        resp = svc.chat("存个策略卡", on_confirm=on_confirm)
+        resp = svc.chat("存个策略卡", callbacks=ChatCallbacks(on_confirm=on_confirm))
 
         assert results == [True]
         svc._tools.call.assert_not_called()
@@ -126,9 +127,11 @@ class TestOnConfirmDeny:
         calls: list[tuple[str, bool, str]] = []
         resp = svc.chat(
             "把茅台加入自选",
-            on_tool_call=lambda n, a: calls.append((n, "start", "")),
-            on_tool_result=lambda n, ok, _ms, r: calls.append((n, "end" if ok else "denied", r)),
-            on_confirm=lambda n, a: False,
+            callbacks=ChatCallbacks(
+                on_tool_call=lambda n, a: calls.append((n, "start", "")),
+                on_tool_result=lambda n, ok, _ms, r: calls.append((n, "end" if ok else "denied", r)),
+                on_confirm=lambda n, a: False,
+            ),
         )
 
         assert ("manage_watchlist", "start", "") in calls
@@ -150,7 +153,7 @@ class TestOnConfirmDeny:
         def on_confirm(_name: str, _args: dict) -> bool:
             raise RuntimeError("UI 挂了")
 
-        resp = svc.chat("存策略卡", on_confirm=on_confirm)
+        resp = svc.chat("存策略卡", callbacks=ChatCallbacks(on_confirm=on_confirm))
         svc._tools.call.assert_not_called()
         assert resp.text == "已取消"
 
@@ -163,7 +166,7 @@ class TestOnConfirmAllow:
             _tc_message("strategy_save", '{"card": {"name": "均值回归"}}'),
             _text_response("已保存"),
         ]
-        resp = svc.chat("存策略卡", on_confirm=lambda n, a: True)
+        resp = svc.chat("存策略卡", callbacks=ChatCallbacks(on_confirm=lambda n, a: True))
         svc._tools.call.assert_called_once()
         assert resp.text == "已保存"
 
@@ -177,7 +180,7 @@ class TestOnConfirmAllow:
         confirm_calls: list[str] = []
         resp = svc.chat(
             "茅台多少钱",
-            on_confirm=lambda n, a: confirm_calls.append(n) or True,
+            callbacks=ChatCallbacks(on_confirm=lambda n, a: confirm_calls.append(n) or True),
         )
         assert confirm_calls == []
         svc._tools.call.assert_called_once()
@@ -193,7 +196,7 @@ class TestOnConfirmAllow:
             _text_response("无告警"),
         ]
         confirm_calls: list[str] = []
-        svc.chat("看下告警", on_confirm=lambda n, a: confirm_calls.append(n) or True)
+        svc.chat("看下告警", callbacks=ChatCallbacks(on_confirm=lambda n, a: confirm_calls.append(n) or True))
         assert confirm_calls == []
 
     @patch("openai.OpenAI")

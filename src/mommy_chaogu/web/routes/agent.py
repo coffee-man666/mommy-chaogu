@@ -181,9 +181,7 @@ async def chat(
     resp = await asyncio.to_thread(
         agent.chat,
         req.message,
-        None,  # history 不单独传，由 memory 提供上下文
-        None,  # system_override
-        memory.for_session(req.session_id),
+        memory=memory.for_session(req.session_id),
         system_addendum="\n\n".join(addenda),
     )
 

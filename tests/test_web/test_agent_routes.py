@@ -46,13 +46,16 @@ class _FakeAgent:
     def chat(
         self,
         message: str,
-        history: Any,
-        system_override: Any,
-        memory_ctx: Any,
+        *,
+        history: Any = None,
+        system_override: Any = None,
+        system_addendum: Any = None,
+        memory: Any = None,
+        callbacks: Any = None,
         **kwargs: Any,
     ) -> _FakeChatResp:
-        self.last_call = (message, history, system_override, memory_ctx)
-        self.last_kwargs = kwargs
+        self.last_call = (message, history, system_override, memory)
+        self.last_kwargs = {**kwargs, "system_addendum": system_addendum, "callbacks": callbacks}
         return self._resp
 
 
