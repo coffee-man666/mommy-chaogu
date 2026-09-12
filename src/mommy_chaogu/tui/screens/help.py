@@ -21,7 +21,7 @@ _HELP_TEXT = """\
   PgUp PgDn  滚动对话
   Ctrl+L     清屏
   Ctrl+P     命令面板
-  Ctrl+T     切换主题
+  Ctrl+T     选择主题（↑↓ 实时预览）
   Ctrl+C     连按两次退出
   ?          帮助（本页面）
 
@@ -41,7 +41,7 @@ _HELP_TEXT = """\
   /memory       记忆系统
   /status       服务状态
   /clear        清空对话
-  /theme        切换主题
+  /theme        选择主题（/theme 名称 直接选中）
   /quit         退出
 """
 

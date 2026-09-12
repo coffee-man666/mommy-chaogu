@@ -87,7 +87,7 @@ SLASH_COMMANDS: dict[str, SlashCommand] = {
         SlashCommand("status", "服务状态"),
         SlashCommand("help", "按键速查"),
         SlashCommand("clear", "清空对话"),
-        SlashCommand("theme", "切换主题（/theme 日光·极夜·拿铁… 直接选中）"),
+        SlashCommand("theme", "选择主题（↑↓ 实时预览；/theme 名称 直接选中）"),
         SlashCommand("quit", "退出"),
     ]
 }
@@ -502,7 +502,11 @@ class ChatView(Vertical):
         elif cmd == "clear":
             self.clear_messages()
         elif cmd == "theme":
-            self.app.action_cycle_theme(args.strip())  # type: ignore[attr-defined]
+            arg = args.strip()
+            if arg:
+                self.app.action_cycle_theme(arg)  # type: ignore[attr-defined]
+            else:
+                self.app.action_open_theme_picker()  # type: ignore[attr-defined]
         elif cmd == "quit":
             self.app.exit()
         elif cmd == "today":

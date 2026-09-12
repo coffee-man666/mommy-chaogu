@@ -36,6 +36,9 @@ THEMES = (
 # 浅底主题：前景必须用深色变体（守卫测试据此校验）
 LIGHT_BG_THEMES = ("light", "solarized", "latte", "github-light")
 
+# 主题色板取不到时的中性兜底（选择器色板/未知主题）
+FALLBACK_BG = "#888888"
+
 ROLES = ("info", "success", "danger", "warning", "muted", "thinking")
 
 _PALETTES: dict[str, dict[str, str]] = {

@@ -28,7 +28,7 @@
 - `↑/↓` 历史 / 候选循环；`Tab` 接受补全；`PgUp/PgDn` 滚动
 - `y / n / a` 写操作确认（允许 / 拒绝 / 本会话不再问）
 - 点击或 `Enter`：展开工具轨迹详情、思考全文
-- `Ctrl+P` 命令面板；`Ctrl+T` 主题（深色/浅色/色盲友好/日光/极夜/拿铁/Atom/GitHub/GitHub浅色/Dracula/Tokyo Night，`/theme 名称` 直接选中）；`Ctrl+C` 双击退出
+- `Ctrl+P` 命令面板；`Ctrl+T` 主题选择器（↑↓ 实时预览 / Enter 确认 / Esc 还原；`/theme 名称` 可直接选中）；`Ctrl+C` 双击退出
 
 ## 架构（谁负责什么）
 

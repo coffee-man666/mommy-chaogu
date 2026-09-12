@@ -30,8 +30,9 @@ from textual.widgets import Footer, Static
 from mommy_chaogu.db_paths import DEFAULT_DATA_DIR
 from mommy_chaogu.tui.messages import StepStatus
 from mommy_chaogu.tui.screens.help import HelpScreen
+from mommy_chaogu.tui.screens.theme_picker import ThemePickerScreen
 from mommy_chaogu.tui.services.bootstrap import Services
-from mommy_chaogu.tui.services.colors import GITHUB_TEXTUAL_THEMES
+from mommy_chaogu.tui.services.colors import FALLBACK_BG, GITHUB_TEXTUAL_THEMES, LIGHT_BG_THEMES
 from mommy_chaogu.tui.services.errors import friendly_error
 from mommy_chaogu.tui.services.session_journal import SessionJournal
 from mommy_chaogu.tui.views.chat import ChatView
@@ -110,7 +111,7 @@ class MommyTuiApp(App[None]):
         Binding("ctrl+p", "app.command_palette", "命令面板"),
         Binding("ctrl+c", "quit_request", "退出", priority=True),
         Binding("ctrl+q", "quit", "退出", show=False),
-        Binding("ctrl+t", "cycle_theme", "主题", show=False),
+        Binding("ctrl+t", "open_theme_picker", "主题", show=False),
         Binding("question_mark", "help", "帮助", show=False),
     ]
 
@@ -325,6 +326,42 @@ class MommyTuiApp(App[None]):
     # ------------------------------------------------------------------
     # 主题切换
     # ------------------------------------------------------------------
+
+    def action_open_theme_picker(self) -> None:
+        """Ctrl+T / /theme：打开选择器，↑↓ 实时预览，Enter 确认，Esc 还原。"""
+        options = [(tid, self._theme_option_prompt(tid)) for tid in self._THEMES]
+        self.push_screen(
+            ThemePickerScreen(
+                options,
+                self.ui_theme,
+                on_preview=self._preview_theme,
+                on_confirm=self._confirm_theme,
+            )
+        )
+
+    def _theme_option_prompt(self, tid: str) -> str:
+        """选项行：底色色板 + 当前标记 + 名称 + 深浅标签。"""
+        label = self._THEME_LABELS.get(tid, tid)
+        tag = "浅底" if tid in LIGHT_BG_THEMES else "深底"
+        mark = "● 当前" if tid == self.ui_theme else ""
+        return f"[on {self._theme_bg_hex(tid)}]   [/] {label} · {tag} {mark}"
+
+    def _theme_bg_hex(self, tid: str) -> str:
+        """主题代表背景色（取 textual 主题定义，取不到回退中性灰）。"""
+        theme = self.get_theme(self._TEXTUAL_THEMES.get(tid, "textual-dark"))
+        bg = theme.background if theme else None
+        return bg if isinstance(bg, str) and bg.startswith("#") else FALLBACK_BG
+
+    def _preview_theme(self, name: str) -> None:
+        """选择器高亮回调：立即套用、不弹 toast（实时预览）。"""
+        if name != self.ui_theme:
+            self.ui_theme = name
+            self._apply_theme(notify=False)
+
+    def _confirm_theme(self, name: str) -> None:
+        """选择器确认回调：套用并弹 toast。"""
+        self.ui_theme = name
+        self._apply_theme(notify=True)
 
     def action_cycle_theme(self, name: str = "") -> None:
         """Ctrl+T 循环切换；`/theme <名称>` 直接选中（如 /theme nord）。"""
