@@ -309,9 +309,11 @@ class StockBacktestOut(BaseModel):
     end_date: date
     total_signals: int
     win_rate: float | None = None  # 无信号时为 null
-    avg_return_pct: float | None = None
+    avg_return_pct: float | None = None  # 净收益（扣往返交易成本）
     max_drawdown_pct: float | None = None
     sharpe_ratio: float | None = None
+    avg_gross_return_pct: float | None = None  # 毛收益（不扣成本），对照用
+    cost_model: str | None = None  # 成本模型明细（多行文本）
     message: str | None = None  # 无信号/数据不足时的中文提示，成功为 null
 
 

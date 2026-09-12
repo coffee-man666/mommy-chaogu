@@ -16,9 +16,11 @@ from typing import Self
 from mommy_chaogu.db_paths import register_sqlite3_adapters
 from mommy_chaogu.earnings.schema import SCHEMA_SQL
 from mommy_chaogu.earnings.types import (
+    SOURCE_PRIORITY,
     EarningsActual,
     EarningsCalendar,
     EarningsScore,
+    EarningsSource,
     EarningsVerdict,
 )
 
@@ -160,16 +162,29 @@ class EarningsStore:
         return [self._row_to_actual(r) for r in rows]
 
     def get_actual(self, code: str, period: str) -> EarningsActual | None:
-        row = self.engine.execute(
+        """取一股一期的实际业绩；多 source 并存时按优先级取最优。
+
+        优先级见 :data:`SOURCE_PRIORITY`（REPORT > EXPRESS > GUIDANCE > FORECAST）。
+        之前用 ``ORDER BY source DESC`` 靠字典序排，express（快报）反而垫底——
+        同股同期最多 4 行，改在 Python 侧排序。
+        """
+        rows = self.engine.execute(
             """
             SELECT * FROM earnings_actual
             WHERE code = ? AND period = ?
-            ORDER BY source DESC  -- 优先 REPORT > EXPRESS > FORECAST
-            LIMIT 1
             """,
             (code, period),
-        ).fetchone()
-        return self._row_to_actual(row) if row else None
+        ).fetchall()
+        if not rows:
+            return None
+        best = max(
+            rows,
+            key=lambda r: (
+                SOURCE_PRIORITY.get(EarningsSource(r["source"]), 0),
+                r["disclosure_date"],
+            ),
+        )
+        return self._row_to_actual(best)
 
     @staticmethod
     def _row_to_actual(row: sqlite3.Row) -> EarningsActual:

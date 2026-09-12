@@ -15,20 +15,20 @@ from mommy_chaogu.backtest.costs import (
 def test_default_cost_params() -> None:
     assert DEFAULT_COSTS.commission_pct == 0.0255
     assert DEFAULT_COSTS.stamp_duty_pct == 0.05
-    assert DEFAULT_COSTS.transfer_fee_pct == 0.02
+    assert DEFAULT_COSTS.transfer_fee_pct == 0.001  # 2022-04 起万分之 0.1
     assert DEFAULT_COSTS.slippage_pct == 0.1
 
 
 def test_round_trip_cost_matches_formula() -> None:
     # 佣金*2 + 过户费*2 + 印花税 + 滑点*2
-    expected = 0.0255 * 2 + 0.02 * 2 + 0.05 + 0.1 * 2
+    expected = 0.0255 * 2 + 0.001 * 2 + 0.05 + 0.1 * 2
     assert DEFAULT_COSTS.round_trip_cost_pct() == expected
 
 
-def test_round_trip_cost_about_034pct() -> None:
-    """往返成本 ≈ 0.34%（在合理区间内）。"""
+def test_round_trip_cost_about_030pct() -> None:
+    """往返成本 ≈ 0.30%（在合理区间内）。"""
     c = DEFAULT_COSTS.round_trip_cost_pct()
-    assert 0.33 <= c <= 0.35
+    assert 0.29 <= c <= 0.31
 
 
 def test_trading_costs_is_frozen() -> None:

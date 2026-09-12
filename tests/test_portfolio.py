@@ -80,10 +80,13 @@ def test_analyzer_sector_correlation_and_risk(store: PortfolioStore) -> None:
         SimpleNamespace(name="科技" if code == "AAA" else "金融")
     ]
     cache = MagicMock()
-    cache.get_bars.side_effect = lambda code, *_: [
-        {"close": value}
-        for value in (["10", "11", "10", "12"] if code == "AAA" else ["20", "19", "21", "18"])
-    ]
+    dates4 = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]
+
+    def _bars(code: str, *_args: object) -> list[dict]:
+        closes = ["10", "11", "10", "12"] if code == "AAA" else ["20", "19", "21", "18"]
+        return [{"close": c, "timestamp": f"{d}T15:00:00+08:00"} for d, c in zip(dates4, closes, strict=False)]
+
+    cache.get_bars.side_effect = _bars
 
     analyzer = PortfolioAnalyzer(store, adapter, cache)
     sectors = analyzer.sector_concentration()
@@ -95,6 +98,60 @@ def test_analyzer_sector_correlation_and_risk(store: PortfolioStore) -> None:
     risk = analyzer.risk_metrics(days=3)
     assert risk["max_drawdown_pct"] > 0
     assert risk["volatility_pct"] > 0
+
+
+def test_analyzer_correlation_aligns_by_date_not_index(store: PortfolioStore) -> None:
+    """交易日历错开（停牌/数据缺口）时，相关性按日期交集对齐。
+
+    构造：公共日期上 BBB 收益恰好是 AAA 的 2 倍（完美正相关），
+    但两边各有一天对方没有的"噪声日"。按数组索引对齐会得到 <1 的值。
+    """
+    store.add_position("AAA", "Alpha", Decimal("10"), 100)
+    store.add_position("BBB", "Beta", Decimal("20"), 50)
+    adapter = MagicMock()
+    cache = MagicMock()
+
+    def _bars(code: str, *_args: object) -> list[dict]:
+        if code == "AAA":
+            # d1→d2: +10%，d2→d3: +20%，d3→d4: -10%
+            schedule = [("2026-06-01", "100"), ("2026-06-02", "110"), ("2026-06-03", "132"), ("2026-06-04", "118.8")]
+        else:
+            # BBB 停牌 d1；公共日 d3/d4 的收益是 AAA 同日收益的 2 倍；d5 是噪声日
+            schedule = [("2026-06-02", "100"), ("2026-06-03", "140"), ("2026-06-04", "112"), ("2026-06-05", "130")]
+        return [{"close": c, "timestamp": f"{d}T15:00:00+08:00"} for d, c in schedule]
+
+    cache.get_bars.side_effect = _bars
+
+    analyzer = PortfolioAnalyzer(store, adapter, cache)
+    correlation = analyzer.correlation_matrix(days=10)
+    # 公共日 d3/d4：(0.2, -0.1) 与 (0.4, -0.2) 完美线性 → 1.0
+    assert correlation["AAA"]["BBB"] == 1.0
+    assert correlation["BBB"]["AAA"] == 1.0
+
+
+def test_analyzer_risk_metrics_aligns_by_date(store: PortfolioStore) -> None:
+    """组合日收益按日期对齐：停牌日记 0（价格冻结），而不是按索引错位拼接。"""
+    store.add_position("AAA", "Alpha", Decimal("10"), 100)
+    store.add_position("BBB", "Beta", Decimal("20"), 50)
+    adapter = MagicMock()  # 无报价 → 均权
+    cache = MagicMock()
+
+    def _bars(code: str, *_args: object) -> list[dict]:
+        if code == "AAA":
+            # 日收益：d2 +10%，d3 +20%，d4 -10%
+            schedule = [("2026-06-01", "100"), ("2026-06-02", "110"), ("2026-06-03", "132"), ("2026-06-04", "118.8")]
+        else:
+            # BBB 停牌 d2：只有 d3/d4 两笔收益（均为 0）
+            schedule = [("2026-06-01", "100"), ("2026-06-03", "100"), ("2026-06-04", "100")]
+        return [{"close": c, "timestamp": f"{d}T15:00:00+08:00"} for d, c in schedule]
+
+    cache.get_bars.side_effect = _bars
+
+    analyzer = PortfolioAnalyzer(store, adapter, cache)
+    risk = analyzer.risk_metrics(days=10)
+    # 按日期对齐的组合日收益（均权）：d2 0.05、d3 0.10、d4 -0.05
+    # 净值 1 → 1.05 → 1.155 → 1.09725，最大回撤 = 0.05775/1.155 = 5.0%
+    assert risk["max_drawdown_pct"] == pytest.approx(5.0, abs=0.01)
 
 
 def test_analyzer_empty_and_math_boundaries(store: PortfolioStore) -> None:

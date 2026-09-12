@@ -70,29 +70,51 @@ class Workflow:
 
 @dataclass
 class StepResult:
-    """单步执行结果。"""
+    """单步执行结果。
+
+    Attributes:
+        optional: 该步是否为可选步骤（失败只降级，不影响整体成功判定）。
+    """
 
     display_name: str
     tool_name: str
     success: bool
     data: Any = None
     error: str | None = None
+    optional: bool = False
 
 
 @dataclass
 class WorkflowResult:
-    """工作流执行结果。"""
+    """工作流执行结果。
+
+    Attributes:
+        cancelled: 执行途中被取消（Esc / cancel_event），未跑完全部步骤。
+    """
 
     workflow_id: str
     steps: list[StepResult] = field(default_factory=list)
     summary: str = ""
     # 未命中工作流时，router 设置此字段让调用方走 AgentService
     fallback_to_agent: bool = False
+    cancelled: bool = False
+
+    @property
+    def failed_required_steps(self) -> int:
+        """失败的非可选步骤数。"""
+        return sum(1 for s in self.steps if not s.success and not s.optional)
 
     @property
     def succeeded(self) -> bool:
-        """是否成功执行（至少一步成功且无致命错误）。"""
-        return any(s.success for s in self.steps)
+        """是否成功执行：至少跑了一步、未被取消、且所有非可选步骤都成功。
+
+        之前是 ``any()``——10 步只活 1 步也算成功，部分失败会被当成功上报
+        （如 increment_hit 误计命中）。可选步骤（``optional=True``）失败只
+        降级展示，不影响整体判定。
+        """
+        if not self.steps or self.cancelled:
+            return False
+        return self.failed_required_steps == 0
 
 
 # ============================================================
@@ -193,6 +215,7 @@ class WorkflowExecutor:
 
         for step in workflow.steps:
             if is_cancelled is not None and is_cancelled():
+                result.cancelled = True
                 break
             # 构建参数
             args = dict(step.args)
@@ -218,6 +241,7 @@ class WorkflowExecutor:
                         tool_name=step.tool_name,
                         success=False,
                         error=str(parsed["error"]),
+                        optional=step.optional,
                     )
                 else:
                     sr = StepResult(
@@ -225,6 +249,7 @@ class WorkflowExecutor:
                         tool_name=step.tool_name,
                         success=True,
                         data=parsed,
+                        optional=step.optional,
                     )
                     step_results.append(
                         {"step": step.display_name, "tool": step.tool_name, "result": parsed}
@@ -236,11 +261,13 @@ class WorkflowExecutor:
                     tool_name=step.tool_name,
                     success=False,
                     error=str(e),
+                    optional=step.optional,
                 )
 
             result.steps.append(sr)
 
             if is_cancelled is not None and is_cancelled():
+                result.cancelled = True
                 break
 
             if not sr.success and not step.optional:

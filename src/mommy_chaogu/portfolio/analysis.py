@@ -76,28 +76,36 @@ class PortfolioAnalyzer:
             result[pos.code] = result.get(pos.code, Decimal("0")) + price * pos.shares
         return result
 
-    def _daily_returns_from_cache(self, code: str, days: int) -> list[float]:
-        """从 bar_cache 读取日 K 线并计算日收益率序列。"""
+    def _dated_daily_returns_from_cache(self, code: str, days: int) -> dict[str, float]:
+        """从 bar_cache 读取日 K 线，返回 {日期: 日收益率}。
+
+        日期键为收益率发生的那一天。跨 code 对齐**必须**按日期交集做，
+        不能按数组索引——停牌 / 数据缺口会让位置序列错位。
+        """
         if self.cache_store is None:
-            return []
+            return {}
         bars = self.cache_store.get_bars(code, "1d", "forward")
         if not bars:
-            return []
-        # 取最近 days+1 根 K 线（生成 days 个收益率）
+            return {}
+        # 取最近 days+1 根 K 线（生成最多 days 个收益率）
         recent = bars[-(days + 1) :]
-        closes = [float(Decimal(str(b["close"]))) for b in recent]
-        if len(closes) < 2:
-            return []
-        returns: list[float] = []
-        for i in range(1, len(closes)):
-            prev = closes[i - 1]
-            if prev > 0:
-                returns.append((closes[i] - prev) / prev)
-        return returns
+        dated: dict[str, float] = {}
+        prev_close: float | None = None
+        for bar in recent:
+            close = float(Decimal(str(bar["close"])))
+            date = str(bar["timestamp"])[:10]
+            if prev_close is not None and prev_close > 0:
+                dated[date] = (close - prev_close) / prev_close
+            prev_close = close
+        return dated
 
     @staticmethod
     def _pearson(x: list[float], y: list[float]) -> float:
-        """计算 Pearson 相关系数。序列长度不等时截取公共长度。"""
+        """计算 Pearson 相关系数。
+
+        调用方必须先按日期对齐出等长序列（见
+        :meth:`_dated_daily_returns_from_cache` 的 docstring）。
+        """
         n = min(len(x), len(y))
         if n < 2:
             return 0.0
@@ -158,26 +166,30 @@ class PortfolioAnalyzer:
     def correlation_matrix(self, days: int = 30) -> dict[str, dict[str, float]]:
         """返回 {code1: {code2: correlation}} 基于 bar_cache 日收益率。
 
-        使用 Pearson 相关系数。对角线为 1.0。
+        使用 Pearson 相关系数，**按日期交集对齐**两只股票的收益率序列
+        （停牌 / 数据缺口的日子不参与）。对角线为 1.0。
         """
         codes = self._position_codes()
         if len(codes) < 2:
             return {}
 
-        returns_by_code: dict[str, list[float]] = {}
+        returns_by_code: dict[str, dict[str, float]] = {}
         for code in codes:
-            rets = self._daily_returns_from_cache(code, days)
+            rets = self._dated_daily_returns_from_cache(code, days)
             if len(rets) >= 2:
                 returns_by_code[code] = rets
 
         result: dict[str, dict[str, float]] = {}
-        for c1 in returns_by_code:
+        for c1, r1 in returns_by_code.items():
             row: dict[str, float] = {}
-            for c2 in returns_by_code:
+            for c2, r2 in returns_by_code.items():
                 if c1 == c2:
                     row[c2] = 1.0
                 else:
-                    row[c2] = round(self._pearson(returns_by_code[c1], returns_by_code[c2]), 4)
+                    common = sorted(set(r1) & set(r2))
+                    row[c2] = round(
+                        self._pearson([r1[d] for d in common], [r2[d] for d in common]), 4
+                    )
             result[c1] = row
         return result
 
@@ -198,17 +210,12 @@ class PortfolioAnalyzer:
         market_values = self._market_values()
 
         # 读取每个 code 的日收益率
-        all_returns: dict[str, list[float]] = {}
+        all_returns: dict[str, dict[str, float]] = {}
         for code in codes:
-            rets = self._daily_returns_from_cache(code, days)
+            rets = self._dated_daily_returns_from_cache(code, days)
             if rets:
                 all_returns[code] = rets
         if not all_returns:
-            return default
-
-        # 对齐到公共长度
-        min_len = min(len(r) for r in all_returns.values())
-        if min_len < 1:
             return default
 
         # 按市值计算权重
@@ -224,11 +231,13 @@ class PortfolioAnalyzer:
             for code in all_returns:
                 weights[code] = 1.0 / n
 
-        # 组合日收益率序列
-        portfolio_returns: list[float] = []
-        for i in range(min_len):
-            daily_ret = sum(weights[code] * all_returns[code][i] for code in all_returns)
-            portfolio_returns.append(daily_ret)
+        # 组合日收益率：按日期对齐，某 code 当日缺收益（停牌 / 数据缺口）
+        # 按 0 处理——停牌期间价格冻结，收益即 0
+        all_dates = sorted(set().union(*[set(r) for r in all_returns.values()]))
+        portfolio_returns: list[float] = [
+            sum(weights[code] * all_returns[code].get(d, 0.0) for code in all_returns)
+            for d in all_dates
+        ]
 
         if not portfolio_returns:
             return default

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from mommy_chaogu.backtest.costs import DEFAULT_COSTS
 from mommy_chaogu.backtest.engine import BacktestEngine, BacktestResult
 from mommy_chaogu.cache.store import CacheStore
 from mommy_chaogu.market_data import MarketType, Money, Quote, QuoteType
@@ -126,7 +127,7 @@ def test_empty_when_no_data(engine: BacktestEngine):
 
 
 def test_single_signal_winning(engine: BacktestEngine, store: CacheStore):
-    """主力净流入触发信号，持有 3 天后上涨 → 获胜。"""
+    """主力净流入触发信号，持有 3 天后上涨 → 获胜（净收益扣往返成本）。"""
     code = "600519"
     store.set_quote(code, _make_quote(code))
     # 收盘价：信号日 10 → 3 天后 11（+10%）
@@ -142,12 +143,15 @@ def test_single_signal_winning(engine: BacktestEngine, store: CacheStore):
     sig = result.signals_detail[0]
     assert sig["code"] == code
     assert sig["date"] == "2026-06-01"
-    assert sig["return_after_3d"] == pytest.approx(10.0, abs=0.01)
-    assert sig["return_after_hold_pct"] == pytest.approx(10.0, abs=0.01)
+    assert sig["return_after_3d"] == pytest.approx(10.0, abs=0.01)  # 毛收益
+    assert sig["gross_return_after_hold_pct"] == pytest.approx(10.0, abs=0.01)
+    assert sig["return_after_hold_pct"] == pytest.approx(
+        10.0 - DEFAULT_COSTS.round_trip_cost_pct(), abs=0.01
+    )
 
 
 def test_single_signal_losing(engine: BacktestEngine, store: CacheStore):
-    """主力净流入触发信号，持有 3 天后下跌 → 亏损。"""
+    """主力净流入触发信号，持有 3 天后下跌 → 亏损（净收益扣成本）。"""
     code = "000001"
     store.set_quote(code, _make_quote(code))
     # 收盘价：信号日 10 → 3 天后 9（-10%）
@@ -160,7 +164,38 @@ def test_single_signal_losing(engine: BacktestEngine, store: CacheStore):
     assert result.losing_signals == 1
     assert result.win_rate == 0.0
     sig = result.signals_detail[0]
-    assert sig["return_after_hold_pct"] == pytest.approx(-10.0, abs=0.01)
+    assert sig["return_after_hold_pct"] == pytest.approx(
+        -10.0 - DEFAULT_COSTS.round_trip_cost_pct(), abs=0.01
+    )
+
+
+def test_costs_none_keeps_gross(engine: BacktestEngine, store: CacheStore):
+    """costs=None 时不扣成本：净=毛，cost_model 标注未扣减。"""
+    code = "600519"
+    store.set_quote(code, _make_quote(code))
+    _seed_bars(store, code, ["10", "10", "10", "11", "11"])
+    _seed_flows(store, code, "2026-06-01", 500_000_000)
+
+    result = engine.run([code], "2026-06-01", "2026-06-05", hold_days=3, costs=None)
+    sig = result.signals_detail[0]
+    assert sig["return_after_hold_pct"] == pytest.approx(10.0, abs=0.01)
+    assert result.cost_model == "未扣减交易成本"
+    assert result.avg_return_pct == pytest.approx(result.avg_gross_return_pct, abs=0.001)
+
+
+def test_default_run_reports_cost_model(engine: BacktestEngine, store: CacheStore):
+    """默认运行带成本模型明细，净平均收益 = 毛平均 - 往返成本。"""
+    code = "600519"
+    store.set_quote(code, _make_quote(code))
+    _seed_bars(store, code, ["10", "10", "10", "11", "11"])
+    _seed_flows(store, code, "2026-06-01", 500_000_000)
+
+    result = engine.run([code], "2026-06-01", "2026-06-05", hold_days=3)
+    assert "印花税" in result.cost_model
+    assert result.avg_gross_return_pct == pytest.approx(10.0, abs=0.01)
+    assert result.avg_return_pct == pytest.approx(
+        10.0 - DEFAULT_COSTS.round_trip_cost_pct(), abs=0.01
+    )
 
 
 def test_win_rate_calculation(engine: BacktestEngine, store: CacheStore):
@@ -185,8 +220,12 @@ def test_win_rate_calculation(engine: BacktestEngine, store: CacheStore):
     assert result.winning_signals == 2
     assert result.losing_signals == 1
     assert result.win_rate == pytest.approx(2 / 3, abs=0.01)
-    # 平均收益 ≈ (10 + 5 - 8) / 3 = 2.33%
-    assert result.avg_return_pct == pytest.approx(2.3333, abs=0.1)
+    # 毛平均收益 ≈ (10 + 5 - 8) / 3 = 2.33%
+    assert result.avg_gross_return_pct == pytest.approx(2.3333, abs=0.1)
+    # 净平均收益 = 毛平均 - 往返成本
+    assert result.avg_return_pct == pytest.approx(
+        2.3333 - DEFAULT_COSTS.round_trip_cost_pct(), abs=0.1
+    )
 
 
 def test_no_signal_when_ratio_below_threshold(engine: BacktestEngine, store: CacheStore):
@@ -228,6 +267,7 @@ def test_result_fields_present(engine: BacktestEngine, store: CacheStore):
     assert isinstance(result.sharpe_ratio, float)
     assert isinstance(result.signals_detail, list)
     assert result.message == ""  # 有数据时 message 为空
+    assert result.cost_model  # 默认带成本模型明细
 
     # signals_detail 每条的字段
     assert len(result.signals_detail) == 1
@@ -240,6 +280,7 @@ def test_result_fields_present(engine: BacktestEngine, store: CacheStore):
         "return_after_1d",
         "return_after_3d",
         "return_after_5d",
+        "gross_return_after_hold_pct",
         "return_after_hold_pct",
     ):
         assert key in sig, f"missing key: {key}"

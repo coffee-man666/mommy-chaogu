@@ -119,6 +119,60 @@ def test_different_source_coexists(store: EarningsStore):
     assert len(actuals) == 2
 
 
+def test_get_actual_source_priority_express_beats_forecast(store: EarningsStore):
+    """express（业绩快报，官方精确数字）必须压过 forecast（预告粗范围）。
+
+    回归用例：旧实现 ``ORDER BY source DESC`` 靠字典序，"express" 会垫底。
+    """
+    for source in (EarningsSource.FORECAST, EarningsSource.EXPRESS):
+        store.upsert_actual(
+            EarningsActual(
+                code="603662",
+                name="柯力传感",
+                period="H1 2026",
+                actual_value=Decimal("850000000"),
+                growth_pct=Decimal("200.0"),
+                disclosure_date=date(2026, 7, 20),
+                source=source,
+            )
+        )
+
+    got = store.get_actual("603662", "H1 2026")
+    assert got is not None
+    assert got.source == EarningsSource.EXPRESS
+
+
+def test_get_actual_source_priority_full_order(store: EarningsStore):
+    """四种 source 并存时按 REPORT > EXPRESS > GUIDANCE > FORECAST 逐层选取。"""
+    for source in EarningsSource:
+        store.upsert_actual(
+            EarningsActual(
+                code="603662",
+                name="柯力传感",
+                period="H1 2026",
+                actual_value=Decimal("850000000"),
+                growth_pct=Decimal("200.0"),
+                disclosure_date=date(2026, 7, 20),
+                source=source,
+            )
+        )
+
+    expected = [
+        EarningsSource.REPORT,
+        EarningsSource.EXPRESS,
+        EarningsSource.GUIDANCE,
+        EarningsSource.FORECAST,
+    ]
+    for winner in expected:
+        got = store.get_actual("603662", "H1 2026")
+        assert got is not None
+        assert got.source == winner
+        store.engine.execute(
+            "DELETE FROM earnings_actual WHERE source = ?", (winner.value,)
+        )
+        store.engine.commit()
+
+
 def test_upsert_calendar(store: EarningsStore):
     c = EarningsCalendar(
         code="603662",

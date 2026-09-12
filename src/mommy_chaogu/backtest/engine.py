@@ -2,11 +2,13 @@
 
 流程：
 1. 遍历 codes，从 money_flow_cache 读每日主力净流入
-2. 从 quote_cache 取流通市值（近似，市值变动缓慢）
+2. 从 quote_cache 取流通市值（近似，市值变动缓慢；见 :attr:`BacktestResult.mcap_as_of`）
 3. 计算 ratio = main_net / float_market_cap
 4. ratio > 5bp (spike 阈值) → 记录买入信号
 5. 从 bar_cache 读日 K 线收盘价，计算持有 hold_days 后的收益
-6. 汇总胜率、平均收益、最大回撤、夏普比率
+6. 每笔信号扣减一次往返交易成本（:func:`backtest.costs.apply_costs`），
+   胜率 / 平均收益 / 回撤 / 夏普全部按 **净收益** 口径统计，毛收益保留在
+   ``avg_gross_return_pct`` 与每条信号的 ``gross_return_after_hold_pct``
 """
 
 from __future__ import annotations
@@ -17,6 +19,12 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from mommy_chaogu.backtest.costs import (
+    DEFAULT_COSTS,
+    TradingCosts,
+    apply_costs,
+    format_cost_breakdown,
+)
 from mommy_chaogu.cache.store import CacheStore
 
 # flow_in_spike 阈值 5bp = 0.0005
@@ -26,10 +34,18 @@ SPIKE_THRESHOLD = Decimal("0.0005")
 RISK_FREE_ANNUAL = 0.02
 _TRADING_DAYS = 252
 
+NO_COSTS_LABEL = "未扣减交易成本"
+
 
 @dataclass
 class BacktestResult:
-    """回测汇总结果。"""
+    """回测汇总结果。
+
+    Attributes:
+        avg_return_pct: 持有期 **净** 平均收益（扣往返成本后）。
+        avg_gross_return_pct: 持有期毛平均收益（不扣成本），用于对照。
+        cost_model: 成本模型明细（或未扣成本说明），给报告 / API 展示。
+    """
 
     total_signals: int
     winning_signals: int
@@ -40,6 +56,8 @@ class BacktestResult:
     sharpe_ratio: float
     signals_detail: list[dict[str, Any]] = field(default_factory=list)
     message: str = ""
+    avg_gross_return_pct: float = 0.0
+    cost_model: str = ""
 
 
 class BacktestEngine:
@@ -140,6 +158,7 @@ class BacktestEngine:
         start_date: str,
         end_date: str,
         hold_days: int = 3,
+        costs: TradingCosts | None = DEFAULT_COSTS,
     ) -> BacktestResult:
         """回放 flow_in_spike 信号规则。
 
@@ -148,10 +167,14 @@ class BacktestEngine:
             start_date: 起始日期 "YYYY-MM-DD"
             end_date: 结束日期 "YYYY-MM-DD"
             hold_days: 持有天数（默认 3）
+            costs: 交易成本参数；默认 :data:`backtest.costs.DEFAULT_COSTS`，
+                传 ``None`` 完全不扣成本（毛收益口径）
 
         Returns:
-            BacktestResult 汇总结果
+            BacktestResult 汇总结果（胜率 / 平均收益按扣成本后的净收益统计）
         """
+        cost_model = format_cost_breakdown(costs) if costs is not None else NO_COSTS_LABEL
+
         # 1. 加载所有 code 的数据
         all_data: dict[str, dict[str, Any]] = {}
         for code in codes:
@@ -170,6 +193,7 @@ class BacktestEngine:
                 sharpe_ratio=0.0,
                 signals_detail=[],
                 message="无缓存数据，请先 mommy-flows pull 拉取历史数据",
+                cost_model=cost_model,
             )
 
         # 2. 收集所有交易日（取并集）
@@ -220,6 +244,12 @@ class BacktestEngine:
                         pass
 
                 ratio_bp = float(ratio) * 10_000
+                # 扣减一次往返成本得到净收益；毛收益保留供对照
+                net_hold = (
+                    apply_costs(hold_return, "bullish", costs)
+                    if hold_return is not None and costs is not None
+                    else hold_return
+                )
                 signals_detail.append(
                     {
                         "code": code,
@@ -228,24 +258,32 @@ class BacktestEngine:
                         "ratio_bp": round(ratio_bp, 2),
                         "main_net_yi": float(main_net) / 100_000_000,
                         **returns,
-                        "return_after_hold_pct": hold_return,
+                        "gross_return_after_hold_pct": hold_return,
+                        "return_after_hold_pct": net_hold,
                     }
                 )
 
-        # 4. 统计
+        # 4. 统计（净收益口径；毛收益单列）
         completed = [s for s in signals_detail if s.get("return_after_hold_pct") is not None]
         winning = [s for s in completed if s["return_after_hold_pct"] > 0]
         losing = [s for s in completed if s["return_after_hold_pct"] <= 0]
 
         returns_pct = [s["return_after_hold_pct"] for s in completed]
+        gross_returns_pct = [
+            s["gross_return_after_hold_pct"]
+            for s in completed
+            if s.get("gross_return_after_hold_pct") is not None
+        ]
         total = len(signals_detail)
 
         if returns_pct:
             avg_return = sum(returns_pct) / len(returns_pct)
+            avg_gross_return = sum(gross_returns_pct) / len(gross_returns_pct)
             max_dd = _max_drawdown(returns_pct)
             sharpe = _sharpe_ratio(returns_pct, hold_days)
         else:
             avg_return = 0.0
+            avg_gross_return = 0.0
             max_dd = 0.0
             sharpe = 0.0
 
@@ -258,6 +296,8 @@ class BacktestEngine:
             max_drawdown_pct=round(max_dd, 4),
             sharpe_ratio=round(sharpe, 4),
             signals_detail=signals_detail,
+            avg_gross_return_pct=round(avg_gross_return, 4),
+            cost_model=cost_model,
         )
 
 

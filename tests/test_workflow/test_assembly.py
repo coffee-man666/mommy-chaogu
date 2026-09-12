@@ -104,8 +104,21 @@ class TestBuildNLRuntime:
         finally:
             store.close()
 
-    def test_no_key_agent_none_executor_usable(self, isolated_dbs: Path) -> None:
-        """无 key 时 agent=None（入口据此降级），工作流路由/执行仍可用。"""
+    def test_no_key_agent_none_executor_usable(
+        self, isolated_dbs: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """无 key 时 agent=None（入口据此降级），工作流路由/执行仍可用。
+
+        前置：显式清掉 shell / 早期测试可能留下的 provider key 环境变量
+        （清单从 SUPPORTED_PROVIDERS 真相源派生），测试自身封闭。
+        """
+        from mommy_chaogu.agent.llm import SUPPORTED_PROVIDERS
+
+        for info in SUPPORTED_PROVIDERS.values():
+            monkeypatch.delenv(str(info["env_key"]), raising=False)
+        monkeypatch.delenv("AGENT_PROVIDER", raising=False)
+        monkeypatch.delenv("AGENT_MODEL", raising=False)
+
         runtime = build_nl_runtime(agent_db=isolated_dbs / "agent.db", build_agent=True)
         assert runtime.agent_service is None
         route = runtime.router.route("今天怎么样")

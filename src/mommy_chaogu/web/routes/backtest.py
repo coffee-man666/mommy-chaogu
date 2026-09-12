@@ -71,6 +71,8 @@ def get_stock_backtest(
             avg_return_pct=result.avg_return_pct,
             max_drawdown_pct=result.max_drawdown_pct,
             sharpe_ratio=result.sharpe_ratio,
+            avg_gross_return_pct=result.avg_gross_return_pct,
+            cost_model=result.cost_model,
             message=None,
         )
     return StockBacktestOut(

@@ -441,3 +441,55 @@ class TestWorkflowResult:
         result = WorkflowResult(workflow_id="empty")
         assert result.succeeded is False
         assert result.steps == []
+
+    def test_optional_failure_keeps_succeeded(self) -> None:
+        """可选步骤失败只降级，不影响整体成功。"""
+        result = WorkflowResult(
+            workflow_id="test",
+            steps=[
+                StepResult("a", "tool_a", True, {"data": 1}),
+                StepResult("b", "tool_b", False, error="失败", optional=True),
+            ],
+        )
+        assert result.succeeded is True
+        assert result.failed_required_steps == 0
+
+    def test_required_failure_breaks_succeeded(self) -> None:
+        """非可选步骤失败 → 整体失败（旧 any() 语义下 10 步死 9 步也算成功）。"""
+        result = WorkflowResult(
+            workflow_id="test",
+            steps=[
+                StepResult("a", "tool_a", True, {"data": 1}),
+                StepResult("b", "tool_b", False, error="失败"),
+            ],
+        )
+        assert result.succeeded is False
+        assert result.failed_required_steps == 1
+
+    def test_cancelled_is_not_succeeded(self) -> None:
+        """执行途中取消：即使已跑步骤全成功，也不算成功。"""
+        result = WorkflowResult(
+            workflow_id="test",
+            steps=[StepResult("a", "tool_a", True, {"data": 1})],
+            cancelled=True,
+        )
+        assert result.succeeded is False
+
+    def test_executor_mixed_optional_failure(self) -> None:
+        """执行器级：必需步成功 + 可选步 error payload → 整体成功。"""
+        tools = FakeToolRegistry({"flaky_tool": '{"error": "数据源暂不可用"}'})
+        executor = WorkflowExecutor(tools)
+        wf = Workflow(
+            id="mixed",
+            trigger_patterns=["test"],
+            description="",
+            steps=[
+                WorkflowStep(tool_name="core_tool", display_name="核心数据"),
+                WorkflowStep(tool_name="flaky_tool", display_name="可选增强", optional=True),
+            ],
+        )
+        result = executor.execute(wf, "test")
+        assert result.steps[0].success is True
+        assert result.steps[1].success is False
+        assert result.steps[1].optional is True
+        assert result.succeeded is True

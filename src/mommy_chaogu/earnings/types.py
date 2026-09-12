@@ -37,6 +37,18 @@ class EarningsSource(StrEnum):
     GUIDANCE = "guidance"  # 券商独立调研
 
 
+#: 同股同期多 source 并存时的选取优先级：官方渠道优先，同官方内精确度优先。
+#: REPORT（定期报告全文）> EXPRESS（业绩快报，官方精确数字）
+#: > GUIDANCE（券商调研，精确数字但非官方）> FORECAST（业绩预告，粗范围）。
+#: 注意不能靠 SQL 字典序排——"guidance" 按字母序会排到 "express" 前面。
+SOURCE_PRIORITY: dict[EarningsSource, int] = {
+    EarningsSource.REPORT: 4,
+    EarningsSource.EXPRESS: 3,
+    EarningsSource.GUIDANCE: 2,
+    EarningsSource.FORECAST: 1,
+}
+
+
 VERDICT_LABEL: dict[EarningsVerdict, str] = {
     EarningsVerdict.SUPER_BEAT: "🟢 超预期",
     EarningsVerdict.BEAT: "🟢 略超",
