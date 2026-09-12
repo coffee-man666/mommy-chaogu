@@ -10,12 +10,13 @@ import contextlib
 import logging
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from dotenv import load_dotenv
+
+from mommy_chaogu.services.watchlist_quote_service import WatchlistQuoteService
 
 _log = logging.getLogger(__name__)
 
@@ -30,10 +31,11 @@ class DataService:
     _source_label: str = "初始化中"
 
     def watchlist_quotes(self) -> list[dict[str, Any]]:
-        """批量获取自选股报价 + 主力资金流。
+        """批量获取自选股报价 + 主力资金流（委托统一服务层）。
 
-        报价走 adapter.get_quotes（批量，底层腾讯一次 HTTP 拉 80 只）；
-        资金流无批量 API，但有 5 分钟节流缓存，用 4 线程并发拉。
+        实现在 services/watchlist_quote_service.py（与 ThemeService 同层），
+        这里只负责从 watchlist_store 取 code 集合与维护数据源标签。
+        TUI 门面保持 duck-typed dict 行（FakeServices 的注入缝）。
         """
         if self.adapter is None:
             return []
@@ -44,68 +46,11 @@ class DataService:
         if not codes:
             return []
 
-        # 批量报价（一次 HTTP 拉所有 code）
-        quote_error = False
-        try:
-            quotes = self.adapter.get_quotes(codes)
-        except Exception as e:
-            _log.debug("批量拉取报价失败: %s", e)
-            quotes = []
-            quote_error = True
-        quotes_by_code: dict[str, Any] = {getattr(q, "code", ""): q for q in quotes}
-
-        # 资金流并发拉（无批量 API，5 分钟节流缓存，max_workers=4 控并发）
-        flows_by_code: dict[str, Any] = {}
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            flow_results = list(pool.map(self._fetch_flow_safe, codes))
-        for code, flow_val in zip(codes, flow_results, strict=True):
-            if flow_val is not None:
-                flows_by_code[code] = flow_val
-
-        rows: list[dict[str, Any]] = []
-        for code in codes:
-            q = quotes_by_code.get(code)
-            if q is None:
-                if quote_error:
-                    rows.append(
-                        {
-                            "code": code,
-                            "name": code,
-                            "price": None,
-                            "change_pct": None,
-                            "change_amount": None,
-                            "main_flow": flows_by_code.get(code),
-                            "quote_unavailable": True,
-                        }
-                    )
-                continue
-            rows.append(
-                {
-                    "code": code,
-                    "name": getattr(q, "name", code),
-                    "price": q.price,
-                    "change_pct": getattr(q, "change_pct", None),
-                    "change_amount": getattr(q, "change", None),
-                    "main_flow": flows_by_code.get(code),
-                }
-            )
-
-        self._source_label = (
-            self.adapter.format_source_label()
-            if hasattr(self.adapter, "format_source_label")
-            else ""
-        )
-        return rows
-
-    def _fetch_flow_safe(self, code: str) -> Any:
-        """线程池内安全拉资金流，失败返回 None。"""
-        try:
-            flows = self.adapter.get_today_money_flow(code)
-            if flows:
-                return getattr(flows[-1], "main_net", None)
-        except Exception as e:
-            _log.debug("拉资金流 %s 失败: %s", code, e)
-        return None
+        service = WatchlistQuoteService(self.adapter)
+        rows = service.fetch(codes)
+        if service.last_source_label:
+            self._source_label = service.last_source_label
+        return cast(list[dict[str, Any]], rows)
 
     def portfolio_snapshot(self) -> dict[str, Any]:
         """持仓快照 = portfolio.db × 实时报价 join。"""
