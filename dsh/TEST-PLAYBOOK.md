@@ -156,7 +156,7 @@ grep "MCP server started\|dsh web:" /tmp/dsh-host.log
 | A5 | 工具 | run_backtest 仅支持 flow_in_spike | 设计如此 | 低 | 模型已主动区分并拒编 ✅ |
 | A6 | 数据 | 10 根窗口 MA20 无法计算 | 服务端均线纪律 | 低 | 提示 limit≥40 重拉 ✅ |
 | A7 | 回复 | 长会话中新请求被旧话题吞掉（报价请求被回测回答覆盖） | LLM 上下文混淆 | 中 | 每测试组新会话 / 话题前缀 |
-| A8 | 工具链 | 会话接受消息但 agent 回合静默不启动（无 Stop/无报错/无回答），复现 4 次 | 定位未完成（疑似 LLM provider 静默失败） | **高** | 换新会话；复跑时探针前置 |
+| A8 | 工具链 | 会话接受消息但 agent 回合静默不启动（无 Stop/无报错/无回答），复现 4 次 | ✅ 已定位（2026-09-17，GUI 复现 2 次取证）：宿主一元 RPC 无 deadline，传输挂起时 promise 永不结算；用户气泡是 `beginSubmission` 本地 echo，仅 RPC 报错才退场 → 三重静默丢失。与上游 Discussions #2060 同链（该帖促成 prompt 类 RPC 去 deadline，误杀修复翻转成静默挂起）。此前「疑似 LLM provider 静默失败」系误判 | **高** | ✅ 已修（2026-09-18）：客户端看门狗 `src/client/sendWatchdog.ts`——boot 包装 fetch，按 `{"type":"client-request"}` 信封识别一元请求，30s 无响应展示可操作横幅（不 abort、零干扰，迟到结算自动撤） |
 | A9 | 数据源 | eastmoney push2his 连接失败（RemoteDisconnected，重试 3 次耗尽） | 上游拒连（周日？风控？） | 中 | get_bars 走缓存兜底 ✅（拉新失败保留旧数据纪律生效） |
 | A10 | 工具链 | **mcp_server 僵尸进程泄漏**：11 个并存，最老 2d20h（每会话孵化一个，断开后不退出） | 宿主不回收 stdio 子进程；server 侧无自愈 | **高** | ✅ 已修（2026-09-13）：空闲看门狗（默认 30 分钟无请求自杀，`MOMMY_MCP_IDLE_TIMEOUT` 可配/0 禁用），见 `src/mommy_chaogu/agent/mcp_server.py` |
 | A11 | 工具链 | 明确要求用工具的请求完成但 CallToolRequest=0，模型纯知识作答（数据可信度归零） | 会话级 MCP 连接退化，定位未完成 | **高** | §3 探针一票否决；宿主重启+全新会话 |
