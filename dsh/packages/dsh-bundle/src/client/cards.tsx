@@ -7,6 +7,7 @@
  * K 线迷你表（含 MA 列）/ 预测 / 自选写回执 + 信号 / 回测 / 历史资金流 /
  * 主力筛选 / 相似事件 / 研究结论回执。
  */
+import { useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { ToolCallOwnerProps } from './types.ts'
 import {
@@ -27,9 +28,13 @@ import {
   parseWatchlistOp,
   readCall,
   trendOf,
+  type BarView,
   type ToolCallBlock,
 } from './parse.ts'
 import type { LocaleKey } from './locales.ts'
+import { loadConfig, subscribeConfig } from './config.ts'
+import { BarsSvgChart } from './barsSvg.tsx'
+import { BarsLwcChart } from './barsLwc.tsx'
 import css from './cards.module.css'
 
 /** 框架沿 owner props 注入 t；缺席时回落中文常量（词典缺失不渲染裸键）。 */
@@ -218,20 +223,17 @@ export function FlowCard(props: CardProps) {
   )
 }
 
-/** mcp__mommy-chaogu__get_bars：K 线迷你表（最近 8 根 + 更早计数）。 */
-export function BarsCard(props: CardProps) {
-  const call = readCall((props.block ?? {}) as ToolCallBlock)
-  if (call.resultText === null) return null
-  const parsed = parseBars(call.resultText)
-  if (parsed === null) return null
-  const newestFirst = [...parsed.bars].reverse()
-  const shown = newestFirst.slice(0, 8)
-  // include_ma 时服务端已附 ma_<w> 字段——这里只取窗口名列表渲染列，不在浏览器算指标
-  const maWindows = [...new Set(parsed.bars.flatMap(b => Object.keys(b.ma)))].sort((a, b) => Number(a) - Number(b))
-  const t = props.t
+/** K 线明细表（table 模式本体；图表模式下经「明细」展开全量查看）。 */
+function BarsTable(props: {
+  barsNewestFirst: BarView[]
+  maWindows: string[]
+  t?: CardProps['t']
+  showAll: boolean
+}) {
+  const { barsNewestFirst, maWindows, t, showAll } = props
+  const shown = showAll ? barsNewestFirst : barsNewestFirst.slice(0, 8)
   return (
-    <div className={css.card} data-mommy-card="bars">
-      <Head title={`${t?.('card.bars.title') ?? 'K 线'} · ${parsed.name || parsed.code}`} />
+    <>
       <table className={css.table}>
         <thead>
           <tr>
@@ -262,10 +264,62 @@ export function BarsCard(props: CardProps) {
           })}
         </tbody>
       </table>
-      {newestFirst.length > shown.length && (
+      {!showAll && barsNewestFirst.length > shown.length && (
         <div className={css.foot}>
-          {(t?.('card.bars.older') ?? '更早 {count} 根').replace('{count}', String(newestFirst.length - shown.length))}
+          {(t?.('card.bars.older') ?? '更早 {count} 根').replace('{count}', String(barsNewestFirst.length - shown.length))}
         </div>
+      )}
+    </>
+  )
+}
+
+/**
+ * mcp__mommy-chaogu__get_bars：K 线卡。渲染模式走客户端配置（停靠设置菜单）：
+ * table = 迷你表（最近 8 根，历史行为零回归）；svg = 自绘迷你蜡烛 + 服务端
+ * 均线；lwc = Lightweight-Charts 交互图。图表模式只做数值→像素映射，均线
+ * 一律来自服务端 ma_<w> 字段；图挂了回落表格，不炸 slot。
+ */
+export function BarsCard(props: CardProps) {
+  const call = readCall((props.block ?? {}) as ToolCallBlock)
+  const parsed = call.resultText === null ? null : parseBars(call.resultText)
+  const config = useSyncExternalStore(subscribeConfig, loadConfig)
+  const [tableOpen, setTableOpen] = useState(false)
+  const [chartFailed, setChartFailed] = useState(false)
+  if (call.resultText === null || parsed === null) return null
+  const t = props.t
+  const maWindows = [...new Set(parsed.bars.flatMap(b => Object.keys(b.ma)))].sort((a, b) => Number(a) - Number(b))
+  const newestFirst = [...parsed.bars].reverse()
+  const mode = chartFailed ? 'table' : config.barsMode
+  const last = parsed.bars[parsed.bars.length - 1]!
+  const lastPrev = parsed.bars[parsed.bars.length - 2] ?? null
+  const lastChg = last.changePct ?? (lastPrev !== null && lastPrev.close !== 0 ? ((last.close - lastPrev.close) / lastPrev.close) * 100 : null)
+  return (
+    <div className={css.card} data-mommy-card="bars">
+      <Head title={`${t?.('card.bars.title') ?? 'K 线'} · ${parsed.name || parsed.code}`} />
+      {mode === 'svg' && <BarsSvgChart bars={parsed.bars} maWindows={maWindows} />}
+      {mode === 'lwc' && <BarsLwcChart bars={parsed.bars} maWindows={maWindows} onFailed={() => setChartFailed(true)} />}
+      {mode !== 'table' && (
+        <div className={css.barsSummary}>
+          <span>{last.timestamp.slice(0, 10)}</span>
+          <span>
+            {t?.('field.close') ?? '收盘'} {last.close.toFixed(2)}
+          </span>
+          <Trend value={lastChg}>{fmtPct(lastChg)}</Trend>
+        </div>
+      )}
+      {mode === 'table' ? (
+        <BarsTable barsNewestFirst={newestFirst} maWindows={maWindows} t={t} showAll={false} />
+      ) : tableOpen ? (
+        <>
+          <button type="button" className={css.barsToggle} onClick={() => setTableOpen(false)}>
+            {t?.('card.bars.hideTable') ?? '收起明细'}
+          </button>
+          <BarsTable barsNewestFirst={newestFirst} maWindows={maWindows} t={t} showAll />
+        </>
+      ) : (
+        <button type="button" className={css.barsToggle} onClick={() => setTableOpen(true)}>
+          {(t?.('card.bars.detail') ?? '明细 {count} 根').replace('{count}', String(parsed.bars.length))}
+        </button>
       )}
     </div>
   )

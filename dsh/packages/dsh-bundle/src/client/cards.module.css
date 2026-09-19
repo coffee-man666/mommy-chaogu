@@ -120,3 +120,27 @@
 
 .list { display: flex; flex-direction: column; gap: 6px; }
 .listItem { display: flex; flex-direction: column; gap: 2px; }
+
+/* —— bars 卡图表模式（svg/lwc）公共件。 —— */
+.barsSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--mommy-text-dim);
+  font-family: var(--mommy-font-num);
+  padding: 2px 0;
+}
+
+.barsToggle {
+  align-self: flex-start;
+  border: 1px solid var(--mommy-card-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.barsToggle:hover { background: var(--mommy-card-bg); }

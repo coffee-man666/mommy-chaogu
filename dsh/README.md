@@ -31,7 +31,22 @@ list --json` / `mommy quote ...`，CLI 是工具箱的稳定契约），浏览�
 | 1 Profile+bundle patch | `cordis.patch.yml`（6 行：gate/preset-installer/mcp/client/bridge + agent-presets 覆盖行） | `dsh.profile.bundles` 层序组合；同 id 覆盖行 config 全键 restate |
 | 2 Agent preset | `assets/preset/mommy-investor/`（persona + 技能目录行） | boot 时幂等自安装到 `<数据目录>/dsh-presets`；托管 hash，用户改过的文件永不覆盖 |
 | 3 审批闸门 | `src/gate.ts` | `tools/pre-execute` waterfall 只 ask 不 allow；判定表逐条移植 `agent/service.py` 的 requires_confirmation；headless 无审批者自动 deny（fail-closed 白送） |
-| 4 前端 | `src/client/`（13 张 toolview 富卡片 + 左侧自选停靠）+ `src/bridge.ts`（HTTP/SSE） | 三段 CJS 模块包裹 + 构建期纯度门禁 + CSS Modules 内联；`shell.overlay` / `tool.call.toolview` 官方 slot |
+| 4 前端 | `src/client/`（13 张 toolview 富卡片 + 右缘自选停靠（固定吸附、可收起为右缘垂直拉手，不做自由拖拽/浮动药丸） + 停靠设置菜单）+ `src/bridge.ts`（HTTP/SSE） | 三段 CJS 模块包裹 + 构建期纯度门禁 + CSS Modules 内联；`shell.overlay` / `tool.call.toolview` 官方 slot |
+
+发送链路看门狗（2026-09-18）：宿主一元 RPC（POST `/api/*`，信封
+`{"type":"client-request"}`）无 deadline，传输挂起时用户消息三重静默丢失
+（气泡滞留 / 无 promptError 横幅 / 宿主零痕迹，GUI 实测复现两次）。客户端
+boot 时包装 `fetch`，按信封精确识别一元请求，30s 无响应展示可操作提醒横幅
+（不 abort、零干扰，迟到结算自动撤横幅）——`src/client/sendWatchdog.ts`，
+`test/sendWatchdog.test.ts` 钉判定与判死/结算语义。
+
+浏览器配置（2026-09-17）：停靠面板头部 ⚙ 菜单可切 get_bars 卡渲染模式——`table`（迷你表，
+历史行为）/ `svg`（自绘蜡烛 + 服务端 MA 折线，零依赖默认）/ `lwc`（Lightweight-Charts 交互图，
+整包内联使 client.js 升至 ~85KB gzip，`test/clientBundleSize.test.ts` 钉 90KB 预算）。停靠位置契约（同日重设计）：固定右缘满高面板，唯一持久化是展开/收起
+（`localStorage(mommy.dock.v2)` 只存 collapsed；v1 自由坐标语义废弃）。
+配置存
+`localStorage(mommy.client.config.v1)`，只放展示偏好；行情口径唯一真相源仍是服务端工具参数，
+三种模式均不落任何指标计算（MA 一律来自服务端 `ma_<w>` 字段）。
 
 MCP 工具在宿主里的公开名是 `mcp__mommy-chaogu__<rawName>`——闸门与卡片 key
 都按这个词法。写工具 7 个（strategy_save / strategy_archive /

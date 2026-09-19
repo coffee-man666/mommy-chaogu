@@ -1,13 +1,18 @@
 /**
- * mommy-chaogu 浏览器半（嫁接面 4）：对话流富卡片 + 左侧自选停靠。
+ * mommy-chaogu 浏览器半（嫁接面 4）：对话流富卡片 + 右缘自选停靠。
  *
  * Slot 布局（不改 DSH 源码，全部走官方 slot 机制）：
  * - `tool.call.toolview` ×7（key = 宿主公开工具名 mcp__mommy-chaogu__*）：
- *   报价 / 批量报价 / 指数 / 资金流 / K 线迷你表 / 预测历史 / 自选写回执；
- * - `shell.overlay`（mommy-chaogu-watchlist-dock）→ 左侧自选停靠。
+ *   报价 / 批量报价 / 指数 / 资金流 / K 线（三渲染模式）/ 预测历史 / 自选写回执；
+ * - `shell.overlay`（mommy-chaogu-watchlist-dock）→ 右缘自选停靠（固定右缘
+ *   满高面板，可收起为右缘垂直拉手）。
  *
  * 静态包的 slot 条目崩溃默认无人上报（监督缝只覆盖动态插件）——打到
  * console 可见化。数据经 node 半 /mommy/api 同源桥。
+ *
+ * 另含发送链路看门狗（sendWatchdog）：宿主一元 RPC 无 deadline，传输
+ * 挂起时用户消息会三重静默丢失（气泡滞留 / 无横幅 / 宿主零痕迹），
+ * 此处只做检测与提醒，不改变任何请求语义。
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import {
@@ -27,6 +32,7 @@ import {
 } from './cards.tsx'
 import { MommyDock } from './dock.tsx'
 import { en, zh } from './locales.ts'
+import { installSendWatchdog } from './sendWatchdog.ts'
 import './tokens.css'
 
 /**
@@ -58,6 +64,9 @@ export const inject = ['slots', 'locale']
 const TOOL = (raw: string) => `mcp__mommy-chaogu__${raw}`
 
 export function apply(ctx: ClientContext): void {
+  // 发送链路看门狗：boot 时安装，覆盖连接层后续全部一元 RPC（幂等）。
+  installSendWatchdog()
+
   const slots = (ctx as unknown as { slots: SlotsFace }).slots
   const locale = (ctx as unknown as { locale: LocaleFace }).locale
   // bind 的 t 由 slot 的 locale: NS 声明经框架注入组件；本文件不直接消费。

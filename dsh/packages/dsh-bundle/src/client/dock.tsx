@@ -1,21 +1,22 @@
 /**
- * 左侧自选停靠（shell.overlay）：mommy 自选股 + 批量报价，SSE 失效信号驱动
+ * 右缘自选停靠（shell.overlay）：mommy 自选股 + 批量报价，SSE 失效信号驱动
  * refetch（portfolio 库任何写入——AI 写、TUI/Web 写——都触发重拉）。
  *
  * 数据经 node 半 /mommy/api 同源桥（宿主认证栅栏内）；桥缺席（如错挂
  * headless）显示可重试错误态，永不炸宿主 shell。
  *
- * 布局契约：面板挂在宿主 overlay 层（AppFrame 的 absolute inset:0 容器，
- * frame 相对坐标）。默认贴侧栏右缘——侧栏宽度从 frame 的内联
- * gridTemplateColumns 读出（宿主可拖拽调宽/折叠），属性级 MutationObserver
- * 跟随；标题栏可拖拽挪动，收起成药丸，两者都落 localStorage。纯 UI 状态，
- * 不涉任何行情计算。
+ * 布局契约（2026-09-17 重设计）：面板**固定吸附 overlay 层右缘**（top/bottom
+ * 满高、宽 264），不做自由拖拽、不做浮动药丸——浮动定位会压住宿主 chrome
+ * （logo/标题）、被宿主 overlay 漂移放大成「面板飞出视口」，且位置被
+ * localStorage 记住后怪状态难以自愈。收起态 = 右缘垂直拉手（垂直居中），
+ * 与任何宿主元素无重叠。唯一持久化是展开/收起（storage v2，只存
+ * collapsed）。纯 UI 状态，不涉任何行情计算。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { fetchQuotes, fetchWatchlist, subscribeMommyEvents, type WatchlistEntry } from './api.ts'
 import { fmtAmountCN, fmtPct, trendOf, type QuoteView } from './parse.ts'
 import type { LocaleKey } from './locales.ts'
+import { loadConfig, saveConfig, subscribeConfig as subscribeConfigClient, type BarsMode } from './config.ts'
 import css from './dock.module.css'
 
 export interface MommyDockProps {
@@ -32,110 +33,49 @@ interface DockState {
   loading: boolean
 }
 
-interface DockPos {
-  left: number
-  top: number
-}
-
-interface DockLayout {
-  pos: DockPos | null
-  collapsed: boolean
-}
-
-interface DragGesture {
-  pointerId: number
-  offX: number
-  offY: number
-  frameLeft: number
-  frameTop: number
-  frameWidth: number
-  frameHeight: number
-}
-
 const EMPTY: DockState = { entries: [], quotes: new Map(), source: '', staleNote: null, error: null, loading: true }
-const STORAGE_KEY = 'mommy.dock.v1'
-const PANEL_WIDTH = 224
-const PANEL_MARGIN = 8
+/** v2 只存 { collapsed}；v1 的自由坐标语义已废弃，不迁移。 */
+const STORAGE_KEY = 'mommy.dock.v2'
 
-const DEFAULT_LAYOUT: DockLayout = { pos: null, collapsed: false }
+const BARS_MODE_KEYS: Record<BarsMode, LocaleKey> = {
+  table: 'config.barsMode.table',
+  svg: 'config.barsMode.svg',
+  lwc: 'config.barsMode.lwc',
+}
 
-function loadLayout(): DockLayout {
+function loadCollapsed(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw === null) return DEFAULT_LAYOUT
-    const parsed = JSON.parse(raw) as Partial<DockLayout>
-    const pos =
-      parsed.pos !== undefined &&
-      parsed.pos !== null &&
-      Number.isFinite(parsed.pos.left) &&
-      Number.isFinite(parsed.pos.top)
-        ? { left: parsed.pos.left, top: parsed.pos.top }
-        : null
-    return { pos, collapsed: parsed.collapsed === true }
+    if (raw === null) return false
+    const parsed = JSON.parse(raw) as { collapsed?: unknown }
+    return parsed.collapsed === true
   } catch {
-    return DEFAULT_LAYOUT
+    return false
   }
 }
 
-function saveLayout(layout: DockLayout): void {
+function saveCollapsed(collapsed: boolean): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ collapsed }))
   } catch {
-    // 隐私模式等 storage 不可用：布局不持久化，功能不受影响
+    // 隐私模式等 storage 不可用：不持久化，功能不受影响
   }
-}
-
-/** 宿主 AppFrame 在 frame 元素上内联三列 grid 轨道，首列即侧栏当前宽度。 */
-function sidebarWidthOf(frame: HTMLElement | null): number {
-  if (frame === null) return 0
-  const first = frame.style.gridTemplateColumns.split(' ')[0] ?? ''
-  const px = Number.parseFloat(first)
-  return Number.isFinite(px) ? px : 0
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), Math.max(min, max))
 }
 
 export function MommyDock(props: MommyDockProps) {
   const t = props.t
   const [state, setState] = useState<DockState>(EMPTY)
   const [openCode, setOpenCode] = useState<string | null>(null)
-  const [layout, setLayout] = useState<DockLayout>(loadLayout)
-  const [sidebarW, setSidebarW] = useState(0)
-  const rootRef = useRef<HTMLElement | null>(null)
-  // 面板根是 div、收起药丸是 button——回调 ref 统一收 HTMLElement（ref 属性
-  // 对元素类型是不变的，useRef<HTMLDivElement> 挂不到 button 上）。
-  const setRootRef = (el: HTMLElement | null): void => {
-    rootRef.current = el
-  }
-  const layoutRef = useRef(layout)
-  const dragRef = useRef<DragGesture | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(loadCollapsed)
+  const config = useSyncExternalStore(subscribeConfigClient, loadConfig)
 
-  useEffect(() => {
-    layoutRef.current = layout
-  }, [layout])
-
-  const applyLayout = useCallback((next: DockLayout) => {
-    setLayout(next)
-    saveLayout(next)
-  }, [])
-
-  // 侧栏实时宽度跟随：AppFrame 拖宽/折叠都写 frame 的 style 与
-  // data-sidebar-collapsed 属性，属性级监听足够，不需要宿主类型。
-  // slot 渲染位会包 display:contents 包装层，祖先一律用 closest 定位。
-  // 收起药丸也必须挂 rootRef：挂载即收起（localStorage 记住 collapsed）时
-  // 药丸是唯一渲染位，effect（依赖 []）只在挂载时跑一次，ref 缺席会让
-  // observer 永不安装、sidebarW 永远为 0——展开后面板压住宿主侧栏。
-  useEffect(() => {
-    const overlay = rootRef.current?.closest('[data-shell-overlay]')
-    const frame = overlay?.parentElement ?? null
-    const update = () => setSidebarW(sidebarWidthOf(frame))
-    update()
-    if (frame === null) return undefined
-    const observer = new MutationObserver(update)
-    observer.observe(frame, { attributes: true, attributeFilter: ['style', 'data-sidebar-collapsed'] })
-    return () => observer.disconnect()
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(prev => {
+      const next = !prev
+      saveCollapsed(next)
+      return next
+    })
   }, [])
 
   const load = useCallback(async () => {
@@ -194,63 +134,6 @@ export function MommyDock(props: MommyDockProps) {
     return [...map.entries()]
   }, [state.entries])
 
-  // —— 拖拽：标题栏是把手（按钮除外），坐标相对 overlay 层（即 frame）。 ——
-  const autoLeft = sidebarW + PANEL_MARGIN
-  const panelStyle: CSSProperties =
-    layout.pos !== null
-      ? { left: layout.pos.left, top: layout.pos.top }
-      : { left: autoLeft, top: PANEL_MARGIN, bottom: PANEL_MARGIN }
-
-  const onHeadPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    if ((event.target as HTMLElement).closest('button') !== null) return
-    const root = rootRef.current
-    // 拖拽坐标以实际包含块（overlay 层）为参照，包装层变化不影响。
-    const container = root?.offsetParent
-    if (root === null || root === undefined || container === null || container === undefined) return
-    const rootRect = root.getBoundingClientRect()
-    const containerRect = container.getBoundingClientRect()
-    dragRef.current = {
-      pointerId: event.pointerId,
-      offX: event.clientX - rootRect.left,
-      offY: event.clientY - rootRect.top,
-      frameLeft: containerRect.left,
-      frameTop: containerRect.top,
-      frameWidth: containerRect.width,
-      frameHeight: containerRect.height,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const onHeadPointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const drag = dragRef.current
-    if (drag === null || event.pointerId !== drag.pointerId) return
-    const width = rootRef.current?.offsetWidth ?? PANEL_WIDTH
-    const left = clamp(event.clientX - drag.frameLeft - drag.offX, 0, drag.frameWidth - width)
-    const top = clamp(event.clientY - drag.frameTop - drag.offY, 0, drag.frameHeight - 40)
-    setLayout(prev => ({ ...prev, pos: { left: Math.round(left), top: Math.round(top) } }))
-  }
-
-  const onHeadPointerUp = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const drag = dragRef.current
-    if (drag === null || event.pointerId !== drag.pointerId) return
-    dragRef.current = null
-    saveLayout(layoutRef.current)
-  }
-
-  const onHeadDoubleClick = (): void => {
-    dragRef.current = null
-    applyLayout({ ...layoutRef.current, pos: null })
-  }
-
-  const headDragProps = {
-    onPointerDown: onHeadPointerDown,
-    onPointerMove: onHeadPointerMove,
-    onPointerUp: onHeadPointerUp,
-    onPointerCancel: onHeadPointerUp,
-    onDoubleClick: onHeadDoubleClick,
-    title: t?.('dock.title') ?? '自选',
-  }
-
   const refreshButton = (
     <button
       type="button"
@@ -267,38 +150,78 @@ export function MommyDock(props: MommyDockProps) {
       type="button"
       className={css.button}
       aria-label={t?.('dock.collapse') ?? '收起'}
-      onClick={() => applyLayout({ ...layoutRef.current, collapsed: true })}
+      onClick={toggleCollapsed}
     >
       –
     </button>
   )
 
-  if (layout.collapsed) {
+  // —— 设置：展示偏好菜单（bars 卡渲染模式）。纯 localStorage，不碰数据口径。 ——
+  const settingsButton = (
+    <button
+      type="button"
+      className={css.button}
+      aria-label={t?.('config.title') ?? '设置'}
+      aria-expanded={settingsOpen ? 'true' : 'false'}
+      onClick={() => setSettingsOpen(open => !open)}
+    >
+      ⚙
+    </button>
+  )
+
+  const settingsPanel = settingsOpen ? (
+    <div className={css.settings} role="group" aria-label={t?.('config.title') ?? '设置'}>
+      <div className={css.settingsTitle}>{t?.('config.barsMode') ?? 'K 线卡片渲染'}</div>
+      <div className={css.settingsOptions} role="radiogroup" aria-label={t?.('config.barsMode') ?? 'K 线卡片渲染'}>
+        {(['table', 'svg', 'lwc'] as const).map(mode => (
+          <label key={mode} className={css.settingsOption}>
+            <input
+              type="radio"
+              name="mommy-bars-mode"
+              checked={config.barsMode === mode}
+              onChange={() => saveConfig({ barsMode: mode })}
+            />
+            <span>{t?.(BARS_MODE_KEYS[mode])}</span>
+          </label>
+        ))}
+      </div>
+      <div className={css.settingsNote}>{t?.('config.savedNote') ?? '偏好仅保存在本机浏览器'}</div>
+    </div>
+  ) : null
+
+  // 收起态：右缘垂直拉手（垂直居中，不占顶部 chrome，与 logo/标题零重叠）。
+  if (collapsed) {
     return (
       <button
         type="button"
-        className={css.pill}
+        className={css.tab}
         data-mommy-dock="watchlist"
-        ref={setRootRef}
-        style={{ left: layout.pos !== null ? layout.pos.left : autoLeft, top: layout.pos !== null ? layout.pos.top : PANEL_MARGIN }}
         aria-label={t?.('dock.expand') ?? '展开'}
-        onClick={() => applyLayout({ ...layoutRef.current, collapsed: false })}
+        onClick={toggleCollapsed}
       >
-        <span className={css.pillCount}>
+        <span className={css.tabLabel}>
           {t?.('dock.title') ?? '自选'} · {state.entries.length}
         </span>
       </button>
     )
   }
 
+  const head = (
+    <div className={css.head}>
+      <span className={css.title}>
+        {t?.('dock.title') ?? '自选'} · {state.entries.length}
+      </span>
+      <span className={css.grow} />
+      {settingsButton}
+      {state.error === null && state.entries.length > 0 ? refreshButton : null}
+      {collapseButton}
+    </div>
+  )
+
   if (state.error !== null && state.entries.length === 0) {
     return (
-      <div className={css.dock} data-mommy-dock="watchlist" style={panelStyle} ref={setRootRef}>
-        <div className={css.head} {...headDragProps}>
-          <span className={css.title}>{t?.('dock.title') ?? '自选'}</span>
-          <span className={css.grow} />
-          {collapseButton}
-        </div>
+      <div className={css.dock} data-mommy-dock="watchlist" data-dock-state="error">
+        {head}
         <div className={css.center}>
           <span>{t?.('dock.error') ?? '数据不可用'}</span>
           <span className={css.code}>{state.error}</span>
@@ -306,37 +229,27 @@ export function MommyDock(props: MommyDockProps) {
             {t?.('dock.retry') ?? '重试'}
           </button>
         </div>
+        {settingsPanel}
       </div>
     )
   }
 
   if (state.entries.length === 0) {
     return (
-      <div className={css.dock} data-mommy-dock="watchlist" style={panelStyle} ref={setRootRef}>
-        <div className={css.head} {...headDragProps}>
-          <span className={css.title}>{t?.('dock.title') ?? '自选'}</span>
-          <span className={css.grow} />
-          {refreshButton}
-          {collapseButton}
-        </div>
+      <div className={css.dock} data-mommy-dock="watchlist" data-dock-state="empty">
+        {head}
         <div className={css.empty}>
           <span>{t?.('dock.empty') ?? '自选股为空'}</span>
           <span>{t?.('dock.emptyHint') ?? '在对话里让 AI「把 600519 加进自选」试试'}</span>
         </div>
+        {settingsPanel}
       </div>
     )
   }
 
   return (
-    <div className={css.dock} data-mommy-dock="watchlist" style={panelStyle} ref={setRootRef}>
-      <div className={css.head} {...headDragProps}>
-        <span className={css.title}>
-          {t?.('dock.title') ?? '自选'} · {state.entries.length}
-        </span>
-        <span className={css.grow} />
-        {refreshButton}
-        {collapseButton}
-      </div>
+    <div className={css.dock} data-mommy-dock="watchlist" data-dock-state="ready">
+      {head}
       <div className={css.body}>
         <div className={css.groups}>
           {groups.map(([group, entries]) => (
@@ -416,6 +329,7 @@ export function MommyDock(props: MommyDockProps) {
           {t?.('dock.source') ?? '来源'}: {state.source}
         </div>
       )}
+      {settingsPanel}
     </div>
   )
 }

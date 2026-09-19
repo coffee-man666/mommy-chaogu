@@ -1,7 +1,7 @@
 {
   "name": "@mommy-chaogu/dsh-bundle",
   "version": "0.1.0",
-  "description": "mommy-chaogu DSH product graft: MCP tools row + write-approval gate + investor preset + browser cards/dock (no host source changes)",
+  "description": "mommy-chaogu DSH product graft: MCP tools row + write-approval gate + investor preset + browser cards/right-dock (no host source changes)",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -52,7 +52,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-mcp-client": "0.1.5-rc.2"
+    "@deepseek-ai/dsh-mcp-client": "0.1.5-rc.2",
+    "lightweight-charts": "^5.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0",

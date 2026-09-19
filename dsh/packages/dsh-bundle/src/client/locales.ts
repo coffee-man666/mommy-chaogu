@@ -24,6 +24,14 @@ export type LocaleKey =
   | 'card.flow.ratio'
   | 'card.bars.title'
   | 'card.bars.older'
+  | 'card.bars.detail'
+  | 'card.bars.hideTable'
+  | 'config.title'
+  | 'config.barsMode'
+  | 'config.barsMode.table'
+  | 'config.barsMode.svg'
+  | 'config.barsMode.lwc'
+  | 'config.savedNote'
   | 'card.predictions.title'
   | 'card.watchlistOp.title'
   | 'card.watchlistOp.ok'
@@ -84,6 +92,14 @@ export const zh: Dict = {
   'card.flow.ratio': '主力净占比',
   'card.bars.title': 'K 线',
   'card.bars.older': '更早 {count} 根',
+  'card.bars.detail': '明细 {count} 根',
+  'card.bars.hideTable': '收起明细',
+  'config.title': '设置',
+  'config.barsMode': 'K 线卡片渲染',
+  'config.barsMode.table': '表格',
+  'config.barsMode.svg': '迷你 K 线',
+  'config.barsMode.lwc': '交互 K 线',
+  'config.savedNote': '偏好仅保存在本机浏览器',
   'card.predictions.title': '预测历史',
   'card.watchlistOp.title': '自选操作',
   'card.watchlistOp.ok': '已执行',
@@ -143,6 +159,14 @@ export const en: Dict = {
   'card.flow.ratio': 'Main net ratio',
   'card.bars.title': 'Bars',
   'card.bars.older': '{count} older bars',
+  'card.bars.detail': 'Details ({count} bars)',
+  'card.bars.hideTable': 'Hide details',
+  'config.title': 'Settings',
+  'config.barsMode': 'Bars card render',
+  'config.barsMode.table': 'Table',
+  'config.barsMode.svg': 'Mini candles',
+  'config.barsMode.lwc': 'Interactive chart',
+  'config.savedNote': 'Stored in this browser only',
   'card.predictions.title': 'Prediction history',
   'card.watchlistOp.title': 'Watchlist change',
   'card.watchlistOp.ok': 'Applied',
