@@ -7,7 +7,26 @@
 
 ## [Unreleased]
 
-> 本段记录 `feat/dsh-product-graft` 分支上 DSH 产品嫁接的评审修复批次
+### 新增：DSH 个人档满血第一波（策略卡与记忆）
+
+- **doctor 档位检查项**——从 MCP 覆盖行 args 解析 `--profile`，如实报告当前档位
+  与工具面（market-only 19+5 / personal 37+7）；personal 附审批闸与个人数据边界
+  说明，未知档位判 error。doctor 成为唯一的档位探测面（切档 = 重跑 install +
+  重启宿主）。+3 测试。
+- **审批闸理由带内容**——写工具 ask 的 reason 追加关键参数：`strategy_save`
+  显示策略卡标题与确认注记、`strategy_activate_monitor`/`archive` 显示
+  strategy_id、`manage_*` 显示动作与代码。用户在审批对话框看到的是「他要
+  保存什么」而不只是「他要写」；参数残缺退回通用理由，不崩溃不误报。+2 测试。
+- **Skill 双档适配**——`mommy-strategy`：market-only 降级指引补 DSH 产品模式
+  路径（`mommy dsh install --personal` + 重启），并写明 DSH 审批条即保存/启用
+  授权、拒绝后不得重发；`mommy-onboard`：新增「DSH 产品模式无需 connect」
+  小节（档位是安装期选择，doctor 报告代替猜测）。
+- **AGENT-CHECKLIST §2b 个人档测试轨**——S1 蒸馏全流程（审批理由须含卡标题；
+  S1b 未确认不保存）/ S2 检查表诚实性 / S3 三次授权双确认 / M1 隔会话召回 /
+  M2 预测生命周期（PredictionsCard 首次点亮）/ M3 重启延续 / R1 market-only
+  诚实拒绝；G0 预检表补 mcp_profile 期望行。
+
+> 以下为 `feat/dsh-product-graft` 分支上 DSH 产品嫁接的评审修复批次
 > （2026-09-13）。评审背景：四面嫁接机制（patch / preset / 审批闸门 / 浏览器
 > slot）本身合格且全部门禁绿，但评审发现若干"会说谎"与"静默失败"缺陷——
 > 它们的共同点是**测试全绿、用户看到的却是错的**。本批修复全部带回归测试。

@@ -42,6 +42,7 @@ uv run mommy dsh doctor
 |---|---|
 | dsh_binary | ⚠️ 警告可接受（npx 形态，本机常态） |
 | 其余各项 | 全 ✅ |
+| mcp_profile | ✅ 文案含「personal（个人档）」「37 个基础工具」「7 个研究工作流」「审批闸」（本清单 §1.2 装 --personal；出现 market-only 即档位回归） |
 | product_skills 文案 | **「5 个产品 Skill 就位。」**（动态计数；出现「三个」即回归） |
 | 结论 | 「产品 profile 可用」 |
 
@@ -145,6 +146,77 @@ Notice → 工作区选默认 → agent 模式选「mommy 投研助手」。
 - 预期：拖动跟手；刷新后位置保持；双击后面板回到贴侧栏默认位。
 - 证据：`f8_dragged.png`、`f8_reset.png`。
 
+## 2b. 用例 S1–S3 / M1–M3（个人档：策略卡与记忆满血验收）
+
+> 前置：§1.2 的 `--personal` 安装 + G1 探针通过。每条用例**新会话**（防 A7 话题串扰）。
+> 反复利用 F5 已验证的审批链：本节所有写操作都应弹审批条，理由里带内容（卡标题/代码）。
+
+### S1 策略蒸馏全流程（含义确认 → 保存授权 → 入库核对）
+- 操作：新会话贴一段短策略原文（示例：`把这段方法整理成策略卡：「只在股价缩量回踩
+  20 日线企稳、且当日主力资金净流入转正时关注，跌破 20 日线止损。」`），确认出卡后说
+  `忠于原意，保存它`。
+- 预期（按序）：
+  1. 回答先给出**人类可读的策略卡**（名称/来源/观察/进入/退出/风险，逐条件标注
+     可自动检查 / 需人工判断），不是 JSON；
+  2. 保存时弹宿主审批条，**理由含策略卡标题与确认注记**（本批新增的 reason 增强）；
+  3. Allow 后回答给回执（标题/ID/版本），**不声称回测有效**；
+  4. 核对入库：`sqlite3 $MOMMY_DATA_DIR/portfolio.db` 之外——策略卡在 agent 库：
+     `sqlite3 $MOMMY_DATA_DIR/agent.db "select id,title,version from strategy_cards"`
+     出现该卡。
+- 分支 S1b（未确认拒绝路径）：另一新会话只说「整理成策略卡」并直接等它保存——
+  预期：未经明确保存指令时**不调用 strategy_save**；若调用了且 user_confirmed=true，
+  属 LLM 自报确认违规，记 ❌。
+- 失败指向：无审批条直接入库 = 闸门回归（严重）；审批理由无卡标题 = reason 增强回归。
+- 证据：`s1_card.png`、`s1_approval_reason.png`（审批条截图必须含理由文字）、`s1_sqlite.png`。
+
+### S2 prepare_application 逐条件检查表（诚实性）
+- 操作：接 S1 的卡，发 `按这套方法看 600519 现在符合不符合`。
+- 预期：先出**检查表**（每个条件：满足/不满足/无法判断 + 时间戳证据），语义类条件
+  （缩量/企稳）诚实标「需人工判断」，不偷换成相似指标；结论区不是收益承诺。
+- 失败指向：把「无法判断」硬判成满足/不满足 = 蒸馏诚实性回归。
+- 证据：`s2_checklist.png`。
+
+### S3 启用监控（第三次独立授权）
+- 操作：接上，发 `把里面能自动监控的条件启用提醒`。
+- 预期：先展示候选（触发规则/阈值/标的），问一次「要启用吗」；确认后**再弹审批条**
+  （strategy_activate_monitor）；Allow 后回执含告警 ID 与触发解释；查
+  `sqlite3 $MOMMY_DATA_DIR/portfolio.db "select id,rule_id from alerts"`（或经
+  `mommy watchlist list` 同库核对）出现该告警。纯语义条件保持人工，**不得**被硬翻成
+  价格规则。
+- 失败指向：保存卡时的一次确认被复用为监控授权 = 三次授权语义回归（严重）。
+- 证据：`s3_candidate.png`、`s3_approval.png`、`s3_alert_sqlite.png`。
+
+### M1 记忆写入与隔会话召回
+- 操作：会话 A 发 `记录结论：我认为 600519 短期波动加大，观察 1850 支撑，来源是我
+  自己的技术观察`（触发 record_research_conclusion，写授权按工具参数 user_confirmed
+  流程）；**新开会话 B** 发 `我之前对 600519 有什么结论`。
+- 预期：会话 B 能召回该结论（记忆注入生效），并带时间；不召回 = 记忆链路断裂记 ❌。
+- 证据：`m1_record.png`、`m1_recall_new_session.png`。
+
+### M2 预测生命周期
+- 操作：会话 A 让它对某板块给一个可验证预测（record 附预测）；shell 跑
+  `uv run mommy agent verify --json`（或 `mommy agent consolidate`）；回 DSH 问
+  `我有哪些待验证的预测`。
+- 预期：预测入库（predictions 表/`/predictions` 语义）；verify 输出到期预测的
+  命中/未命中/无法验证三态；DSH 回答与库一致，PredictionsCard 渲染（个人档三张
+  休眠卡之一首次点亮）。
+- 证据：`m2_verify_shell.png`、`m2_predictions_card.png`。
+
+### M3 宿主重启后记忆延续
+- 操作：`pkill -f "dsh --profile mommy"` 后按 §1.4 重启宿主，新会话问
+  `我之前对 600519 有什么结论`。
+- 预期：结论仍可召回（持久化在 agent.db，与 MCP 子进程生命周期无关）。
+- 证据：`m3_recall_after_restart.png`。
+
+### 反向用例 R1 market-only 下保存类诚实拒绝
+- 操作（需要另起 scratch，或最后做）：用 market-only 重装
+  （`uv run mommy dsh install` 不带 --personal）+ 重启宿主，发 `把这段方法保存成
+  策略卡：…`。
+- 预期：回答说明当前连接不含保存类工具（策略卡需 personal 档），给出
+  `uv run mommy dsh install --personal` 的升级路径；**不得**伪装保存成功或直连数据库。
+- 证据：`r1_market_only_refusal.png`。
+- 注：本用例做完后如需回到 personal 环境，重装 --personal + 重启即可。
+
 ## 3. 结果登记（照抄进报告）
 
 | 用例 | 结果 | 证据文件 | 备注/偏差 |
@@ -161,6 +233,14 @@ Notice → 工作区选默认 → agent 模式选「mommy 投研助手」。
 | F6 slow=250 | | | 命中/0命中/历史不足：__ |
 | F7 卡片抽查 | | | |
 | F8 拖拽/复位 | | | |
+| S1 蒸馏全流程 | | | 审批理由含卡标题：是/否 |
+| S1b 未确认不保存 | | | |
+| S2 检查表诚实性 | | | 无法判断的条件数：__ |
+| S3 启用监控双确认 | | | 告警 ID：__ |
+| M1 隔会话召回 | | | |
+| M2 预测生命周期 | | | PredictionsCard 渲染：是/否 |
+| M3 重启后延续 | | | |
+| R1 market-only 拒绝 | | | |
 
 新异常沿用 playbook §6 编号规则（续 A12…/H4…），登记：现象 / 复现步骤 / 根因猜测 / 严重度。
 
@@ -168,7 +248,7 @@ Notice → 工作区选默认 → agent 模式选「mommy 投研助手」。
 
 ```bash
 pkill -f "dsh --profile mommy"; pkill -f mommy_chaogu.agent.mcp_server
-mkdir -p gui-test-screenshots && mv /tmp/f*.png gui-test-screenshots/ 2>/dev/null
+mkdir -p gui-test-screenshots && mv /tmp/f*.png /tmp/s*.png /tmp/m*.png /tmp/r*.png gui-test-screenshots/ 2>/dev/null
 rm -rf $MOMMY_DATA_DIR   # scratch 数据目录整体清除
 ```
 
