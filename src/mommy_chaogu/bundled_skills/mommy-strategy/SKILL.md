@@ -25,9 +25,20 @@ method types or testing this workflow.
 
 If `strategy_*` tools are absent, the connection is `market-only` or an older installation. The
 Agent may still draft a card in the current conversation, but must not save it through shell or
-direct database access. Explain that local strategy storage needs a `personal` connection. Run
-`mommy agent plan --host <agent> --profile personal --json`, show the changed privacy scope, and
-wait for approval before `mommy agent connect`; restart the Agent after a successful connection.
+direct database access. Explain that local strategy storage needs a `personal` connection, then
+point the user to the entry they are using:
+
+- Coding-agent hosts (Claude/Kimi/Cline/Codex): run `mommy agent plan --host <agent> --profile
+  personal --json`, show the changed privacy scope, and wait for approval before
+  `mommy agent connect`; restart the Agent after a successful connection.
+- DSH product mode: run `uv run mommy dsh install --personal` (re-installs the profile with the
+  personal MCP tier), then restart the host with `mommy dsh run`. `mommy dsh doctor` reports the
+  active tier and its tool surface.
+
+In DSH personal mode, `strategy_save` / `strategy_archive` / `strategy_activate_monitor` and
+`manage_*` write actions pass through the host's approval dialog before executing. The dialog
+shows the card title and confirmation note (for saves) — treat the user's approval there as the
+save/activation authorization, and never resubmit a call the user denied.
 
 ## Distill a new card
 

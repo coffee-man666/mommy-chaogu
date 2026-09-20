@@ -75,6 +75,20 @@ commit, use the resolved SHA in
 Show the exact command first. `--force` prevents an older installed build with the same package
 version from being mistaken for this commit.
 
+## DSH product mode: no connect step
+
+When the user is talking through a DSH host that already runs the mommy product profile
+(`mommy dsh install`), the connection is grafted: no detect/plan/connect is needed. The privacy
+tier is an install-time choice, not a per-conversation one:
+
+- default `market-only`: public market tools only; portfolio, memory, and Strategy Card tools are
+  intentionally absent — do not promise them;
+- `uv run mommy dsh install --personal` then restarting the host (`mommy dsh run`) opens the
+  personal tier: Strategy Cards, memory, and holdings become available, and every write passes
+  through the host's approval dialog.
+
+`mommy dsh doctor` reports the active tier and its tool surface; quote it instead of guessing.
+
 ## Detect and plan
 
 1. Run `mommy agent detect --json`.
