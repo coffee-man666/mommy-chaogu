@@ -262,7 +262,9 @@ class TestDoctor:
         from mommy_chaogu.coding_agents.dsh import parse_dsh_version
 
         assert parse_dsh_version(dsh_product.PRODUCT_TESTED_DSH_VERSION) is not None
-        monkeypatch.setattr(dsh_product, "_detect_dsh", lambda: ("/usr/local/bin/dsh", "0.1.5-rc.2"))
+        monkeypatch.setattr(
+            dsh_product, "_detect_dsh", lambda: ("/usr/local/bin/dsh", "0.1.5-rc.2")
+        )
         report = doctor_dsh_product()
         version_check = next(c for c in report["checks"] if c["name"] == "dsh_version")
         assert version_check["status"] == "ok"
@@ -362,3 +364,36 @@ class TestQuoteCli:
         rc = quote_cli.main_quote(codes)
         assert rc == 2
         assert "50" in capsys.readouterr().err
+
+
+class TestDoctorMcpProfile:
+    """doctor 必须如实报告 MCP 档位与对应的工具面（档位探测面只有 doctor）。"""
+
+    def test_market_only_default_reports_public_surface(self, fake_env: dict[str, Path]) -> None:
+        install_dsh_product()
+        report = doctor_dsh_product()
+        check = next(c for c in report["checks"] if c["name"] == "mcp_profile")
+        assert check["status"] == "ok"
+        assert "market-only" in check["message"]
+        assert "19 个基础工具" in check["message"]
+        assert "5 个研究工作流" in check["message"]
+
+    def test_personal_reports_full_surface_and_boundary(self, fake_env: dict[str, Path]) -> None:
+        install_dsh_product(mcp_profile="personal")
+        report = doctor_dsh_product()
+        check = next(c for c in report["checks"] if c["name"] == "mcp_profile")
+        assert check["status"] == "ok"
+        assert "personal" in check["message"]
+        assert "37 个基础工具" in check["message"]
+        assert "7 个研究工作流" in check["message"]
+        assert "审批闸" in check["message"]
+
+    def test_unknown_profile_is_error(self, fake_env: dict[str, Path]) -> None:
+        install_dsh_product()
+        patch = dsh_product.profile_dir() / "cordis.patch.yml"
+        text = patch.read_text(encoding="utf-8").replace("market-only", "yolo")
+        patch.write_text(text, encoding="utf-8")
+        report = doctor_dsh_product()
+        check = next(c for c in report["checks"] if c["name"] == "mcp_profile")
+        assert check["status"] == "error"
+        assert "mcp_profile" in report["blocking"]

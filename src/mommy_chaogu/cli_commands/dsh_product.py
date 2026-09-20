@@ -28,6 +28,11 @@ from typing import Any, NoReturn
 
 import yaml
 
+from mommy_chaogu.agent.research_tools import (
+    allowed_base_tool_names,
+    allowed_research_tool_names,
+    normalize_mcp_profile,
+)
 from mommy_chaogu.coding_agents.base import (
     ConnectionSpec,
     connection_spec,
@@ -367,7 +372,7 @@ def _detect_dsh() -> tuple[str | None, str | None]:
 
 
 def doctor_dsh_product(*, home: Path | None = None) -> dict[str, Any]:
-    """逐项体检：dsh 探测、profile 文件、bundle 产物、Skill、覆盖行。"""
+    """逐项体检：dsh 探测、profile 文件、bundle 产物、Skill、覆盖行、MCP 档位。"""
     resolved_home = (home or product_home()).resolve()
     directory = profile_dir(resolved_home)
     checks: list[dict[str, Any]] = []
@@ -445,6 +450,57 @@ def doctor_dsh_product(*, home: Path | None = None) -> dict[str, Any]:
                 else f"缺覆盖行：{sorted(missing)}；重跑 mommy dsh install。",
             }
         )
+        # 档位检查：MCP 行 args 的 --profile 决定宿主 Agent 的工具面（切换
+        # 档位 = 重跑 install + 重启宿主）。doctor 是唯一的档位探测面。
+        mcp_row = next(
+            (op for op in patches if isinstance(op, dict) and op.get("id") == "mommy-chaogu-mcp"),
+            None,
+        )
+        profile_args: list[str] = []
+        if isinstance(mcp_row, dict):
+            raw_args = mcp_row.get("config", {}).get("args", [])
+            if isinstance(raw_args, list):
+                profile_args = [str(item) for item in raw_args]
+        profile_value: str | None = None
+        if "--profile" in profile_args:
+            idx = profile_args.index("--profile")
+            if idx + 1 < len(profile_args):
+                profile_value = profile_args[idx + 1]
+        if profile_value is None:
+            checks.append(
+                {
+                    "name": "mcp_profile",
+                    "status": "error",
+                    "message": "MCP 覆盖行缺 --profile 参数；重跑 mommy dsh install。",
+                }
+            )
+        else:
+            try:
+                profile = normalize_mcp_profile(profile_value)
+            except ValueError:
+                checks.append(
+                    {
+                        "name": "mcp_profile",
+                        "status": "error",
+                        "message": f"未知档位 {profile_value!r}（须为 market-only 或 personal）；重跑 mommy dsh install。",
+                    }
+                )
+            else:
+                n_base = len(allowed_base_tool_names(profile))
+                n_research = len(allowed_research_tool_names(profile))
+                if profile == "market-only":
+                    message = (
+                        f"market-only（公共行情档）：{n_base} 个基础工具 + "
+                        f"{n_research} 个研究工作流；个人上下文与写操作不开放，"
+                        "策略卡/记忆相关卡片不会渲染。"
+                    )
+                else:
+                    message = (
+                        f"personal（个人档）：{n_base} 个基础工具 + "
+                        f"{n_research} 个研究工作流，含策略卡、记忆与持仓；"
+                        "写操作经宿主审批闸逐次授权；个人数据对宿主 Agent 可见。"
+                    )
+                checks.append({"name": "mcp_profile", "status": "ok", "message": message})
     else:
         checks.append(
             {"name": "profile_patch", "status": "error", "message": f"没有找到 {patch_path}。"}
