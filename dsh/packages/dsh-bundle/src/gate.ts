@@ -85,6 +85,35 @@ export function requiresConfirmation(rawToolName: string, args: unknown): boolea
 }
 
 /**
+ * 审批理由的增补细节：让用户在审批对话框里看到「他要保存什么」，而不只是
+ * 「他要写」。参数形状不信任（工具自校验 schema，这里只做保守读取）——
+ * 拿不到关键字段就退回通用理由，绝不因参数形状异常而放行或崩溃。
+ */
+export function writeDetail(rawToolName: string, args: unknown): string | null {
+  const a = (args ?? {}) as Record<string, unknown>
+  const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null)
+  if (rawToolName === 'strategy_save') {
+    const card = a.card as { title?: unknown } | undefined
+    const title = card === undefined ? null : str(card.title)
+    const note = str(a.confirmation_note)
+    const parts = [title === null ? null : `策略卡「${title}」`, note === null ? null : `确认注记：${note}`]
+    return parts.filter(p => p !== null).join('；') || null
+  }
+  if (rawToolName === 'strategy_archive' || rawToolName === 'strategy_activate_monitor') {
+    const id = str(a.strategy_id)
+    return id === null ? null : `策略卡 ${id}`
+  }
+  const actions = CONFIRM_BY_ACTION[rawToolName]
+  if (actions !== undefined) {
+    const action = str(a.action)
+    const code = str(a.code)
+    const parts = [action === null ? null : `${action} ${code ?? ''}`.trim()]
+    return parts[0] ?? null
+  }
+  return null
+}
+
+/**
  * 纯判定：这次工具调用是否需要用户审批。
  *
  * 非 mommy 工具或只读调用 → undefined（调用方必须 next()）；写调用 →
@@ -112,11 +141,13 @@ export function decideWriteGate(
     return undefined
   }
   if (!requiresConfirmation(rawName, args)) return undefined
+  const detail = writeDetail(rawName, args)
   return {
     kind: 'ask',
     reason:
-      `mommy tool "${toolName}" modifies user data (watchlist / alerts / strategy cards); `
-      + 'the mommy-chaogu gate requires explicit user approval. '
+      `mommy tool "${toolName}" modifies user data (watchlist / alerts / strategy cards)`
+      + (detail === null ? '' : ` — ${detail}`)
+      + '; the mommy-chaogu gate requires explicit user approval. '
       + 'Headless deployments with no approver will deny this call — fail closed by design.',
   }
 }

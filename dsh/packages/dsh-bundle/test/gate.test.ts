@@ -5,6 +5,7 @@ import {
   createGateListener,
   decideWriteGate,
   requiresConfirmation,
+  writeDetail,
 } from '../src/gate.ts'
 
 const P = 'mcp__mommy-chaogu__'
@@ -49,6 +50,28 @@ describe('decideWriteGate（waterfall 决策）', () => {
       kind: 'ask',
       reason: expect.stringContaining('failing closed'),
     })
+  })
+  it('审批理由带内容：strategy_save 显示卡标题与确认注记（用户看到「保存什么」）', () => {
+    const decision = decideWriteGate(`${P}strategy_save`, {
+      card: { title: '缩量回踩二十日线' },
+      user_confirmed: true,
+      confirmation_note: '用户看过最终卡片并要求保存',
+    })
+    expect(decision).toMatchObject({
+      kind: 'ask',
+      reason: expect.stringContaining('缩量回踩二十日线'),
+    })
+    expect(decision).toMatchObject({
+      reason: expect.stringContaining('用户看过最终卡片并要求保存'),
+    })
+  })
+  it('审批理由带内容：manage_watchlist add 显示代码；参数残缺退回通用理由不崩溃', () => {
+    expect(decideWriteGate(`${P}manage_watchlist`, { action: 'add', code: '600519' })).toMatchObject(
+      { kind: 'ask', reason: expect.stringContaining('add 600519') },
+    )
+    expect(writeDetail('strategy_save', null)).toBeNull()
+    expect(writeDetail('strategy_save', { card: 'not-an-object' })).toBeNull()
+    expect(writeDetail('manage_watchlist', {})).toBeNull()
   })
 })
 
