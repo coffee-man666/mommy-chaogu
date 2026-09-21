@@ -29,7 +29,7 @@
 ```bash
 cd /Users/hanyan/CoffeeMan/mommy-chaogu
 pnpm -C dsh build                       # 浏览器半 + host 半，含纯度门禁
-pnpm -C dsh test                        # 56 用例
+pnpm -C dsh test                        # 97 用例
 uv run pytest tests/test_dsh_adapter.py -q
 uv run mommy dsh install                # 刷新 profile 内 file: 副本 + Skill 五件套
 uv run mommy dsh doctor                 # 期望：产品 profile 可用

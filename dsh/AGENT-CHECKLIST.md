@@ -26,7 +26,7 @@
 cd /Users/hanyan/CoffeeMan/mommy-chaogu
 
 # 1.1 门禁全绿（这是本批修复的一部分：typecheck 刚进门禁）
-pnpm -C dsh build && pnpm -C dsh typecheck && pnpm -C dsh test   # 期望：构建成功 + 65/65
+pnpm -C dsh build && pnpm -C dsh typecheck && pnpm -C dsh test   # 期望：构建成功 + 97/97
 uv run pytest tests/test_dsh_adapter.py tests/test_dsh_product.py \
    tests/test_dsh_four_star_tools.py tests/test_mcp_idle_watchdog.py -q   # 期望全过
 

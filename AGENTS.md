@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（2,082 个离线用例，另有 14 个网络探针）
+uv run pytest -m "not network"   # 跑测试（2,316 个离线用例，另有 14 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
