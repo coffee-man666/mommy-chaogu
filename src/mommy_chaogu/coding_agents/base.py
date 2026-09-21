@@ -237,7 +237,9 @@ def install_skill(
     home: Path | None = None,
 ) -> Path:
     skill_name = source.name
-    destination = home / "skills" / skill_name if home is not None else skill_dir(target, skill_name)
+    destination = (
+        home / "skills" / skill_name if home is not None else skill_dir(target, skill_name)
+    )
     if destination.is_symlink():
         raise RuntimeError(f"Skill 目标是符号链接，为避免写入意外位置已停止：{destination}")
     bundled_hash = directory_hash(source)

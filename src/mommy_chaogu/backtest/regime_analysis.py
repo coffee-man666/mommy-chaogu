@@ -85,8 +85,6 @@ def _daily_returns(closes: list[float]) -> list[float]:
     ]
 
 
-
-
 def classify_market_regime(bars: list[dict[str, Any]]) -> str:
     """根据指数日 K 线判断市场状态。
 

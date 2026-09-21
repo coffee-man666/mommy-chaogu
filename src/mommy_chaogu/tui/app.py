@@ -368,7 +368,13 @@ class MommyTuiApp(App[None]):
         """Ctrl+T 循环切换；`/theme <名称>` 直接选中（如 /theme nord）。"""
         if name:
             candidates = {t.lower(): t for t in self._THEMES}
-            aliases = {"日光": "solarized", "极夜": "nord", "拿铁": "latte", "浅色": "light", "深色": "dark"}
+            aliases = {
+                "日光": "solarized",
+                "极夜": "nord",
+                "拿铁": "latte",
+                "浅色": "light",
+                "深色": "dark",
+            }
             key = aliases.get(name, aliases.get(name.lower(), name.lower()))
             if key in candidates:
                 self.ui_theme = candidates[key]

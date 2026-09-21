@@ -51,9 +51,7 @@ class _FakeAdapter:
         return []
 
 
-def _ctx(
-    bars: dict[str, list[Any]] | None = None, market_db: Path | None = None
-) -> ToolContext:
+def _ctx(bars: dict[str, list[Any]] | None = None, market_db: Path | None = None) -> ToolContext:
     return ToolContext(adapter=_FakeAdapter(bars or {}), market_db=market_db)
 
 

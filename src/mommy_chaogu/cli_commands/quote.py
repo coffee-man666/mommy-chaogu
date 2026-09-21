@@ -54,7 +54,10 @@ def cmd_quote(args: argparse.Namespace) -> int:
         _log.debug("批量报价失败: %s", e)
         print(json.dumps({"source": "", "quotes": [], "error": str(e)}, ensure_ascii=False))
         return 0
-    payload = {"source": adapter.format_source_label(), "quotes": [_quote_to_dict(q) for q in quotes]}
+    payload = {
+        "source": adapter.format_source_label(),
+        "quotes": [_quote_to_dict(q) for q in quotes],
+    }
     print(json.dumps(payload, ensure_ascii=False))
     return 0
 

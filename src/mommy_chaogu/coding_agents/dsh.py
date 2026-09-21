@@ -92,10 +92,7 @@ def dsh_version_check(version: str | None, baseline: str = TESTED_DSH_VERSION) -
     if detected == tested:
         message = f"dsh {version} 与验证基线 {baseline} 一致。"
     elif detected < tested:
-        message = (
-            f"dsh {version} 低于验证基线 {baseline}，"
-            "patch 格式或 mcp-client 配置键可能缺失。"
-        )
+        message = f"dsh {version} 低于验证基线 {baseline}，patch 格式或 mcp-client 配置键可能缺失。"
     else:
         message = (
             f"dsh {version} 新于验证基线 {baseline}（developer preview 常有"

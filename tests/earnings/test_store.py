@@ -167,9 +167,7 @@ def test_get_actual_source_priority_full_order(store: EarningsStore):
         got = store.get_actual("603662", "H1 2026")
         assert got is not None
         assert got.source == winner
-        store.engine.execute(
-            "DELETE FROM earnings_actual WHERE source = ?", (winner.value,)
-        )
+        store.engine.execute("DELETE FROM earnings_actual WHERE source = ?", (winner.value,))
         store.engine.commit()
 
 
