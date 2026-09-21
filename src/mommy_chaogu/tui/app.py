@@ -246,6 +246,8 @@ class MommyTuiApp(App[None]):
             return  # 冷启动：欢迎卡即终态，零仪式
         if self._active_turn_id is not None:
             return  # 极端竞态：活动轮次进行中不插入历史
+        if self._journal is not None and self._journal.active_id != rec.session_id:
+            return  # 用户已先行 /new 或 /resume：迟到的恢复不得重放/改绑
         chat = self.query_one(ChatView)
         chat.replay_entries(rec.entries, more_older=rec.more_older)
         chat.show_resume_banner(rec.session_id, len(rec.entries))

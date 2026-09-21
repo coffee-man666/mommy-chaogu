@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 from mommy_chaogu.agent.memory import ConversationMemory, SessionMemory, validate_session_id
 
-type ResumeReason = Literal["cold-start", "resumed-latest", "picked"]
+type ResumeReason = Literal["cold-start", "resumed-latest", "picked", "superseded"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,13 +68,24 @@ class SessionJournal:
         self._memory = memory
         self._tail_size = max(1, tail_size)
         self._active: str | None = None
+        # 显式会话选择（/new、/resume）的代数；恢复解析跨越线程时用它判断
+        # 「用户是否已先行动」——迟到的恢复不得把活跃指针改回旧会话。
+        self._generation = 0
 
     def recover_latest(self) -> Recovery:
-        """解析「上次会话」并返回尾窗。空库（首次安装）返回冷启动。"""
+        """解析「上次会话」并返回尾窗。空库（首次安装）返回冷启动。
+
+        启动恢复在后台线程执行（TUI 用户可立刻输入），完整解析可能晚于
+        用户的 /new 或 /resume。若期间代数已变化，返回 ``superseded`` 且
+        **不改活跃指针**——否则新会话会被静默改回旧会话，后续消息写错会话。
+        """
+        generation = self._generation
         latest = self._latest_session_id()
         if latest is None:
             return Recovery(None, (), 0, "cold-start")
         entries, more_older = self._tail_window(latest)
+        if self._generation != generation:
+            return Recovery(latest, entries, more_older, "superseded")
         self._active = latest
         return Recovery(latest, entries, more_older, "resumed-latest")
 
@@ -89,6 +100,7 @@ class SessionJournal:
         suffix = secrets.token_hex(2)
         new_id = validate_session_id(f"tui-{stamp}-{suffix}")
         self._active = new_id
+        self._generation += 1
         return new_id
 
     def switch(self, session_id: str) -> Recovery:
@@ -104,6 +116,7 @@ class SessionJournal:
             return self.recover_latest()
         entries, more_older = self._tail_window(session_id)
         self._active = session_id
+        self._generation += 1
         return Recovery(session_id, entries, more_older, "picked")
 
     def sessions(self, limit: int = 12) -> list[SessionInfo]:
