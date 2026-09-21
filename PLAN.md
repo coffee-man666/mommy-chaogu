@@ -9,6 +9,8 @@
 > 2026-09-21 项目评价与打分：[`docs/PROJECT-SCORECARD-2026-09-21.md`](docs/PROJECT-SCORECARD-2026-09-21.md)
 >
 > 2026-09-20 评分校准与下一阶段计划：[`docs/IMPROVEMENT-PLAN-2026-09-20.md`](docs/IMPROVEMENT-PLAN-2026-09-20.md)
+>
+> M1 验收脚本（E1 彩排 / E2 红队 / E3 真人）：[`docs/M1-ACCEPTANCE-SCRIPTS.md`](docs/M1-ACCEPTANCE-SCRIPTS.md)
 
 ## 当前目标
 

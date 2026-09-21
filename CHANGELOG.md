@@ -7,6 +7,38 @@
 
 ## [Unreleased]
 
+### 工程与修复：质量基线恢复（2026-09-21）
+
+> 背景：用户评审发现 CI 自 2026-09-12 起持续红（format + packaged frontend），
+> 09-21 又新增 dependency-audit 漏洞门禁失败；分支已积累 30+ 未合并提交。
+> 本批把门禁恢复到全绿，并修掉一个被 format 门禁挡住、从未在 CI 跑到的真实竞态。
+
+- **依赖漏洞清零**——dependency-audit 门禁红：`anyio 4.14.1` 三枚 CVE、
+  `soupsieve 2.8.4` 两枚 CVE。升级 `anyio 4.14.2` / `soupsieve 2.9.2`，
+  按 CI 命令复跑 pip-audit：No known vulnerabilities found。
+- **format 门禁收口**——13 个文件不满足 `ruff format --check`，纯换行调整，
+  无语义变化；现 432 files already formatted。
+- **packaged frontend 重建**——`web/dist` 与 `src/mommy_chaogu/web/static`
+  漂移（static 停在 08-10）。按 lock 干净 `npm ci` 后重建并同步，
+  `diff -qr` 归零；`vue-tsc` 通过、vitest 78/78。
+- **计数对齐现实**——AGENTS.md 离线用例 2,082→2,316；AGENT-CHECKLIST
+  G0 预检 65/65→97/97；TEST-PLAYBOOK 复跑命令 56→97。
+- **修复：TUI 启动恢复竞态**——`on_mount` 的恢复 worker 是后台线程；用户在
+  其落回主线程前按 `/new`（或 `/resume`）时，迟到的 `recover_latest` 会把
+  活跃会话改回旧会话，`_apply_recovery` 随后重放旧历史并改绑记忆——新会话
+  静默失效（CI Python 3.13 上稳定复现为测试超时，此前被 format 门禁挡住未
+  暴露）。`SessionJournal` 增加会话代数：解析期间用户已显式切换时返回
+  `superseded` 且不改活跃指针；`_apply_recovery` 增加 active_id 守卫。
+  +2 回归测试（后台线程中途 /new 的交错、迟到恢复不改绑）。
+- **M1 验收脚本集**——补齐计划阶段 0 最后一项（"真实验收材料与观察记录模板就绪"）：
+  `docs/M1-ACCEPTANCE-SCRIPTS.md` 定义三档证据分级（E1 机制彩排 / E2 红队 / E3 真人，
+  禁止混写）、真人验收 S1–S7 步骤与 Gate、A/B/C 方法类型变体（含预期判定表）、
+  D 系列彩排清单与 R1–R12 红队用例、统一记录模板与停止规则。
+
+门禁：离线 2318 passed / 14 deselected（3.12 与 3.13 双版本）；`ruff` +
+`mypy --strict`（223 文件）干净；web vue-tsc + vitest 78/78；dsh
+build/typecheck + 97/97；CI 8/8 job 全绿（2026-09-12 以来首次）。
+
 ### 新增：DSH 个人档满血第一波（策略卡与记忆）
 
 - **doctor 档位检查项**——从 MCP 覆盖行 args 解析 `--profile`，如实报告当前档位
