@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>产品方向与交付评审 — mommy-chaogu DSH UI</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18212b;
+      --muted: #5f6b76;
+      --line: #dfe5ea;
+      --soft: #f5f7f9;
+      --blue: #215a9a;
+      --green: #176b4d;
+      --amber: #8a5a00;
+      --red: #9b2c2c;
+      --shadow: 0 8px 26px rgba(25, 43, 61, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #edf1f4;
+      font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 42px 24px 80px; }
+    header, section { background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+    header { padding: 30px 34px; margin-bottom: 18px; }
+    section { padding: 26px 30px; margin: 18px 0; }
+    h1, h2, h3 { line-height: 1.25; margin: 0 0 12px; letter-spacing: -.015em; }
+    h1 { font-size: 29px; }
+    h2 { font-size: 21px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+    h3 { font-size: 17px; margin-top: 22px; }
+    p { margin: 9px 0; }
+    .meta, .source { color: var(--muted); font-size: 13px; }
+    .lead { font-size: 17px; line-height: 1.6; }
+    .decision { border-left: 4px solid var(--blue); background: #f1f6fc; padding: 14px 16px; margin: 16px 0; }
+    .warning { border-left-color: var(--amber); background: #fff8e8; }
+    .critical { border-left-color: var(--red); background: #fff2f2; }
+    .good { border-left-color: var(--green); background: #eff9f4; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card { background: var(--soft); border: 1px solid var(--line); border-radius: 11px; padding: 16px; }
+    .card h3 { margin-top: 0; }
+    .tag { display: inline-block; padding: 2px 8px; margin-right: 5px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; }
+    .tag.obs { color: var(--green); }
+    .tag.infer { color: var(--blue); }
+    .tag.open { color: var(--amber); }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 9px 8px; }
+    th { background: #f7f9fb; font-weight: 650; }
+    code { background: #f1f3f5; border-radius: 4px; padding: 1px 4px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { background: #17212b; color: #eef4f8; padding: 15px 17px; border-radius: 10px; overflow-x: auto; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    a { color: var(--blue); }
+    ul, ol { margin-top: 7px; }
+    .sequence { counter-reset: seq; list-style: none; padding: 0; }
+    .sequence li { counter-increment: seq; position: relative; padding: 12px 14px 12px 48px; margin: 8px 0; background: var(--soft); border: 1px solid var(--line); border-radius: 10px; }
+    .sequence li::before { content: counter(seq); position: absolute; left: 15px; top: 12px; width: 23px; height: 23px; border-radius: 50%; background: var(--blue); color: #fff; text-align: center; line-height: 23px; font-weight: 700; }
+    .small { font-size: 13px; color: var(--muted); }
+    @media (max-width: 760px) {
+      main { padding: 18px 10px 50px; }
+      header, section { padding: 20px 16px; border-radius: 12px; }
+      h1 { font-size: 24px; }
+      .grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="meta">2026-09-19 · 范围：DSH 浏览器半、watchlist dock、toolview 数据卡 · revision：<code>192ee5214e02d272fc8e285c4ab9abce5282f242</code></p>
+    <h1>产品方向与交付评审 — mommy-chaogu DSH UI</h1>
+    <p class="lead">把 DSH UI 的下一条用户结果定义为：用户能在一次小范围投研中看懂自选对象、证据、来源/时间/新鲜度，并继续追问或请求加入自选；不会把“没有数据”误读成“没有结果”。</p>
+    <div class="decision good"><strong>推荐：</strong>以方案 C「对话原生证据链」为骨架，以方案 A「决策摘要带」为默认密度。保留官方 slot、固定右缘 dock 和服务端计算边界；方案 B 只在验证后做受限实验，方案 D 不作为默认方向。</div>
+    <p class="small">本次是审核建议，不是已批准的产品路线。决定性未知：用户是否首先需要小范围、多证据研究，还是频繁需要多标的比较；以及 DSH slot 是否提供可靠的 composer、导航和调用身份接口。</p>
+  </header>
+
+  <section>
+    <h2>1. 下一步建议</h2>
+    <p>当前 build、typecheck 和 95 个 DSH bundle 测试均通过，工程边界稳定。但用户体验仍偏向“工具卡片集合 + 自选列表”，而不是“扫描 → 取证 → 行动”。继续增加卡片或图表模式不能解决事实状态和下一步行动不清的问题。</p>
+    <div class="grid">
+      <div class="card"><h3>R1 · 先修事实状态</h3><p>可见区分 loading、empty、ready、partial、stale、error；已有快照失败时保留并提示；逐标的显示 missing/stale、来源和时间。</p></div>
+      <div class="card"><h3>R2 · 让卡片成为证据</h3><p>quote / bars / flow 先统一证据头、2–4 个摘要事实和明确空/错态，再扩展其他卡片。</p></div>
+      <div class="card"><h3>R3 · 打通下一步</h3><p>确认宿主动作能力后，建立标的焦点与 follow-up intent；写入自选永远回到 Agent 审批链。</p></div>
+    </div>
+    <p class="source">当前代码中的关键缺口：<code>dock.tsx:36,216,237-246</code>；<code>dock.tsx:113-119,221-250,322-330</code>；<code>cards.tsx:109-150,328-335,391-396,470-475,503-508,539-544</code>。</p>
+  </section>
+
+  <section>
+    <h2>2. 方向依据</h2>
+    <table>
+      <thead><tr><th>项目</th><th>判断</th><th>权威性 / 证据</th></tr></thead>
+      <tbody>
+        <tr><td>用户与场景</td><td>用户以自然语言提出投研目标，宿主 Agent 编排工具，用户在对话中理解证据并继续修正或复用。</td><td><span class="tag infer">文档声明 + 审核推断</span><br><a href="../../AGENTS.md">AGENTS.md:197-223</a>；历史 GUI 观察到工具调用，但没有用户访谈。</td></tr>
+        <tr><td>核心价值</td><td>行情与证据要有来源、时间、新鲜度和缺口说明，不包装成收益保证或自动交易。</td><td><span class="tag obs">文档声明</span><br><a href="../../AGENTS.md">AGENTS.md:204-215,225-230</a>；T2/T3/T4 部分观察支持。</td></tr>
+        <tr><td>当前阶段</td><td>DSH 产品嫁接已具备官方 slot、固定 dock 和 13 张卡，重点应从“能挂载”转向“用户能用结果做下一步”。</td><td><span class="tag obs">代码/门禁</span><br><a href="../../dsh/README.md">dsh/README.md:27-68</a>；当前门禁通过。</td></tr>
+        <tr><td>下一条结果</td><td>一次小范围研究中完成“找到对象 → 判断证据是否可信 → 继续下一步”。</td><td><span class="tag open">审核推断，待确认</span><br>当前没有真实用户验证。</td></tr>
+        <tr><td>边界</td><td>不改宿主；TS 只解析、渲染和交互；市场计算与写入留在 Python/宿主工具；不做下单终端。</td><td><span class="tag obs">文档声明</span><br><a href="../../dsh/README.md">dsh/README.md:16-25,70-89</a>。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>3. 用户经历与证据</h2>
+    <table>
+      <thead><tr><th>用户步骤</th><th>当前体验</th><th>证据与限制</th></tr></thead>
+      <tbody>
+        <tr><td>进入 DSH，扫一眼自选</td><td>历史 T1 显示 dock 已挂载且不压侧栏；固定 264px overlay 会压缩对话可视宽度，还没有“当前研究对象”语义。</td><td><a href="../../dsh/TEST-PLAYBOOK.md">TEST-PLAYBOOK.md:85-88</a>；<a href="../../gui-test-screenshots/t1_initial_layout.png">历史截图</a>，本次未重新启动主机。</td></tr>
+        <tr><td>首次加载 / 空自选</td><td><code>loading:true</code> 会在渲染分支中被空数组抢先处理；标题刷新按钮只在有条目时显示。</td><td><a href="../../dsh/packages/dsh-bundle/src/client/dock.tsx">dock.tsx:36,216,237-246</a>；代码检查，未做空库真机复现。</td></tr>
+        <tr><td>数据源抖动后继续看自选</td><td>报价路径会保留旧报价，但 stale 只有批次脚注；已有旧条目时 watchlist 请求错误不进入可见 error 态。</td><td><a href="../../dsh/packages/dsh-bundle/src/client/dock.tsx">dock.tsx:81-119,221-250,322-330</a>；<code>api.ts:32-45</code> 当前已透传 error，旧评审的“api 丢 error”不是当前事实。</td></tr>
+        <tr><td>阅读数据卡</td><td>卡片外观统一但 provenance 不统一；多类有效空结果直接不渲染；只有 K 线有明细交互。</td><td><a href="../../dsh/packages/dsh-bundle/src/client/cards.tsx">cards.tsx:72-589</a>；T3 历史视觉展开受阻。</td></tr>
+        <tr><td>从证据继续行动</td><td>没有统一 action；dock 行只做局部展开；官方 composer/navigation/action seam 未证实。</td><td><a href="../../dsh/packages/dsh-bundle/src/client/dock.tsx">dock.tsx:263-315</a>；<a href="../../dsh/packages/dsh-bundle/src/client/types.ts">types.ts:7-16</a>。</td></tr>
+        <tr><td>AI 写入自选后确认</td><td>已有回执三态和 SSE 重拉基础；malformed 回执在特定条件下可能默认显示成功。</td><td><a href="../../dsh/packages/dsh-bundle/src/client/parse.ts">parse.ts:270-308</a>；历史 F5 记录，本次未重跑。</td></tr>
+      </tbody>
+    </table>
+    <div class="decision warning"><strong>用户负担：</strong>需要从长正文和工具行拼出同一标的，自己判断数字是否仍有效，遇到空结果时猜是“没有命中”还是“卡片没渲染”。</div>
+  </section>
+
+  <section>
+    <h2>4. 路线判断</h2>
+    <p><strong>是否兑现既定方向：</strong>承重边界已经兑现；dock 和卡片基础能力部分兑现；“用户看懂结果并继续修正或复用”尚未被当前 UI 验收证明。历史测试证明工具能调用、回答能诚实说明限制，但不能替代 rich card 的真实使用证据。</p>
+    <p><strong>方向假设是否成立：</strong>对话 + 上下文 dock + 证据卡与项目定位一致；用户是否需要筛选/排序/多选比较仍未验证。不能把“13 张卡”本身当成产品目标。</p>
+    <p><strong>最小实验：</strong>已有多个分组自选，其中一只报价正常、一只 stale、一只缺失；用户问“今天谁值得继续看，为什么，数据是否过期”。如果用户主要卡在跨标的比较，再开启 B；如果主要卡在判断数据是否最新，继续做比较没有优先级。</p>
+  </section>
+
+  <section>
+    <h2>5. 四个界面方向</h2>
+    <div class="card">
+      <h3>方案 A · 极简「决策摘要带」</h3>
+      <p>默认只放名称、代码、价格、涨跌、状态和一条注意标签，一次展开一个标的；卡片默认 2–4 个事实，明细渐进披露。学习成本最低，但摘要更容易被误读。</p>
+      <pre>type Freshness =
+  | { kind: 'fresh'; source: string; asOf: string }
+  | { kind: 'stale'; source?: string; asOf?: string; reason: string }
+  | { kind: 'missing'; reason: string }</pre>
+    </div>
+    <div class="card">
+      <h3>方案 B · 有边界的「研究工作台」</h3>
+      <p>增加搜索、分组筛选、排序、临时固定和有限多选比较；明确区分“研究固定”和“加入自选”。灵活但会把对话辅助面推向通用后台，应等验证后再做。</p>
+      <pre>interface ResearchViewState {
+  query: string; group: string | null
+  sort: 'group' | 'changePct' | 'freshness'
+  locallyPinned: Set&lt;string&gt;; selected: Set&lt;string&gt;
+}</pre>
+    </div>
+    <div class="card">
+      <h3>方案 C · 对话原生「证据链卡」</h3>
+      <p>AI 叙述提出判断，卡片证明、对比或限定，dock 只保持“我正在看谁”。每张卡统一 subject、source、as-of、freshness、scope、caveat 和下一步；没有可靠调用身份时不猜关系。</p>
+      <pre>interface EvidenceNode&lt;T&gt; {
+  nodeId: string; chainId?: string
+  subject: { code: string; name: string }
+  role: 'quote' | 'market-context' | 'bars' | 'flow'
+  provenance: { source: string; asOf?: string
+    fetchedAt?: string; freshness: 'live'|'cached'|'stale'|'unknown' }
+}</pre>
+    </div>
+    <div class="card">
+      <h3>方案 D · 专业「密集型行情终端」</h3>
+      <p>借鉴表格密度、数字对齐和键盘导航，但会把 stale、caveat、探索性回测放进“交易终端”语境，容易让红绿、胜率和信号看起来像结论。只借鉴排版和导航，不采用其产品形态。</p>
+    </div>
+    <div class="decision good"><strong>合成结论：</strong>C 提供证据语义，A 提供默认展示密度，B 只作为验证后的有限能力，D 只借鉴键盘和数字排版。推荐 C+A。</div>
+  </section>
+
+  <section>
+    <h2>6. 建议与取舍</h2>
+    <article class="decision critical"><h3>R1 · 先让 watchlist 与卡片的事实状态可见</h3><p><strong>最小动作：</strong>建立 loading / empty / ready / partial / stale / error；修复初始加载优先级、空态刷新、已有快照的列表错误提示；逐代码显示 fresh/stale/missing、source、as-of、reason。</p><p><strong>为什么现在：</strong>这是事实诚实性的产品底线。验证应注入首次加载、真空、列表失败但有旧条目、报价失败但有旧报价、部分缺失五态；用户应能指出“是否存在、哪只不可用、最后有效时间、如何重试”。高信心。</p></article>
+    <article class="decision"><h3>R2 · 把 13 张卡收敛成「摘要 + 证据头 + 明确结果状态」</h3><p><strong>最小动作：</strong>先为 quote / bars / flow 增加统一 EvidenceHeader；默认只呈现 2–4 个决策事实，详情渐进披露；有效空结果、error、unsupported 分开渲染，只有 unsupported 回落通用行，回测 caveat 保持可见。</p><p><strong>为什么现在：</strong>继续新增卡片会放大工具适配器漂移。用“600519 为什么跌”验证用户是否能说出判断、来源/时间和缺口；中高信心。</p></article>
+    <article class="decision warning"><h3>R3 · 宿主动作能力确定后，建立「标的焦点 → 下一步」闭环</h3><p><strong>最小动作：</strong>先做只读 SymbolRef 和 action intent：focus-symbol、expand-detail、ask-follow-up、request-watchlist-add。若宿主没有官方 action，显示可复制追问提示，不造私有 RPC；写入自选永远回到 Agent 审批。</p><p><strong>为什么现在：</strong>没有下一步，卡片只是结果终点；但动作接口尚未证实。验证“继续看 600519 的 20 日趋势”是否保留代码与语境，以及审批、回执、SSE、dock 计数是否一致。中等信心。</p></article>
+  </section>
+
+  <section>
+    <h2>7. 下一阶段与暂缓项</h2>
+    <ol class="sequence">
+      <li><strong>先做 R1：</strong>状态诚实性与故障恢复；若用户仍无法判断空、stale、missing、error，不进入比较功能。</li>
+      <li><strong>再做 R2：</strong>quote/bars/flow 的证据头与空结果卡；复用现有 slot 和服务端口径。</li>
+      <li><strong>然后探测 R3：</strong>确认官方 composer/navigation/action seam，再做焦点和 follow-up；缺失时收窄为提示。</li>
+      <li><strong>最后做方向决定：</strong>只有真实任务显示比较是主要阻塞，才做搜索 + 单一排序 + 临时选择的 B 版本。</li>
+    </ol>
+    <p><strong>暂缓：</strong>全量研究工作台、任意列/复杂筛选/多层比较/自由拖拽，以及更多 card 类型和图表变体。</p>
+    <p><strong>停止作为默认方向：</strong>独立交易终端、单键交易、闪烁式实时反馈、浏览器端均线/复权/信号/回测计算。</p>
+  </section>
+
+  <section>
+    <h2>8. 工程证据与 UI 规范检查</h2>
+    <table>
+      <thead><tr><th>文件:行</th><th>后果</th><th>角色 / 建议</th></tr></thead>
+      <tbody>
+        <tr><td><a href="../../dsh/packages/dsh-bundle/src/client/dock.tsx">dock.tsx:36,216,237-246</a></td><td>初始 loading 可能显示空态；空自选没有刷新。</td><td>产品承诺底线 · R1</td></tr>
+        <tr><td><a href="../../dsh/packages/dsh-bundle/src/client/dock.tsx">dock.tsx:81-119,221-250,322-330</a></td><td>已有旧条目时列表错误不可见；stale 脚注可能暗示不存在的旧快照。</td><td>产品承诺底线 · R1</td></tr>
+        <tr><td><a href="../../dsh/packages/dsh-bundle/src/client/cards.tsx">cards.tsx:72-589</a></td><td>卡片字段、时间和交互不一致；有效空结果多处不渲染。</td><td>当前方向使能器 · R2</td></tr>
+        <tr><td><a href="../../dsh/packages/dsh-bundle/src/client/parse.ts">parse.ts:281-308</a></td><td>malformed 回执在部分条件下默认显示 ok。</td><td>产品承诺底线 · R2 工程支持</td></tr>
+        <tr><td><a href="../../dsh/packages/dsh-bundle/src/client/dock.tsx">dock.tsx:263-272</a>；<code>dock.module.css:40-50,69-78,136-156</code></td><td><code>div</code> 承担按钮行为；缺少可见 focus；刷新使用不合适的 <code>aria-pressed</code>。</td><td>可访问性支持 · R1/R3</td></tr>
+        <tr><td><a href="../../dsh/packages/dsh-bundle/src/client/types.ts">types.ts:7-16</a></td><td>上下文不足以证明跨卡片关系或官方动作能力。</td><td>学习缺口 · R3 先做接口探针</td></tr>
+      </tbody>
+    </table>
+    <p>本次按最新 Web Interface Guidelines 做了规范检查：动作使用语义 <code>&lt;button&gt;</code>，交互元素有可见 focus，异步状态使用 <code>aria-live</code>，导航与动作分开。来源：<a href="https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md">Vercel Web Interface Guidelines</a>（2026-09-19 获取）。规范问题服务于 R1/R3，不单独形成组件重构路线。</p>
+  </section>
+
+  <section>
+    <h2>9. 验证记录与边界</h2>
+    <table>
+      <thead><tr><th>检查</th><th>结果</th><th>限制</th></tr></thead>
+      <tbody>
+        <tr><td>版本与工作树</td><td><code>192ee5214e02d272fc8e285c4ab9abce5282f242</code>；仅有范围外未跟踪文件。</td><td>未清理或修改用户内容。</td></tr>
+        <tr><td>build / typecheck</td><td>均通过；当前 client bundle 约 87.04 KB gzip。</td><td>门禁通过不等于用户理解卡片。</td></tr>
+        <tr><td>DSH bundle tests</td><td>10 个测试文件、95 个测试通过。</td><td>未覆盖完整 React 视觉旅程。</td></tr>
+        <tr><td>历史 GUI</td><td>T1/T2/T3/T4 有截图和记录；T3 视觉展开、T6 部分点击受阻。</td><td><a href="../../dsh/TEST-PLAYBOOK.md">TEST-PLAYBOOK.md:85-110,142-182</a>；本次未新开 DSH 主机。</td></tr>
+        <tr><td>用户价值</td><td>没有真实用户访谈、任务完成率或使用日志。</td><td>C+A 是审核建议，不是用户验收结论。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>10. 决策状态</h2>
+    <div class="decision good">当前可复用基础：官方 slot、服务端计算边界、固定 dock、解析失败回落、写回执/SSE 基础，以及通过的 build/typecheck/95 测试。</div>
+    <div class="decision warning">待批准建议：R1–R3 与 C+A 合成方向。若进入实现，明确排除完整研究工作台、交易终端化、浏览器指标计算和新卡片扩张。</div>
+    <p>复访条件：完成 R1–R3 的单条真机/任务实验后，根据实际用户卡点决定开启 B，或停止在 DSH UI 上继续扩张。</p>
+  </section>
+</main>
+</body>
+</html>
