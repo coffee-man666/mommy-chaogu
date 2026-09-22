@@ -126,3 +126,23 @@ class TestExpandableDetail:
             assert "已拒绝" in content
 
         self._run_mounted(ToolIndicator("strategy_save", "", args={}), check)
+
+
+class TestLifecycleSafety:
+    def test_late_render_and_timer_after_unmount(self) -> None:
+        """回归（CI flake）：卸载后迟到渲染 / 闪烁定时器不得抛 NoMatches。"""
+
+        async def scenario() -> None:
+            app = _Host()
+            async with app.run_test() as pilot:
+                host = app.query_one(Vertical)
+                ind = ToolIndicator("get_quote", "600519")
+                await host.mount(ind)
+                await pilot.pause()
+                await ind.remove()
+                await pilot.pause()
+                ind._render_header("#ffffff")  # 曾抛 NoMatches
+                ind._blink()
+                assert ind._timer is None  # on_unmount 已停表
+
+        _run(scenario())

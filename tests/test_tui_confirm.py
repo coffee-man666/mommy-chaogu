@@ -193,3 +193,38 @@ class TestInlineConfirm:
                 assert app.query_one(HintBar).mode != "confirm"
 
         _run(scenario())
+
+    def test_late_callbacks_survive_torn_down_view(self) -> None:
+        """回归（CI 3.13 flake）：视图半拆除时迟到回调不得抛 NoMatches。"""
+        from mommy_chaogu.tui.widgets.hint_bar import HintBar
+
+        agent = _ReplayAgent()
+        app = _make_app(agent)
+
+        async def scenario() -> None:
+            async with app.run_test(size=(100, 30)) as pilot:
+                chat = app.query_one(ChatView)
+                app.query_one(HintBar).remove()
+                await pilot.pause()
+                chat.set_busy(True)  # 曾抛 NoMatches(HintBar)
+                chat.set_busy(False)
+                await pilot.pause()
+
+        _run(scenario())
+
+    def test_confirm_on_torn_down_view_denies(self) -> None:
+        """确认面已拆除时 request_confirm 必须 fail-closed（deny），不悬空等待。"""
+        agent = _ReplayAgent()
+        app = _make_app(agent)
+
+        async def scenario() -> None:
+            async with app.run_test(size=(100, 30)) as pilot:
+                chat = app.query_one(ChatView)
+                app.query_one("#chat-log").remove()
+                await pilot.pause()
+                decisions: list[str] = []
+                chat.request_confirm("strategy_save", {"title": "t"}, decisions.append)
+                await pilot.pause()
+                assert decisions == ["deny"]
+
+        _run(scenario())

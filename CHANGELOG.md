@@ -30,6 +30,13 @@
   暴露）。`SessionJournal` 增加会话代数：解析期间用户已显式切换时返回
   `superseded` 且不改活跃指针；`_apply_recovery` 增加 active_id 守卫。
   +2 回归测试（后台线程中途 /new 的交错、迟到恢复不改绑）。
+- **修复：TUI 迟到回调/卸载竞态（同批第二处）**——CI flake 根因是
+  `DOMQuery.first()` 空集时**抛 NoMatches 而非返回 None**，此前三处"找不到就
+  跳过"的守卫全部实际会炸（chat.py 的 `#chat-log`/`HintBar` 查询、`_refresh_hint_bar`）；
+  `ToolIndicator` 还缺少卸载时的定时器清理，`/clear` 后旧指示器的闪烁定时器会继续
+  触碰已拆除子树。现在统一用 `next(iter(query), None)` 安全取节点、确认面已拆除时
+  `request_confirm` fail-closed 拒绝、`on_unmount` 停表。+4 回归测试
+  （半拆除视图的迟到回调、迟到确认拒绝、卸载后渲染/定时器）。
 - **M1 验收脚本集**——补齐计划阶段 0 最后一项（"真实验收材料与观察记录模板就绪"）：
   `docs/M1-ACCEPTANCE-SCRIPTS.md` 定义三档证据分级（E1 机制彩排 / E2 红队 / E3 真人，
   禁止混写）、真人验收 S1–S7 步骤与 Gate、A/B/C 方法类型变体（含预期判定表）、
