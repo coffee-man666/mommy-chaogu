@@ -1,0 +1,75 @@
+# @mommy-chaogu/dsh-bundle —— mommy-chaogu DSH 产品嫁接的 patch 层。
+#
+# 形状纪律（对照 dsh-trading packages/base/cordis.patch.yml 实证语义）：
+#   - 本文件必须是顶层 YAML 数组（loadProfile → parsePatchList 对非数组直接抛错）；
+#   - 只用 insert 行新增自有行（id 命名空间 mommy-chaogu-*，全生态唯一；
+#     同 id 再 insert = 整行替换，多 bundle 互相覆盖——insert-only 铁律）；
+#   - agent-presets 是宿主 web 层已有行，必须写同 id 覆盖行且 config 全键
+#     restate（default/roots/includeShippedRoot/includeUserRoot 一个都不能少，
+#     覆盖语义不合并）；headless 宿主无该行时 loader 只警告跳过，不致命；
+#   - 行 id 引用的每个包名都必须出现在本包 dependencies（安装闭包，bare 名
+#     从 profile node_modules 解析，缺包 = 启动 ERR_MODULE_NOT_FOUND）。
+#
+# 行清单（host 面常驻，四层职责）：
+#   mommy-chaogu-gate              写操作审批闸门（tools/pre-execute 只 ask）
+#   mommy-chaogu-preset-installer  投研 preset 幂等自安装（托管 hash，不改用户文件）
+#   mommy-chaogu-mcp               mommy MCP 工具行（37 工具；默认 market-only）
+#   mommy-chaogu-client            浏览器半（对话流富卡片 + 自选停靠；仅 web 宿主加载）
+#   mommy-chaogu-bridge            node 半 HTTP 桥（/mommy/api + SSE；headless 挂起无害）
+#
+# 安装闭包：mcp 行引用 @deepseek-ai/dsh-mcp-client（dependencies 实装）；
+# client/bridge/gate/presets 行引用本包子路径 exports。
+- insert:
+    # 面 3：写操作审批。mommy 的 7 个写工具（经 MCP 前缀 mcp__mommy-chaogu__ 暴露）
+    # 一律走宿主审批面：只返回 {kind:'ask'}，永不直接 allow；headless 无审批者时
+    # 宿主自动降级 deny（fail-closed）。读工具与查询类 action 不打扰。
+    - id: mommy-chaogu-gate
+      name: '@mommy-chaogu/dsh-bundle/gate'
+
+    # 面 2：preset 安装器。boot 时把 assets/preset/mommy-investor 幂等自安装到
+    # 统一 preset root（首行托管 hash，用户改过的文件永不覆盖）。
+    - id: mommy-chaogu-preset-installer
+      name: '@mommy-chaogu/dsh-bundle/presets'
+
+    # 工具面：mommy MCP server（stdio）。默认 market-only（公共行情 + 研究证据包），
+    # 个人上下文与写操作需用户显式切 personal（由 Python 安装器在 profile patch 覆盖）。
+    # command 默认按 PATH 上的 mommy-mcp；mommy dsh install 会用绝对解释器路径覆写。
+    - id: mommy-chaogu-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: stdio
+        serverName: mommy-chaogu
+        command: mommy-mcp
+        args:
+          - '--profile'
+          - market-only
+
+    # 面 4 浏览器半：tool.call.toolview 富卡片（报价/资金流/K线/预测/自选写回执）
+    # + shell.overlay 自选停靠。本行指向包根（宿主 client-modules 扫描器的
+    # exactPackageSpecifier 对 scoped 包只认裸包名，子路径行永远不是 client row）：
+    # root 入口是空 apply host 半（loader import 无害），浏览器产物 lib/client.js
+    # 由 web 宿主经包 manifest 的 dsh.client 声明发现注入 __DSH_BOOT__。headless
+    # 宿主无扫描行，本行只是空插件，天然无害。
+    - id: mommy-chaogu-client
+      name: '@mommy-chaogu/dsh-bundle'
+
+    # 面 4 node 半：/mommy/api 数据桥 + SSE 失效信号。webServer/connection 只在
+    # web 宿主存在——apply 内用 ctx.inject 子插件声明依赖，headless 宿主子 fiber
+    # 静默挂起（无副作用不崩 profile，dsh-trading client-ui-trading 同款）。
+    - id: mommy-chaogu-bridge
+      name: '@mommy-chaogu/dsh-bundle/bridge'
+
+# 覆盖行：preset root 挂载。web 宿主的 web-app 层已有 agent-presets 行，insert
+# 同 id 条目会触发 duplicate loader entry id 启动崩溃，必须走覆盖；config 全键
+# restate（default/roots/includeShippedRoot/includeUserRoot 缺一不可）。root 用
+# mommy 数据目录下的产品自有区（与用户创作区 ~/.dsh/.agent-presets 分开）；
+# Python 安装器在 profile patch 里按解析后的绝对路径再覆盖一次。
+- id: agent-presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: mommy-investor
+    roots:
+      - path: ~/.local/share/mommy-chaogu/dsh-presets
+        trust: user
+    includeShippedRoot: true
+    includeUserRoot: true

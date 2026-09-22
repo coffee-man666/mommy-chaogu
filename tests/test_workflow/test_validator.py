@@ -66,3 +66,20 @@ def test_validator_detects_builtin_trigger_conflict_and_warns_unknown_arg() -> N
     assert blocking_issues(issues)
     assert any("冲突" in issue for issue in issues)
     assert any(issue.startswith("warning:") for issue in issues)
+
+
+def test_validator_blocks_write_tools_in_custom_specs() -> None:
+    """自定义工作流按 trigger 自动执行、无逐次确认通道——写工具必须 blocking。
+
+    判定集与 agent/service.py 的确认白名单同源（strategy_* 三件套 +
+    manage_watchlist / manage_alert）；backfill_history 写的是行情缓存而非
+    用户数据，不属于此集。
+    """
+    for write_tool in ("manage_watchlist", "manage_alert", "strategy_save"):
+        spec = _valid(steps=[StepSpec(write_tool, "写")])
+        issues = validate_spec(spec)
+        assert any("写工具" in issue and write_tool in issue for issue in issues), write_tool
+        assert blocking_issues(issues)
+
+    cache_write = _valid(steps=[StepSpec("backfill_history", "回填")])
+    assert not any("写工具" in issue for issue in validate_spec(cache_write))

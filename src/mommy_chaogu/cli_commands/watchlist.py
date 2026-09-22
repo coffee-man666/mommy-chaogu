@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 # Shared CLI dependencies are deliberately exported by cli_support.
@@ -95,6 +96,19 @@ def cmd_watchlist_remove(args: argparse.Namespace) -> int:
 
 def cmd_watchlist_list(args: argparse.Namespace) -> int:
     s = _store(args)
+    if getattr(args, "json", False):
+        entries = s.list_entries()
+        payload = [
+            {
+                "code": e.code,
+                "name": e.name,
+                "group": e.group.name,
+                "note": e.note,
+            }
+            for e in entries
+        ]
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
     if args.by_group:
         by_group = s.list_entries_by_group()
         if not by_group:
@@ -193,6 +207,11 @@ def build_watchlist_parser() -> argparse.ArgumentParser:
     # list
     p_l = sub.add_parser("list", help="列出自选股")
     p_l.add_argument("--by-group", "-G", action="store_true", help="按分组显示")
+    p_l.add_argument(
+        "--json",
+        action="store_true",
+        help="输出 JSON（机器可读；DSH 桥与脚本的稳定数据面，忽略 --by-group）",
+    )
     p_l.set_defaults(func=cmd_watchlist_list)
 
     # stats

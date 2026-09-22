@@ -70,3 +70,14 @@ data/archive/
 # （见 tests/test_release_consistency.py 的 _EXCLUDED_SKILL_WHITELIST 白名单）——
 # 两套机制分工不同，新增本地 Skill 副本时参照此说明选择。
 .agents/skills/market-watch-loop
+
+# DSH 产品模式安装产物（mommy dsh install 生成，不入仓）
+data/dsh-home/
+data/dsh-presets/
+# TS 子工程构建产物
+dsh/**/lib/
+dsh/**/node_modules/
+dsh/**/*.tsbuildinfo
+# 本地产物 / 截图（不入仓）
+.zcode/
+gui-test-screenshots/

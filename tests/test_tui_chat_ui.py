@@ -47,8 +47,9 @@ class TestToolDisplayName:
     def test_all_tools_mapped(self) -> None:
         from mommy_chaogu.tui.widgets.tool_indicator import TOOL_DISPLAY_NAMES
 
-        # 25 个行情/数据工具 + 7 个策略卡工具（写操作确认条需要中文名）
-        assert len(TOOL_DISPLAY_NAMES) == 32
+        # 30 个行情/数据工具 + 7 个策略卡工具（写操作确认条需要中文名）；
+        # 完备性由 tests/test_tool_surface_mirrors.py 对 registry 断言
+        assert len(TOOL_DISPLAY_NAMES) == 37
         for name in ("strategy_save", "strategy_archive", "strategy_activate_monitor"):
             assert name in TOOL_DISPLAY_NAMES
 

@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json
+from mommy_chaogu.codes import STOCK_CODE_PATTERN
 from mommy_chaogu.codes import STOCK_CODE_RE as _CODE_RE
 from mommy_chaogu.strategy.models import AutomationStatus, StrategyCard
 from mommy_chaogu.strategy.store import (
@@ -119,7 +120,7 @@ DEFS: list[ToolDef] = [
                 "strategy_id": {"type": "string"},
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}(?:[.-][A-Z])?|\\d{6})$",
+                    "pattern": STOCK_CODE_PATTERN,
                     "description": "要应用策略的 A 股或美股代码",
                 },
                 "days": {"type": "integer", "minimum": 5, "maximum": 60, "default": 20},
@@ -141,7 +142,7 @@ DEFS: list[ToolDef] = [
                 "condition_id": {"type": "string"},
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}(?:[.-][A-Z])?|\\d{6})$",
+                    "pattern": STOCK_CODE_PATTERN,
                 },
                 "name": {
                     "type": "string",
@@ -166,7 +167,7 @@ DEFS: list[ToolDef] = [
                 "condition_id": {"type": "string"},
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}(?:[.-][A-Z])?|\\d{6})$",
+                    "pattern": STOCK_CODE_PATTERN,
                 },
                 "name": {
                     "type": "string",

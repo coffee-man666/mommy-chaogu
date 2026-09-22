@@ -1,0 +1,13 @@
+/* mommy-chaogu DSH 前端设计令牌（全局）：A 股语义色——涨红跌绿。
+   组件样式一律走 CSS Modules（cards/dock），本文件只放共享变量与基础 reset。 */
+:root {
+  --mommy-up: #d93025;       /* 涨：红 */
+  --mommy-down: #1a7f37;     /* 跌：绿 */
+  --mommy-flat: #6b7280;     /* 平：灰 */
+  --mommy-card-bg: rgba(127, 127, 127, 0.08);
+  --mommy-card-border: rgba(127, 127, 127, 0.22);
+  --mommy-card-radius: 10px;
+  --mommy-text: inherit;
+  --mommy-text-dim: rgba(127, 127, 127, 0.9);
+  --mommy-font-num: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+}

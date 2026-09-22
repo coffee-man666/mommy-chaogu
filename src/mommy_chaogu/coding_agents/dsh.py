@@ -55,9 +55,15 @@ def parse_dsh_version(text: str | None) -> tuple[int, int, int] | None:
     return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
 
-def dsh_version_check(version: str | None) -> dict[str, Any]:
-    """生成 doctor 用的 dsh 版本漂移检查项（非阻塞，warning 不计入 blocking）。"""
-    tested = parse_dsh_version(TESTED_DSH_VERSION)
+def dsh_version_check(version: str | None, baseline: str = TESTED_DSH_VERSION) -> dict[str, Any]:
+    """生成 doctor 用的 dsh 版本漂移检查项（非阻塞，warning 不计入 blocking）。
+
+    ``baseline`` 允许产品模式（mommy dsh，真机验证基线不同）传自己的版本；
+    默认仍是本 adapter 的 ``TESTED_DSH_VERSION``。真实比较与 ``tested`` 字段
+    都用 ``baseline``——禁止比较一个基线、显示另一个（曾经靠事后字符串替换
+    修补显示，属于会说谎的实现）。
+    """
+    tested = parse_dsh_version(baseline)
     assert tested is not None  # 基线常量必须可解析，见测试约束
     detected = parse_dsh_version(version)
     if version is not None and detected is None:
@@ -65,10 +71,10 @@ def dsh_version_check(version: str | None) -> dict[str, Any]:
             "name": "dsh_version",
             "status": "warning",
             "detected": version,
-            "tested": TESTED_DSH_VERSION,
+            "tested": baseline,
             "message": (
                 f"dsh --version 输出无法解析出版本号（{version!r}）；"
-                f" mommy 按 {TESTED_DSH_VERSION} 基线验证，格式变化时连接可能失效。"
+                f" mommy 按 {baseline} 基线验证，格式变化时连接可能失效。"
             ),
         }
     if detected is None:
@@ -76,30 +82,27 @@ def dsh_version_check(version: str | None) -> dict[str, Any]:
             "name": "dsh_version",
             "status": "not_checked",
             "detected": None,
-            "tested": TESTED_DSH_VERSION,
+            "tested": baseline,
             "message": (
                 "未探测到本地 dsh 二进制（常见于 npx 运行），无法核对版本；"
-                f" mommy 按 {TESTED_DSH_VERSION} 基线验证。"
+                f" mommy 按 {baseline} 基线验证。"
             ),
         }
     relation = "ok" if detected == tested else "warning"
     if detected == tested:
-        message = f"dsh {version} 与验证基线 {TESTED_DSH_VERSION} 一致。"
+        message = f"dsh {version} 与验证基线 {baseline} 一致。"
     elif detected < tested:
-        message = (
-            f"dsh {version} 低于验证基线 {TESTED_DSH_VERSION}，"
-            "patch 格式或 mcp-client 配置键可能缺失。"
-        )
+        message = f"dsh {version} 低于验证基线 {baseline}，patch 格式或 mcp-client 配置键可能缺失。"
     else:
         message = (
-            f"dsh {version} 新于验证基线 {TESTED_DSH_VERSION}（developer preview 常有"
+            f"dsh {version} 新于验证基线 {baseline}（developer preview 常有"
             "破坏性变更）；若工具未出现在 dsh 中，请以 doctor 逐项结果为准。"
         )
     return {
         "name": "dsh_version",
         "status": relation,
         "detected": version,
-        "tested": TESTED_DSH_VERSION,
+        "tested": baseline,
         "message": message,
     }
 

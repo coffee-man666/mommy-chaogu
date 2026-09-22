@@ -6,9 +6,15 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
+from mommy_chaogu.agent.service import CONFIRM_ALWAYS, CONFIRM_BY_ACTION
 from mommy_chaogu.agent.tools.registry import _TOOL_MAP, ToolRegistry
 from mommy_chaogu.workflow.engine import Workflow
 from mommy_chaogu.workflow.spec import WorkflowSpec
+
+#: 与 agent/service.py 的确认白名单同源（同一份「改动用户数据须逐次授权」
+#: 判定集）：自定义工作流经 trigger 自动执行、执行器没有 on_confirm 通道，
+#: 写工具进 spec 等于绕过三次独立授权的产品语义——blocking。
+_WRITE_TOOL_NAMES: frozenset[str] = frozenset(CONFIRM_ALWAYS) | frozenset(CONFIRM_BY_ACTION)
 
 
 def _patterns_conflict(left: str, right: str) -> bool:
@@ -76,6 +82,12 @@ def validate_spec(
             continue
         if step.tool_name not in registered_names:
             issues.append(f"第 {index} 步工具未在当前 ToolRegistry 注册: {step.tool_name}")
+            continue
+        if step.tool_name in _WRITE_TOOL_NAMES:
+            issues.append(
+                f"第 {index} 步是写工具 {step.tool_name}：自定义工作流按 trigger 自动执行、"
+                "没有逐次确认通道，写操作（自选/告警/策略卡）须留在对话的人工确认流程中"
+            )
             continue
         properties = tool_def.parameters.get("properties", {})
         for name, source in step.inputs.items():

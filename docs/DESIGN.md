@@ -16,7 +16,10 @@
   - 用户不应学习复杂工具 → **自然语言优先，CLI/MCP 由 Agent 接管**
   - 第三方接口随时挂（东财 push2 凌晨会断）→ **降级优先，断流不致命**
   - 用户信任比技术包装重要 → **事实、解释、能力缺口和数据时间必须可见**
-- **数据源**：东方财富 efinance（主）+ 腾讯财经 qt.gtimg.cn（备）
+- **数据源**（四源 fallback 链，`market_data/__init__.py:create_adapter_chain`）：
+  Massive（美股行情）→ Yahoo（美股备用 / `^` 指数 / 利率 / VIX）→ 东方财富 efinance（A 股主）→
+  腾讯财经 qt.gtimg.cn（A 股兜底）；另有模块级直连源（news / sector / fundamentals / rankings，
+  Protocol 外的第二条缝，见 §backlog）
 - **不做什么**：不下单、不做实盘、不自动荐股、不建设通用量化策略平台；数据与方法未达到
   要求时不宣称真实回测。
 
@@ -72,7 +75,7 @@ class MarketDataAdapter(Protocol):
 ```
 [DB] ←→ [CachedMarketDataAdapter] ←→ [业务层 (Monitor / Signals)]
               ↓
-       [MarketDataAdapter] (efinance / tencent / mock)
+       [MarketDataAdapter] (massive / yahoo / efinance / tencent 四源链)
 ```
 
 每条缓存记录带**双时间戳**：
@@ -124,8 +127,10 @@ src/mommy_chaogu/
 ├── market_data/         # 数据源适配层
 │   ├── types.py             # 11 个 dataclass + 4 个 StrEnum
 │   ├── adapter.py           # MarketDataAdapter Protocol
-│   ├── efinance_adapter.py  # 东方财富（主力）
-│   ├── tencent_adapter.py   # 腾讯财经（备力）
+│   ├── massive_adapter.py   # Massive（美股行情，链首）
+│   ├── yahoo_adapter.py     # Yahoo（美股备用 / 指数 / 利率 / VIX）
+│   ├── efinance_adapter.py  # 东方财富（A 股主力）
+│   ├── tencent_adapter.py   # 腾讯财经（A 股兜底）
 │   └── fallback_adapter.py  # 多源 fallback 装饰器
 │
 ├── watchlist/           # 自选池

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>工程 × 能力 — mommy-chaogu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .arrow-right { position: relative; }
+      .arrow-right::after { content: ""; position: absolute; right: -14px; top: 50%;
+        transform: translateY(-50%); border-left: 10px solid #cbd5e1;
+        border-top: 7px solid transparent; border-bottom: 7px solid transparent; }
+      .chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-14">
+
+      <!-- ============ Header ============ -->
+      <header class="space-y-4">
+        <p class="text-xs uppercase tracking-wider text-slate-400">Architecture &amp; capability review · 2026-09-13 · HEAD 91d5d4b + 工作区 494 行未提交修复</p>
+        <h1 class="font-serif text-4xl font-bold leading-tight">工程 × 能力 — mommy-chaogu</h1>
+        <p class="text-lg text-slate-700 leading-relaxed">
+          根病一句话：<strong>底座深，跨缝浅。</strong>单语言内的 derive-don't-duplicate 纪律是真实成立的
+          （37 工具单一注册表、import 期一致性校验、mypy strict 零豁免、2,301 个离线用例）；
+          但每一个<strong>跨语言（Python↔TS）、跨入口（TUI↔Web↔DSH）、跨文档（代码↔AGENTS/README）</strong>
+          的形状都活在多份手抄里——而且漂移不再是假设，是实测：TUI 标签表注释自称「覆盖全部工具」实际缺 5 个，
+          web 侧缺 12 个；审批语义存在<strong>五种编码</strong>且漂移方向是 fail-open；代码正则真相源只迁移了 2/23 个使用点，
+          同一个 MCP server 对 <span class="chip">BRK.B</span> 给出两种答案。
+          这些手抄分别落在三类损伤里：<span class="text-red-600 font-semibold">会说谎的</span>、
+          <span class="text-amber-600 font-semibold">被拖慢的</span>、<span class="text-slate-600 font-semibold">长不大的</span>。
+        </p>
+        <div class="flex flex-wrap gap-6 text-sm text-slate-600">
+          <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>底座健康</span>
+          <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>能用但有条件 / 被拖慢</span>
+          <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>会说谎或封顶</span>
+        </div>
+        <p class="text-sm text-slate-500">本次深挖结合两个前序会话：四阶段验收测试（发现 A8/A10/A11 三项宿主高危）与修复会话
+        （落地 SSE 重连 / MCP 看门狗 / 参数透传 / dock 拖拽，即当前未提交的 494 行）。上次评审（08-15）八候选落地 2.5 个，记分卡见英文记录层。</p>
+      </header>
+
+      <!-- ============ 能力清单 ============ -->
+      <section class="space-y-5">
+        <p class="text-xs uppercase tracking-wider text-slate-400">01 · 能力清单（数字全部在 HEAD 实测）</p>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="rounded-xl border bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between"><h3 class="font-serif font-bold">行情与确定性计算</h3><span class="w-3 h-3 rounded-full bg-emerald-500"></span></div>
+            <p class="mt-2 text-sm text-slate-600">37 工具 / 12 域，TUI/Web/CLI/MCP/DSH 五入口共用同一 ToolRegistry；quote/bars 有缓存兜底，「拉新失败保旧数据」在 agent 路径成立。</p>
+            <p class="mt-1 text-xs text-slate-400">卡点：news/sector/基本面/龙虎榜约 9 个工具走 Protocol 外的半条缝——无缓存无降级（F16）。</p>
+          </div>
+          <div class="rounded-xl border bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between"><h3 class="font-serif font-bold">DSH 产品嫁接</h3><span class="w-3 h-3 rounded-full bg-amber-500"></span></div>
+            <p class="mt-2 text-sm text-slate-600">13 张 toolview 卡 + 5 个产品 Skill + 桥与 dock，四面机制真机验证于宿主 0.1.5-rc.2；mcp_server 复用而非复制工具注册表（全子系统最深的一处）。</p>
+            <p class="mt-1 text-xs text-slate-400">卡点：跨语言契约全部手抄——审批表五种编码、前缀 6 处字面量、WAL×mtime 失效信号疑点（F1/F2/F8）。</p>
+          </div>
+          <div class="rounded-xl border bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between"><h3 class="font-serif font-bold">持续监测</h3><span class="w-3 h-3 rounded-full bg-red-500"></span></div>
+            <p class="mt-2 text-sm text-slate-600">7 条内置规则 + 自定义告警 + flows ratio + 业绩比对，规则引擎本身扎实。</p>
+            <p class="mt-1 text-xs text-slate-400">封顶：全仓无 scheduler；Server酱只在 web 进程接线（monitor/flows 循环零接线，已 grep 验证）；Bark 完整实现零调用方；无交易时段 gate（F13/F6）。「受支持的自动监测」今天是「受支持的手动监测」。</p>
+          </div>
+          <div class="rounded-xl border bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between"><h3 class="font-serif font-bold">策略蒸馏闭环</h3><span class="w-3 h-3 rounded-full bg-amber-500"></span></div>
+            <p class="mt-2 text-sm text-slate-600">extract → save → prepare → activate，三次独立确认的语义在代码里齐全（strategies.py + store 强制 note）。</p>
+            <p class="mt-1 text-xs text-slate-400">卡点：写面治理三轨不等价——LLM 路径有确认闸，工作流路径无闸且编译器全表喂 37 工具，MCP personal 档靠 LLM 自报布尔（F15）。</p>
+          </div>
+          <div class="rounded-xl border bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between"><h3 class="font-serif font-bold">五入口一致体验</h3><span class="w-3 h-3 rounded-full bg-amber-500"></span></div>
+            <p class="mt-2 text-sm text-slate-600">CLI 17 子命令 + 10 工作流、TUI 16 slash、Web 13 页、MCP 5 宿主、DSH——底座同一套。</p>
+            <p class="mt-1 text-xs text-slate-400">卡点：工具表面在 DEFS/TUI/web/DSH 四处镜像，两处已实测漂移；TUI 富卡只覆盖 4/37 工具，8KB 截断让满限结果永远出不了完整卡（F5/F14）。</p>
+          </div>
+          <div class="rounded-xl border bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between"><h3 class="font-serif font-bold">安装 · 升级 · doctor</h3><span class="w-3 h-3 rounded-full bg-red-500"></span></div>
+            <p class="mt-2 text-sm text-slate-600">产品模式独立 DSH_HOME + profile manifest + 托管 hash，幂等安装经 21 个离线用例。</p>
+            <p class="mt-1 text-xs text-slate-400">封顶：Skill 升级路径自锁——<span class="chip">previous=None</span> 使未动过的副本在内容升级后必然被判「用户修改」，--force 又会覆盖真修改（F11）；doctor 版本基线靠字符串替换整容（F4）。</p>
+          </div>
+          <div class="rounded-xl border bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between"><h3 class="font-serif font-bold">质量基建</h3><span class="w-3 h-3 rounded-full bg-emerald-500"></span></div>
+            <p class="mt-2 text-sm text-slate-600">2,301 离线用例 / 161 文件；mypy strict 零豁免（真实收敛，非压制，顺带修过两个真 bug）；vitest 64 例；TODO/FIXME 零残留。</p>
+            <p class="mt-1 text-xs text-slate-400">卡点：dsh-bundle 的 vitest 不在任何 CI workflow 里；嫁接 GUI 层零自动化，只有人工 TEST-PLAYBOOK。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 三类损伤 ============ -->
+      <section class="space-y-5">
+        <p class="text-xs uppercase tracking-wider text-slate-400">02 · 三类能力损伤（决定紧急度：先止血，再解 throttle，天花板另排）</p>
+        <div class="grid md:grid-cols-3 gap-4">
+          <div class="rounded-xl border-2 border-red-200 bg-red-50/50 p-4 space-y-3">
+            <h3 class="font-serif font-bold text-red-700">会说谎的 · 先修</h3>
+            <div class="text-xs text-slate-700 space-y-2">
+              <p>WAL 下 mtime 失效信号可能丢：AI 写自选，dock 永不刷新 <span class="chip">events.ts:39 · db.py:41</span></p>
+              <p>「拉新失败保留旧数据」注释 vs 实际清空旧报价（exit 0 + 桥 200 + 前端丢 error 三连） <span class="chip">quote.py:36 · dock.tsx:144</span></p>
+              <p>正则双轨：research_stock 收 BRK.B、get_quote schema 拒（15 处手抄） <span class="chip">codes.py:33 · quote.py:19</span></p>
+              <p>doctor 报「0.1.5-rc.2 新于基线 0.1.5-rc.2」 <span class="chip">dsh_product.py:386</span></p>
+              <p>TUI 标签注释称全覆盖实缺 5；web 缺 12 <span class="chip">tool_indicator.py:31</span></p>
+              <p>凌晨跑 monitor 拿昨评估规则、假信号推微信 <span class="chip">poller.py · background.py</span></p>
+              <p>文档计数：13/9/9 实为 17/10/13；25 工具实为 37 <span class="chip">AGENTS.md · BACKEND-CAPABILITIES.md</span></p>
+            </div>
+          </div>
+          <div class="rounded-xl border-2 border-amber-200 bg-amber-50/50 p-4 space-y-3">
+            <h3 class="font-serif font-bold text-amber-700">被拖慢的 · 再修</h3>
+            <div class="text-xs text-slate-700 space-y-2">
+              <p>「什么是写操作」五种编码各自演化，漂移方向 fail-open <span class="chip">service.py:44 · gate.ts:31 · research_tools.py:59</span></p>
+              <p>持仓×报价 join 四处平行，web 两条路由逐只循环 N 次 HTTP <span class="chip">web/routes/portfolio.py:52</span></p>
+              <p>ToolContext 默认装配 6 处复制，工厂默认路径是死代码 <span class="chip">assembly.py:190</span></p>
+              <p>Skill 升级 previous=None 自锁 + 安装非事务 <span class="chip">dsh_product.py:319 · base.py:245</span></p>
+              <p>数据目录解析三份 + import 时冻结，桥被迫自建兜底 <span class="chip">db_paths.py:48 · bridge.ts:138</span></p>
+            </div>
+          </div>
+          <div class="rounded-xl border-2 border-slate-300 bg-slate-50 p-4 space-y-3">
+            <h3 class="font-serif font-bold text-slate-700">长不大的 · 战略决策</h3>
+            <div class="text-xs text-slate-700 space-y-2">
+              <p>无 scheduler + 推送只接 web 进程 + Bark 孤儿 → 「9 点推送日报」无现成路径 <span class="chip">web/app.py:136 · push/bark.py:43</span></p>
+              <p>8KB 截断与工具上限互不知晓：120 根实测 22.4KB，满限必然截断且非法 JSON <span class="chip">registry.py:70 · bars.py:76</span></p>
+              <p>写面治理三轨：工作流轨无闸（validator 一条规则即可堵） <span class="chip">compiler.py:62 · engine.py:232</span></p>
+              <p>Adapter Protocol 半条缝：约 9 工具无缓存无降级裸奔 <span class="chip">adapter.py:33 · intel.py:104</span></p>
+              <p>agent.db 七子系统共居：重置记忆必然丢策略卡 <span class="chip">db_paths.py:72 · strategy/store.py:65</span></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 能力链条 ============ -->
+      <section class="space-y-8">
+        <p class="text-xs uppercase tracking-wider text-slate-400">03 · 能力链条（现状 → 卡点 → 解锁）</p>
+
+        <article class="space-y-3">
+          <h3 class="font-serif font-bold text-lg">链 1 · DSH 嫁接的可信度 = 跨语言契约的单一真相源化程度（候选 F1/F2/F8/F12）</h3>
+          <div class="grid md:grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-3">
+            <div class="rounded-lg bg-white border p-4 text-sm">嫁接四面真机可用；但 WAL 下 AI 写可能不动主文件 mtime，dock 失效信号是「碰巧可见」而非「必然可见」；数据源抖动时面板显示空自选而非旧价。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-red-50 border border-red-200 p-4 text-sm">错误链三连说谎（exit 0 + 桥 200 + 前端丢 error）+ mtime 只 stat 主文件 + 审批判定五编码、前缀 6 处字面量零交叉断言。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm">AI 写落盘 → dock 必然刷新；抖动时显示陈旧价 + 来源标注 + 降级提示；审批语义从 MCP annotations 派生，加写工具只改一处。</div>
+          </div>
+          <p class="text-xs text-slate-500">能力含义：宿主里「允许一次加自选」的联动从概率事件变成产品承诺。</p>
+        </article>
+
+        <article class="space-y-3">
+          <h3 class="font-serif font-bold text-lg">链 2 · 「自动监测」承诺 = 调度与推送的出端（候选 F13/F6/F15）</h3>
+          <div class="grid md:grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-3">
+            <div class="rounded-lg bg-white border p-4 text-sm">规则引擎、信号日志、Server酱/Bark 推送实现都在，但一切靠用户手动触发或常驻 web 进程。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-red-50 border border-red-200 p-4 text-sm">全仓无 scheduler；notifier 只在 web/app.py 接线（monitor/flows 循环零接线，已验证）；Bark 零调用方；无交易时段 gate；日报无 push 通道。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm">一条命令获得「每天 9 点日报到微信」；monitor/flows 循环直推信号；iOS 用户零 Server酱依赖；凌晨不再假告警。</div>
+          </div>
+          <p class="text-xs text-slate-500">能力含义：产品文档里「受支持的自动监测」从措辞变成行为。</p>
+        </article>
+
+        <article class="space-y-3">
+          <h3 class="font-serif font-bold text-lg">链 3 · 五入口一致体验 = 工具表面从手抄变派生（候选 F3/F5/F7/F14）</h3>
+          <div class="grid md:grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-3">
+            <div class="rounded-lg bg-white border p-4 text-sm">37 工具的底层能力五入口同源；但展示面四处镜像已漂移（TUI 缺 5、web 缺 12、注释说谎），文档计数落后实情一代。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-red-50 border border-red-200 p-4 text-sm">标签表/正则/计数各自手抄，无生成无完备性断言；8KB 截断与 120 根上限互不知晓，TUI 富卡 4/37。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm">新工具上线当天全入口同步可读；BRK.B 全域一致；宿主 Agent 按文档接面不再低估 13 个工具。</div>
+          </div>
+          <p class="text-xs text-slate-500">能力含义：加一个工具从「N 文件协调编辑 + 靠记忆」变成「改一处 + 门禁兜底」。</p>
+        </article>
+
+        <article class="space-y-3">
+          <h3 class="font-serif font-bold text-lg">链 4 · 安装器的可升级性 = managed-copy 纪律统一（候选 F11/F4）</h3>
+          <div class="grid md:grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-3">
+            <div class="rounded-lg bg-white border p-4 text-sm">首次安装幂等、doctor 可跑；但 Skill 内容一升级，未动过的副本必然被判「用户修改」。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-red-50 border border-red-200 p-4 text-sm"><span class="chip">previous=None</span> + hash 判定 → 必然 RuntimeError 逼 --force，--force 又覆盖真修改；隔壁 TS presets 的 per-file stamp 才是正确方案；doctor 基线靠 replace 整容。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm">Skill 无缝升级、真用户修改逐文件跳过；doctor 报真实基线；五件套可以放心迭代内容。</div>
+          </div>
+          <p class="text-xs text-slate-500">能力含义：产品 Skill 从「冻结态」变成可演进的交付物。</p>
+        </article>
+
+        <article class="space-y-3">
+          <h3 class="font-serif font-bold text-lg">链 5 · Web 组合页性能与服务面宽度 = join 与装配的收编（候选 F9/F10/F16/F17）</h3>
+          <div class="grid md:grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-3">
+            <div class="rounded-lg bg-white border p-4 text-sm">持仓页能看，但 20 只持仓 = 20 次逐只上游请求；改默认 adapter 链要动 6 个文件。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-red-50 border border-red-200 p-4 text-sm">持仓×报价 join 四处平行（web 逐只循环）；ToolContext 装配 6 处复制；~9 工具在 Protocol 半条缝上无缓存无降级。</div>
+            <div class="arrow-right"></div>
+            <div class="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm">组合页 N→1 次上游请求；adapter 链改动一处生效；限流风暴下全工具面均匀降级而非裸奔。</div>
+          </div>
+          <p class="text-xs text-slate-500">能力含义：web 体验与 TUI/工具面同源同速，服务面宽度配得上五入口。</p>
+        </article>
+      </section>
+
+      <!-- ============ 映射矩阵 ============ -->
+      <section class="space-y-4">
+        <p class="text-xs uppercase tracking-wider text-slate-400">04 · 映射矩阵</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse bg-white rounded-xl border shadow-sm">
+            <thead><tr class="text-left text-xs uppercase tracking-wider text-slate-400 border-b">
+              <th class="p-3">工程动作（候选）</th><th class="p-3">消除的损伤</th><th class="p-3">直接解锁</th><th class="p-3">强度</th>
+            </tr></thead>
+            <tbody class="divide-y">
+              <tr><td class="p-3">F1 stat -wal/-shm 或 revision 表</td><td class="p-3">静默过期</td><td class="p-3">AI 写必然反映到 dock</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F2 错误链诚实化（退出码/error 字段/prev-state）</td><td class="p-3">静默空列表</td><td class="p-3">抖动时保旧价 + 降级提示</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F3 DEFS 正则从 codes.py 生成</td><td class="p-3">自相矛盾 schema</td><td class="p-3">BRK.B 全域一致</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F4 版本检查参数化</td><td class="p-3">自相矛盾 doctor</td><td class="p-3">真实基线报告</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F5 标签表从 DEFS 生成/断言</td><td class="p-3">四镜像漂移</td><td class="p-3">新工具全入口当天可读</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F6 交易时段 gate</td><td class="p-3">深夜假告警</td><td class="p-3">监测语义诚实</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F7 文档计数修正</td><td class="p-3">能力低报</td><td class="p-3">宿主接面不再少 13 工具</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F8 闸门读 MCP annotations + 前缀交叉断言</td><td class="p-3">fail-open 漂移</td><td class="p-3">加写工具只改一处</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F9 PortfolioQuoteService</td><td class="p-3">N 次请求循环</td><td class="p-3">组合页 N→1 次上游</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F10 单一装配函数</td><td class="p-3">6 文件协调编辑</td><td class="p-3">adapter 链一处改</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">Worth exploring</span></td></tr>
+              <tr><td class="p-3">F11 Skill previous-hash / stamp</td><td class="p-3">升级自锁</td><td class="p-3">Skill 无缝迭代</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F12 数据目录函数化</td><td class="p-3">三份分叉解析</td><td class="p-3">桥卸下防御性钉 env</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">Worth exploring</span></td></tr>
+              <tr><td class="p-3">F13 scheduler + 推送接线</td><td class="p-3">手动监测封顶</td><td class="p-3">「9 点推送」一条命令</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-xs font-medium">战略</span></td></tr>
+              <tr><td class="p-3">F14 上限与截断联动</td><td class="p-3">必然截断</td><td class="p-3">满限结果可渲染</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">Worth exploring</span></td></tr>
+              <tr><td class="p-3">F15 validator 写工具规则（+服务端确认）</td><td class="p-3">确定性路径无闸</td><td class="p-3">三授权语义硬闸化</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">Strong</span></td></tr>
+              <tr><td class="p-3">F16 Protocol 补缝 / 命名第二缝</td><td class="p-3">非对称失败</td><td class="p-3">限流风暴均匀降级</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">Worth exploring</span></td></tr>
+              <tr><td class="p-3">F17 agent.db 分库</td><td class="p-3">概念/存储漂移</td><td class="p-3">重置记忆保留策略卡</td><td class="p-3"><span class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-xs font-medium">战略</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 路线图 ============ -->
+      <section class="space-y-4">
+        <p class="text-xs uppercase tracking-wider text-slate-400">05 · 波次路线图</p>
+        <div class="bg-white rounded-xl border shadow-sm p-4">
+          <pre class="mermaid">
+flowchart LR
+  W0["第 0 波 · 先落盘<br/>提交工作区 494 行<br/>(看门狗/SSE重连/透传/dock)"]
+  W1["第一波 · 止血<br/>F2 F6 F3 F4 F5 F7 (+F1 验证后)"]
+  W2["第二波 · 解拖慢<br/>F8 F9 F11 → F10 F12"]
+  W3["第三波 · 天花板决策<br/>F13 F15 F14 F16 F17"]
+  W0 --> W1 --> W2 --> W3
+  classDef wave fill:#0f172a,color:#fff
+  class W0,W1,W2,W3 wave
+          </pre>
+        </div>
+      </section>
+
+      <!-- ============ 结论 ============ -->
+      <section>
+        <div class="deep rounded-2xl p-8 text-slate-100 space-y-4">
+          <h2 class="font-serif text-2xl font-bold">结论</h2>
+          <p class="leading-relaxed text-slate-200">
+            这个仓库的核心质量是真实的：单一工具注册表供五个入口、确定性计算的诚实边界经住了真机 GUI 测试、
+            质量门在热点区真实生效。壳子被拖慢的根源不是缺少工程，而是<strong>手抄替代派生</strong>——
+            每一条跨缝的形状（审批表、工具标签、代码正则、数据目录、版本基线、Skill hash）都是两边各写一份加注释互指。
+            上次评审 2.5/8 的落地率也说明：评审要被排期，靠的不是指出浅模块，而是说清修好之后用户多了什么。
+          </p>
+          <p class="leading-relaxed text-slate-200">
+            三波的顺序是刻意 的：会说谎的七处先修（每一处都在污染用户或宿主 Agent 当前能得出的结论），
+            被拖慢的五处其次（它们对每次变更收税），天花板的五处是产品形状决策——尤其是「自动监测」那条链，
+            它决定这款产品是工具箱还是承诺。所有修复的公共纪律只有一条：<strong>derive, don't duplicate</strong>。
+          </p>
+          <p class="text-xs text-slate-400">HEAD 91d5d4b（feat/dsh-product-graft）+ 未提交工作区 · 数字全部实测于 2026-09-13 · 证据与英文记录层：docs/reviews/2026-09-13-mommy-chaogu-review.md</p>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>

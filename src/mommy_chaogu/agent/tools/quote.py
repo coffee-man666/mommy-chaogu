@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _json, _quote_to_dict
+from mommy_chaogu.codes import INDEX_OR_STOCK_CODE_PATTERN
 from mommy_chaogu.market_data.rankings import fetch_indexes
 
 DEFS: list[ToolDef] = [
@@ -16,8 +17,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^(\\^[A-Z]{1,6}|[A-Z]{1,6}|\\d{6})$",
-                    "description": "股票代码（A 股 6 位数字如 '600519'，美股字母如 'AAPL'，`^` 前缀为美股指数/利率/VIX 如 '^GSPC'/'^VIX'/'^TNX'）",
+                    "pattern": INDEX_OR_STOCK_CODE_PATTERN,
+                    "description": "股票代码（A 股 6 位数字如 '600519'，美股字母如 'AAPL' 或带后缀 'BRK.B'，`^` 前缀为美股指数/利率/VIX 如 '^GSPC'/'^VIX'/'^TNX'）",
                 }
             },
             "required": ["code"],
@@ -31,8 +32,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string", "pattern": "^(\\^[A-Z]{1,6}|[A-Z]{1,6}|\\d{6})$"},
-                    "description": "股票代码列表，如 ['600519', 'AAPL', '^GSPC']",
+                    "items": {"type": "string", "pattern": INDEX_OR_STOCK_CODE_PATTERN},
+                    "description": "股票代码列表，如 ['600519', 'AAPL', 'BRK.B', '^GSPC']",
                 }
             },
             "required": ["codes"],

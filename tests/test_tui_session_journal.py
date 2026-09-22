@@ -83,6 +83,28 @@ class TestRecoverLatest:
         assert rec.session_id == "tui-0826"
         assert [e.content for e in rec.entries] == ["新会话二"]
 
+    def test_recover_latest_superseded_by_midflight_new(self, tmp_path: Path) -> None:
+        """启动恢复跨线程迟到：解析期间用户已 /new，恢复不得覆盖活跃指针。"""
+        mem = _memory(tmp_path)
+        mem.add("user", "旧会话", session_id="default")
+
+        class _InterleavedJournal(SessionJournal):
+            """在恢复解析中途模拟主线程 /new（后台线程与主线程的真实交错）。"""
+
+            def _tail_window(self, session_id: str) -> Any:
+                result = super()._tail_window(session_id)
+                self.begin_next()
+                return result
+
+        journal = _InterleavedJournal(mem)
+
+        rec = journal.recover_latest()
+
+        assert rec.reason == "superseded"
+        assert rec.session_id == "default"
+        assert journal.active_id.startswith("tui-")  # /new 的会话仍是活跃会话
+        assert journal.bound_memory_for_agent().session_id == journal.active_id
+
 
 class TestSessionSwitching:
     def test_cold_start_then_begin_next(self, tmp_path: Path) -> None:
@@ -350,6 +372,35 @@ class TestAppSessionWiring:
                 )
                 assert app._journal is not None and app._journal.active_id.startswith("tui-")
                 assert mem.summary("default")["total"] == 2  # 旧会话原样保留
+
+        _run(_test())
+
+    def test_late_recovery_does_not_clobber_new_session(self, tmp_path: Path) -> None:
+        """竞态回归：/new 之后才落地的旧恢复结果不得重放或改绑记忆。"""
+        from mommy_chaogu.tui.app import MommyTuiApp
+
+        services, mem = self._services_with_memory(tmp_path, seed=1)
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=services)  # type: ignore[arg-type]
+            async with app.run_test() as pilot:
+                prompt = app.query_one("ChatInput")
+                prompt.value = "/new"
+                await pilot.press("enter")
+                assert await self._wait_until(
+                    pilot,
+                    lambda: (
+                        services.agent._memory is not None
+                        and services.agent._memory.session_id.startswith("tui-")
+                    ),
+                )
+                new_sid = services.agent._memory.session_id
+                stale = SessionJournal(mem).recover_latest()  # 迟到的旧恢复结果
+                assert stale.session_id == "default"
+                app._apply_recovery(stale)
+                await pilot.pause()
+                assert services.agent._memory.session_id == new_sid
+                assert app._journal is not None and app._journal.active_id == new_sid
 
         _run(_test())
 

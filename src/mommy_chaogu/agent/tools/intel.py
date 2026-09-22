@@ -12,6 +12,7 @@ from mommy_chaogu.agent.tools.base import (
     _floatify,
     _json,
 )
+from mommy_chaogu.codes import STOCK_CODE_PATTERN
 from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
 from mommy_chaogu.market_data.news_api import (
     get_announcements,
@@ -49,7 +50,7 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "pattern": STOCK_CODE_PATTERN,
                     "description": "股票代码（A 股 6 位数字或美股字母）",
                 },
                 "limit": {
@@ -91,7 +92,7 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "pattern": STOCK_CODE_PATTERN,
                     "description": "股票代码（A 股 6 位数字或美股字母），如 '600519'（贵州茅台）",
                 }
             },

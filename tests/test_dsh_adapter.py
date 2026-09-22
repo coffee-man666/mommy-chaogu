@@ -221,6 +221,21 @@ def test_dsh_version_check_reports_drift_as_non_blocking_warning() -> None:
     assert unparseable["detected"] == "custom-build"
 
 
+def test_dsh_version_check_custom_baseline_uses_it_for_real_comparison() -> None:
+    # 回归背景：产品模式（mommy dsh doctor）曾用一个基线（0.1.1-rc.2）做真实
+    # 比较、再字符串替换显示成另一个（0.1.5-rc.2）——0.1.5 宿主被报"高于基线
+    # 0.1.5-rc.2"。baseline 参数必须同时驱动比较与 tested/文案。
+    product_baseline = "0.1.5-rc.2"
+    ok = dsh_version_check(product_baseline, baseline=product_baseline)
+    assert ok["status"] == "ok"
+    assert ok["tested"] == product_baseline
+
+    older = dsh_version_check("0.1.2", baseline=product_baseline)
+    assert older["status"] == "warning"
+    assert older["tested"] == product_baseline
+    assert "低于验证基线 0.1.5-rc.2" in older["message"]
+
+
 def test_doctor_includes_dsh_version_check_without_blocking(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

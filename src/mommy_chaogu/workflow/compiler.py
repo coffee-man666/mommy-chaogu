@@ -8,12 +8,20 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from mommy_chaogu.agent.service import CONFIRM_ALWAYS, CONFIRM_BY_ACTION
 from mommy_chaogu.agent.tools.registry import _TOOL_DEFINITIONS
 from mommy_chaogu.workflow.engine import Workflow
 from mommy_chaogu.workflow.spec import WorkflowSpec
 from mommy_chaogu.workflow.validator import blocking_issues, validate_spec
 
 ChatRaw = Callable[[list[dict[str, str]]], Any]
+
+#: 自定义工作流经 trigger 自动执行、执行器无逐次确认通道（engine 没有
+#: AgentService 的 on_confirm 闸），写工具不得进入 spec——编译器目录里
+#: 直接不提供，validator 对绕过编译器的手写 spec 再拦一道（同一份判定集）。
+_WRITE_TOOL_NAMES: frozenset[str] = frozenset(CONFIRM_ALWAYS) | frozenset(CONFIRM_BY_ACTION)
+
+_COMPILER_TOOL_DEFS = [tool for tool in _TOOL_DEFINITIONS if tool.name not in _WRITE_TOOL_NAMES]
 
 
 @dataclass
@@ -66,7 +74,7 @@ class WorkflowCompiler:
                     "description": tool.description,
                     "parameters": tool.parameters,
                 }
-                for tool in _TOOL_DEFINITIONS
+                for tool in _COMPILER_TOOL_DEFS
             ],
             ensure_ascii=False,
             indent=2,

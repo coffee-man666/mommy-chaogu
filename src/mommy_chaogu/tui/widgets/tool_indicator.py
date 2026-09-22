@@ -55,6 +55,11 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "list_themes": "查主题列表",
     "get_theme_stocks": "查主题个股",
     "get_memory_context": "查记忆",
+    "get_memory_health": "查记忆健康",
+    "check_earnings_catalyst": "查业绩催化",
+    "check_kline_signal": "查K线信号",
+    "screen_inflow_stocks": "筛主力流入",
+    "run_backtest": "回放回测",
     "strategy_save": "保存策略卡",
     "strategy_archive": "归档策略卡",
     "strategy_activate_monitor": "启用策略监控",
@@ -289,6 +294,10 @@ class ToolIndicator(Vertical):
         self._render_header(_c("info"), blink=True)
         self._timer = self.set_interval(_BLINK_INTERVAL_S, self._blink)
 
+    def on_unmount(self) -> None:
+        """卸载即停闪烁定时器——/clear 或退出后不得再触碰已拆除的子树。"""
+        self._stop_timer()
+
     def _blink(self) -> None:
         self._blink_on = not self._blink_on
         self._render_header(_c("info"), blink=True)
@@ -297,7 +306,11 @@ class ToolIndicator(Vertical):
         circle = _CIRCLE if (not blink or self._blink_on) else " "
         header = Text(f"{circle} ", style=color)
         header.append(self._title)
-        self.query_one(".ti-header", Static).update(header)
+        node = next(iter(self.query(".ti-header")), None)
+        if isinstance(node, Static):
+            node.update(header)
+        # 找不到 = 视图正在拆除（Mount 消息迟到 / 定时器撞上卸载）：跳过渲染，
+        # 不抛 NoMatches 把应用/测试炸掉。注意 DOMQuery.first() 空集是抛异常。
 
     # ── 详情展开（Kimi Code 式）─────────────────────────────────
 

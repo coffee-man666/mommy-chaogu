@@ -1,6 +1,7 @@
 // 工具名 → 中文显示名
 // 移植自 src/mommy_chaogu/tui/widgets/tool_indicator.py TOOL_DISPLAY_NAMES
-// 覆盖 agent/tools/ 的 25 个工具；新工具若缺中文会 fallback 到原名。
+// 覆盖 agent/tools/ 的 37 个工具（tests/test_tool_surface_mirrors.py 断言完备，
+// 漏加会红）；新工具若缺中文会 fallback 到原名。
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   get_quote: '查行情',
@@ -28,6 +29,18 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_themes: '查主题列表',
   get_theme_stocks: '查主题个股',
   get_memory_context: '查记忆',
+  get_memory_health: '查记忆健康',
+  check_earnings_catalyst: '查业绩催化',
+  check_kline_signal: '查K线信号',
+  screen_inflow_stocks: '筛主力流入',
+  run_backtest: '回放回测',
+  strategy_save: '保存策略卡',
+  strategy_archive: '归档策略卡',
+  strategy_activate_monitor: '启用策略监控',
+  strategy_list: '查策略卡',
+  strategy_get: '查策略卡详情',
+  strategy_prepare_application: '准备策略应用',
+  strategy_prepare_monitor: '准备策略监控',
 }
 
 export function toolDisplayName(tool: string): string {

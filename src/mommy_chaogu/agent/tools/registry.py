@@ -19,6 +19,7 @@ from typing import Any
 from mommy_chaogu.agent.tools import (
     alerts,
     analysis,
+    backtest,
     bars,
     flows,
     holdings,
@@ -42,6 +43,7 @@ _MODULES = (
     holdings,
     intel,
     analysis,
+    backtest,
     alerts,
     memory,
     themes,

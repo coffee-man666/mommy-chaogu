@@ -1,0 +1,12 @@
+{
+  "name": "@mommy-chaogu/dsh-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "description": "mommy-chaogu DSH 嫁接子工程（pnpm workspace）",
+  "packageManager": "pnpm@12.4.1",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test"
+  }
+}

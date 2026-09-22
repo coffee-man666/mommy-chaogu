@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
+from mommy_chaogu.codes import A_SHARE_CODE_PATTERN
 
 DEFS: list[ToolDef] = [
     ToolDef(
@@ -18,13 +19,13 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
-                    "description": "股票代码（A 股 6 位数字或美股字母，单只，与 codes 二选一。注意：资金流为 A 股特有数据，美股无此概念）",
+                    "pattern": A_SHARE_CODE_PATTERN,
+                    "description": "A 股股票代码（6 位数字，资金流为 A 股特有数据，美股无此概念）",
                 },
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string", "pattern": "^([A-Z]{1,6}|\\d{6})$"},
-                    "description": "股票代码列表（多只批量查询，最多前 10 只，与 code 二选一。注意：资金流为 A 股特有数据，美股无此概念）",
+                    "items": {"type": "string", "pattern": A_SHARE_CODE_PATTERN},
+                    "description": "A 股股票代码列表（多只批量查询，最多前 10 只，与 code 二选一）",
                 },
             },
         },
@@ -37,8 +38,8 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
-                    "description": "股票代码（A 股 6 位数字或美股字母）",
+                    "pattern": A_SHARE_CODE_PATTERN,
+                    "description": "A 股股票代码（6 位数字，资金流为 A 股特有数据，美股无此概念）",
                 },
                 "days": {
                     "type": "integer",

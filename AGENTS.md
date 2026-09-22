@@ -6,7 +6,7 @@
 
 ```bash
 uv sync --extra dev      # 安装依赖
-uv run pytest -m "not network"   # 跑测试（2,082 个离线用例，另有 14 个网络探针）
+uv run pytest -m "not network"   # 跑测试（2,316 个离线用例，另有 14 个网络探针）
 uv run ruff check .      # lint
 uv run mypy --strict src # type check
 ```
@@ -77,9 +77,9 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 36 工具 + MCP + 记忆系统 5 层 + Strategy Cards）
+├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 37 工具（含 run_backtest 信号回放） + MCP + 记忆系统 5 层 + Strategy Cards）
 ├── strategy/        # 用户确认的策略卡校验、版本、来源与监控关联
-├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
+├── workflow/        # 自然语言工作流引擎（10 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库
@@ -88,8 +88,9 @@ src/mommy_chaogu/
 ├── services/        # 统一数据服务层（工具层和 API 层共用）
 ├── push/            # Server酱微信推送
 ├── channels/        # 本地消息网关（微信二维码授权 + 私聊长轮询）
+├── dsh/             # DSH 产品嫁接子工程（pnpm workspace：@mommy-chaogu/dsh-bundle）
 ├── db_paths.py      # 统一数据库路径管理
-└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个透传子命令）
+└── cli.py           # argparse 入口（含 mommy 自然语言入口 + 17 个透传子命令）
 ```
 
 ## 自然语言入口
@@ -114,7 +115,7 @@ src/mommy_chaogu/
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：
 - `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor
-- `definitions.py` — 9 个预定义工作流（morning_brief / stock_analysis / sector_scan 等）
+- `definitions.py` — 10 个预定义工作流（morning_brief / us_market_brief / stock_analysis / sector_scan 等）
 - `router.py` — NLRouter（正则匹配优先，fallback 到 AgentService）
 
 Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
@@ -158,12 +159,37 @@ Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
 - `tui/views/chat.py` — 对话视图（流式 + 卡片容器 + slash/@ 联想 + busy 排队 + Esc）
 - `tui/widgets/` — TopBar / cards（10 种富卡片）/ ToolIndicator / WorkingIndicator / HintBar
 
+## DSH 产品嫁接（dsh/ 子工程 + mommy dsh）
+
+`uv run mommy dsh install|uninstall|doctor|run` —— 把 mommy-chaogu 作为**产品**
+嫁接到 DSH（DeepSeek Harness）web 宿主：独立 DSH_HOME（默认 `<数据目录>/dsh-home`，
+不污染用户 `~/.dsh`）+ `profiles/mommy`，不改宿主源码。架构与承重纪律见
+`dsh/README.md`（四面机制全部真机验证于 0.1.5-rc 系）。
+
+- `dsh/packages/dsh-bundle`（pnpm workspace）：`cordis.patch.yml` 六行（gate /
+  preset-installer / mcp / client / bridge + agent-presets 覆盖行）、投研 preset
+  资产（托管 hash 自安装）、写工具审批闸门（`tools/pre-execute` 只 ask，判定表
+  移植 `requires_confirmation`）、node 半 `/mommy/api` 桥（CLI 子进程 + SSE 失效
+  信号 + 认证栅栏）、浏览器半（13 张 toolview 富卡片 + 左侧自选停靠，三段 CJS
+  包裹 + 纯度门禁）。**市场计算逻辑永远不落 TS 侧**（含均线——`get_bars
+  include_ma` 服务端计算）。产品 Skill 五件套（onboard/research/strategy/
+  basket-analysis/market-watch-loop）
+- MCP 工具在 DSH 里的公开名是 `mcp__mommy-chaogu__<rawName>`；工具面继续走
+  MCP（五宿主共用），数据面走 CLI JSON：`mommy watchlist list --json` 与
+  `mommy quote <codes...>`（桥与脚本的稳定契约面）
+- `src/mommy_chaogu/cli_commands/dsh_product.py`：安装器（profile manifest +
+  四条绝对路径覆盖行 + Skills，file: 副本强制刷新）；增强模式（`mommy connect
+  dsh`）与产品模式互补共存
+- 开发循环：`pnpm -C dsh build && pnpm -C dsh typecheck && pnpm -C dsh test` → `uv run mommy dsh install`
+  → `dsh --profile mommy --dump-config` → 真机四步验收（见 dsh/README.md）
+
 ## Web 前端
 
 `uv run mommy-web` → Vue 3 + shadcn/vue + Tailwind v4。
 
 - 桌面端侧边导航 + 移动端底部 tab（响应式）
-- 9 个页面：仪表盘/行情/主题/持仓/AI对话/个股详情/信号/设置/主题详情
+- 13 个页面：仪表盘/AI对话/设置引导/行情/关注/持仓/个股详情/信号/预测/主题/主题详情/篮子详情/我的
+  （另有 /agent /dashboard /settings 三条重定向与 404 兜底）
 - shadcn 组件（reka-ui）+ lucide 图标
 - A 股配色（红涨绿跌）+ 深色/浅色模式
 - klinecharts K 线图 + WebSocket 实时推送

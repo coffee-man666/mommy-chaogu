@@ -23,9 +23,11 @@ from mommy_chaogu.cli_commands.agent_managed import main_doctor
 from mommy_chaogu.cli_commands.cache import *
 from mommy_chaogu.cli_commands.channel import *
 from mommy_chaogu.cli_commands.connect import *
+from mommy_chaogu.cli_commands.dsh_product import *
 from mommy_chaogu.cli_commands.flows import *
 from mommy_chaogu.cli_commands.memory import *
 from mommy_chaogu.cli_commands.monitor import *
+from mommy_chaogu.cli_commands.quote import *
 from mommy_chaogu.cli_commands.report import *
 from mommy_chaogu.cli_commands.semicon import *
 from mommy_chaogu.cli_commands.watchlist import *
@@ -213,6 +215,8 @@ def _build_dispatch() -> dict[str, tuple[str, Callable[[], object] | None]]:
         "setup": ("mommy-setup", main_setup),
         "semicon": ("mommy-semicon", main_semicon),
         "flows": ("mommy-flows", main_flows),
+        "quote": ("mommy-quote", main_quote),
+        "dsh": ("mommy-dsh", main_dsh),
         "report": ("mommy-report", main_report),
         "agent": ("mommy-agent", main_agent),
         "memory": ("mommy-memory", main_memory),
@@ -395,7 +399,7 @@ def main_mommy() -> None:
             "  mommy watchlist list       结构化子命令（同 mommy --raw watchlist list）\n"
             "  mommy                      进入交互式 REPL\n"
             "\n"
-            "可用子命令: watchlist, monitor, cache, semicon, flows, report, agent, memory, channel, connect, setup, web, tui, workflow, doctor"
+            "可用子命令: watchlist, monitor, cache, semicon, flows, quote, dsh, report, agent, memory, channel, connect, setup, web, tui, workflow, doctor"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -500,11 +504,20 @@ def main() -> int:
     sub.add_parser("flows", help="资金流拉新 + 排行 + 监控").set_defaults(
         func=lambda _: _dispatch_subcommand(build_flows_parser(), "mommy-flows")
     )
+    sub.add_parser("quote", help="批量实时报价（JSON 输出）").set_defaults(
+        func=lambda _: _dispatch_subcommand(build_quote_parser(), "mommy-quote")
+    )
+    sub.add_parser("dsh", help="DSH 产品模式（install / run / doctor）").set_defaults(
+        func=lambda _: _dispatch_subcommand(build_dsh_parser(), "mommy-dsh")
+    )
     sub.add_parser("report", help="报告 HTML 渲染（单日 / 索引 / 预览）").set_defaults(
         func=lambda _: _dispatch_subcommand(build_report_parser(), "mommy-report")
     )
 
-    args = p.parse_args()
+    # 子命令的剩余参数由 _dispatch_subcommand 重解析（sys.argv[2:]）；顶层用
+    # parse_known_args 容忍它们，`mommy-chaogu watchlist list` 与 DSH 桥的
+    # `python -m mommy_chaogu.cli watchlist list --json` 都能直达。
+    args, _ = p.parse_known_args()
     rc = args.func(args)
     return int(rc) if rc is not None else 0
 

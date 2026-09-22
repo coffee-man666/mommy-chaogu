@@ -1,0 +1,146 @@
+/* tool.call.toolview 富卡片样式（CSS Modules，构建期内联进 client bundle）。 */
+
+.card {
+  display: block;
+  border: 1px solid var(--mommy-card-border);
+  border-radius: var(--mommy-card-radius);
+  background: var(--mommy-card-bg);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 460px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--mommy-text-dim);
+  letter-spacing: 0.02em;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--mommy-card-border);
+  color: var(--mommy-text-dim);
+}
+.badge[data-state='ok'] { color: var(--mommy-up); border-color: currentcolor; }
+.badge[data-state='denied'] { color: var(--mommy-down); border-color: currentcolor; }
+.badge[data-state='error'] { color: var(--mommy-flat); border-color: currentcolor; }
+
+.sym { font-weight: 600; }
+.dim { color: var(--mommy-text-dim); }
+.num { font-family: var(--mommy-font-num); font-variant-numeric: tabular-nums; }
+
+.trend[data-trend='up'] { color: var(--mommy-up); }
+.trend[data-trend='down'] { color: var(--mommy-down); }
+.trend[data-trend='flat'] { color: var(--mommy-flat); }
+
+.price {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--mommy-font-num);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 4px 12px;
+  margin-top: 6px;
+}
+.grid .k { color: var(--mommy-text-dim); font-size: 11px; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.table th {
+  text-align: right;
+  color: var(--mommy-text-dim);
+  font-weight: 500;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+.table td {
+  text-align: right;
+  padding: 2px 6px;
+  font-family: var(--mommy-font-num);
+  font-variant-numeric: tabular-nums;
+}
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+  font-family: inherit;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  border: 1px solid var(--mommy-card-border);
+  border-radius: 8px;
+  padding: 3px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 88px;
+}
+.chip .name { font-size: 11px; color: var(--mommy-text-dim); }
+
+.foot {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--mommy-text-dim);
+}
+
+.barsBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.barSeg {
+  height: 6px;
+  border-radius: 3px;
+  background: currentcolor;
+  opacity: 0.85;
+  min-width: 2px;
+}
+
+.list { display: flex; flex-direction: column; gap: 6px; }
+.listItem { display: flex; flex-direction: column; gap: 2px; }
+
+/* —— bars 卡图表模式（svg/lwc）公共件。 —— */
+.barsSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--mommy-text-dim);
+  font-family: var(--mommy-font-num);
+  padding: 2px 0;
+}
+
+.barsToggle {
+  align-self: flex-start;
+  border: 1px solid var(--mommy-card-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.barsToggle:hover { background: var(--mommy-card-bg); }

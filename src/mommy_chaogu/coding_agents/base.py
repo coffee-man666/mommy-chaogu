@@ -206,10 +206,16 @@ def managed_skills_ok(target: str, previous: dict[str, Any] | None) -> bool:
     )
 
 
-def remove_managed_skills(target: str, previous: dict[str, Any] | None) -> None:
-    """Remove only unchanged Skill directories recorded in connector state."""
+def remove_managed_skills(
+    target: str, previous: dict[str, Any] | None, *, home: Path | None = None
+) -> None:
+    """Remove only unchanged Skill directories recorded in connector state.
+
+    ``home`` 显式指定 agent home（产品模式安装器的独立 DSH_HOME）；
+    缺省按 ``skill_dir`` 常规解析。
+    """
     for name, (path, expected_hash) in managed_skill_records(target, previous).items():
-        expected_path = skill_dir(target, name)
+        expected_path = home / "skills" / name if home is not None else skill_dir(target, name)
         same_target = path.expanduser().resolve() == expected_path.expanduser().resolve()
         if (
             same_target
@@ -223,10 +229,17 @@ def remove_managed_skills(target: str, previous: dict[str, Any] | None) -> None:
 
 
 def install_skill(
-    target: str, source: Path, previous: dict[str, Any] | None, *, force: bool
+    target: str,
+    source: Path,
+    previous: dict[str, Any] | None,
+    *,
+    force: bool,
+    home: Path | None = None,
 ) -> Path:
     skill_name = source.name
-    destination = skill_dir(target, skill_name)
+    destination = (
+        home / "skills" / skill_name if home is not None else skill_dir(target, skill_name)
+    )
     if destination.is_symlink():
         raise RuntimeError(f"Skill 目标是符号链接，为避免写入意外位置已停止：{destination}")
     bundled_hash = directory_hash(source)

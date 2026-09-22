@@ -305,23 +305,10 @@ def on_tool_call(fn_name: str, fn_args: dict) -> None: ...      # 执行前
 def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None: ...  # 执行后
 ```
 
-25 个工具的**中文显示名映射**（前端可直接复用，`tui/widgets/tool_indicator.py:TOOL_DISPLAY_NAMES`）：
-
-| 工具 | 显示名 | 工具 | 显示名 |
-|---|---|---|---|
-| get_quote | 查行情 | get_quotes | 批量查行情 |
-| get_market_indexes | 查大盘指数 | get_sector_ranking | 查板块排行 |
-| search_sector | 搜板块 | get_sector_stocks | 查板块成分股 |
-| get_money_flow_today | 查今日资金流 | get_money_flow_history | 查资金流历史 |
-| get_bars | 查K线 | get_watchlist | 查自选股 |
-| get_portfolio | 查持仓 | search_news | 搜新闻 |
-| get_announcements | 查公告 | get_longhuban | 查龙虎榜 |
-| get_fundamentals | 查基本面 | get_portfolio_analysis | 持仓分析 |
-| backfill_history | 补历史数据 | manage_alert | 管理告警 |
-| search_similar_events | 搜相似事件 | get_prediction_history | 查预测记录 |
-| get_market_narrative | 查市场叙事 | list_themes | 查主题列表 |
-| get_theme_stocks | 查主题个股 | get_memory_context | 查记忆 |
-| manage_watchlist | 管理自选股 | — | — |
+**中文显示名映射**（37 个工具全覆盖）：唯一真相源是 `tui/widgets/tool_indicator.py:TOOL_DISPLAY_NAMES`
+（web 侧 `web/src/lib/toolNames.ts` 与之同步；`tests/test_tool_surface_mirrors.py` 断言两表覆盖
+registry 全部工具，漏加新工具会红）。示例：`get_quote` 查行情、`get_bars` 查K线、
+`strategy_save` 保存策略卡、`run_backtest` 回放回测、`check_kline_signal` 查K线信号。
 
 工具结果摘要/耗时渲染规范（dexter 风格）：`⏺ 查行情(code=600519)` → `⎿ 首行摘要 · 1.2s`，参考实现 `tui/widgets/tool_indicator.py`（含 `format_tool_args / format_result_digest / format_elapsed` 可直接复用逻辑）。
 
@@ -342,7 +329,7 @@ def on_tool_result(fn_name: str, ok: bool, elapsed_ms: int, result: str) -> None
 | `mommy-tui` / `mommy-web` | 两个前端 |
 | `mommy watchlist/monitor/cache/semicon/flows/report/agent/memory/earnings/...` | 透传子命令 |
 | `mommy connect claude/kimi/cline/codex/dsh` | 注册本地 MCP、安装投研 Skill、测试与断开 |
-| `mommy-mcp` | MCP server（25 个底层工具 + 6 个研究工作流，按 privacy profile 发布） |
+| `mommy-mcp` | MCP server（37 个底层工具 + 7 个研究工作流，按 privacy profile 发布；market-only 档发布 19+5） |
 
 `--verbose` 输出路由决策 + 工具调用过程，是调试前端路由展示的参考输出。
 

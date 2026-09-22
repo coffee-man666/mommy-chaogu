@@ -1,0 +1,207 @@
+/* shell.overlay 自选停靠样式（CSS Modules）。2026-09-17 重设计：面板固定
+   吸附 overlay 层右缘（top/bottom 满高、右对齐），不做自由拖拽、不做浮动
+   药丸——浮动定位会压住宿主 chrome 且被宿主 overlay 漂移放大。收起态 =
+   右缘垂直拉手（垂直居中）。CSS 只管形状，无任何内联位置。 */
+
+.dock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 264px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--mommy-card-border);
+  overflow: hidden;
+  /* Canvas 系统色随宿主深浅主题，90% 底 + blur 兜余量——纯 card-bg 只有
+     8% alpha，聊天文字会透出面板。 */
+  background: color-mix(in srgb, Canvas 90%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 10%);
+  font-size: 12px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--mommy-card-border);
+  user-select: none;
+}
+
+.title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.grow { flex: 1; }
+
+.button {
+  border: 1px solid var(--mommy-card-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.button:hover { background: var(--mommy-card-bg); }
+.button[aria-pressed='true'] { border-color: currentcolor; }
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.groups { display: flex; flex-direction: column; gap: 8px; }
+
+.groupName {
+  font-size: 11px;
+  color: var(--mommy-text-dim);
+  padding: 4px 6px 2px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.row:hover { background: var(--mommy-card-bg); }
+.row[data-open='true'] { border-color: var(--mommy-card-border); }
+
+.rowMain {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.name { font-weight: 500; }
+.code { color: var(--mommy-text-dim); font-size: 11px; }
+
+.price {
+  margin-left: auto;
+  font-family: var(--mommy-font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.trend[data-trend='up'] { color: var(--mommy-up); }
+.trend[data-trend='down'] { color: var(--mommy-down); }
+.trend[data-trend='flat'] { color: var(--mommy-flat); }
+
+.detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--mommy-text-dim);
+}
+.detail .num { color: inherit; font-family: var(--mommy-font-num); }
+
+.empty {
+  padding: 18px 12px;
+  color: var(--mommy-text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.center {
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--mommy-text-dim);
+  padding: 0 12px;
+  text-align: center;
+}
+
+.foot {
+  padding: 6px 12px;
+  font-size: 10px;
+  color: var(--mommy-text-dim);
+  border-top: 1px solid var(--mommy-card-border);
+}
+
+/* 收起态：右缘垂直拉手，垂直居中——只占一条边，与宿主 chrome 零重叠。 */
+.tab {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  padding: 12px 5px;
+  border: 1px solid var(--mommy-card-border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  background: color-mix(in srgb, var(--mommy-card-bg) 90%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: -4px 0 14px rgb(0 0 0 / 12%);
+  font-size: 12px;
+  cursor: pointer;
+  color: inherit;
+  user-select: none;
+}
+.tab:hover { border-color: currentcolor; }
+
+.tabLabel {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 设置弹层：挂在 dock 根（absolute）内右上角，覆盖列表之上。 —— */
+.settings {
+  position: absolute;
+  top: 40px;
+  right: 10px;
+  z-index: 40;
+  min-width: 188px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--mommy-card-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, Canvas 92%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 26px rgb(0 0 0 / 18%);
+}
+
+.settingsTitle {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settingsOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.settingsOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settingsOption input { accent-color: var(--mommy-up); }
+
+.settingsNote {
+  font-size: 11px;
+  color: var(--mommy-text-dim);
+}

@@ -254,15 +254,23 @@ class ChatView(Vertical):
     # ------------------------------------------------------------------
 
     def set_busy(self, busy: bool) -> None:
-        """标记是否正在处理消息（驱动 WorkingIndicator + HintBar）。"""
+        """标记是否正在处理消息（驱动 WorkingIndicator + HintBar）。
+
+        迟到回调可能在视图半拆除时到达（ChatView 子树逐个卸载，查询可能
+        落在窗口期）——挂件与提示条都按尽力而为处理，不让退出过程炸出
+        NoMatches（CI 3.13 flake 回归）。
+        """
         self._busy = busy
         if busy:
             self._cancelled = False
-            if self._working is None:
+            log = self._chat_log_or_none()
+            if log is not None and self._working is None:
                 self._working = WorkingIndicator()
                 self._working.set_queued(len(self._queue))
-                self.query_one("#chat-log", VerticalScroll).mount(self._working)
-            self.query_one(HintBar).show_busy()
+                log.mount(self._working)
+            hint = self._hint_bar_or_none()
+            if hint is not None:
+                hint.show_busy()
         else:
             if self._working is not None:
                 self._working.stop_timer()
@@ -282,6 +290,19 @@ class ChatView(Vertical):
         """重置取消标记。"""
         self._cancelled = False
 
+    def _chat_log_or_none(self) -> VerticalScroll | None:
+        """对话流滚容器；视图拆除中查询可能落空，返回 None 而不是抛 NoMatches。
+
+        注意 ``DOMQuery.first()`` 在空集时**抛 NoMatches**（不返回 None），
+        不能用它做守卫——迟到回调需要的是「找不到就跳过」。
+        """
+        node = next(iter(self.query("#chat-log")), None)
+        return node if isinstance(node, VerticalScroll) else None
+
+    def _hint_bar_or_none(self) -> HintBar | None:
+        """同上：HintBar 在视图半拆除时可能已不在树上。"""
+        return next(iter(self.query(HintBar)), None)
+
     def _refresh_hint_bar(self) -> None:
         """根据当前输入内容刷新 HintBar（slash/@ 候选、代码提示或默认）。
 
@@ -289,7 +310,7 @@ class ChatView(Vertical):
         树上）——刷新提示条是尽力而为，找不到就直接跳过，不让迟到的
         回调把应用/测试炸掉（NoMatches）。
         """
-        hint = self.query(HintBar).first()
+        hint = self._hint_bar_or_none()
         if hint is None:
             return
         if self._busy:
@@ -862,12 +883,19 @@ class ChatView(Vertical):
             on_decision=self._handle_confirm_decision,
             focus_back=lambda: self._focus_prompt(),
         )
+        log = self._chat_log_or_none()
+        if log is None:
+            # 视图已拆除（迟到回调）：没有可交互的确认面 —— fail-closed 拒绝，
+            # 不让等待方悬空，也不抛 NoMatches。
+            on_decision("deny")
+            return
         self._confirm_bar = bar
         self._pending_confirm_cb = on_decision
-        log = self.query_one("#chat-log", VerticalScroll)
         log.mount(bar)
         log.scroll_end(animate=False)
-        self.query_one(HintBar).show_confirm()
+        hint = self._hint_bar_or_none()
+        if hint is not None:
+            hint.show_confirm()
 
     def _handle_confirm_decision(self, decision: str) -> None:
         """确认条决定统一入口：恢复提示栏 + 通知等待方（app 的 worker）。"""

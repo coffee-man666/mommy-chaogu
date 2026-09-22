@@ -51,6 +51,8 @@ MARKET_ONLY_BASE_TOOLS: frozenset[str] = frozenset(
         "screen_inflow_stocks",
         "check_earnings_catalyst",
         "check_kline_signal",
+        # 确定性信号回放（只读公共缓存数据，探索性评估口径）
+        "run_backtest",
     }
 )
 

@@ -7,7 +7,170 @@
 
 ## [Unreleased]
 
-后续变更将在这里记录。
+### 工程与修复：质量基线恢复（2026-09-21）
+
+> 背景：用户评审发现 CI 自 2026-09-12 起持续红（format + packaged frontend），
+> 09-21 又新增 dependency-audit 漏洞门禁失败；分支已积累 30+ 未合并提交。
+> 本批把门禁恢复到全绿，并修掉一个被 format 门禁挡住、从未在 CI 跑到的真实竞态。
+
+- **依赖漏洞清零**——dependency-audit 门禁红：`anyio 4.14.1` 三枚 CVE、
+  `soupsieve 2.8.4` 两枚 CVE。升级 `anyio 4.14.2` / `soupsieve 2.9.2`，
+  按 CI 命令复跑 pip-audit：No known vulnerabilities found。
+- **format 门禁收口**——13 个文件不满足 `ruff format --check`，纯换行调整，
+  无语义变化；现 432 files already formatted。
+- **packaged frontend 重建**——`web/dist` 与 `src/mommy_chaogu/web/static`
+  漂移（static 停在 08-10）。按 lock 干净 `npm ci` 后重建并同步，
+  `diff -qr` 归零；`vue-tsc` 通过、vitest 78/78。
+- **计数对齐现实**——AGENTS.md 离线用例 2,082→2,316；AGENT-CHECKLIST
+  G0 预检 65/65→97/97；TEST-PLAYBOOK 复跑命令 56→97。
+- **修复：TUI 启动恢复竞态**——`on_mount` 的恢复 worker 是后台线程；用户在
+  其落回主线程前按 `/new`（或 `/resume`）时，迟到的 `recover_latest` 会把
+  活跃会话改回旧会话，`_apply_recovery` 随后重放旧历史并改绑记忆——新会话
+  静默失效（CI Python 3.13 上稳定复现为测试超时，此前被 format 门禁挡住未
+  暴露）。`SessionJournal` 增加会话代数：解析期间用户已显式切换时返回
+  `superseded` 且不改活跃指针；`_apply_recovery` 增加 active_id 守卫。
+  +2 回归测试（后台线程中途 /new 的交错、迟到恢复不改绑）。
+- **修复：TUI 迟到回调/卸载竞态（同批第二处）**——CI flake 根因是
+  `DOMQuery.first()` 空集时**抛 NoMatches 而非返回 None**，此前三处"找不到就
+  跳过"的守卫全部实际会炸（chat.py 的 `#chat-log`/`HintBar` 查询、`_refresh_hint_bar`）；
+  `ToolIndicator` 还缺少卸载时的定时器清理，`/clear` 后旧指示器的闪烁定时器会继续
+  触碰已拆除子树。现在统一用 `next(iter(query), None)` 安全取节点、确认面已拆除时
+  `request_confirm` fail-closed 拒绝、`on_unmount` 停表。+4 回归测试
+  （半拆除视图的迟到回调、迟到确认拒绝、卸载后渲染/定时器）。
+- **M1 验收脚本集**——补齐计划阶段 0 最后一项（"真实验收材料与观察记录模板就绪"）：
+  `docs/M1-ACCEPTANCE-SCRIPTS.md` 定义三档证据分级（E1 机制彩排 / E2 红队 / E3 真人，
+  禁止混写）、真人验收 S1–S7 步骤与 Gate、A/B/C 方法类型变体（含预期判定表）、
+  D 系列彩排清单与 R1–R12 红队用例、统一记录模板与停止规则。
+
+门禁：离线 2318 passed / 14 deselected（3.12 与 3.13 双版本）；`ruff` +
+`mypy --strict`（223 文件）干净；web vue-tsc + vitest 78/78；dsh
+build/typecheck + 97/97；CI 8/8 job 全绿（2026-09-12 以来首次）。
+
+### 新增：DSH 个人档满血第一波（策略卡与记忆）
+
+- **doctor 档位检查项**——从 MCP 覆盖行 args 解析 `--profile`，如实报告当前档位
+  与工具面（market-only 19+5 / personal 37+7）；personal 附审批闸与个人数据边界
+  说明，未知档位判 error。doctor 成为唯一的档位探测面（切档 = 重跑 install +
+  重启宿主）。+3 测试。
+- **审批闸理由带内容**——写工具 ask 的 reason 追加关键参数：`strategy_save`
+  显示策略卡标题与确认注记、`strategy_activate_monitor`/`archive` 显示
+  strategy_id、`manage_*` 显示动作与代码。用户在审批对话框看到的是「他要
+  保存什么」而不只是「他要写」；参数残缺退回通用理由，不崩溃不误报。+2 测试。
+- **Skill 双档适配**——`mommy-strategy`：market-only 降级指引补 DSH 产品模式
+  路径（`mommy dsh install --personal` + 重启），并写明 DSH 审批条即保存/启用
+  授权、拒绝后不得重发；`mommy-onboard`：新增「DSH 产品模式无需 connect」
+  小节（档位是安装期选择，doctor 报告代替猜测）。
+- **AGENT-CHECKLIST §2b 个人档测试轨**——S1 蒸馏全流程（审批理由须含卡标题；
+  S1b 未确认不保存）/ S2 检查表诚实性 / S3 三次授权双确认 / M1 隔会话召回 /
+  M2 预测生命周期（PredictionsCard 首次点亮）/ M3 重启延续 / R1 market-only
+  诚实拒绝；G0 预检表补 mcp_profile 期望行。
+
+> 以下为 `feat/dsh-product-graft` 分支上 DSH 产品嫁接的评审修复批次
+> （2026-09-13）。评审背景：四面嫁接机制（patch / preset / 审批闸门 / 浏览器
+> slot）本身合格且全部门禁绿，但评审发现若干"会说谎"与"静默失败"缺陷——
+> 它们的共同点是**测试全绿、用户看到的却是错的**。本批修复全部带回归测试。
+
+### 修复（第二波：评审 F2/F8①/F15 + 表面派生化 F3/F5）
+
+- **dock「拉新失败保留旧数据」注释说谎**（F2②③）——报价拉新失败路径
+  曾是全新空 Map 整体替换（注释却写"保留旧数据"），且 `fetchQuotes` 丢弃
+  CLI 的 exit 0 + error 载荷，把「数据源挂了」伪装成「空自选」。现在
+  error 字段透传、失败保留上次快照、脚注显式标注「行情拉新失败，显示上
+  次快照」（`api.ts` / `dock.tsx` / `locales.ts`，+2 vitest）。
+- **审批闸门 fail-open 漂移**（F8①）——前缀命中但判定表查不到的工具曾
+  静默放行（`undefined ?? next()`）。新增 `MOMMY_TOOL_SURFACE` 工具面
+  快照（37+7），未知 mommy 工具一律 `ask`（fail-closed：快照漂移表现为
+  多问一次，绝不静默放行）；头注明确两个「写」概念的裁决——
+  `backfill_history` 写行情缓存非用户数据，刻意不拦（gate.test.ts 语义
+  正名）。
+- **自定义工作流写面无闸**（F15）——编译器曾把含写工具的全部 37 工具喂
+  给编译 LLM，validator 只查存在性、执行器无确认通道：trigger 命中即可
+  自动执行 `manage_watchlist add`。现在编译目录剔除写工具（源头），
+  validator 对写工具出 blocking issue（闸门），判定集与
+  `agent/service.py` 确认白名单同源（`compiler.py` / `validator.py`，
+  +2 测试）。
+- **DEFS 代码正则手抄漂移**（F3）——19 处内联 pattern 收编为 `codes.py`
+  常量：宽面工具（行情/K线/公告/基本面/策略卡）升级 canonical（接受
+  `BRK.B`/`BF-B`）；A 股特有域（资金流×3/业绩催化/金叉/主力筛选/信号
+  回放）诚实收窄为 `^\d{6}$`（旧行为放行美股字母只会换来静默空数据）。
+  元测试 `tests/test_tool_surface_mirrors.py` 焊死：pattern 必须引用
+  常量、宽窄按域裁决。
+- **展示标签表漂移**（F5）——TUI 表补 5 个（注释「覆盖全部工具」终成
+  真话，37/37）、web 表补 12 个；完备性断言进 `test_tool_surface_mirrors.py`，
+  新工具漏配标签直接红灯。BACKEND-CAPABILITIES 的 25 条手抄表改为指向
+  真相源。
+- **文档计数说谎**（F7）——AGENTS.md 透传子命令 13→17、预定义工作流
+  9→10、web 页面 9→13（另 3 重定向 + 404）；BACKEND-CAPABILITIES
+  「25 个底层工具 + 6 研究工作流」→「37 + 7（market-only 发布 19+5）」；
+  DESIGN.md 数据源叙事从两源（efinance+腾讯）更新为四源链
+  （massive→yahoo→efinance→tencent）。
+
+门禁：离线 2313 passed / 14 deselected；`ruff` + `mypy --strict`（223
+文件）干净；dsh `typecheck` + vitest 68/68 + build 通过；web vue-tsc +
+vitest 78/78。
+
+### 修复（第一波）
+
+- **doctor 版本检查假比较**——`mommy dsh doctor` 曾用增强模式基线
+  （`0.1.1-rc.2`）做真实比较、再把文案字符串替换成产品基线（`0.1.5-rc.2`）：
+  0.1.5 宿主被报"高于基线 0.1.5-rc.2"，0.1.2 宿主也误报。`dsh_version_check`
+  新增 `baseline` 参数，产品模式传自己的基线，比较与 `tested`/文案同源；
+  删除字符串替换（`coding_agents/dsh.py`、`cli_commands/dsh_product.py`）。
+- **`check_kline_signal` 宽窗口静默死区**——内部取数曾被钳到 120 根，而金叉
+  判定需要 `slow+2` 根：schema 放行 `slow` 到 250，但 ≥119 的请求永远凑不齐
+  K 线，返回空结果且无任何错误。现在按 `slow` 实际取数（adapter 无 120 上限，
+  那只是 `get_bars` 工具的 schema 展示上限）；历史不足的标的以顶层 `skipped`
+  字段显式标出（`reason: insufficient_history`），不再与"无信号"混为一谈，
+  正常路径输出形状不变（`agent/tools/analysis.py`）。
+- **`mommy quote` 的 `source` 恒为空串**——CLI 曾直接用裸适配器链
+  （`FallbackAdapter` 没有 `format_source_label`，该方法只在缓存层上），DSH
+  dock 的「来源」脚注永远不渲染，且绕开了缓存节流与"拉新失败保留旧数据"
+  纪律。现在与 agent 工具面 / MCP 同一构造：缓存层包住适配器链
+  （`cli_commands/quote.py`）。
+- **SSE 失效信号的 WAL 盲区**——失效总线只 stat `portfolio.db` 主文件，而
+  mommy 的库全部跑 WAL 模式：长驻写者（MCP server）的提交先落 `-wal`，
+  checkpoint 前主文件 mtime 不动——AI 写完自选股，dock 收不到失效信号。
+  现在签名取 db / `-wal` / `-shm` 三者 mtime 最大值；建库（null→有值）也算
+  变化（`dsh-bundle/src/events.ts`）。
+- **dock 拖拽升级的三处缺陷**（随拖拽功能一并入库的问题）：
+  1. `Element.style` 类型错误（tsc 报错但不在任何门禁里，被原样提交）；
+  2. 挂载即收起（localStorage 记住 collapsed）时收起药丸没挂 `rootRef`，
+     MutationObserver 永不安装、侧栏宽度永远为 0——展开后面板压住宿主侧栏
+     直到刷新。现在药丸与面板统一走回调 ref；
+  3. 空自选股状态丢失刷新按钮，只能靠 SSE 信号或收起/展开兜底
+     （`dsh-bundle/src/client/dock.tsx`）。
+- **陈旧计数文案**——「三个产品 Skill」（实为五个，doctor 文案改为按
+  `PRODUCT_SKILL_NAMES` 动态生成）、「36 工具」（实为 37）等对齐现实
+  （`dsh_product.py`、`cordis.patch.yml`、`dsh/README.md`、preset 注释）。
+
+### 变更
+
+- **`pnpm -C dsh typecheck` 进入开发循环门禁**——dsh 子工程此前的门禁只有
+  build + vitest（tsdown/vitest 都不做类型检查），本批 5 个 tsc 错误因此全部
+  漏网。根 package.json 增加 `typecheck` 递归脚本，AGENTS.md 与 dsh/README.md
+  的开发循环同步更新。
+- `.gitignore` 补 `.zcode/`、`gui-test-screenshots/` 本地产物目录。
+
+### 测试
+
+- `tests/test_dsh_adapter.py`：`dsh_version_check` 自定义基线驱动真实比较；
+- `tests/test_dsh_product.py`：doctor 探测到 0.1.5-rc.2 判 ok 且 `tested` 为
+  产品基线；quote CLI 回归测试改为 mock 真实使用的适配器构造（旧测试 fake
+  在裸链上补了 `format_source_label`，生产坏着测试照样绿）；
+- `tests/test_dsh_four_star_tools.py`：slow=250 金叉不死区、历史不足显式
+  `skipped`、正常路径无 `skipped` 键；
+- `dsh-bundle/test/events.test.ts`（新增）：只写 `-wal` 也发失效信号、无变化
+  不误发、建库即发首个信号；
+- `dsh-bundle/test/api.test.ts`：清零 possibly-undefined 索引访问。
+
+### 文档
+
+- **`dsh/AGENT-CHECKLIST.md`（新增）**——修复批次的前端回归清单，写给会操作
+  前端的 Agent 直接执行：scratch 数据目录隔离安装（不碰真实自选库）、预检
+  探针（doctor 文案 / quote source / MCP 调用计数）、F1–F8 用例（每条含精确
+  操作、可判定预期、失败指向哪项修复、截图命名）、结果登记表与收尾清理。
+  与 `dsh/TEST-PLAYBOOK.md`（GUI 手册 + 异常登记 A1–A11/H1–H3）互为配套。
+
 
 ## [1.5.0] - 2026-08-19
 

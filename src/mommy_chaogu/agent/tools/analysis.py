@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _floatify, _json
+from mommy_chaogu.codes import A_SHARE_CODE_PATTERN
 from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
 from mommy_chaogu.market_data.news_api import get_announcements
 from mommy_chaogu.market_data.types import BarInterval
@@ -32,7 +33,7 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string", "pattern": "^\\d{6}$"},
+                    "items": {"type": "string", "pattern": A_SHARE_CODE_PATTERN},
                     "description": "股票代码列表，最多 50 只",
                 },
                 "threshold_bp": {
@@ -54,7 +55,7 @@ DEFS: list[ToolDef] = [
             "properties": {
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string", "pattern": "^\\d{6}$"},
+                    "items": {"type": "string", "pattern": A_SHARE_CODE_PATTERN},
                     "description": "股票代码列表，最多 50 只",
                 }
             },
@@ -64,15 +65,15 @@ DEFS: list[ToolDef] = [
     ToolDef(
         name="check_kline_signal",
         description=(
-            "检查收盘后日线信号：volume_breakout 为放量上涨，"
-            "ma_golden_cross 为 5 日线上穿 20 日线。"
+            "检查收盘后日线信号：volume_breakout 为放量上涨；ma_golden_cross 为 "
+            "fast 日均线上穿 slow 日均线（默认 5/20，窗口可自定义）。"
         ),
         parameters={
             "type": "object",
             "properties": {
                 "codes": {
                     "type": "array",
-                    "items": {"type": "string", "pattern": "^\\d{6}$"},
+                    "items": {"type": "string", "pattern": A_SHARE_CODE_PATTERN},
                     "description": "股票代码列表，最多 50 只",
                 },
                 "signal": {
@@ -80,11 +81,34 @@ DEFS: list[ToolDef] = [
                     "enum": ["volume_breakout", "ma_golden_cross"],
                     "default": "volume_breakout",
                 },
+                "fast": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 120,
+                    "default": 5,
+                    "description": "ma_golden_cross 的短均线窗口（默认 5）",
+                },
+                "slow": {
+                    "type": "integer",
+                    "minimum": 3,
+                    "maximum": 250,
+                    "default": 20,
+                    "description": "ma_golden_cross 的长均线窗口（默认 20；须大于 fast）",
+                },
             },
             "required": ["codes"],
         },
     ),
 ]
+
+
+def _clamp_int(value: Any, default: int, low: int, high: int) -> int:
+    """把任意输入钳到 [low, high] 的整数（默认值兜底）。"""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
 
 
 def _codes(args: dict[str, Any]) -> list[str]:
@@ -105,15 +129,22 @@ def _number(value: Any) -> Decimal | None:
         return None
 
 
-def _contract(results: list[dict[str, Any]], total: int | None = None) -> str:
+def _contract(
+    results: list[dict[str, Any]],
+    total: int | None = None,
+    skipped: list[dict[str, Any]] | None = None,
+) -> str:
     total_value = len(results) if total is None else total
-    return _json(
-        {
-            "results": results[:MAX_RESULTS],
-            "count": min(len(results), MAX_RESULTS),
-            "total": total_value,
-        }
-    )
+    payload: dict[str, Any] = {
+        "results": results[:MAX_RESULTS],
+        "count": min(len(results), MAX_RESULTS),
+        "total": total_value,
+    }
+    # skipped：因历史不足无法判定信号的标的（非错误、也非无信号），
+    # 只在有内容时出现——正常路径的输出形状不变。
+    if skipped:
+        payload["skipped"] = skipped
+    return _json(payload)
 
 
 def _handle_screen_inflow_stocks(ctx: ToolContext, args: dict[str, Any]) -> str:
@@ -222,9 +253,20 @@ def _handle_check_kline_signal(ctx: ToolContext, args: dict[str, Any]) -> str:
     signal = str(args.get("signal", "volume_breakout"))
     if signal not in {"volume_breakout", "ma_golden_cross"}:
         return _json({"error": "signal 必须是 volume_breakout 或 ma_golden_cross"})
+    fast = _clamp_int(args.get("fast", 5), 5, 2, 120)
+    slow = _clamp_int(args.get("slow", 20), 20, 3, 250)
+    if fast >= slow:
+        return _json({"error": f"fast（{fast}）必须小于 slow（{slow}）"})
+    # 窗口越宽需要越多历史 K 线（多取 10 根余量）。adapter 的 get_bars 没有
+    # 120 根上限（那是 get_bars 工具 schema 的展示上限），这里按 slow 实际取数，
+    # 否则 slow ≥ 119 时永远凑不齐 slow + 2 根，schema 放行的窗口会静默空结果。
+    limit = max(30, slow + 10)
     results: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     for code in _codes(args):
-        bars = _completed_daily_bars(ctx.adapter.get_bars(code, interval=BarInterval.D1, limit=30))
+        bars = _completed_daily_bars(
+            ctx.adapter.get_bars(code, interval=BarInterval.D1, limit=limit)
+        )
         if not bars:
             continue
         index = len(bars) - 1
@@ -239,34 +281,42 @@ def _handle_check_kline_signal(ctx: ToolContext, args: dict[str, Any]) -> str:
                 and volume_ratio > Decimal("1.5")
                 and change_pct > Decimal("2")
             )
-        elif len(bars) >= 22:
+        elif len(bars) >= slow + 2:
             # Check the most recent completed bar and its predecessor for a
             # cross; this avoids reporting an old crossover as current.
             for end in (index - 1, index):
-                if end < 20:
+                if end < slow - 1:
                     continue
-                previous_short = _ma(bars, end - 1, 5)
-                previous_long = _ma(bars, end - 1, 20)
-                current_short = _ma(bars, end, 5)
-                current_long = _ma(bars, end, 20)
+                previous_short = _ma(bars, end - 1, fast)
+                previous_long = _ma(bars, end - 1, slow)
+                current_short = _ma(bars, end, fast)
+                current_long = _ma(bars, end, slow)
                 if previous_short <= previous_long and current_short > current_long:
                     hit = True
                     current = bars[end]
                     volume_ratio = _volume_ratio(bars, end)
                     change_pct = _bar_change_pct(current)
                     break
+        else:
+            # 历史不足 slow + 2 根：金叉既不能确认也不能否认，显式标出
+            # （不与"无信号"混为一谈——上市太久的判断交给调用方）。
+            skipped.append(
+                {"code": current.code, "reason": "insufficient_history", "bars": len(bars)}
+            )
         if hit:
             results.append(
                 {
                     "code": current.code,
                     "name": current.name,
                     "signal": signal,
+                    "fast": fast,
+                    "slow": slow,
                     "close": str(current.close),
                     "volume_ratio": str(volume_ratio) if volume_ratio is not None else None,
                     "change_pct": str(change_pct),
                 }
             )
-    return _contract(results)
+    return _contract(results, skipped=skipped)
 
 
 HANDLERS: dict[str, ToolHandler] = {

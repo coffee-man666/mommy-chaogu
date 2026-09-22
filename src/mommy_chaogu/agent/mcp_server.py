@@ -26,6 +26,9 @@ import argparse
 import asyncio
 import logging
 import os
+import threading
+import time
+from collections.abc import Callable
 from typing import Any, cast
 
 from mcp.server import Server
@@ -55,6 +58,56 @@ from mommy_chaogu.agent.research_tools import (
 from mommy_chaogu.agent.tools import ToolContext, ToolRegistry
 
 _log = logging.getLogger(__name__)
+
+#: 空闲多久后自杀退出（秒）。宿主断开会话后不回收 stdio 子进程时，server
+#: 自身是唯一能兜底的一方（实测泄漏 11+ 个进程、最老存活近 3 天）。
+#: ``MOMMY_MCP_IDLE_TIMEOUT=0`` 可禁用。
+DEFAULT_IDLE_TIMEOUT_S = 1800.0
+
+
+def _resolve_idle_timeout(explicit: float | None = None) -> float:
+    """空闲超时解析：显式参数 > 环境变量 > 默认 30 分钟；非法值回退默认。"""
+    if explicit is not None:
+        return max(0.0, explicit)
+    raw = os.environ.get("MOMMY_MCP_IDLE_TIMEOUT", "").strip()
+    if raw == "":
+        return DEFAULT_IDLE_TIMEOUT_S
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        _log.warning(
+            "MOMMY_MCP_IDLE_TIMEOUT 非法（%r），回退默认 %.0fs", raw, DEFAULT_IDLE_TIMEOUT_S
+        )
+        return DEFAULT_IDLE_TIMEOUT_S
+
+
+def _start_idle_watchdog(
+    timeout_s: float,
+    on_exit: Callable[[str], None],
+) -> Callable[[], None]:
+    """启动空闲看门狗线程，返回 touch（每次收到 MCP 请求时调用）。
+
+    看门狗是独立 daemon 线程而非 asyncio task：event loop 在 shutdown 阶段会
+    取消剩余 task，且线程池里卡死的网络 IO 会让 ``asyncio.run`` 的清理永远
+    挂住——超时退出必须发生在 loop 生命周期之外。
+    """
+    last_activity = time.monotonic()
+
+    def touch() -> None:
+        nonlocal last_activity
+        last_activity = time.monotonic()
+
+    def watch() -> None:
+        while True:
+            time.sleep(min(60.0, timeout_s))
+            idle = time.monotonic() - last_activity
+            if idle >= timeout_s:
+                on_exit(f"idle {idle:.0f}s >= {timeout_s:.0f}s")
+                return
+
+    threading.Thread(target=watch, name="mommy-mcp-idle-watchdog", daemon=True).start()
+    return touch
+
 
 MCP_INSTRUCTIONS = """
 mommy-chaogu is a local investing toolbox. The host Agent is the only reasoner; never call a second
@@ -193,6 +246,7 @@ def create_mcp_server(
     ctx: ToolContext | None = None,
     *,
     profile: McpProfile | str = DEFAULT_MCP_PROFILE,
+    touch: Callable[[], None] | None = None,
 ) -> Server:
     """创建 MCP Server 实例。
 
@@ -200,7 +254,9 @@ def create_mcp_server(
         ctx: ToolContext（None 则用默认配置）
         profile: ``market-only`` 只开放公共行情；``personal`` 额外开放
             持仓、记忆和写操作。
+        touch: 收到任何 MCP 请求时调用（空闲看门狗的活性信号）。
     """
+    mark_activity = touch if touch is not None else (lambda: None)
     selected_profile = normalize_mcp_profile(profile)
     # Discovery must be cheap and read-only. Build database/data-source services
     # only when a tool is actually called, not during initialize/tools-list.
@@ -230,6 +286,7 @@ def create_mcp_server(
         )
 
     async def list_tools() -> list[Tool]:
+        mark_activity()
         tools: list[Tool] = []
         for td in base_defs:
             fn = td["function"]
@@ -253,6 +310,7 @@ def create_mcp_server(
         return tools
 
     async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
+        mark_activity()
         nonlocal runtime_ctx, registry, research
         if name not in allowed_base and name not in allowed_research:
             result = (
@@ -305,13 +363,37 @@ def create_mcp_server(
     )
 
 
-async def run_stdio(profile: McpProfile | str = DEFAULT_MCP_PROFILE) -> None:
-    """stdio 模式启动（MCP 标准 transport）。"""
+async def run_stdio(
+    profile: McpProfile | str = DEFAULT_MCP_PROFILE,
+    *,
+    idle_timeout_s: float | None = None,
+) -> None:
+    """stdio 模式启动（MCP 标准 transport）。
+
+    idle_timeout_s 覆盖空闲看门狗超时（None 时读 MOMMY_MCP_IDLE_TIMEOUT，
+    默认 30 分钟；0 禁用）——宿主断开会话后不回收本子进程时自杀退出。
+    """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
     selected_profile = normalize_mcp_profile(profile)
-    server = create_mcp_server(profile=selected_profile)
+    timeout_s = _resolve_idle_timeout(idle_timeout_s)
+    touch: Callable[[], None] | None = None
+    if timeout_s > 0:
+
+        def bail(reason: str) -> None:
+            _log.warning(
+                "mommy-chaogu MCP server 空闲退出（%s）——宿主未回收的 stdio 子进程兜底", reason
+            )
+            logging.shutdown()
+            os._exit(0)
+
+        touch = _start_idle_watchdog(timeout_s, bail)
+    server = create_mcp_server(profile=selected_profile, touch=touch)
     async with stdio_server() as (read_stream, write_stream):
-        _log.info("mommy-chaogu MCP server started (profile=%s)", selected_profile)
+        _log.info(
+            "mommy-chaogu MCP server started (profile=%s, idle_timeout=%.0fs)",
+            selected_profile,
+            timeout_s,
+        )
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 

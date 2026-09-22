@@ -1,0 +1,75 @@
+{
+  "name": "@mommy-chaogu/dsh-bundle",
+  "version": "0.1.0",
+  "description": "mommy-chaogu DSH product graft: MCP tools row + write-approval gate + investor preset + browser cards/right-dock (no host source changes)",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./gate": {
+      "types": "./lib/gate.d.ts",
+      "default": "./lib/gate.js"
+    },
+    "./presets": {
+      "types": "./lib/presets.d.ts",
+      "default": "./lib/presets.js"
+    },
+    "./bridge": {
+      "types": "./lib/bridge.d.ts",
+      "default": "./lib/bridge.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "assets",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsdown && tsdown --config tsdown.client.config.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-mcp-client": "0.1.5-rc.2",
+    "lightweight-charts": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0",
+    "@deepseek-ai/schemastery": ">=3.18.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.7",
+    "lightningcss": "^1.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.3.1",
+    "tsdown": "^0.22.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -74,3 +74,14 @@ def test_update_preserves_existing_id_and_injects_old_spec() -> None:
     assert result.spec is not None
     assert result.spec.id == "user_existing"
     assert "当前 spec" in prompts[0]
+
+
+def test_compiler_directory_excludes_write_tools() -> None:
+    """编译器不再把写工具喂给编译 LLM（自定义 spec 无确认通道，源头就不提供）。"""
+    from mommy_chaogu.workflow.compiler import _COMPILER_TOOL_DEFS
+
+    names = {tool.name for tool in _COMPILER_TOOL_DEFS}
+    assert "manage_watchlist" not in names
+    assert "strategy_save" not in names
+    assert "get_quote" in names
+    assert "screen_inflow_stocks" in names

@@ -246,6 +246,8 @@ class MommyTuiApp(App[None]):
             return  # 冷启动：欢迎卡即终态，零仪式
         if self._active_turn_id is not None:
             return  # 极端竞态：活动轮次进行中不插入历史
+        if self._journal is not None and self._journal.active_id != rec.session_id:
+            return  # 用户已先行 /new 或 /resume：迟到的恢复不得重放/改绑
         chat = self.query_one(ChatView)
         chat.replay_entries(rec.entries, more_older=rec.more_older)
         chat.show_resume_banner(rec.session_id, len(rec.entries))
@@ -368,7 +370,13 @@ class MommyTuiApp(App[None]):
         """Ctrl+T 循环切换；`/theme <名称>` 直接选中（如 /theme nord）。"""
         if name:
             candidates = {t.lower(): t for t in self._THEMES}
-            aliases = {"日光": "solarized", "极夜": "nord", "拿铁": "latte", "浅色": "light", "深色": "dark"}
+            aliases = {
+                "日光": "solarized",
+                "极夜": "nord",
+                "拿铁": "latte",
+                "浅色": "light",
+                "深色": "dark",
+            }
             key = aliases.get(name, aliases.get(name.lower(), name.lower()))
             if key in candidates:
                 self.ui_theme = candidates[key]

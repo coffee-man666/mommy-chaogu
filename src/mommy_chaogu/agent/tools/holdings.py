@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, TypedDict, cast
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
+from mommy_chaogu.codes import STOCK_CODE_PATTERN
 
 
 class _PortfolioSummary(TypedDict):
@@ -62,7 +63,7 @@ DEFS: list[ToolDef] = [
                 },
                 "code": {
                     "type": "string",
-                    "pattern": "^([A-Z]{1,6}|\\d{6})$",
+                    "pattern": STOCK_CODE_PATTERN,
                     "description": "股票代码（A 股 6 位数字或美股字母，必填）",
                 },
                 "group": {
