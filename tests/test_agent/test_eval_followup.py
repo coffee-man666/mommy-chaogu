@@ -276,7 +276,9 @@ class TestRetryStatusAndCancel:
         svc._client.chat.completions.create.side_effect = [err, ok]
 
         events: list[tuple[str, dict[str, Any]]] = []
-        resp = svc.chat("hi", callbacks=ChatCallbacks(on_status=lambda kind, info: events.append((kind, info))))
+        resp = svc.chat(
+            "hi", callbacks=ChatCallbacks(on_status=lambda kind, info: events.append((kind, info)))
+        )
 
         assert resp.text == "好"
         assert len(events) == 1

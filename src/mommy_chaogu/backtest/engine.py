@@ -204,9 +204,7 @@ class BacktestEngine:
         for data in all_data.values():
             all_dates.update(data["flow_by_date"].keys())
         mcap_dates = [
-            data["mcap_as_of"]
-            for data in all_data.values()
-            if data.get("mcap_as_of") is not None
+            data["mcap_as_of"] for data in all_data.values() if data.get("mcap_as_of") is not None
         ]
         mcap_as_of = min(mcap_dates).strftime("%Y-%m-%d") if mcap_dates else ""
         caveats: list[str] = []

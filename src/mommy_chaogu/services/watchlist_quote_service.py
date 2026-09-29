@@ -79,9 +79,7 @@ class WatchlistQuoteService:
             quotes = []
             quote_error = True
         # duck-typed getattr 与既有 TUI 行为一致（FakeServices 可能传非 Quote 对象）
-        quotes_by_code: dict[str, object] = {
-            str(getattr(q, "code", "")): q for q in quotes
-        }
+        quotes_by_code: dict[str, object] = {str(getattr(q, "code", "")): q for q in quotes}
 
         # ---- 资金流并发拉（无批量 API，5 分钟节流缓存）----
         flows_by_code: dict[str, Money | None] = {}
@@ -120,9 +118,7 @@ class WatchlistQuoteService:
             )
 
         self.last_source_label = (
-            str(adapter.format_source_label())
-            if hasattr(adapter, "format_source_label")
-            else ""
+            str(adapter.format_source_label()) if hasattr(adapter, "format_source_label") else ""
         )
         return rows
 
