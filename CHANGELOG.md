@@ -7,7 +7,13 @@
 
 ## [Unreleased]
 
-后续变更将在这里记录。
+### 新增
+
+- **股票名称搜索 `search_stock` 工具**——新增 `search_stock`（`market_data/stock_search.py`，东财
+  suggest 优先 + 新浪 suggest 兜底）：名称/拼音 → 代码解析，覆盖 A 股 + 美股（"比亚迪"→002594、
+  "maotai"→600519）。修复用户问"看看比亚迪"时 LLM 只能硬传中文名、efinance 失败即整链报
+  "未找到"的问题。`get_quote` 同时支持直接传中文名称（自动解析，参数 schema 不再限制为纯代码），
+  system prompt 已引导 LLM 先搜索再查行情。
 
 ## [1.5.0] - 2026-08-19
 
