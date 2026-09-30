@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mommy_chaogu.market_data.rankings import IndexQuote
+from mommy_chaogu.market_data.stock_search import StockSearchHit
 from mommy_chaogu.market_data.types import MarketType, Money, Quote, QuoteType
 from mommy_chaogu.web.routes.market import _ranking
 
@@ -267,6 +268,58 @@ class TestStockSearch:
         assert client.get("/api/stocks/search?q=").status_code == 422
         assert client.get("/api/stocks/search?q=6&limit=11").status_code == 422
         assert client.get("/api/stocks/search?q=%20%20").json() == []
+
+    def test_remote_fallback_on_no_local_match(
+        self,
+        client: TestClient,
+        mock_watchlist_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """本地池未命中 → 远程名称搜索兜底（mock，不打网络）。"""
+        mock_watchlist_store.list_entries.return_value = [
+            SimpleNamespace(code="600519", name="贵州茅台"),
+        ]
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.market.search_stocks_by_name",
+            lambda q, limit=10: [
+                StockSearchHit(code="002594", name="比亚迪", market="A股"),
+                StockSearchHit(code="AAPL", name="苹果", market="US"),
+            ],
+        )
+        response = client.get("/api/stocks/search?q=比亚迪")
+        assert response.status_code == 200
+        assert response.json() == [
+            {"code": "002594", "name": "比亚迪", "source": "remote"},
+            {"code": "AAPL", "name": "苹果", "source": "remote"},
+        ]
+
+    def test_local_match_skips_remote(
+        self,
+        client: TestClient,
+        mock_watchlist_store: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """本地命中则不打远程。"""
+        mock_watchlist_store.list_entries.return_value = [
+            SimpleNamespace(code="600519", name="贵州茅台"),
+        ]
+        calls: list[str] = []
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.market.search_stocks_by_name",
+            lambda q, limit=10: calls.append(q) or [],
+        )
+        response = client.get("/api/stocks/search?q=茅台")
+        assert response.json()[0]["source"] == "watchlist"
+        assert calls == []
+
+    def test_remote_no_hit_returns_empty(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "mommy_chaogu.web.routes.market.search_stocks_by_name",
+            lambda q, limit=10: [],
+        )
+        assert client.get("/api/stocks/search?q=不存在").json() == []
 
 
 class TestStockDecisionContext:

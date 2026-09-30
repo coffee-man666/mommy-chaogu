@@ -277,7 +277,7 @@ class StockSearchOut(BaseModel):
 
     code: str
     name: str
-    source: Literal["watchlist", "semicon", "cache"]
+    source: Literal["watchlist", "semicon", "cache", "remote"]
 
 
 class StockHoldingContextOut(BaseModel):

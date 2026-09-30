@@ -14,6 +14,7 @@ from mommy_chaogu.market_data.rankings import (
     fetch_indexes,
     fetch_sector_ranking,
 )
+from mommy_chaogu.market_data.stock_search import search_stocks_by_name
 from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.semicon import SemiconStore
 from mommy_chaogu.services.stock_context_service import StockContextService
@@ -94,7 +95,13 @@ def search_stocks(
         for item in candidates.values()
         if item.code.casefold().startswith(needle) or needle in item.name.casefold()
     ]
-    return sorted(matched, key=score)[:limit]
+    results = sorted(matched, key=score)[:limit]
+    if results:
+        return results
+    # 本地池（自选/产业链/历史缓存）未命中 → 远程名称搜索兜底，
+    # 否则搜索框输入新股票名（如"比亚迪"）永远无联想。
+    hits = search_stocks_by_name(needle, limit=limit)
+    return [StockSearchOut(code=h.code, name=h.name, source="remote") for h in hits]
 
 
 @stocks_router.get("/{code}/decision-context", response_model=StockDecisionContextOut)
