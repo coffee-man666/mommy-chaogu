@@ -341,12 +341,15 @@ class TestAppSessionWiring:
                 prompt = app.query_one("ChatInput")
                 prompt.value = "/new"
                 await pilot.press("enter")
+                # 慢速 CI runner 上 /new 全链路（journal + 记忆换绑）偶发超
+                # 4s 默认 deadline；本测试验证"命令最终生效"而非性能
                 assert await self._wait_until(
                     pilot,
                     lambda: (
                         services.agent._memory is not None
                         and services.agent._memory.session_id.startswith("tui-")
                     ),
+                    timeout_s=15.0,
                 )
                 assert app._journal is not None and app._journal.active_id.startswith("tui-")
                 assert mem.summary("default")["total"] == 2  # 旧会话原样保留
@@ -364,25 +367,29 @@ class TestAppSessionWiring:
             app = MommyTuiApp(services=services)  # type: ignore[arg-type]
             async with app.run_test() as pilot:
                 prompt = app.query_one("ChatInput")
-                # 无参：列表卡
+                # 无参：列表卡（慢速 CI runner deadline 放宽，同 /new 测试）
                 prompt.value = "/resume"
                 await pilot.press("enter")
                 chat = app.query_one(ChatView)
                 assert await self._wait_until(
                     pilot,
                     lambda: any("tui-20260820" in str(c.content) for c in chat.query(".card")),
+                    timeout_s=15.0,
                 )
                 # 带 id：切换
                 prompt.value = "/resume tui-20260820-090000-cafe"
                 await pilot.press("enter")
                 assert await self._wait_until(
-                    pilot, lambda: services.agent._memory.session_id == "tui-20260820-090000-cafe"
+                    pilot,
+                    lambda: services.agent._memory.session_id == "tui-20260820-090000-cafe",
+                    timeout_s=15.0,
                 )
                 assert await self._wait_until(
                     pilot,
                     lambda: any(
                         "另一个会话的问题" in str(c.content) for c in chat.query(".user-msg")
                     ),
+                    timeout_s=15.0,
                 )
 
         _run(_test())
