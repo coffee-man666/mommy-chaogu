@@ -276,6 +276,10 @@ class MommyTuiApp(App[None]):
             return  # 冷启动：欢迎卡即终态，零仪式
         if self._active_turn_id is not None:
             return  # 极端竞态：活动轮次进行中不插入历史
+        if self._journal is not None and self._journal.active_id != rec.session_id:
+            # 活跃会话已不是解析出的那个（用户已 /new、/resume 接管，
+            # 或 recover_latest 因用户接管未认领）→ 不回放、不换绑
+            return
         if (
             generation is not None
             and self._journal is not None

@@ -79,12 +79,18 @@ class SessionJournal:
         return self._generation
 
     def recover_latest(self) -> Recovery:
-        """解析「上次会话」并返回尾窗。空库（首次安装）返回冷启动。"""
+        """解析「上次会话」并返回尾窗。空库（首次安装）返回冷启动。
+
+        仅当用户尚未接管（``_active is None``，即还没 /new、/resume）时才
+        认领最新会话为活跃会话；否则保持现状——启动恢复 worker 与用户
+        输入并发时，晚到的 recover_latest 不得把 active 改回旧会话。
+        """
         latest = self._latest_session_id()
         if latest is None:
             return Recovery(None, (), 0, "cold-start")
         entries, more_older = self._tail_window(latest)
-        self._active = latest
+        if self._active is None:
+            self._active = latest
         return Recovery(latest, entries, more_older, "resumed-latest")
 
     @property

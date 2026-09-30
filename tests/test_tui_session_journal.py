@@ -378,13 +378,17 @@ class TestAppSessionWiring:
                     timeout_s=15.0,
                 )
                 # 手工注入"晚到的启动恢复"（CI 慢速时 recover worker 与
-                # /new 并发的时序），确定性复现而无需真竞态：世代 0 是
-                # 启动 worker 的快照，/new 已把世代推到 1
+                # /new 并发的时序），确定性复现而无需真竞态。两种快照
+                # 时序都要防住：worker 快照在 /new 之前（世代 0）和
+                # 之后（当前世代）。
                 assert app._journal is not None
                 late = app._journal.recover_latest()  # 指向旧会话（tui- 新会话尚无写入）
-                app._apply_recovery(late, 0)  # 过期世代 → 应被放弃
+                current_gen = app._journal.generation
+                app._apply_recovery(late, 0)  # 过期世代快照
+                app._apply_recovery(late, current_gen)  # /new 之后才快照的 worker
                 await pilot.pause()
                 assert services.agent._memory.session_id.startswith("tui-")  # 未被覆盖
+                assert app._journal.active_id.startswith("tui-")  # active 未被改回
 
         _run(_test())
 
