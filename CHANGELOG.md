@@ -7,8 +7,27 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **TUI 挂载期 DOM 查询竞态（NoMatches 随机崩溃）**——两类共 23 处：
+  1. `on_mount` 里 `query_one` 自身 compose 子节点在动态挂载时偶发未就绪，随机抛
+     `NoMatches` 炸掉整个 Mount 流程（`test_tui_confirm` 本地实测 15% 挂率）；
+  2. worker 线程经 `call_from_thread` 回主线程的 16 个回调里 `query_one(ChatView)`
+     撞启动窗口同样抛 `NoMatches`，导致整轮对话死掉（确认决定悬空、偶发线程不收尾挂死）。
+  统一改成 `thinking.py` 已验证的 `try/except + call_after_refresh` 重试模式（新增
+  `_chat_or_defer` 统一入口，消息队列 FIFO 保序）。修复后 `test_tui_confirm`
+  20 连跑 0 败 0 挂（基线 10 跑 2 败）。另补 `test_tui_confirm.py` 一处未 assert 的
+  `_wait_until`。
+- **依赖 CVE**——anyio 4.14.1→4.14.2（3 个 CVE）、soupsieve 2.8.4→2.10（2 个）、
+  pyjwt 2.13.0→2.15.1（10 个，审计当日新披露）。`pip-audit` 恢复全绿。
+- **前端打包产物过期**——重建 `web/static`（main 上 Frontend CI 检查
+  `diff -qr dist ../src/mommy_chaogu/web/static` 连红 3 次的原因之一）。
+
 ### 新增
 
+- **web 股票搜索远程兜底**——`/api/stocks/search` 本地池（自选/产业链/缓存）未命中时
+  调用 `search_stocks_by_name` 远程搜索，`source` 新增 `"remote"`（前端标签"全网"）。
+  网页搜索框输入"比亚迪"等新股票名不再无联想。
 - **股票名称搜索 `search_stock` 工具**——新增 `search_stock`（`market_data/stock_search.py`，东财
   suggest 优先 + 新浪 suggest 兜底）：名称/拼音 → 代码解析，覆盖 A 股 + 美股（"比亚迪"→002594、
   "maotai"→600519）。修复用户问"看看比亚迪"时 LLM 只能硬传中文名、efinance 失败即整链报
