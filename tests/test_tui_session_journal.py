@@ -356,6 +356,38 @@ class TestAppSessionWiring:
 
         _run(_test())
 
+    def test_late_recovery_does_not_clobber_new_session(self, tmp_path: Path) -> None:
+        """慢速环境竞态回归：启动恢复晚于 /new 到达时，不得换绑覆盖新会话。"""
+
+        from mommy_chaogu.tui.app import MommyTuiApp
+
+        services, _mem = self._services_with_memory(tmp_path, seed=1)
+
+        async def _test() -> None:
+            app = MommyTuiApp(services=services)  # type: ignore[arg-type]
+            async with app.run_test() as pilot:
+                prompt = app.query_one("ChatInput")
+                prompt.value = "/new"
+                await pilot.press("enter")
+                assert await self._wait_until(
+                    pilot,
+                    lambda: (
+                        services.agent._memory is not None
+                        and services.agent._memory.session_id.startswith("tui-")
+                    ),
+                    timeout_s=15.0,
+                )
+                # 手工注入"晚到的启动恢复"（CI 慢速时 recover worker 与
+                # /new 并发的时序），确定性复现而无需真竞态：世代 0 是
+                # 启动 worker 的快照，/new 已把世代推到 1
+                assert app._journal is not None
+                late = app._journal.recover_latest()  # 指向旧会话（tui- 新会话尚无写入）
+                app._apply_recovery(late, 0)  # 过期世代 → 应被放弃
+                await pilot.pause()
+                assert services.agent._memory.session_id.startswith("tui-")  # 未被覆盖
+
+        _run(_test())
+
     def test_resume_command_lists_and_switches(self, tmp_path: Path) -> None:
         from mommy_chaogu.tui.app import MommyTuiApp
         from mommy_chaogu.tui.views.chat import ChatView

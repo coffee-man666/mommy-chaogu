@@ -255,20 +255,34 @@ class MommyTuiApp(App[None]):
         """worker 线程：解析上次会话（SQL 不占主线程），回主线程渲染。"""
         if self._journal is None:
             return
+        # 快照世代：解析 + 回放期间用户 /new、/resume 切走则放弃回放
+        gen = self._journal.generation
         try:
             rec = self._journal.recover_latest()
         except Exception as e:
             _log.warning("会话恢复失败: %s", e)
             return
-        self.call_from_thread(self._apply_recovery, rec)
+        self.call_from_thread(self._apply_recovery, rec, gen)
 
-    def _apply_recovery(self, rec: Any) -> None:
-        """主线程：重放尾窗 + 横幅 + 换绑续聊记忆视图。"""
+    def _apply_recovery(self, rec: Any, generation: int | None = None) -> None:
+        """主线程：重放尾窗 + 横幅 + 换绑续聊记忆视图。
+
+        generation 为启动恢复 worker 快照的会话世代；回放时世代已变
+        （慢速环境下解析期间用户已 /new、/resume 切走）则放弃，防止
+        晚到的恢复换绑覆盖用户刚激活的会话。None 表示跳过校验（/resume
+        自己的回放路径，switch 已把世代推到最新）。
+        """
         if rec is None or rec.session_id is None:
             return  # 冷启动：欢迎卡即终态，零仪式
         if self._active_turn_id is not None:
             return  # 极端竞态：活动轮次进行中不插入历史
-        chat = self._chat_or_defer(self._apply_recovery, rec)
+        if (
+            generation is not None
+            and self._journal is not None
+            and self._journal.generation != generation
+        ):
+            return
+        chat = self._chat_or_defer(self._apply_recovery, rec, generation)
         if chat is None:
             return
         chat.replay_entries(rec.entries, more_older=rec.more_older)
@@ -324,7 +338,8 @@ class MommyTuiApp(App[None]):
             _log.warning("切换会话失败: %s", e)
             chat.append_hint(friendly_error(e))
             return
-        self._apply_recovery(rec)
+        # switch 后快照世代：回放前再被 /new、/resume 切走则放弃
+        self._apply_recovery(rec, self._journal.generation)
 
     # ------------------------------------------------------------------
     # 全局动作

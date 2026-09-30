@@ -68,6 +68,15 @@ class SessionJournal:
         self._memory = memory
         self._tail_size = max(1, tail_size)
         self._active: str | None = None
+        # 会话世代：用户动作（/new、/resume）递增。启动恢复 worker 快照
+        # 世代，回放前发现已变化即放弃——防止慢速环境下晚到的恢复覆盖
+        # 用户刚切换的会话（recover_latest 的 _active 副作用绕不过它）。
+        self._generation = 0
+
+    @property
+    def generation(self) -> int:
+        """会话世代（每次用户切换 +1），供恢复流程做竞态校验。"""
+        return self._generation
 
     def recover_latest(self) -> Recovery:
         """解析「上次会话」并返回尾窗。空库（首次安装）返回冷启动。"""
@@ -85,6 +94,7 @@ class SessionJournal:
 
     def begin_next(self) -> str:
         """分配并激活一个新会话（/new）。历史会话原样保留在 /resume 列表里。"""
+        self._generation += 1
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         suffix = secrets.token_hex(2)
         new_id = validate_session_id(f"tui-{stamp}-{suffix}")
@@ -96,6 +106,7 @@ class SessionJournal:
 
         目标不存在（如刚被保留期清理）时回落当前会话，不抛异常打断用户。
         """
+        self._generation += 1
         try:
             validate_session_id(session_id)
         except ValueError:

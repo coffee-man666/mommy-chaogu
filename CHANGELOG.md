@@ -9,6 +9,11 @@
 
 ### 修复
 
+- **TUI 启动恢复覆盖用户新会话的产品竞态**——慢速环境下启动恢复 worker 与用户输入并发：
+  `/new` 之后晚到的 `_apply_recovery` 会把记忆换绑回旧会话（`recover_latest` 的
+  `_active` 副作用绕过简单守卫），CI 上表现为 `test_new_command_starts_fresh_session`
+  间歇失败。SessionJournal 引入会话世代计数（`/new`、`/resume` 递增），恢复 worker
+  快照世代，回放时世代已变即放弃；附确定性回归测试（注入过期世代）。
 - **TUI 挂载期 DOM 查询竞态（NoMatches 随机崩溃）**——两类共 23 处：
   1. `on_mount` 里 `query_one` 自身 compose 子节点在动态挂载时偶发未就绪，随机抛
      `NoMatches` 炸掉整个 Mount 流程（`test_tui_confirm` 本地实测 15% 挂率）；
