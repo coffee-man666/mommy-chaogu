@@ -149,7 +149,7 @@ class TestInlineConfirm:
                 assert await _wait_until(pilot, lambda: bool(agent.decisions))
                 assert agent.decisions == [True]
                 # 第二轮：同工具直接放行，不再弹确认条
-                await _wait_until(pilot, lambda: not app.query_one(ChatView)._busy)
+                assert await _wait_until(pilot, lambda: not app.query_one(ChatView)._busy)
                 await _submit(pilot, app, "再存一次")
                 assert await _wait_until(pilot, lambda: len(agent.decisions) == 2)
                 assert agent.decisions == [True, True]

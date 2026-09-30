@@ -67,6 +67,17 @@ class ConfirmBar(Vertical):
         yield Static(classes="cb-args")
 
     def on_mount(self) -> None:
+        self._render_body()
+        self.focus()
+
+    def _render_body(self) -> None:
+        """渲染确认文案；挂载期子节点偶发未就绪（NoMatches）则延迟重试。"""
+        try:
+            body_widget = self.query_one(".cb-body", Static)
+            args_widget = self.query_one(".cb-args", Static)
+        except Exception:
+            self.call_after_refresh(self._render_body)
+            return
         title = (
             f"{self._display_name}({self._args_summary})"
             if self._args_summary
@@ -84,13 +95,11 @@ class ConfirmBar(Vertical):
         body.append(" 拒绝   ")
         body.append("[a]", style=_c("info"))
         body.append(" 本会话不再询问")
-        self.query_one(".cb-body", Static).update(body)
-        args_widget = self.query_one(".cb-args", Static)
+        body_widget.update(body)
         if self._args_pretty:
             args_widget.update(Text(self._args_pretty, style="dim"))
         else:
             args_widget.display = False
-        self.focus()
 
     # ── 决定 ────────────────────────────────────────────────────
 

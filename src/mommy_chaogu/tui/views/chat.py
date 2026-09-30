@@ -220,7 +220,15 @@ class ChatView(Vertical):
     def on_mount(self) -> None:
         """启动焦点落在输入框；欢迎卡先渲染骨架，数据由 app 的 worker 回填。"""
         self.update_welcome(None, None, 0, 0, self._has_agent())
-        prompt = self.query_one("#prompt", ChatInput)
+        self._init_prompt_focus()
+
+    def _init_prompt_focus(self) -> None:
+        """启动焦点；挂载期子节点偶发未就绪（NoMatches）则延迟重试。"""
+        try:
+            prompt = self.query_one("#prompt", ChatInput)
+        except Exception:
+            self.call_after_refresh(self._init_prompt_focus)
+            return
         prompt.cursor_blink = False
         prompt.focus()
 
