@@ -261,7 +261,8 @@ def test_write_env_file_preserves_unmanaged_and_supported_provider_keys(
     assert "CUSTOM_SETTING=keep" in content
     assert "OPENAI_API_KEY=existing-openai" in content
     assert "ZAI_API_KEY=new-zai" in content
-    assert "SERVER_CHAN_KEY=legacy" in content
+    # Server酱已下线：旧 key 重写时一并清除
+    assert "SERVER_CHAN_KEY" not in content
 
     _write_env_file(env, "zai", "newer-zai", model="glm-5")
     rewritten = env.read_text(encoding="utf-8")

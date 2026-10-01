@@ -33,7 +33,6 @@ cp .env.example .env       # 复制模板
 | kimi | `MOONSHOT_API_KEY` | Moonshot / Kimi |
 | zai | `ZAI_API_KEY` | z.ai / GLM-4.7 |
 | minimax | `MINIMAX_API_KEY` | MiniMax 开放平台按量 API（M3，非 Coding Plan） |
-| — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
 | — | `AGENT_MODEL` | 覆盖聊天模型名 |
 
@@ -86,7 +85,7 @@ src/mommy_chaogu/
 ├── web/             # FastAPI + WebSocket
 ├── tui/             # Textual 终端 UI（单屏对话即界面的投研 Coding Agent CLI）
 ├── services/        # 统一数据服务层（工具层和 API 层共用）
-├── push/            # Server酱微信推送
+├── push/            # 推送管道（Bark Pusher + Notifier/Deduper 通用抽象）
 ├── channels/        # 本地消息网关（微信二维码授权 + 私聊长轮询）
 ├── db_paths.py      # 统一数据库路径管理
 └── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个透传子命令）
