@@ -23,7 +23,6 @@ _ENV_KEYS = (
     "MOONSHOT_API_KEY",
     "ZAI_API_KEY",
     "MINIMAX_API_KEY",
-    "SERVER_CHAN_KEY",
     "AGENT_PROVIDER",
     "AGENT_MODEL",
     "MOMMY_CONFIG_DIR",
@@ -66,7 +65,6 @@ model = "moonshot-v1-8k"
 max_tool_calls = 5
 
 [push]
-server_chan_key = "toml_key"
 web_base_url = "https://mama.example.com"
 
 [cache]
@@ -79,7 +77,6 @@ quote_fetch_interval_seconds = 120
     assert cfg.agent.provider == "kimi"
     assert cfg.agent.model == "moonshot-v1-8k"
     assert cfg.agent.max_tool_calls == 5
-    assert cfg.push.server_chan_key == "toml_key"
     assert cfg.push.web_base_url == "https://mama.example.com"
     assert cfg.cache.quote_fetch_interval_seconds == 120
 
@@ -93,7 +90,6 @@ quote_fetch_interval_seconds = 120
         ("DEEPSEEK_API_KEY", "env_secret", "agent.api_key", "env_secret"),
         ("AGENT_PROVIDER", "openai", "agent.provider", "openai"),
         ("AGENT_MODEL", "gpt-5-mini", "agent.model", "gpt-5-mini"),
-        ("SERVER_CHAN_KEY", "env_sck", "push.server_chan_key", "env_sck"),
     ],
 )
 def test_env_overrides(
@@ -106,9 +102,6 @@ def test_env_overrides(
 [agent]
 provider = "deepseek"
 api_key = "toml_key"
-
-[push]
-server_chan_key = "toml_sck"
 """,
         encoding="utf-8",
     )
