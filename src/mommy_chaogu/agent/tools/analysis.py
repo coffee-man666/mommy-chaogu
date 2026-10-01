@@ -11,10 +11,22 @@ from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _floatify, _json
+from mommy_chaogu.agent.tools.base import (
+    ToolContext,
+    ToolDef,
+    ToolHandler,
+    _clamp_int,
+    _floatify,
+    _json,
+)
 from mommy_chaogu.market_data.fundamentals_api import get_fundamentals
 from mommy_chaogu.market_data.news_api import get_announcements
+from mommy_chaogu.market_data.rankings import INDEX_CODES
 from mommy_chaogu.market_data.types import BarInterval
+from mommy_chaogu.services.regime_series import DEFAULT_DAYS as _REGIME_DEFAULT_DAYS
+from mommy_chaogu.services.regime_series import MAX_DAYS as _REGIME_MAX_DAYS
+from mommy_chaogu.services.regime_series import MIN_DAYS as _REGIME_MIN_DAYS
+from mommy_chaogu.services.regime_series import RegimeSeriesService
 
 MAX_CODES = 50
 MAX_RESULTS = 20
@@ -101,6 +113,39 @@ DEFS: list[ToolDef] = [
                 },
             },
             "required": ["codes"],
+        },
+    ),
+    ToolDef(
+        name="market_regime_series",
+        description=(
+            "市场环境路径式状态：A 股指数近 N 个交易日的逐日三态序列"
+            "（bull/bear/sideways）+ 状态持续天数与切换点，回答"
+            "「现在市场什么状态？跟上周比有什么变化？」而非单值截面。"
+            "输出标注判定标的（如「上证指数 sh000001」）与「探索性状态评估」"
+            "（波动率阈值未在真实指数数据校准，不构成择时建议）。"
+            "指数代码必须带市场前缀——'000001' 是平安银行不是上证指数。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "index_code": {
+                    "type": "string",
+                    "enum": list(INDEX_CODES),
+                    "description": (
+                        "指数代码：sh000001 上证指数 / sz399001 深证成指 / sz399006 创业板指"
+                        " / sh000300 沪深300 / sh000688 科创50 / sh000016 上证50"
+                    ),
+                    "default": "sh000001",
+                },
+                "days": {
+                    "type": "integer",
+                    "description": f"回看交易日数，默认 {_REGIME_DEFAULT_DAYS}"
+                    f"（{_REGIME_MIN_DAYS}~{_REGIME_MAX_DAYS}）",
+                    "default": _REGIME_DEFAULT_DAYS,
+                    "minimum": _REGIME_MIN_DAYS,
+                    "maximum": _REGIME_MAX_DAYS,
+                },
+            },
         },
     ),
 ]
@@ -362,8 +407,26 @@ def _handle_check_kline_signal(ctx: ToolContext, args: dict[str, Any]) -> str:
     return _contract(results, evidence=evidence, note=_UNVERIFIED_ADJUSTMENT_NOTE)
 
 
+def _handle_market_regime_series(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """市场环境路径式状态：指数日 K → 逐日三态序列 + 切换摘要。
+
+    数据入口是 get_index_bars 同源的 INDEX_LIST 白名单（服务层
+    resolve_index_symbol 解析），输出带判定标的标注与「探索性状态评估」。
+    """
+    raw_index = str(args.get("index_code") or "sh000001")
+    days = _clamp_int(
+        args.get("days", _REGIME_DEFAULT_DAYS),
+        _REGIME_DEFAULT_DAYS,
+        _REGIME_MIN_DAYS,
+        _REGIME_MAX_DAYS,
+    )
+    service = RegimeSeriesService(ctx.adapter)
+    return _json(_floatify(service.compute(raw_index, days=days)))
+
+
 HANDLERS: dict[str, ToolHandler] = {
     "screen_inflow_stocks": _handle_screen_inflow_stocks,
     "check_earnings_catalyst": _handle_check_earnings_catalyst,
     "check_kline_signal": _handle_check_kline_signal,
+    "market_regime_series": _handle_market_regime_series,
 }

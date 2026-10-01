@@ -1,14 +1,24 @@
-"""记忆工具：事件语义搜索、预测历史、市场叙事、记忆上下文。"""
+"""记忆工具：事件语义搜索、预测历史、市场叙事与变化检测、记忆上下文。"""
 
 from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 
 _log = logging.getLogger(__name__)
+
+# narrative 检索范围（narrative 层已支持，工具层校验后透传）：
+# 'market' / 'sector:板块名' / 'stock:代码'（episodic scope 前缀匹配语义）。
+_SCOPE_RE = re.compile(r"^(market|sector:\S.+|stock:\S.+)$")
+
+_SCOPE_DESCRIPTION = (
+    "检索范围：'market'（默认，全市场）/ 'sector:板块名'（如 'sector:半导体'）"
+    "/ 'stock:代码'（如 'stock:603662'）"
+)
 
 
 DEFS: list[ToolDef] = [
@@ -110,6 +120,7 @@ DEFS: list[ToolDef] = [
         description=(
             "生成过去 N 天的市场脉络叙述（转折点 → 因果链 → 当前状态）。"
             "基于情景记忆中的历史事件，用 LLM 生成复盘分析。"
+            "可按 scope 限定范围（全市场 / 某板块 / 某个股）。"
         ),
         parameters={
             "type": "object",
@@ -120,7 +131,33 @@ DEFS: list[ToolDef] = [
                     "default": 7,
                     "minimum": 1,
                     "maximum": 365,
-                }
+                },
+                "scope": {
+                    "type": "string",
+                    "pattern": "^(market|sector:.+|stock:.+)$",
+                    "description": _SCOPE_DESCRIPTION,
+                    "default": "market",
+                },
+            },
+        },
+    ),
+    ToolDef(
+        name="detect_market_changes",
+        description=(
+            "检测市场状态变化：最近 3 天 vs 之前 10 天的关键变化清单"
+            "（只输出「变了什么」，如风格切换/资金迁移，不是罗列事件）。"
+            "基于情景记忆事件 + LLM 对比；LLM 不可用时降级返回两段原始事件"
+            "供人工比对。可按 scope 限定范围（全市场 / 某板块 / 某个股）。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "pattern": "^(market|sector:.+|stock:.+)$",
+                    "description": _SCOPE_DESCRIPTION,
+                    "default": "market",
+                },
             },
         },
     ),
@@ -310,6 +347,14 @@ def _handle_update_prediction_stage(ctx: ToolContext, args: dict[str, Any]) -> s
     )
 
 
+def _normalize_scope(args: dict[str, Any]) -> str | None:
+    """校验并归一 scope 参数；非法值返回 None（由调用方报 error）。"""
+    scope = str(args.get("scope") or "market").strip()
+    if not _SCOPE_RE.match(scope):
+        return None
+    return scope
+
+
 def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
     """生成市场脉络叙述。LLM 不可用时降级为返回事件列表。"""
     db_path = ctx.resolved_agent_db
@@ -317,6 +362,9 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
         return _json({"error": "记忆系统未配置（agent_db is None）"})
 
     days = _clamp_int(args.get("days", 7), 7, 1, 365)
+    scope = _normalize_scope(args)
+    if scope is None:
+        return _json({"error": f"scope 非法：{_SCOPE_DESCRIPTION}"})
 
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
@@ -328,17 +376,18 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
 
         try:
             narrative = MarketNarrative(episodic, ctx.client, model=ctx.model)
-            text = narrative.generate_narrative(days=days)
-            return _json({"narrative": text, "days": days})
+            text = narrative.generate_narrative(scope=scope, days=days)
+            return _json({"narrative": text, "days": days, "scope": scope})
         except Exception as e:
             _log.warning("get_market_narrative: LLM 生成失败，降级事件列表: %s", e)
 
     # 降级：返回最近事件列表
-    events = episodic.recent(days=days, limit=50)
+    events = episodic.recent(days=days, scope=scope, limit=50)
     return _json(
         {
             "degraded": True,
             "days": days,
+            "scope": scope,
             "events": [
                 {
                     "id": e.get("id"),
@@ -348,6 +397,55 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
                     "summary": e.get("summary"),
                 }
                 for e in events
+            ],
+        }
+    )
+
+
+def _handle_detect_market_changes(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """检测最近 3 天 vs 之前 10 天的关键变化（narrative.detect_changes 挂工具层）。"""
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"error": "记忆系统未配置（agent_db is None）"})
+
+    scope = _normalize_scope(args)
+    if scope is None:
+        return _json({"error": f"scope 非法：{_SCOPE_DESCRIPTION}"})
+
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(db_path)
+
+    # 有 LLM client → 变化对比
+    if ctx.client is not None and ctx.model is not None:
+        from mommy_chaogu.agent.narrative import MarketNarrative
+
+        try:
+            narrative = MarketNarrative(episodic, ctx.client, model=ctx.model)
+            text = narrative.detect_changes(scope=scope)
+            return _json({"changes": text, "scope": scope})
+        except Exception as e:
+            _log.warning("detect_market_changes: LLM 生成失败，降级事件对比: %s", e)
+
+    # 降级：返回两段原始事件（窗口口径同 narrative.detect_changes：
+    # 最近 3 天 vs 之前 10 天），供 agent/人工直接比对
+    now = datetime.now(UTC)
+    prior = episodic.query(
+        scope=scope,
+        start_date=(now - timedelta(days=13)).strftime("%Y-%m-%d"),
+        end_date=(now - timedelta(days=3)).strftime("%Y-%m-%d"),
+        limit=50,
+    )
+    recent = episodic.recent(days=3, scope=scope, limit=30)
+    return _json(
+        {
+            "degraded": True,
+            "scope": scope,
+            "recent_events": [
+                {"timestamp": e.get("timestamp"), "summary": e.get("summary")} for e in recent
+            ],
+            "prior_events": [
+                {"timestamp": e.get("timestamp"), "summary": e.get("summary")} for e in prior
             ],
         }
     )
@@ -404,6 +502,7 @@ HANDLERS: dict[str, ToolHandler] = {
     "get_prediction_history": _handle_get_prediction_history,
     "update_prediction_stage": _handle_update_prediction_stage,
     "get_market_narrative": _handle_get_market_narrative,
+    "detect_market_changes": _handle_detect_market_changes,
     "get_memory_context": _handle_get_memory_context,
     "get_memory_health": _handle_get_memory_health,
 }
