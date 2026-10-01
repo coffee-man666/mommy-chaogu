@@ -1,7 +1,9 @@
 """去重器：JSON 文件实现。
 
 按 (code, rule_id, date) 去重——一码一规一天最多推一次。
-每天新的一天会自动清空（不加载昨天的 key）。
+每天新的一天会自动清空（不加载昨天的 key）——含常驻进程场景：
+should_push / mark_pushed 首次发现跨天时自动翻转日期并重新加载当天 key
+（此前 _today 冻结在构造时刻，常驻 web 跨天后昨天推过的 key 被永久抑制）。
 
 存到 data/pushed.json。文件格式：
 {
@@ -34,10 +36,25 @@ class JsonFileDeduper:
     def _key(self, signal: Signal) -> str:
         return f"{signal.code}|{signal.rule_id}|{self._today}"
 
+    def _ensure_current_day(self) -> None:
+        """跨天翻转（常驻进程必需）。
+
+        ``_today`` 若冻结在构造时刻，常驻 web / monitor 跨天后，
+        昨天推过的 code+rule 会生成同一条旧 key 而被永久抑制，
+        直到进程重启。翻转时重新加载文件，顺带拾取同日其它进程
+        （如 cron snapshot 与常驻 web 共用同一 pushed.json）写入的 key。
+        """
+        today = date.today().isoformat()
+        if today != self._today:
+            self._today = today
+            self._load()
+
     def should_push(self, signal: Signal) -> bool:
+        self._ensure_current_day()
         return self._key(signal) not in self._pushed
 
     def mark_pushed(self, signal: Signal) -> None:
+        self._ensure_current_day()
         key = self._key(signal)
         self._pushed.add(key)
         self._save()
