@@ -13,7 +13,6 @@
     MOONSHOT_API_KEY  → agent.api_key（provider=kimi 时）
     ZAI_API_KEY       → agent.api_key（provider=zai 时）
     MINIMAX_API_KEY   → agent.api_key（provider=minimax 时）
-    SERVER_CHAN_KEY   → push.server_chan_key
     AGENT_PROVIDER    → agent.provider
     AGENT_MODEL       → agent.model
     MOMMY_API_TOKEN   → web.api_token
@@ -200,7 +199,7 @@ def load_runtime_env() -> RuntimeEnvStatus:
             (user_env, user_values, "用户级配置"),
         ):
             has_secret = any(
-                value and (key.endswith("API_KEY") or key in {"MOMMY_API_TOKEN", "SERVER_CHAN_KEY"})
+                value and (key.endswith("API_KEY") or key in {"MOMMY_API_TOKEN"})
                 for key, value in values.items()
             )
             if has_secret and path.is_file() and path.stat().st_mode & 0o077:
@@ -242,9 +241,8 @@ class AgentConfig:
 
 @dataclass
 class PushConfig:
-    """微信推送（Server酱）配置。"""
+    """推送配置。"""
 
-    server_chan_key: str = ""
     web_base_url: str = ""
 
 
@@ -328,10 +326,6 @@ def _apply_env_overrides(cfg: AppConfig) -> AppConfig:
         val = os.environ.get(env_key, "")
         if val:
             cfg.agent.api_key = val
-
-    env_sck = os.environ.get("SERVER_CHAN_KEY")
-    if env_sck:
-        cfg.push.server_chan_key = env_sck
 
     env_api_token = os.environ.get("MOMMY_API_TOKEN")
     if env_api_token:
