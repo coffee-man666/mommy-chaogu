@@ -76,7 +76,7 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 37 工具 + MCP + 记忆系统 5 层 + Strategy Cards）
+├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 38 工具 + MCP + 记忆系统 5 层 + Strategy Cards）
 ├── strategy/        # 用户确认的策略卡校验、版本、来源与监控关联
 ├── workflow/        # 自然语言工作流引擎（11 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析

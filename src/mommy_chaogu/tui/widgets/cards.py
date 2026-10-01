@@ -312,6 +312,24 @@ _STATUS_LABEL = {
     "missed": "✗ 未中",
     "expired": "已过期",
 }
+# 心法阶段（stage 列，与 status 正交）：candidate 左侧候选 →
+# confirmed 右侧已确认 / retired 已退出（docs/plans/trading-method-landing.md 阶段二）。
+_STAGE_LABEL = {
+    "candidate": "◻ 候选",
+    "confirmed": "◆ 已确认",
+    "retired": "⊘ 已退出",
+}
+
+
+def _stage_label(stage: Any) -> str:
+    """stage → 中文标签；缺省（旧数据/空值）按 candidate 展示。"""
+    return _STAGE_LABEL.get(str(stage or "candidate"), _STAGE_LABEL["candidate"])
+
+
+def _ts_short(value: Any) -> str:
+    """ISO 时间戳 → 'MM-DD HH:MM'（不足 16 位原样返回，'T' 归一为空格）。"""
+    text = str(value or "")
+    return text[5:16].replace("T", " ") if len(text) >= 16 else text
 
 
 def _verify_countdown(verify_after: Any) -> str:
@@ -333,19 +351,30 @@ def _verify_countdown(verify_after: Any) -> str:
 
 
 def prediction_lines(preds: list[dict[str, Any]], theme: str = "dark") -> list[str]:
-    """预测记录行（/predictions 卡与工具结果卡共用）。"""
+    """预测记录行（/predictions 卡与工具结果卡共用）。
+
+    stage 与 status 双列展示（阶段管右侧确认、状态管价格验证结局），
+    时间戳一行给出创建/确认/验证三个时刻（未发生的时刻不展示）。
+    """
     lines: list[str] = []
     for p in preds:
         name = _text(p.get("name") or p.get("code", ""))
         direction = _DIRECTION_LABEL.get(str(p.get("direction", "")), "➡️  震荡")
         status = _text(_STATUS_LABEL.get(str(p.get("status", "")), str(p.get("status", ""))))
+        stage = _text(_stage_label(p.get("stage")))
         tf = _text(p.get("timeframe", ""))
         countdown = _verify_countdown(p.get("verify_after")) if p.get("status") == "pending" else ""
         tail = f" · {countdown}" if countdown else ""
         pred_text = _text(str(p.get("prediction", ""))[:30])
-        lines.append(f"  {name} {direction}（{tf}） {status}{tail}")
+        lines.append(f"  {name} {direction}（{tf}） {stage}｜{status}{tail}")
         if pred_text:
             lines.append(f"    [dim]{pred_text}[/]")
+        stamps = [f"创建 {_ts_short(p.get('created_at'))}"]
+        if p.get("confirmed_at"):
+            stamps.append(f"确认 {_ts_short(p.get('confirmed_at'))}")
+        if p.get("verified_at"):
+            stamps.append(f"验证 {_ts_short(p.get('verified_at'))}")
+        lines.append(f"    [dim]{' · '.join(stamps)}[/]")
     return lines
 
 

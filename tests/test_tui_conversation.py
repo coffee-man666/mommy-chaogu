@@ -140,6 +140,61 @@ class TestRenderers:
         assert "predictions-card" in card.classes
         assert "中芯国际" in str(card.content)  # type: ignore[attr-defined]
 
+    def test_prediction_card_shows_stage_and_three_timestamps(self) -> None:
+        """阶段二：预测卡 stage/status 双列 + 创建/确认/验证三个时间戳。"""
+        result = (
+            '[{"id": 1, "code": "688981", "name": "中芯国际",'
+            ' "prediction": "看高一线", "direction": "up", "timeframe": "5d",'
+            ' "status": "hit", "stage": "confirmed",'
+            ' "created_at": "2026-09-30T15:04:05+00:00",'
+            ' "confirmed_at": "2026-10-02T15:00:00+00:00",'
+            ' "verified_at": "2026-10-05T15:00:00+00:00"}]'
+        )
+        card = render_tool_result("get_prediction_history", result)
+        assert card is not None
+        content = str(card.content)  # type: ignore[attr-defined]
+        # stage 与 status 双列（方向对 ≠ 右侧确认，两列独立展示）
+        assert "◆ 已确认" in content
+        assert "✓ 命中" in content
+        # 创建/确认/验证三个时间戳
+        assert "创建 09-30 15:04" in content
+        assert "确认 10-02 15:00" in content
+        assert "验证 10-05 15:00" in content
+
+    def test_prediction_card_defaults_missing_stage_to_candidate(self) -> None:
+        """旧数据无 stage → 按候选展示；未确认/未验证的时间戳不展示。"""
+        result = (
+            '[{"id": 2, "code": "600519", "name": "贵州茅台",'
+            ' "prediction": "看涨", "direction": "up", "timeframe": "5d",'
+            ' "status": "pending", "created_at": "2026-09-30T15:04:05+00:00",'
+            ' "verify_after": "2099-01-01T00:00:00"}]'
+        )
+        card = render_tool_result("get_prediction_history", result)
+        assert card is not None
+        content = str(card.content)  # type: ignore[attr-defined]
+        assert "◻ 候选" in content
+        assert "待验证" in content
+        assert "创建 09-30 15:04" in content
+        # 未确认 → 无确认时间戳（"确认" 仅出现在已确认标签/时间戳中）
+        assert "确认" not in content
+
+    def test_prediction_card_retired_stage(self) -> None:
+        """retired（已退出）与终态注记 miss 并列展示。"""
+        result = (
+            '[{"id": 3, "code": "000858", "name": "五粮液",'
+            ' "prediction": "看跌", "direction": "down", "timeframe": "3d",'
+            ' "status": "missed", "stage": "retired",'
+            ' "created_at": "2026-09-01T15:04:05+00:00",'
+            ' "verified_at": "2026-09-04T15:00:00+00:00"}]'
+        )
+        card = render_tool_result("get_prediction_history", result)
+        assert card is not None
+        content = str(card.content)  # type: ignore[attr-defined]
+        assert "⊘ 已退出" in content
+        assert "✗ 未中" in content
+        assert "创建 09-01 15:04" in content
+        assert "验证 09-04 15:00" in content
+
     def test_other_tools_return_none(self) -> None:
         assert render_tool_result("search_news", '{"items": []}') is None
         assert render_tool_result("get_watchlist", "[]") is None

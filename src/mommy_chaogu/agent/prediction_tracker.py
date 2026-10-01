@@ -4,6 +4,16 @@
 存储预测方向、目标价、止损价、依据等，到期后回填实际价格与命中状态，
 用于长期评估 agent 的预测准确度。
 
+两套正交的状态机（docs/plans/trading-method-landing.md 阶段二）：
+- ``status``（既有列，verify_engine 写入）：验证**结局**——
+  pending → hit / missed / expired / unverifiable，衡量「价格方向对不对」；
+- ``stage``（新增列，右侧确认驱动）：心法**阶段**——
+  candidate → confirmed / retired，衡量「右侧确认信号出现没有」。
+  ``confirmed`` 只能由右侧确认依据的调用方（update_prediction_stage 工具 /
+  用户人工判定）经 :meth:`update_stage` 写入，verify_engine 永不走该路径；
+  verify 回填 missed/expired 且 stage 仍为 candidate 时由
+  :meth:`update_status` 一并标 retired（「右侧迟迟不确认则退出」）。
+
 价格字段约定（与项目"金额一律 Decimal"一致）：
 - API 边界（create / update_status / 查询返回）一律 ``Decimal``；
 - SQLite 列保持 REAL（存量库无法在线改列型），写入前量化到 4 位小数，
@@ -41,7 +51,9 @@ CREATE TABLE IF NOT EXISTS predictions (
     timeframe TEXT NOT NULL,
     verify_after TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
+    stage TEXT NOT NULL DEFAULT 'candidate',
     verified_at TEXT,
+    confirmed_at TEXT,
     actual_price REAL,
     actual_change_pct REAL,
     accuracy_score REAL,
@@ -71,6 +83,15 @@ _TIMEFRAME_DAYS: dict[str, int] = {
     "20d": 20,
     "60d": 60,
 }
+
+# 预测阶段（stage 列枚举，docs/plans/trading-method-landing.md 阶段二）：
+# candidate 左侧候选 → confirmed 右侧已确认 / retired 已退出。
+# stage 与 status 正交（见模块 docstring）；candidate 仅作初始默认值，
+# 不是 update_stage 的合法迁移目标（回到候选没有业务含义）。
+PREDICTION_STAGES = ("candidate", "confirmed", "retired")
+
+# update_stage 的合法迁移目标 = PREDICTION_STAGES 去掉初始 candidate。
+_STAGE_TARGETS = frozenset(PREDICTION_STAGES) - {"candidate"}
 
 # 价格字段（走 Decimal 约定）；change_pct / accuracy_score 是比率，保持 float。
 _PRICE_FIELDS = ("target_price", "entry_price", "stop_loss", "actual_price")
@@ -143,6 +164,17 @@ class PredictionTracker(EngineOwner):
             columns = {row[1] for row in conn.execute(text("PRAGMA table_info(predictions)"))}
             if "idempotency_key" not in columns:
                 conn.execute(text("ALTER TABLE predictions ADD COLUMN idempotency_key TEXT"))
+            # stage / confirmed_at 加列迁移（阶段二）：旧库加可空/带默认值列，
+            # 向后兼容——旧记录自动取默认（stage='candidate'、confirmed_at=NULL），
+            # 旧字段与旧查询不受影响。
+            if "stage" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE predictions ADD COLUMN stage TEXT NOT NULL DEFAULT 'candidate'"
+                    )
+                )
+            if "confirmed_at" not in columns:
+                conn.execute(text("ALTER TABLE predictions ADD COLUMN confirmed_at TEXT"))
             conn.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_pred_idempotency ON predictions(idempotency_key)"
@@ -275,6 +307,12 @@ class PredictionTracker(EngineOwner):
         命中分。*data_coverage* 序列化为 JSON 写入 ``data_coverage_at_verify``
         （bool 覆盖标记 + 可选的报价新鲜度字段，如 quote_age_seconds/source）。
         *actual_price* 建议传 ``Decimal``，入库前量化到 4 位小数。
+
+        stage 联动（与 status 正交，见模块 docstring）：status 为
+        missed / expired 且 stage 仍为 candidate 时一并标 retired
+        （「右侧迟迟不确认则退出」）；hit / unverifiable 不动 stage
+        ——价格对了 ≠ 右侧确认，confirmed 只能经 :meth:`update_stage`
+        由右侧确认依据写入。
         """
         verified_at = _utcnow().isoformat()
         coverage_json = json.dumps(data_coverage) if data_coverage else None
@@ -287,7 +325,13 @@ class PredictionTracker(EngineOwner):
                         actual_price = :actual_price,
                         actual_change_pct = :actual_change_pct,
                         accuracy_score = :accuracy_score,
-                        data_coverage_at_verify = :data_coverage_at_verify
+                        data_coverage_at_verify = :data_coverage_at_verify,
+                        stage = CASE
+                            WHEN stage = 'candidate'
+                                 AND :status IN ('missed', 'expired')
+                            THEN 'retired'
+                            ELSE stage
+                        END
                     WHERE id = :id
                 """),
                 {
@@ -300,6 +344,58 @@ class PredictionTracker(EngineOwner):
                     "data_coverage_at_verify": coverage_json,
                 },
             )
+
+    def update_stage(
+        self,
+        pred_id: int,
+        stage: str,
+        note: str | None = None,
+    ) -> dict[str, Any] | None:
+        """更新预测阶段（candidate → confirmed / retired），返回更新后的记录。
+
+        *stage* 只接受 ``confirmed`` / ``retired``——candidate 是初始默认值，
+        不是迁移目标（回到候选没有业务含义）；其他值抛 ``ValueError``。
+        ``confirmed`` 写 ``confirmed_at`` = 当前时间；``retired`` 不动
+        ``confirmed_at``。*note*（确认依据 / 退出原因）非空时追加进
+        ``verify_log``（``{"time", "stage", "note"}`` 形态，与
+        increment_attempts 的 attempt 记录并存）——确认依据由此留痕，
+        不新增 schema 列（阶段二 schema 变更仅 stage + confirmed_at 两列）。
+
+        返回 None 表示记录不存在。verify_engine 不调用本方法——
+        confirmed 只能由右侧确认依据的调用方（update_prediction_stage
+        工具 / 用户人工判定）写入。
+        """
+        if stage not in _STAGE_TARGETS:
+            raise ValueError(f"stage 必须是 confirmed / retired，收到: {stage!r}")
+        with self.session() as s:
+            if stage == "confirmed":
+                s.execute(
+                    text("""
+                        UPDATE predictions
+                        SET stage = 'confirmed', confirmed_at = :confirmed_at
+                        WHERE id = :id
+                    """),
+                    {"id": pred_id, "confirmed_at": _utcnow().isoformat()},
+                )
+            else:
+                s.execute(
+                    text("UPDATE predictions SET stage = 'retired' WHERE id = :id"),
+                    {"id": pred_id},
+                )
+            if note:
+                row = s.execute(
+                    text("SELECT verify_log FROM predictions WHERE id = :id"),
+                    {"id": pred_id},
+                ).first()
+                if row is not None:
+                    log_raw = row._mapping["verify_log"]
+                    log: list[dict[str, Any]] = json.loads(log_raw) if log_raw else []
+                    log.append({"time": _utcnow().isoformat(), "stage": stage, "note": note})
+                    s.execute(
+                        text("UPDATE predictions SET verify_log = :log WHERE id = :id"),
+                        {"log": json.dumps(log), "id": pred_id},
+                    )
+        return self.get_by_id(pred_id)
 
     def increment_attempts(self, pred_id: int, reason: str) -> None:
         """``verify_attempts`` 加 1，并向 ``verify_log`` 追加一条记录。

@@ -41,8 +41,11 @@ DEFS: list[ToolDef] = [
     ToolDef(
         name="get_prediction_history",
         description=(
-            "查询 agent 的历史预测记录及命中状态（hit/missed/pending）。"
-            "用于回顾'我之前对某只股票的判断准不准'。"
+            "查询 agent 的历史预测记录及命中状态与阶段。"
+            "status（hit/missed/pending）衡量价格方向验证结局；"
+            "stage（candidate 候选/confirmed 已确认/retired 已退出）衡量"
+            "左侧候选是否等到右侧确认——方向对了（hit）不等于右侧已确认。"
+            "用于回顾'我之前记的左侧候选后来怎么样了'。"
         ),
         parameters={
             "type": "object",
@@ -65,6 +68,41 @@ DEFS: list[ToolDef] = [
                     "maximum": 100,
                 },
             },
+        },
+    ),
+    ToolDef(
+        name="update_prediction_stage",
+        description=(
+            "回写预测的阶段（左侧→右侧纪律闭环）。stage 与 status 独立："
+            "status 管价格验证结局（verify 自动回填），stage 管心法阶段——"
+            "confirmed = 右侧确认信号出现（如 check_kline_signal 的 "
+            "high_20_breakout / price_above_ma20 命中，或用户人工判定），"
+            "status=hit 本身不升 confirmed；retired = 显式放弃该候选"
+            "（右侧迟迟不确认则退出；missed/expired 的自动退出由验证引擎负责）。"
+            "basis 必填，写明确认依据（如信号名与数值）或退出原因。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "prediction_id": {
+                    "type": "integer",
+                    "description": "预测记录 id（get_prediction_history 返回的 id）",
+                    "minimum": 1,
+                },
+                "stage": {
+                    "type": "string",
+                    "enum": ["confirmed", "retired"],
+                    "description": "目标阶段：confirmed（右侧已确认）/ retired（已退出）",
+                },
+                "basis": {
+                    "type": "string",
+                    "description": (
+                        "确认依据或退出原因，必填。如 'high_20_breakout 命中："
+                        "收盘 105 > 20日高点 100' 或 '用户人工判定放弃'"
+                    ),
+                },
+            },
+            "required": ["prediction_id", "stage", "basis"],
         },
     ),
     ToolDef(
@@ -218,12 +256,57 @@ def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> st
                 "prediction": p.get("prediction"),
                 "direction": p.get("direction"),
                 "status": p.get("status"),
+                "stage": p.get("stage") or "candidate",
                 "score": p.get("accuracy_score"),
                 "created_at": p.get("created_at"),
+                "confirmed_at": p.get("confirmed_at"),
                 "verified_at": p.get("verified_at"),
             }
             for p in preds
         ]
+    )
+
+
+def _handle_update_prediction_stage(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """回写预测阶段（confirmed/retired），basis 必填并留痕到 verify_log。"""
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"error": "记忆系统未配置（agent_db is None）"})
+
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    raw_id = args.get("prediction_id")
+    if raw_id is None:
+        return _json({"error": "prediction_id 必须是整数"})
+    try:
+        pred_id = int(raw_id)
+    except (TypeError, ValueError):
+        return _json({"error": "prediction_id 必须是整数"})
+    if pred_id < 1:
+        return _json({"error": "prediction_id 必须是正整数"})
+    stage = str(args.get("stage") or "")
+    basis = str(args.get("basis") or "").strip()
+    if not basis:
+        return _json({"error": "basis 必填：写明确认依据（右侧信号命中数值）或退出原因"})
+
+    tracker = PredictionTracker(db_path)
+    try:
+        row = tracker.update_stage(pred_id, stage, note=basis)
+    except ValueError as e:
+        return _json({"error": str(e)})
+    if row is None:
+        return _json({"error": f"预测 #{pred_id} 不存在"})
+    return _json(
+        {
+            "id": row.get("id"),
+            "code": row.get("code"),
+            "name": row.get("name"),
+            "stage": row.get("stage"),
+            "status": row.get("status"),
+            "confirmed_at": row.get("confirmed_at"),
+            "verified_at": row.get("verified_at"),
+            "basis": basis,
+        }
     )
 
 
@@ -319,6 +402,7 @@ def _handle_get_memory_health(ctx: ToolContext, _args: dict[str, Any]) -> str:
 HANDLERS: dict[str, ToolHandler] = {
     "search_similar_events": _handle_search_similar_events,
     "get_prediction_history": _handle_get_prediction_history,
+    "update_prediction_stage": _handle_update_prediction_stage,
     "get_market_narrative": _handle_get_market_narrative,
     "get_memory_context": _handle_get_memory_context,
     "get_memory_health": _handle_get_memory_health,

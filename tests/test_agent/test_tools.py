@@ -114,7 +114,8 @@ def registry(ctx: ToolContext) -> ToolRegistry:
 class TestToolDefinitions:
     def test_all_tools_have_definitions(self, registry: ToolRegistry) -> None:
         defs = registry.definitions()
-        assert len(defs) == 37
+        # 38 = 阶段二前的 37 + update_prediction_stage（阶段二新增）
+        assert len(defs) == 38
         names = {d["function"]["name"] for d in defs}
         assert names == set(ToolRegistry.tool_names())
 
