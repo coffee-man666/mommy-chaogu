@@ -6,6 +6,7 @@ import pytest
 
 from mommy_chaogu.workflow.definitions import (
     WORKFLOWS,
+    _extract_codes_from_input,
     _extract_codes_from_portfolio,
     _extract_codes_from_watchlist,
     _extract_sector_code_from_prev,
@@ -33,7 +34,7 @@ class TestWorkflowDefinitions:
             assert wf.description, f"{wf.id} 没有 description"
 
     def test_workflow_count(self) -> None:
-        assert len(WORKFLOWS) == 10
+        assert len(WORKFLOWS) == 11
 
     @pytest.mark.parametrize(
         "workflow_id",
@@ -48,6 +49,7 @@ class TestWorkflowDefinitions:
             "portfolio_review",
             "earnings_check",
             "close_report",
+            "stock_closed_loop",
         ],
     )
     def test_workflow_exists(self, workflow_id: str) -> None:
@@ -58,7 +60,7 @@ class TestWorkflowDefinitions:
 class TestDefaultRegistry:
     def test_registry_has_all_workflows(self) -> None:
         registry = get_default_registry()
-        assert len(registry.all_workflows()) == 10
+        assert len(registry.all_workflows()) == 11
 
     def test_registry_match_morning_brief(self) -> None:
         registry = get_default_registry()
@@ -124,6 +126,14 @@ class TestDefaultRegistry:
         assert wf is not None
         assert wf.id == "market_check"
 
+    def test_registry_match_stock_closed_loop(self) -> None:
+        """「个股闭环」「按闭环看看」类输入命中 stock_closed_loop（且不被更早的工作流抢走）。"""
+        registry = get_default_registry()
+        for text in ("按个股闭环看看 603662", "按闭环看看 600519", "个股闭环检查一下 000858"):
+            wf = registry.match(text)
+            assert wf is not None, text
+            assert wf.id == "stock_closed_loop", text
+
     def test_registry_no_match_for_unrelated(self) -> None:
         registry = get_default_registry()
         assert registry.match("量子计算是什么") is None
@@ -137,6 +147,14 @@ class TestExtractors:
 
     def test_extract_stock_code_miss(self) -> None:
         result = _extract_stock_code("分析贵州茅台", [])
+        assert result == {}
+
+    def test_extract_codes_from_input_hit(self) -> None:
+        result = _extract_codes_from_input("按个股闭环看看 600519", [])
+        assert result == {"codes": ["600519"]}
+
+    def test_extract_codes_from_input_miss(self) -> None:
+        result = _extract_codes_from_input("按闭环看看茅台", [])
         assert result == {}
 
     def test_extract_sector_keyword(self) -> None:
@@ -348,3 +366,110 @@ class TestAddWatchlistDefinition:
         assert result.steps[0].success is False
         assert result.steps[0].error is not None
         assert store.list_entries() == []
+
+
+class TestStockClosedLoopDefinition:
+    def test_step_sequence_and_signals(self) -> None:
+        """四步固定顺序：报价 → 20 日高点突破 → 站上 MA20 → 业绩催化。"""
+        wf = get_default_registry().get("stock_closed_loop")
+        assert wf is not None
+        assert [s.tool_name for s in wf.steps] == [
+            "get_quote",
+            "check_kline_signal",
+            "check_kline_signal",
+            "check_earnings_catalyst",
+        ]
+        signals = [s.args.get("signal") for s in wf.steps if s.tool_name == "check_kline_signal"]
+        assert signals == ["high_20_breakout", "price_above_ma20"]
+
+    def test_summary_template_covers_four_sections(self) -> None:
+        """汇总模板覆盖四段结构并带「未复权口径」与不产假信号的要求。"""
+        wf = get_default_registry().get("stock_closed_loop")
+        assert wf is not None
+        assert wf.summary_template is not None
+        for section in ("技术面发现", "信息面解释", "基本面持续性", "技术面执行"):
+            assert section in wf.summary_template
+        assert "未复权" in wf.summary_template
+        assert "不产出假信号" in wf.summary_template
+
+    def test_end_to_end_offline(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """离线端到端：fake 行情源 + mock 基本面/公告。
+
+        离线源 30 根日 K（close=1800+i，high=close+8）：前 20 根最高高点
+        1836 > 最新完成 K 收盘 1829 → 未突破但依据齐全；MA20=1819.5 <
+        收盘 1829 → 站上命中。覆盖验收四件事：步间提取 code→codes、
+        两个信号各跑一次、未命中也有依据、信息面步骤收到同一代码。
+        """
+        from mommy_chaogu.agent.tools import ToolContext, ToolRegistry, analysis
+        from mommy_chaogu.workflow.engine import WorkflowExecutor
+        from tests.offline_market_adapter import OfflineMarketDataAdapter
+
+        monkeypatch.setattr(
+            analysis,
+            "get_fundamentals",
+            lambda code: {"name": "离线测试标的", "pe": "20", "roe": "15"},
+        )
+        monkeypatch.setattr(
+            analysis,
+            "get_announcements",
+            lambda code, limit=3: [{"title": "2026年半年度业绩预告"}],
+        )
+        executor = WorkflowExecutor(ToolRegistry(ToolContext(adapter=OfflineMarketDataAdapter())))
+        wf = get_default_registry().get("stock_closed_loop")
+        assert wf is not None
+
+        result = executor.execute(wf, "按个股闭环看看 600519")
+
+        assert result.succeeded is True
+        assert [step.success for step in result.steps] == [True, True, True, True]
+        assert result.steps[0].data["code"] == "600519"
+
+        breakout = result.steps[1].data
+        assert breakout["count"] == 0
+        assert breakout["evidence"][0]["hit"] is False
+        assert breakout["evidence"][0]["high_20"] == "1836"
+        assert breakout["evidence"][0]["close"] == "1829"
+        assert breakout["evidence"][0]["bars_used"] == 30
+        assert "未复权" in breakout["note"]
+
+        ma20 = result.steps[2].data
+        assert ma20["count"] == 1
+        assert ma20["results"][0]["hit"] is True
+        assert ma20["evidence"][0]["ma20"] == "1819.5"
+
+        catalyst = result.steps[3].data
+        assert catalyst["results"][0]["code"] == "600519"
+        assert catalyst["results"][0]["has_earnings_ann"] is True
+
+    def test_end_to_end_degraded_no_bars(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """降级路径（东财不可达）：K 线拉不到时不产出假信号。
+
+        空 K 线下两个信号步骤仍成功返回契约，evidence 记 bars_used=0、
+        hit=false、依据字段为 None——汇总层据此能明确说"数据拉不到"。
+        """
+        from mommy_chaogu.agent.tools import ToolContext, ToolRegistry, analysis
+        from mommy_chaogu.workflow.engine import WorkflowExecutor
+        from tests.offline_market_adapter import OfflineMarketDataAdapter
+
+        monkeypatch.setattr(
+            analysis,
+            "get_fundamentals",
+            lambda code: {"name": "", "pe": None, "roe": None},
+        )
+        monkeypatch.setattr(analysis, "get_announcements", lambda code, limit=3: [])
+
+        adapter = OfflineMarketDataAdapter()
+        adapter.get_bars = lambda *args, **kwargs: []  # type: ignore[assignment]
+        executor = WorkflowExecutor(ToolRegistry(ToolContext(adapter=adapter)))
+        wf = get_default_registry().get("stock_closed_loop")
+        assert wf is not None
+
+        result = executor.execute(wf, "按个股闭环看看 600519")
+
+        assert result.succeeded is True
+        for step in result.steps[1:3]:
+            assert step.data["count"] == 0
+            assert step.data["results"] == []
+            assert step.data["evidence"][0]["hit"] is False
+            assert step.data["evidence"][0]["bars_used"] == 0
+            assert step.data["evidence"][0]["close"] is None

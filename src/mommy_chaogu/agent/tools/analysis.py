@@ -20,6 +20,16 @@ MAX_CODES = 50
 MAX_RESULTS = 20
 FLOW_BATCH_SIZE = 10
 
+# check_kline_signal 支持的日线信号枚举。high_20_breakout / price_above_ma20
+# 是「短期右侧确认」信号（docs/plans/trading-method-landing.md 阶段一）。
+_KLINE_SIGNALS = frozenset(
+    {"volume_breakout", "ma_golden_cross", "high_20_breakout", "price_above_ma20"}
+)
+
+# get_bars 日 K 的复权/时点语义未核验（docs/plans/trading-method-landing.md
+# §2 阶段一边界），核验前 K 线信号输出统一带该标注——消费方按未复权口径解读。
+_UNVERIFIED_ADJUSTMENT_NOTE = "K线复权语义未核验，信号按未复权口径解读"
+
 DEFS: list[ToolDef] = [
     ToolDef(
         name="screen_inflow_stocks",
@@ -64,8 +74,12 @@ DEFS: list[ToolDef] = [
     ToolDef(
         name="check_kline_signal",
         description=(
-            "检查收盘后日线信号：volume_breakout 为放量上涨，"
-            "ma_golden_cross 为 5 日线上穿 20 日线。"
+            "检查收盘后日线信号（15:05 前剔除当日未完成 K 线）：volume_breakout 为放量上涨，"
+            "ma_golden_cross 为 5 日线上穿 20 日线，high_20_breakout 为收盘突破前 20 根"
+            "完成日 K 的最高高点，price_above_ma20 为收盘站上 MA20。"
+            "results 只含命中记录；evidence 逐只给出判定依据"
+            "（hit/high_20/ma20/close/bars_used，未命中也输出）。"
+            "K 线复权语义未核验，按未复权口径解读。"
         ),
         parameters={
             "type": "object",
@@ -77,7 +91,12 @@ DEFS: list[ToolDef] = [
                 },
                 "signal": {
                     "type": "string",
-                    "enum": ["volume_breakout", "ma_golden_cross"],
+                    "enum": [
+                        "volume_breakout",
+                        "ma_golden_cross",
+                        "high_20_breakout",
+                        "price_above_ma20",
+                    ],
                     "default": "volume_breakout",
                 },
             },
@@ -105,15 +124,25 @@ def _number(value: Any) -> Decimal | None:
         return None
 
 
-def _contract(results: list[dict[str, Any]], total: int | None = None) -> str:
+def _contract(
+    results: list[dict[str, Any]],
+    total: int | None = None,
+    evidence: list[dict[str, Any]] | None = None,
+    note: str | None = None,
+) -> str:
     total_value = len(results) if total is None else total
-    return _json(
-        {
-            "results": results[:MAX_RESULTS],
-            "count": min(len(results), MAX_RESULTS),
-            "total": total_value,
-        }
-    )
+    payload: dict[str, Any] = {
+        "results": results[:MAX_RESULTS],
+        "count": min(len(results), MAX_RESULTS),
+        "total": total_value,
+    }
+    # 依据明细走独立字段（不进 results）：count 语义保持「命中数」，
+    # 不破坏既有 top20 截断契约；evidence 同样按 MAX_RESULTS 截断保持有界。
+    if evidence is not None:
+        payload["evidence"] = evidence[:MAX_RESULTS]
+    if note is not None:
+        payload["note"] = note
+    return _json(payload)
 
 
 def _handle_screen_inflow_stocks(ctx: ToolContext, args: dict[str, Any]) -> str:
@@ -218,19 +247,66 @@ def _ma(bars: list[Any], end: int, window: int) -> Decimal:
     return sum(values) / Decimal(str(window))
 
 
+def _high_20(bars: list[Any], end: int, window: int = 20) -> Decimal | None:
+    """bars[end] 之前 window 根完成 K 线的最高高点；不足 window 根返回 None。"""
+    if end < window:
+        return None
+    return max(Decimal(str(bar.high)) for bar in bars[end - window : end])
+
+
+def _evidence_record(
+    code: str,
+    name: str,
+    signal: str,
+    *,
+    hit: bool,
+    close: Decimal | None,
+    high_20: Decimal | None,
+    ma20: Decimal | None,
+    bars_used: int,
+) -> dict[str, Any]:
+    """单只代码的判定依据记录——未命中（hit=false）也带数值依据。"""
+    return {
+        "code": code,
+        "name": name,
+        "signal": signal,
+        "hit": hit,
+        "close": str(close) if close is not None else None,
+        "high_20": str(high_20) if high_20 is not None else None,
+        "ma20": str(ma20) if ma20 is not None else None,
+        "bars_used": bars_used,
+    }
+
+
 def _handle_check_kline_signal(ctx: ToolContext, args: dict[str, Any]) -> str:
     signal = str(args.get("signal", "volume_breakout"))
-    if signal not in {"volume_breakout", "ma_golden_cross"}:
-        return _json({"error": "signal 必须是 volume_breakout 或 ma_golden_cross"})
+    if signal not in _KLINE_SIGNALS:
+        return _json(
+            {
+                "error": "signal 必须是 volume_breakout / ma_golden_cross / high_20_breakout / price_above_ma20"
+            }
+        )
     results: list[dict[str, Any]] = []
+    evidence: list[dict[str, Any]] = []
     for code in _codes(args):
         bars = _completed_daily_bars(ctx.adapter.get_bars(code, interval=BarInterval.D1, limit=30))
         if not bars:
+            # 数据不可得也留一条依据记录：bars_used=0 明示无依据，不产出假信号。
+            evidence.append(
+                _evidence_record(
+                    code, "", signal, hit=False, close=None, high_20=None, ma20=None, bars_used=0
+                )
+            )
             continue
         index = len(bars) - 1
+        latest = bars[index]
         current = bars[index]
         volume_ratio = _volume_ratio(bars, index)
         change_pct = _bar_change_pct(current)
+        # 两个右侧确认信号的依据：前 20 根完成 K 的最高高点（不含当前根）、
+        # 含当前根的 20 日均线；完成 K 根数不足时为 None，判定不成立。
+        high_20 = _high_20(bars, index)
+        ma20 = _ma(bars, index, 20) if index >= 19 else None
         hit = False
         if signal == "volume_breakout":
             hit = (
@@ -239,6 +315,10 @@ def _handle_check_kline_signal(ctx: ToolContext, args: dict[str, Any]) -> str:
                 and volume_ratio > Decimal("1.5")
                 and change_pct > Decimal("2")
             )
+        elif signal == "high_20_breakout":
+            hit = high_20 is not None and current.close > high_20
+        elif signal == "price_above_ma20":
+            hit = ma20 is not None and current.close > ma20
         elif len(bars) >= 22:
             # Check the most recent completed bar and its predecessor for a
             # cross; this avoids reporting an old crossover as current.
@@ -255,18 +335,31 @@ def _handle_check_kline_signal(ctx: ToolContext, args: dict[str, Any]) -> str:
                     volume_ratio = _volume_ratio(bars, end)
                     change_pct = _bar_change_pct(current)
                     break
+        evidence.append(
+            _evidence_record(
+                latest.code,
+                latest.name,
+                signal,
+                hit=hit,
+                close=latest.close,
+                high_20=high_20,
+                ma20=ma20,
+                bars_used=len(bars),
+            )
+        )
         if hit:
             results.append(
                 {
                     "code": current.code,
                     "name": current.name,
                     "signal": signal,
+                    "hit": True,
                     "close": str(current.close),
                     "volume_ratio": str(volume_ratio) if volume_ratio is not None else None,
                     "change_pct": str(change_pct),
                 }
             )
-    return _contract(results)
+    return _contract(results, evidence=evidence, note=_UNVERIFIED_ADJUSTMENT_NOTE)
 
 
 HANDLERS: dict[str, ToolHandler] = {
