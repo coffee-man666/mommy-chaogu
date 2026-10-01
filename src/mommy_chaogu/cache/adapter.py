@@ -46,14 +46,22 @@ def _bar_trade_date(ts: datetime) -> str:
     return ts.astimezone(_TZ_BEIJING).strftime("%Y-%m-%d")
 
 
-def _bar_to_cache_dict(bar: Bar, interval_str: str, adj_str: str) -> dict[str, Any]:
-    """Bar → 缓存行 bar_dict（JSON-safe，与 set_bar/set_minute_bars 格式一致）。"""
+def _bar_to_cache_dict(
+    bar: Bar, interval_str: str, adj_str: str, *, keep_bar_adjustment: bool = False
+) -> dict[str, Any]:
+    """Bar → 缓存行 bar_dict（JSON-safe，与 set_bar/set_minute_bars 格式一致）。
+
+    ``keep_bar_adjustment``（分钟周期用）：保留 bar 自身口径标签而非请求口径
+    ——无法兑现请求复权的源（腾讯 mkline 只有不复权）落库时如实标注，
+    请求 forward 而拿到 none 数据对消费者可见，不静默改标。日/周/月线维持
+    请求口径覆盖（既有语义，阶段六不改）。
+    """
     from dataclasses import asdict
 
     bar_dict = asdict(bar)
     bar_dict["timestamp"] = bar.timestamp.isoformat()
     bar_dict["interval"] = interval_str
-    bar_dict["adjustment"] = adj_str
+    bar_dict["adjustment"] = bar.adjustment.value if keep_bar_adjustment else adj_str
     return cast(dict[str, Any], _recursive_safe(bar_dict))
 
 
@@ -317,6 +325,10 @@ class CachedMarketDataAdapter:
         - start/end 为闭区间：缓存读取与返回结果都按区间过滤
         - 分钟周期节流窗口独立（默认 5 分钟，见 CacheConfig）：当日是持续
           演化的部分日，不能按天节流把上午快照冻结到收盘
+        - 分钟周期口径诚实（阶段六评审意见）：落库键取 bar 自身口径（腾讯
+          mkline 不复权 → none 键，东财可复权 → 请求键），两源分键存放互不
+          覆盖；读取侧取请求口径行与 none 行的并集（同时间戳请求口径优先），
+          每根保留自身口径标签——请求 forward 而拿到 none 数据如实可见
         """
         interval_str = interval.value
         adj_str = adjustment.value
@@ -330,25 +342,47 @@ class CachedMarketDataAdapter:
         )
 
         def _read_cache() -> list[dict[str, Any]] | None:
-            return self.store.get_bars(
+            rows = self.store.get_bars(
                 code, interval_str, adj_str, start_date=start_str, end_date=end_str
             )
+            if not is_minute_interval(interval_str) or adj_str == AdjustmentType.NONE.value:
+                return rows
+            # 分钟读侧并集：请求口径行 + 不复权行（腾讯备源按自身口径落库）。
+            # 同时间戳两键都有时请求口径优先（能兑现复权的源），并集按时间
+            # 排序返回，每根带自己的口径标签。
+            fallback = self.store.get_bars(
+                code,
+                interval_str,
+                AdjustmentType.NONE.value,
+                start_date=start_str,
+                end_date=end_str,
+            )
+            if not fallback:
+                return rows
+            merged: dict[str, dict[str, Any]] = {
+                str(item.get("timestamp", "")): item for item in (fallback or [])
+            }
+            for item in rows or []:
+                merged[str(item.get("timestamp", ""))] = item
+            return [merged[ts] for ts in sorted(merged)]
 
         def _persist(fresh: list[Bar]) -> None:
             if is_minute_interval(interval_str):
                 # 分钟周期：同日整段打包为单行（方案 A），杜绝同日多根
                 # 相互覆盖（修复坍缩 bug）；写入按时间戳合并，部分日写入
-                # 不丢已缓存的早段。
-                by_day: dict[str, list[dict[str, Any]]] = {}
+                # 不丢已缓存的早段。落库键取 bar 自身口径（腾讯 mkline
+                # 不复权 → none 键），与请求口径的东财行分键存放互不覆盖
+                # ——读取侧由 _read_cache 做并集。
+                by_day: dict[tuple[str, str], list[dict[str, Any]]] = {}
                 for bar in fresh:
                     trade_date = _bar_trade_date(bar.timestamp)
-                    by_day.setdefault(trade_date, []).append(
-                        _bar_to_cache_dict(bar, interval_str, adj_str)
+                    by_day.setdefault((bar.adjustment.value, trade_date), []).append(
+                        _bar_to_cache_dict(bar, interval_str, adj_str, keep_bar_adjustment=True)
                     )
-                for trade_date, day_bars in by_day.items():
+                for (bar_adj, trade_date), day_bars in by_day.items():
                     try:
                         self.store.set_minute_bars(
-                            code, interval_str, adj_str, trade_date, day_bars
+                            code, interval_str, bar_adj, trade_date, day_bars
                         )
                     except Exception as e:
                         _log.error("cache set_minute_bars failed: %s", e)
@@ -424,7 +458,8 @@ class CachedMarketDataAdapter:
                             code,
                         )
                         cached_bars = [
-                            _bar_to_cache_dict(bar, interval_str, adj_str) for bar in fresh
+                            _bar_to_cache_dict(bar, interval_str, adj_str, keep_bar_adjustment=True)
+                            for bar in fresh
                         ]
                     elif refreshed:
                         cached_bars = refreshed
@@ -447,7 +482,13 @@ class CachedMarketDataAdapter:
                     code=code,
                     name=bar_dict.get("name", ""),
                     interval=interval,
-                    adjustment=adjustment,
+                    # 分钟周期：用缓存行内 bar 自身口径标签（腾讯 none / 东财
+                    # forward 如实还原）；日/周/月线维持请求口径（既有语义）
+                    adjustment=(
+                        AdjustmentType(bar_dict["adjustment"])
+                        if is_minute_interval(interval_str) and bar_dict.get("adjustment")
+                        else adjustment
+                    ),
                     timestamp=ts,
                     open=Decimal(bar_dict["open"]),
                     high=Decimal(bar_dict["high"]),

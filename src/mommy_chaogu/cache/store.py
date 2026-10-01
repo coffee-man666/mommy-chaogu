@@ -498,13 +498,16 @@ class CacheStore(EngineOwner):
             bars = []
 
         if is_minute_interval(interval_str):
-            # 分钟周期：按北京交易日分组 → 每日一次打包写入
-            by_day: dict[str, list[dict[str, Any]]] = {}
+            # 分钟周期：按（bar 自身口径, 北京交易日）分组 → 每组一次打包写入。
+            # 落库键取 bar 自身口径（腾讯 mkline 不复权 → none 键），与请求口径
+            # 的东财行分键存放互不覆盖；读取侧并集见 cache/adapter.get_bars。
+            by_day: dict[tuple[str, str], list[dict[str, Any]]] = {}
             for bar in bars:
-                by_day.setdefault(_beijing_trade_date(bar.timestamp), []).append(_bar_to_dict(bar))
-            for trade_date, day_bars in sorted(by_day.items()):
+                group = (bar.adjustment.value, _beijing_trade_date(bar.timestamp))
+                by_day.setdefault(group, []).append(_bar_to_dict(bar))
+            for (bar_adj, trade_date), day_bars in sorted(by_day.items()):
                 try:
-                    self.set_minute_bars(code, interval_str, adj_str, trade_date, day_bars)
+                    self.set_minute_bars(code, interval_str, bar_adj, trade_date, day_bars)
                     result["bars_written"] += len(day_bars)
                 except Exception as e:
                     result["errors"].append(f"minute bars {trade_date}: {e}")

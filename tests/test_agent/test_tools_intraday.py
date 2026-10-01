@@ -136,11 +136,14 @@ class TestBackfillMinuteInterval:
         assert data["flows_written"] == 0
         assert adapter.calls[-1]["interval"] == BarInterval.M5
 
-        # 落库为按日打包单行，可完整读回
+        # 落库为按日打包单行，可完整读回；行键 = bar 自身口径（本 Fake 源
+        # 返回不复权数据 → none 键，请求默认 forward 不改标——口径诚实）
         from mommy_chaogu.cache.store import CacheStore
 
         store = CacheStore(db)
-        rows = store.get_bars(CODE, BarInterval.M5.value, AdjustmentType.FORWARD.value)
+        rows = store.get_bars(CODE, BarInterval.M5.value, AdjustmentType.NONE.value)
         assert rows is not None
         assert len(rows) == 2
+        assert {r["adjustment"] for r in rows} == {"none"}
+        assert store.get_bars(CODE, BarInterval.M5.value, AdjustmentType.FORWARD.value) is None
         assert store.stats()["bars"] == 1

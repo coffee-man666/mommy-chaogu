@@ -442,7 +442,10 @@ class TencentAdapter:
         """分钟 K 线（mkline 备源）。日/周/月线不支持 → 返回 []（东财承担）。
 
         - ``adjustment``：mkline 无复权参数，数据为不复权，Bar.adjustment
-          如实标 ``none``（不复权价）——与东财前复权缓存分键存放，不互窜。
+          如实标 ``none``（不复权价）。缓存层按 bar 自身口径分键落库
+          （none 键，与东财 forward 键互不覆盖），CachedMarketDataAdapter
+          对分钟周期读侧取请求口径与 none 键的并集、每根保留自身口径标签
+          ——请求前复权而拿到不复权数据时如实可见，不静默改标。
         - 成交量单位手 ×100 → 股；**无每根成交额**，turnover 记 0（VWAP 等
           派生指标只能成交量加权的典型价近似，见 services/intraday_service）。
         - 时间标签从周期末转为周期初（与 efinance 统一，见 _mkline_ts）。

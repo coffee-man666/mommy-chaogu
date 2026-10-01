@@ -5,11 +5,13 @@
 （缓存命中路径）只回 1 根；修复后按日打包为单行 JSON，完整读回。
 
 同时覆盖：日线缓存路径零回归、部分日写入合并不丢早段、存量坍缩行
-（dict 形态）读取兼容、backfill 分钟周期支持。
+（dict 形态）读取兼容、backfill 分钟周期支持、口径标签诚实性（不复权
+数据经缓存层不得被改标为请求口径——阶段六评审意见）。
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -25,13 +27,15 @@ CODE = "600519"
 ADJ = AdjustmentType.FORWARD
 
 
-def _m5_bar(ts: datetime, close: str = "100.00", volume: int = 1000) -> Bar:
+def _m5_bar(
+    ts: datetime, close: str = "100.00", volume: int = 1000, adj: AdjustmentType = ADJ
+) -> Bar:
     """北京 09:30-15:05 之间的 5m K（aware UTC 表达，与生产路径一致）。"""
     return Bar(
         code=CODE,
         name="贵州茅台",
         interval=BarInterval.M5,
-        adjustment=ADJ,
+        adjustment=adj,
         timestamp=ts,
         open=Decimal("100.00"),
         high=Decimal(close) + Decimal("1"),
@@ -143,7 +147,6 @@ def test_minute_day_packed_into_single_row(
             {"c": CODE},
         ).first()
     assert row is not None
-    import json
 
     packed = json.loads(row[0])
     assert isinstance(packed, list)
@@ -237,8 +240,6 @@ def test_minute_hit_path_never_shrinks_below_fresh(
 
 def test_store_reads_legacy_collapsed_minute_row(store: CacheStore) -> None:
     """存量坍缩行（dict 形态）读取兼容：不炸、按单根返回。"""
-    import json
-
     legacy = {
         "code": CODE,
         "name": "贵州茅台",
@@ -318,9 +319,11 @@ def test_daily_cache_path_unchanged(
     assert len(bars) == 1
     second = cached.get_bars(CODE, interval=BarInterval.D1, adjustment=ADJ)
     assert len(second) == 1
+    # 日线口径语义不变：源兑现请求复权（bar.adjustment == 请求）→ 两次调用
+    # 标签均为请求口径；行键 = 请求口径（不并集、不分键）
+    assert {b.adjustment for b in bars} == {b.adjustment for b in second} == {ADJ}
     with store.session() as s:
         row = s.execute(text("SELECT bar_json FROM bar_cache")).first()
-    import json
 
     assert not isinstance(json.loads(row[0]), list)  # 日线仍为 dict 单行
 
@@ -395,3 +398,132 @@ def test_backfill_daily_still_fetches_flows(store: CacheStore, fake: FakeMinuteA
     assert result["bars_written"] == 1
     assert result["flows_written"] == 1
     assert flow_fake.flow_calls == [{"code": CODE, "days": 30}]
+
+
+# ---------- 口径标签诚实性（阶段六评审意见：不复权数据不得改标请求口径）----------
+
+
+def test_unadjusted_minute_bars_keep_none_label_and_key(
+    store: CacheStore, fake: FakeMinuteAdapter
+) -> None:
+    """腾讯式源（无视请求复权、返回 NONE）经缓存层不改标。
+
+    修复前：_bar_to_cache_dict 无条件用请求口径覆盖，fresh 返回 none、
+    缓存读回变 forward，且行键落在 (code,5m,forward)——东财前复权数据
+    会与腾讯不复权数据合并进同一打包行。
+    """
+    cached = CachedMarketDataAdapter(fake, store, config=CacheConfig())
+    base = datetime(2026, 9, 30, 1, 30, tzinfo=UTC)
+    fake.bars = [
+        _m5_bar(base + timedelta(minutes=5 * i), f"10.0{i}", adj=AdjustmentType.NONE)
+        for i in range(4)
+    ]
+
+    first = cached.get_bars(CODE, interval=BarInterval.M5, adjustment=ADJ)  # 请求 forward
+    second = cached.get_bars(CODE, interval=BarInterval.M5, adjustment=ADJ)  # 节流内读缓存
+
+    assert len(first) == len(second) == 4
+    assert {b.adjustment for b in first} == {AdjustmentType.NONE}
+    assert {b.adjustment for b in second} == {AdjustmentType.NONE}  # 不再改标 forward
+
+    with store.session() as s:
+        keys = [r[0] for r in s.execute(text("SELECT DISTINCT adj_type FROM bar_cache")).all()]
+        rows = s.execute(text("SELECT bar_json FROM bar_cache")).all()
+    assert keys == ["none"]  # 落库键 = bar 自身口径，与东财 forward 键分键互不覆盖
+    for (bar_json,) in rows:
+        assert {b["adjustment"] for b in json.loads(bar_json)} == {"none"}
+
+
+def _raw_bar_dict(ts: datetime, close: str, adj: str) -> dict[str, Any]:
+    return {
+        "code": CODE,
+        "name": "贵州茅台",
+        "timestamp": ts.isoformat(),
+        "interval": "5m",
+        "adjustment": adj,
+        "open": "100.00",
+        "high": "101.00",
+        "low": "99.00",
+        "close": close,
+        "volume": 1000,
+        "turnover": "100000",
+    }
+
+
+def test_minute_union_read_merges_adjustment_keys(
+    store: CacheStore, cached: CachedMarketDataAdapter, fake: FakeMinuteAdapter
+) -> None:
+    """分钟读侧并集：请求 forward 时，forward 行 + none 行按时间合并，
+    每根保留自身口径标签；同时间戳两键都有时请求口径优先。"""
+    ts_fwd = datetime(2026, 9, 30, 1, 30, tzinfo=UTC)
+    ts_none = datetime(2026, 9, 30, 1, 35, tzinfo=UTC)
+    store.set_minute_bars(
+        CODE, "5m", "forward", "2026-09-30", [_raw_bar_dict(ts_fwd, "10.01", "forward")]
+    )
+    store.set_minute_bars(
+        CODE, "5m", "none", "2026-09-30", [_raw_bar_dict(ts_none, "10.02", "none")]
+    )
+    key = f"bar:{CODE}:5m:{ADJ.value}"
+    cached._last_fetch_attempt[key] = datetime.now(UTC)  # 纯缓存路径
+
+    bars = cached.get_bars(CODE, interval=BarInterval.M5, adjustment=ADJ)
+    assert [(b.timestamp, b.adjustment) for b in bars] == [
+        (ts_fwd, AdjustmentType.FORWARD),
+        (ts_none, AdjustmentType.NONE),
+    ]
+
+    # 同时间戳两键并存 → 请求口径（forward）优先
+    store.set_minute_bars(CODE, "5m", "none", "2026-09-30", [_raw_bar_dict(ts_fwd, "9.99", "none")])
+    bars2 = cached.get_bars(CODE, interval=BarInterval.M5, adjustment=ADJ)
+    fwd_bars = [b for b in bars2 if b.timestamp == ts_fwd]
+    assert len(fwd_bars) == 1
+    assert fwd_bars[0].adjustment == AdjustmentType.FORWARD
+    assert fwd_bars[0].close == Decimal("10.01")
+
+
+def test_minute_guard_keeps_own_adjustment_labels(
+    store: CacheStore,
+    cached: CachedMarketDataAdapter,
+    fake: FakeMinuteAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """防坍缩兜底路径也不改标：持久化失败用 fresh 时，标签保持 bar 自身口径。"""
+    base = datetime(2026, 9, 30, 1, 30, tzinfo=UTC)
+    fake.bars = [
+        _m5_bar(base, "10.00", adj=AdjustmentType.NONE),
+        _m5_bar(base + timedelta(minutes=5), "10.01", adj=AdjustmentType.NONE),
+    ]
+    cached.get_bars(CODE, interval=BarInterval.M5, adjustment=ADJ)
+
+    fake.bars = [
+        _m5_bar(base + timedelta(minutes=5 * i), f"10.0{i}", adj=AdjustmentType.NONE)
+        for i in range(4)
+    ]
+    key = f"bar:{CODE}:5m:{ADJ.value}"
+    cached._last_fetch_attempt[key] = datetime.now(UTC) - timedelta(seconds=90_000)
+    monkeypatch.setattr(
+        cached.store,
+        "set_minute_bars",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("simulated store failure")),
+    )
+
+    bars = cached.get_bars(CODE, interval=BarInterval.M5, adjustment=ADJ)
+    assert len(bars) == 4
+    assert {b.adjustment for b in bars} == {AdjustmentType.NONE}
+
+
+def test_backfill_minute_keys_by_bar_own_adjustment(
+    store: CacheStore, fake: FakeMinuteAdapter
+) -> None:
+    """backfill 分钟：NONE 口径源落 none 键（与请求的 forward 键无关）。"""
+    base = datetime(2026, 9, 30, 1, 30, tzinfo=UTC)
+    fake.bars = [
+        _m5_bar(base, "10.00", adj=AdjustmentType.NONE),
+        _m5_bar(base + timedelta(minutes=5), "10.01", adj=AdjustmentType.NONE),
+    ]
+    result = store.backfill_history(fake, CODE, days=5, interval=BarInterval.M5)
+    assert result["bars_written"] == 2
+    rows = store.get_bars(CODE, "5m", "none")
+    assert rows is not None
+    assert len(rows) == 2
+    assert store.get_bars(CODE, "5m", ADJ.value) is None  # forward 键无行
