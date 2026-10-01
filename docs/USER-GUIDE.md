@@ -538,8 +538,9 @@ uv run mommy web
 ```
 
 注意 `--with-signals` 是开关：不传则只打印快照、不评估告警。频率建议 1~5 分钟
-（4 种可自动化的告警条件都是静态阈值，分钟级足够）；`mommy-web` 运行期间推送
-（Bark/微信）在 web 进程内完成，cron 路径主要把命中写进信号日志供回看。
+（4 种可自动化的告警条件都是静态阈值，分钟级足够）；cron 路径本身只把命中写进
+信号日志供回看，**Bark/微信推送只在 `mommy-web` 进程内发生**（且 Bark 需已配置
+`BARK_DEVICE_KEY`）——要推送就常驻 web 或选方案二。
 cron 是否配置属于你的环境责任，仓库无法替你确认。
 
 **方案二：launchd / systemd 常驻 `mommy-web`**
@@ -578,9 +579,14 @@ Restart=on-failure
 WantedBy=default.target
 ```
 
-常驻 `mommy-web` 后，自定义告警每 5 秒评估，命中经 Bark（需自备 device key）与
-微信（需扫码连接）推送；earnings 业绩比对也在每个交易日收盘后（15:35 起）自动
-pull + score + evaluate 并走同一推送管道。
+常驻 `mommy-web` 后，自定义告警每 5 秒评估，earnings 业绩比对也在每个交易日收盘后
+（15:35 起）自动 pull + score + evaluate，信号走同一推送管道。推送通道按配置生效：
+
+- **Bark（iOS 推送）**：需在启动前设置环境变量 `BARK_DEVICE_KEY`（你的 Bark App
+  device key）。未设置时 mommy-web **不启用 Bark**——这不是静默失败，推送只剩微信
+  通道；去重文件写入用户库同目录 `pushed.json`（一码一规一天）。
+- **微信**：需扫码连接本地消息网关（`mommy setup` / `mommy connect`），按服务端
+  用户偏好筛选。
 
 **回滚开关**：设置环境变量 `MOMMY_ALERTS_BUILTIN_ONLY=1` 可一键停用新增评估分支
 （自定义告警 + earnings 日频评估），回到仅内置 7 条规则；web/monitor 进程重启后生效。

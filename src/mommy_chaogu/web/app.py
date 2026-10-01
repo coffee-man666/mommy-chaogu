@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from mommy_chaogu import __version__
 from mommy_chaogu.db_paths import PORTFOLIO_DB, REFERENCE_DB
+from mommy_chaogu.push import SignalNotifier
 from mommy_chaogu.signals.types import Signal
 from mommy_chaogu.web.background import BackgroundService, set_service
 from mommy_chaogu.web.deps import (
@@ -58,6 +59,29 @@ from mommy_chaogu.web.security import (
 )
 
 _log = logging.getLogger(__name__)
+
+
+def _bark_notifier_if_configured(db_path: Path | None, web_base_url: str) -> SignalNotifier | None:
+    """BARK_DEVICE_KEY 已配置时构造 SignalNotifier（Bark + 一码一规一天去重）。
+
+    此前生产 web 入口从未构造 SignalNotifier/BarkPusher——推送只有微信通道，
+    「mommy-web 运行期间收到 Bark 推送」实际不可达（阶段五评审意见）。
+    现在的语义：环境变量 BARK_DEVICE_KEY 非空 → 启用 Bark 推送 +
+    JsonFileDeduper（写入用户库同目录 pushed.json）；未配置 → 返回 None，
+    mommy-web 推送退化为仅微信通道（不伪造 Bark 可用）。
+    """
+    if not os.environ.get("BARK_DEVICE_KEY", "").strip():
+        return None
+
+    from mommy_chaogu.push import BarkPusher, JsonFileDeduper
+
+    try:
+        pusher = BarkPusher(web_base_url=web_base_url)
+    except ValueError:
+        _log.warning("BARK_DEVICE_KEY 无效，Bark 推送未启用")
+        return None
+    dedup_path = (db_path or PORTFOLIO_DB).parent / "pushed.json"
+    return SignalNotifier(pusher, JsonFileDeduper(dedup_path), web_base_url=web_base_url)
 
 
 def _frontend_dist_candidates() -> tuple[Path, ...]:
@@ -152,6 +176,11 @@ def create_app(
         # 阶段五常驻评估：自定义告警库 + earnings 日频任务（收盘后 pull+score+evaluate）
         custom_alerts = deps.get_custom_alert_store()
 
+        # Bark 推送（可选）：BARK_DEVICE_KEY 配置时启用，未配置仅微信通道
+        bark_notifier = _bark_notifier_if_configured(db_path, web_base_url)
+        if bark_notifier is not None:
+            _log.info("Bark notifier enabled (BARK_DEVICE_KEY configured)")
+
         def _earnings_codes() -> list[str]:
             from mommy_chaogu.signals.custom_evaluation import load_enabled_custom_alerts
 
@@ -183,6 +212,7 @@ def create_app(
             watchlist=watchlist_store,
             alerter=alerter,
             poll_interval_seconds=poll_interval_seconds,
+            notifier=bark_notifier,
             weixin_sender=weixin_sender,
             custom_alerts=custom_alerts,
             earnings_job=_earnings_job,

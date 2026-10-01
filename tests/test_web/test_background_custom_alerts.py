@@ -440,3 +440,48 @@ def test_run_at_constant_is_after_market_close() -> None:
     from mommy_chaogu.earnings.daily import RUN_AT
 
     assert time(15, 0) < RUN_AT
+
+
+# ---------- Bark 推送接线（阶段五评审修复：生产 web 入口此前从未构造 notifier） ----------
+
+
+def test_bark_notifier_built_when_device_key_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mommy_chaogu.push import BarkPusher, SignalNotifier
+    from mommy_chaogu.web.app import _bark_notifier_if_configured
+
+    monkeypatch.setenv("BARK_DEVICE_KEY", "test-device-key")
+    notifier = _bark_notifier_if_configured(tmp_path / "p.db", "http://127.0.0.1:8000")
+
+    assert isinstance(notifier, SignalNotifier)
+    assert isinstance(notifier.pusher, BarkPusher)
+    assert notifier.pusher.device_key == "test-device-key"
+    assert notifier.pusher.web_base_url == "http://127.0.0.1:8000"
+
+
+def test_bark_notifier_none_without_device_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mommy_chaogu.web.app import _bark_notifier_if_configured
+
+    monkeypatch.delenv("BARK_DEVICE_KEY", raising=False)
+    assert _bark_notifier_if_configured(tmp_path / "p.db", "") is None
+
+    # 纯空白同样视为未配置
+    monkeypatch.setenv("BARK_DEVICE_KEY", "   ")
+    assert _bark_notifier_if_configured(tmp_path / "p.db", "") is None
+
+
+def test_bark_notifier_dedup_file_lives_next_to_user_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """去重状态文件落用户库同目录 pushed.json（一码一规一天，不碰仓库 data/）。"""
+    from mommy_chaogu.web.app import _bark_notifier_if_configured
+
+    monkeypatch.setenv("BARK_DEVICE_KEY", "test-device-key")
+    notifier = _bark_notifier_if_configured(tmp_path / "p.db", "")
+
+    assert notifier is not None
+    dedup_path = getattr(notifier.deduper, "db_path", None)
+    assert dedup_path == tmp_path / "pushed.json"
