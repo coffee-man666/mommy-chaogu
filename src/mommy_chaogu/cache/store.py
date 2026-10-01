@@ -253,6 +253,26 @@ class CacheStore(EngineOwner):
                 },
             )
 
+    def list_cached_bar_codes(self, code_prefix: str, interval: str, adj_type: str) -> list[str]:
+        """列出 bar_cache 中已有 K 线缓存的代码（前缀过滤，DISTINCT 升序，只读）。
+
+        供板块相对强弱等批量任务在板块列表接口失败时回退枚举已缓存
+        板块代码（开发规范：拉新失败保留旧数据）。``code_prefix`` 按
+        字面前缀匹配（% / _ 会被转义，不作通配符）。
+        """
+        escaped = code_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        with self.session() as s:
+            rows = s.execute(
+                text("""
+                    SELECT DISTINCT code FROM bar_cache
+                    WHERE code LIKE :prefix ESCAPE '\\'
+                      AND interval = :interval AND adj_type = :adj_type
+                    ORDER BY code
+                """),
+                {"prefix": escaped, "interval": interval, "adj_type": adj_type},
+            ).all()
+            return [str(row[0]) for row in rows]
+
     # ---------- Money flow cache ----------
 
     def get_today_money_flow(self, code: str) -> list[dict[str, Any]] | None:
