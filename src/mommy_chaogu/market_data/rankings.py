@@ -29,6 +29,27 @@ INDEX_LIST: list[tuple[str, str, str]] = [
     ("1.000016", "上证50", "sh000016"),
 ]
 
+# INDEX_LIST 的代码列（agent 工具的 code 枚举，与 INDEX_LIST 同源维护）
+INDEX_CODES: list[str] = [code for _secid, _name, code in INDEX_LIST]
+
+
+def resolve_index_symbol(raw: str) -> tuple[str, str, str] | None:
+    """把用户/LLM 传入的指数标识解析为 INDEX_LIST 条目 ``(secid, 名称, 代码)``。
+
+    接受三种形式：代码 ``'sh000001'``、名称 ``'上证指数'``、secid ``'1.000001'``。
+    裸 6 位数字（如 ``'000001'`` 是平安银行）不在匹配范围，返回 ``None``——
+    由调用方显式报错，防止把指数 K 线静默拉成个股（指数真相源见 INDEX_LIST；
+    docs/plans/trading-method-landing.md 阶段四 / 风险 R10）。
+    """
+    key = str(raw).strip()
+    if not key:
+        return None
+    for entry in INDEX_LIST:
+        if key in entry:
+            return entry
+    return None
+
+
 # 东财板块 fs 参数
 # m:90+t:2 是行业板块（申万），m:90+t:1 是概念板块
 SECTOR_FS = "m:90+t:2"

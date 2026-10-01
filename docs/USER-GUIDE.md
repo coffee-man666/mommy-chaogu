@@ -513,6 +513,88 @@ uv run mommy web
 | 成交量放大 | volume > 2× avg | INFO |
 | 价格突破告警线 | 自定义 | 自定义 |
 
+### 自定义告警的常驻前提与部署方案（重要）
+
+**自定义告警（含策略卡启用的监控）只在评估命令运行期间评估与推送**——评估随进程存在，
+不是后台守护。三个评估入口：
+
+| 入口 | 形态 | 评估频率 |
+|------|------|----------|
+| `uv run mommy web` | 常驻进程 | 默认每 5 秒（`_tick`） |
+| `uv run mommy monitor run --with-signals` | 前台命令（Ctrl+C 退出） | 默认每 30 秒 |
+| `uv run mommy monitor snapshot --with-signals` | 短命命令 | 每次执行一次 |
+
+这些进程都不在运行时，告警不会自动提醒（可查询但无人查）。TUI 与一次性 CLI 对话
+不评估告警。推送去重沿用既有规则：同一只股票 + 同一条规则 + 当天只推送一次。
+
+如果你平时不常开 Web 服务，二选一让告警「有人查」：
+
+**方案一（最低成本）：cron 定时短命命令**
+
+```bash
+# 交易时段每 2 分钟评估一次自定义告警 + 内置规则，收盘后再兜底一次
+*/2 9-15 * * 1-5 cd /path/to/mommy-chaogu && uv run mommy monitor snapshot --with-signals >> data/monitor_cron.log 2>&1
+35 15 * * 1-5 cd /path/to/mommy-chaogu && uv run mommy monitor snapshot --with-signals >> data/monitor_cron.log 2>&1
+```
+
+注意 `--with-signals` 是开关：不传则只打印快照、不评估告警。频率建议 1~5 分钟
+（4 种可自动化的告警条件都是静态阈值，分钟级足够）；cron 路径本身只把命中写进
+信号日志供回看，**Bark/微信推送只在 `mommy-web` 进程内发生**（且 Bark 需已配置
+`BARK_DEVICE_KEY`）——要推送就常驻 web 或选方案二。
+cron 是否配置属于你的环境责任，仓库无法替你确认。
+
+**方案二：launchd / systemd 常驻 `mommy-web`**
+
+macOS（launchd，`~/Library/LaunchAgents/com.mommy-chaogu.web.plist`）：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.mommy-chaogu.web</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/path/to/uv</string><string>run</string><string>mommy-web</string>
+  </array>
+  <key>WorkingDirectory</key><string>/path/to/mommy-chaogu</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+```
+
+Linux（systemd 用户服务，`~/.config/systemd/user/mommy-web.service`）：
+
+```ini
+[Unit]
+Description=mommy-chaogu web (常驻告警评估)
+
+[Service]
+WorkingDirectory=/path/to/mommy-chaogu
+ExecStart=/path/to/uv run mommy-web
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+常驻 `mommy-web` 后，自定义告警每 5 秒评估，earnings 业绩比对也在每个交易日收盘后
+（15:35 起）自动 pull + score + evaluate，信号走同一推送管道。推送通道按配置生效：
+
+- **Bark（iOS 推送）**：需在启动前设置环境变量 `BARK_DEVICE_KEY`（你的 Bark App
+  device key）。未设置时 mommy-web **不启用 Bark**——这不是静默失败，推送只剩微信
+  通道；去重文件写入用户库同目录 `pushed.json`（一码一规一天）。
+- **微信**：需扫码连接本地消息网关（`mommy setup` / `mommy connect`），按服务端
+  用户偏好筛选。
+
+**回滚开关**：设置环境变量 `MOMMY_ALERTS_BUILTIN_ONLY=1` 可一键停用新增评估分支
+（自定义告警 + earnings 日频评估），回到仅内置 7 条规则；web/monitor 进程重启后生效。
+
+> 边界：组合条件（板块共振、多日相对强弱阈值、K 线形态）仍不可自动监控，在策略卡中
+> 标 `manual`（需人工判断）；「不常开进程告警不响」是产品口径而非缺陷，本工具不内置
+> 后台守护进程。
+
 > **推送频率控制**：同一只股票 + 同一条规则 + 当天只推送一次（自动去重）。
 
 ---

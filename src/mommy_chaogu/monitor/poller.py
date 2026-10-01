@@ -25,6 +25,11 @@ from mommy_chaogu.market_data import MarketDataAdapter, Quote
 from mommy_chaogu.market_data.types import MoneyFlow
 from mommy_chaogu.monitor.output import format_log_line, format_table
 from mommy_chaogu.signals import Alerter
+from mommy_chaogu.signals.custom_alerts import CustomAlertStore
+from mommy_chaogu.signals.custom_evaluation import (
+    evaluate_custom_alerts,
+    load_enabled_custom_alerts,
+)
 from mommy_chaogu.watchlist import StockEntry, WatchlistStore
 
 _log = logging.getLogger(__name__)
@@ -99,12 +104,14 @@ class Monitor:
         log_path: Path | None = None,
         stream: TextIO | None = None,
         alerter: Alerter | None = None,
+        custom_alerts: CustomAlertStore | None = None,
     ) -> None:
         self.store = store
         self.adapter = adapter
         self.log_path = log_path
         self.stream = stream or sys.stdout
         self.alerter = alerter
+        self.custom_alerts = custom_alerts
         self._snapshot_id = 0
 
         # 准备日志
@@ -254,9 +261,20 @@ class Monitor:
                     self.print_snapshot(snap, clear_screen=clear_screen)
                     self.write_log(snap)
 
-                    # 信号评估
+                    # 信号评估：内置规则（Snapshot）+ 自定义告警（直接吃 Quote，
+                    # 告警代码不在自选股时经 adapter 补拉报价）
                     if self.alerter is not None:
                         signals = self.alerter.evaluate(snap)
+                        alerts = load_enabled_custom_alerts(self.custom_alerts)
+                        if alerts:
+                            quotes = {row.quote.code: row.quote for row in snap.rows}
+                            signals.extend(
+                                evaluate_custom_alerts(
+                                    alerts,
+                                    quotes,
+                                    fetch_quote=self.adapter.get_quote,
+                                )
+                            )
                         if signals:
                             self.stream.write("\n")
                             self.stream.write(self.alerter.format_signals(signals))

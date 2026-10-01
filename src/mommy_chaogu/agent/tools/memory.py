@@ -1,14 +1,24 @@
-"""记忆工具：事件语义搜索、预测历史、市场叙事、记忆上下文。"""
+"""记忆工具：事件语义搜索、预测历史、市场叙事与变化检测、记忆上下文。"""
 
 from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
 
 _log = logging.getLogger(__name__)
+
+# narrative 检索范围（narrative 层已支持，工具层校验后透传）：
+# 'market' / 'sector:板块名' / 'stock:代码'（episodic scope 前缀匹配语义）。
+_SCOPE_RE = re.compile(r"^(market|sector:\S.+|stock:\S.+)$")
+
+_SCOPE_DESCRIPTION = (
+    "检索范围：'market'（默认，全市场）/ 'sector:板块名'（如 'sector:半导体'）"
+    "/ 'stock:代码'（如 'stock:603662'）"
+)
 
 
 DEFS: list[ToolDef] = [
@@ -41,8 +51,11 @@ DEFS: list[ToolDef] = [
     ToolDef(
         name="get_prediction_history",
         description=(
-            "查询 agent 的历史预测记录及命中状态（hit/missed/pending）。"
-            "用于回顾'我之前对某只股票的判断准不准'。"
+            "查询 agent 的历史预测记录及命中状态与阶段。"
+            "status（hit/missed/pending）衡量价格方向验证结局；"
+            "stage（candidate 候选/confirmed 已确认/retired 已退出）衡量"
+            "左侧候选是否等到右侧确认——方向对了（hit）不等于右侧已确认。"
+            "用于回顾'我之前记的左侧候选后来怎么样了'。"
         ),
         parameters={
             "type": "object",
@@ -68,10 +81,46 @@ DEFS: list[ToolDef] = [
         },
     ),
     ToolDef(
+        name="update_prediction_stage",
+        description=(
+            "回写预测的阶段（左侧→右侧纪律闭环）。stage 与 status 独立："
+            "status 管价格验证结局（verify 自动回填），stage 管心法阶段——"
+            "confirmed = 右侧确认信号出现（如 check_kline_signal 的 "
+            "high_20_breakout / price_above_ma20 命中，或用户人工判定），"
+            "status=hit 本身不升 confirmed；retired = 显式放弃该候选"
+            "（右侧迟迟不确认则退出；missed/expired 的自动退出由验证引擎负责）。"
+            "basis 必填，写明确认依据（如信号名与数值）或退出原因。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "prediction_id": {
+                    "type": "integer",
+                    "description": "预测记录 id（get_prediction_history 返回的 id）",
+                    "minimum": 1,
+                },
+                "stage": {
+                    "type": "string",
+                    "enum": ["confirmed", "retired"],
+                    "description": "目标阶段：confirmed（右侧已确认）/ retired（已退出）",
+                },
+                "basis": {
+                    "type": "string",
+                    "description": (
+                        "确认依据或退出原因，必填。如 'high_20_breakout 命中："
+                        "收盘 105 > 20日高点 100' 或 '用户人工判定放弃'"
+                    ),
+                },
+            },
+            "required": ["prediction_id", "stage", "basis"],
+        },
+    ),
+    ToolDef(
         name="get_market_narrative",
         description=(
             "生成过去 N 天的市场脉络叙述（转折点 → 因果链 → 当前状态）。"
             "基于情景记忆中的历史事件，用 LLM 生成复盘分析。"
+            "可按 scope 限定范围（全市场 / 某板块 / 某个股）。"
         ),
         parameters={
             "type": "object",
@@ -82,7 +131,33 @@ DEFS: list[ToolDef] = [
                     "default": 7,
                     "minimum": 1,
                     "maximum": 365,
-                }
+                },
+                "scope": {
+                    "type": "string",
+                    "pattern": "^(market|sector:.+|stock:.+)$",
+                    "description": _SCOPE_DESCRIPTION,
+                    "default": "market",
+                },
+            },
+        },
+    ),
+    ToolDef(
+        name="detect_market_changes",
+        description=(
+            "检测市场状态变化：最近 3 天 vs 之前 10 天的关键变化清单"
+            "（只输出「变了什么」，如风格切换/资金迁移，不是罗列事件）。"
+            "基于情景记忆事件 + LLM 对比；LLM 不可用时降级返回两段原始事件"
+            "供人工比对。可按 scope 限定范围（全市场 / 某板块 / 某个股）。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "pattern": "^(market|sector:.+|stock:.+)$",
+                    "description": _SCOPE_DESCRIPTION,
+                    "default": "market",
+                },
             },
         },
     ),
@@ -218,13 +293,66 @@ def _handle_get_prediction_history(ctx: ToolContext, args: dict[str, Any]) -> st
                 "prediction": p.get("prediction"),
                 "direction": p.get("direction"),
                 "status": p.get("status"),
+                "stage": p.get("stage") or "candidate",
                 "score": p.get("accuracy_score"),
                 "created_at": p.get("created_at"),
+                "confirmed_at": p.get("confirmed_at"),
                 "verified_at": p.get("verified_at"),
             }
             for p in preds
         ]
     )
+
+
+def _handle_update_prediction_stage(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """回写预测阶段（confirmed/retired），basis 必填并留痕到 verify_log。"""
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"error": "记忆系统未配置（agent_db is None）"})
+
+    from mommy_chaogu.agent.prediction_tracker import PredictionTracker
+
+    raw_id = args.get("prediction_id")
+    if raw_id is None:
+        return _json({"error": "prediction_id 必须是整数"})
+    try:
+        pred_id = int(raw_id)
+    except (TypeError, ValueError):
+        return _json({"error": "prediction_id 必须是整数"})
+    if pred_id < 1:
+        return _json({"error": "prediction_id 必须是正整数"})
+    stage = str(args.get("stage") or "")
+    basis = str(args.get("basis") or "").strip()
+    if not basis:
+        return _json({"error": "basis 必填：写明确认依据（右侧信号命中数值）或退出原因"})
+
+    tracker = PredictionTracker(db_path)
+    try:
+        row = tracker.update_stage(pred_id, stage, note=basis)
+    except ValueError as e:
+        return _json({"error": str(e)})
+    if row is None:
+        return _json({"error": f"预测 #{pred_id} 不存在"})
+    return _json(
+        {
+            "id": row.get("id"),
+            "code": row.get("code"),
+            "name": row.get("name"),
+            "stage": row.get("stage"),
+            "status": row.get("status"),
+            "confirmed_at": row.get("confirmed_at"),
+            "verified_at": row.get("verified_at"),
+            "basis": basis,
+        }
+    )
+
+
+def _normalize_scope(args: dict[str, Any]) -> str | None:
+    """校验并归一 scope 参数；非法值返回 None（由调用方报 error）。"""
+    scope = str(args.get("scope") or "market").strip()
+    if not _SCOPE_RE.match(scope):
+        return None
+    return scope
 
 
 def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
@@ -234,6 +362,9 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
         return _json({"error": "记忆系统未配置（agent_db is None）"})
 
     days = _clamp_int(args.get("days", 7), 7, 1, 365)
+    scope = _normalize_scope(args)
+    if scope is None:
+        return _json({"error": f"scope 非法：{_SCOPE_DESCRIPTION}"})
 
     from mommy_chaogu.agent.episodic_memory import EpisodicMemory
 
@@ -245,17 +376,18 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
 
         try:
             narrative = MarketNarrative(episodic, ctx.client, model=ctx.model)
-            text = narrative.generate_narrative(days=days)
-            return _json({"narrative": text, "days": days})
+            text = narrative.generate_narrative(scope=scope, days=days)
+            return _json({"narrative": text, "days": days, "scope": scope})
         except Exception as e:
             _log.warning("get_market_narrative: LLM 生成失败，降级事件列表: %s", e)
 
     # 降级：返回最近事件列表
-    events = episodic.recent(days=days, limit=50)
+    events = episodic.recent(days=days, scope=scope, limit=50)
     return _json(
         {
             "degraded": True,
             "days": days,
+            "scope": scope,
             "events": [
                 {
                     "id": e.get("id"),
@@ -265,6 +397,55 @@ def _handle_get_market_narrative(ctx: ToolContext, args: dict[str, Any]) -> str:
                     "summary": e.get("summary"),
                 }
                 for e in events
+            ],
+        }
+    )
+
+
+def _handle_detect_market_changes(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """检测最近 3 天 vs 之前 10 天的关键变化（narrative.detect_changes 挂工具层）。"""
+    db_path = ctx.resolved_agent_db
+    if db_path is None:
+        return _json({"error": "记忆系统未配置（agent_db is None）"})
+
+    scope = _normalize_scope(args)
+    if scope is None:
+        return _json({"error": f"scope 非法：{_SCOPE_DESCRIPTION}"})
+
+    from mommy_chaogu.agent.episodic_memory import EpisodicMemory
+
+    episodic = EpisodicMemory(db_path)
+
+    # 有 LLM client → 变化对比
+    if ctx.client is not None and ctx.model is not None:
+        from mommy_chaogu.agent.narrative import MarketNarrative
+
+        try:
+            narrative = MarketNarrative(episodic, ctx.client, model=ctx.model)
+            text = narrative.detect_changes(scope=scope)
+            return _json({"changes": text, "scope": scope})
+        except Exception as e:
+            _log.warning("detect_market_changes: LLM 生成失败，降级事件对比: %s", e)
+
+    # 降级：返回两段原始事件（窗口口径同 narrative.detect_changes：
+    # 最近 3 天 vs 之前 10 天），供 agent/人工直接比对
+    now = datetime.now(UTC)
+    prior = episodic.query(
+        scope=scope,
+        start_date=(now - timedelta(days=13)).strftime("%Y-%m-%d"),
+        end_date=(now - timedelta(days=3)).strftime("%Y-%m-%d"),
+        limit=50,
+    )
+    recent = episodic.recent(days=3, scope=scope, limit=30)
+    return _json(
+        {
+            "degraded": True,
+            "scope": scope,
+            "recent_events": [
+                {"timestamp": e.get("timestamp"), "summary": e.get("summary")} for e in recent
+            ],
+            "prior_events": [
+                {"timestamp": e.get("timestamp"), "summary": e.get("summary")} for e in prior
             ],
         }
     )
@@ -319,7 +500,9 @@ def _handle_get_memory_health(ctx: ToolContext, _args: dict[str, Any]) -> str:
 HANDLERS: dict[str, ToolHandler] = {
     "search_similar_events": _handle_search_similar_events,
     "get_prediction_history": _handle_get_prediction_history,
+    "update_prediction_stage": _handle_update_prediction_stage,
     "get_market_narrative": _handle_get_market_narrative,
+    "detect_market_changes": _handle_detect_market_changes,
     "get_memory_context": _handle_get_memory_context,
     "get_memory_health": _handle_get_memory_health,
 }

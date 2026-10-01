@@ -40,10 +40,21 @@ def cmd_monitor_snapshot(args: argparse.Namespace) -> int:
     m.print_snapshot(snap, clear_screen=False)
     m.write_log(snap)
 
-    # 信号评估
+    # 信号评估：内置规则 + 自定义告警（告警代码不在自选股时经 adapter 补拉）
     if args.with_signals:
+        from mommy_chaogu.signals.custom_alerts import CustomAlertStore
+        from mommy_chaogu.signals.custom_evaluation import (
+            evaluate_custom_alerts,
+            load_enabled_custom_alerts,
+        )
+
         alerter = Alerter.default(log_path=signals_log_path)
         signals = alerter.evaluate(snap)
+        with CustomAlertStore(Path(args.db)) as alert_store:
+            alerts = load_enabled_custom_alerts(alert_store)
+            if alerts:
+                quotes = {row.quote.code: row.quote for row in snap.rows}
+                signals.extend(evaluate_custom_alerts(alerts, quotes, fetch_quote=adp.get_quote))
         print()
         print(alerter.format_signals(signals))
         alerter.write_signals_log(signals)
@@ -55,11 +66,17 @@ def cmd_monitor_run(args: argparse.Namespace) -> int:
     adp = _make_adapter(args)
     log_path = Path(args.log) if args.log else None
     signals_log_path = Path(args.signals_log) if args.signals_log else None
+    custom_alerts = None
+    if args.with_signals:
+        from mommy_chaogu.signals.custom_alerts import CustomAlertStore
+
+        custom_alerts = CustomAlertStore(Path(args.db))
     m = Monitor(
         s,
         adp,
         log_path=log_path,
         alerter=Alerter.default(log_path=signals_log_path) if args.with_signals else None,
+        custom_alerts=custom_alerts,
     )
     m.run(
         interval_seconds=args.interval,

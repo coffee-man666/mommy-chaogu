@@ -492,6 +492,14 @@ def _handle_prepare_monitor(ctx: ToolContext, args: dict[str, Any]) -> str:
         return _json({"error": str(exc), "activated": False})
 
 
+#: 启用监控返回文案的常驻前提（阶段五任务 3：如实定口径，不产生「已启用即常驻生效」误导）。
+_MONITOR_RESIDENCY_NOTE = (
+    "注意：自定义告警仅在评估命令运行期间评估与推送"
+    "（常驻 mommy-web、前台 mommy monitor run，或定时 mommy monitor snapshot --with-signals）；"
+    "这些进程不在运行时不会自动提醒。"
+)
+
+
 def _handle_activate_monitor(ctx: ToolContext, args: dict[str, Any]) -> str:
     if args.get("user_confirmed") is not True:
         return _json(
@@ -553,7 +561,9 @@ def _handle_activate_monitor(ctx: ToolContext, args: dict[str, Any]) -> str:
                             "activated": True,
                             "reused": True,
                             "alert_id": int(existing["alert_id"]),
-                            "message": "这项策略监控已经启用，没有创建重复告警。",
+                            "message": (
+                                "这项策略监控已经启用，没有创建重复告警。" + _MONITOR_RESIDENCY_NOTE
+                            ),
                         }
                     )
                 alert = alerts.add(
@@ -588,6 +598,7 @@ def _handle_activate_monitor(ctx: ToolContext, args: dict[str, Any]) -> str:
                 "message": (
                     f"已启用监控，并关联到《{card.title}》v{record['version']}；"
                     "可用 manage_alert list 查看、用 manage_alert remove 关闭。"
+                    + _MONITOR_RESIDENCY_NOTE
                 ),
             }
         )

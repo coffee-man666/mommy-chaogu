@@ -33,7 +33,6 @@ cp .env.example .env       # 复制模板
 | kimi | `MOONSHOT_API_KEY` | Moonshot / Kimi |
 | zai | `ZAI_API_KEY` | z.ai / GLM-4.7 |
 | minimax | `MINIMAX_API_KEY` | MiniMax 开放平台按量 API（M3，非 Coding Plan） |
-| — | `SERVER_CHAN_KEY` | Server酱微信推送 |
 | — | `AGENT_PROVIDER` | 覆盖 provider（不重启改 .env） |
 | — | `AGENT_MODEL` | 覆盖聊天模型名 |
 
@@ -77,16 +76,16 @@ src/mommy_chaogu/
 ├── signals/         # 7 条内置告警规则 + 自定义告警
 ├── flows/           # 资金流 ratio 信号 + 监控 + 收盘日报
 ├── earnings/        # 业绩前瞻 vs 实际 比对
-├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 37 工具 + MCP + 记忆系统 5 层 + Strategy Cards）
+├── agent/           # LLM agent（llm.py provider 真相源 + tools/ 包按域拆分 40 工具 + MCP + 记忆系统 5 层 + Strategy Cards）
 ├── strategy/        # 用户确认的策略卡校验、版本、来源与监控关联
-├── workflow/        # 自然语言工作流引擎（9 个预定义工作流 + NLRouter + Executor）
+├── workflow/        # 自然语言工作流引擎（11 个预定义工作流 + NLRouter + Executor）
 ├── portfolio/       # 持仓 + 组合分析
 ├── backtest/        # 回测引擎（引擎 + 统一评分 + 成本 + 组合 + walk-forward + regime）
 ├── semicon/         # 半导体产业链参考库
 ├── web/             # FastAPI + WebSocket
 ├── tui/             # Textual 终端 UI（单屏对话即界面的投研 Coding Agent CLI）
 ├── services/        # 统一数据服务层（工具层和 API 层共用）
-├── push/            # Server酱微信推送
+├── push/            # 推送管道（Bark Pusher + Notifier/Deduper 通用抽象）
 ├── channels/        # 本地消息网关（微信二维码授权 + 私聊长轮询）
 ├── db_paths.py      # 统一数据库路径管理
 └── cli.py           # argparse 入口（含 mommy 自然语言入口 + 13 个透传子命令）
@@ -114,7 +113,7 @@ src/mommy_chaogu/
 
 工作流引擎见 `src/mommy_chaogu/workflow/`：
 - `engine.py` — Workflow / WorkflowRegistry / WorkflowExecutor
-- `definitions.py` — 9 个预定义工作流（morning_brief / stock_analysis / sector_scan 等）
+- `definitions.py` — 11 个预定义工作流（morning_brief / stock_analysis / stock_closed_loop / sector_scan 等）
 - `router.py` — NLRouter（正则匹配优先，fallback 到 AgentService）
 
 Agent 交互指导见 `docs/AGENT-INTERACTION-GUIDE.md`。
