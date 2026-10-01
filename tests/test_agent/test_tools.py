@@ -114,9 +114,9 @@ def registry(ctx: ToolContext) -> ToolRegistry:
 class TestToolDefinitions:
     def test_all_tools_have_definitions(self, registry: ToolRegistry) -> None:
         defs = registry.definitions()
-        # 43 = 阶段三后的 40 + get_index_bars / market_regime_series /
-        # detect_market_changes（阶段四新增）
-        assert len(defs) == 43
+        # 44 = 阶段四后的 43 + get_intraday_profile（阶段六新增：
+        # 超短期日内画像——开盘半小时 / VWAP 典型价近似 / 尾盘段）
+        assert len(defs) == 44
         names = {d["function"]["name"] for d in defs}
         assert names == set(ToolRegistry.tool_names())
 

@@ -1,13 +1,21 @@
-"""K 线工具：历史 K 线查询、历史数据回填、A 股指数 K 线。"""
+"""K 线工具：历史 K 线查询、历史数据回填、A 股指数 K 线、日内画像。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from mommy_chaogu.agent.tools.base import ToolContext, ToolDef, ToolHandler, _clamp_int, _json
+from mommy_chaogu.agent.tools.base import (
+    ToolContext,
+    ToolDef,
+    ToolHandler,
+    _clamp_int,
+    _floatify,
+    _json,
+)
 from mommy_chaogu.cache.store import CacheStore
 from mommy_chaogu.market_data.rankings import INDEX_CODES, INDEX_LIST, resolve_index_symbol
 from mommy_chaogu.market_data.types import BarInterval
+from mommy_chaogu.services.intraday_service import IntradayService
 
 DEFS: list[ToolDef] = [
     ToolDef(
@@ -51,10 +59,19 @@ DEFS: list[ToolDef] = [
                 },
                 "days": {
                     "type": "integer",
-                    "description": "回填天数，默认 30（最大 365）",
+                    "description": "回填天数，默认 30（最大 365）；分钟周期时表示回填根数（受上游分钟存档深度限制）",
                     "default": 30,
                     "minimum": 1,
                     "maximum": 365,
+                },
+                "interval": {
+                    "type": "string",
+                    "enum": ["1d", "5m", "15m", "30m", "60m"],
+                    "description": (
+                        "K 线周期，默认 1d。分钟周期只回填分钟 K（按日打包落缓存，不回填资金流）；"
+                        "仅 1d 回填历史资金流"
+                    ),
+                    "default": "1d",
                 },
             },
             "required": ["code"],
@@ -94,6 +111,26 @@ DEFS: list[ToolDef] = [
                     "maximum": 120,
                 },
             },
+        },
+    ),
+    ToolDef(
+        name="get_intraday_profile",
+        description=(
+            "超短期日内画像：今天资金怎么交易这只股票。三段指标：开盘半小时"
+            "（10:00 价相对昨收 + 量占比）、VWAP 相对位置（典型价近似）、尾盘"
+            " 14:30-15:00 段行为（涨跌 + 量占比）。5 分钟 K，东财主源 + 腾讯"
+            " mkline 备源，经本地缓存。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$",
+                    "description": "A 股 6 位数字代码（如 600519）",
+                },
+            },
+            "required": ["code"],
         },
     ),
 ]
@@ -138,9 +175,17 @@ def _handle_backfill_history(ctx: ToolContext, args: dict[str, Any]) -> str:
         return _json({"error": "market_db 未配置，无法回填"})
     code = args["code"]
     days = _clamp_int(args.get("days", 30), 30, 1, MAX_BACKFILL_DAYS)
+    interval = BarInterval(args.get("interval", "1d"))
     store = CacheStore(db_path)
-    result = store.backfill_history(ctx.adapter, code, days=days)
+    result = store.backfill_history(ctx.adapter, code, days=days, interval=interval)
     return _json(result)
+
+
+def _handle_get_intraday_profile(ctx: ToolContext, args: dict[str, Any]) -> str:
+    """超短期日内画像（阶段六）：5 分钟 K → 开盘半小时 / VWAP（典型价近似）/ 尾盘段。"""
+    code = args["code"]
+    service = IntradayService(ctx.adapter)
+    return _json(_floatify(service.profile(code)))
 
 
 def _index_help() -> str:
@@ -209,4 +254,5 @@ HANDLERS: dict[str, ToolHandler] = {
     "get_bars": _handle_get_bars,
     "backfill_history": _handle_backfill_history,
     "get_index_bars": _handle_get_index_bars,
+    "get_intraday_profile": _handle_get_intraday_profile,
 }

@@ -33,6 +33,10 @@ class CacheConfig:
     today_money_flow_fetch_interval_seconds: int = 300  # 5 分钟
     market_snapshot_fetch_interval_seconds: int = 3600  # 1 小时
     bar_fetch_interval_seconds: int = 86400  # 1 天
+    # 分钟 K 的节流窗口（阶段六）：当日是持续演化的部分日，按天节流会把
+    # 上午的快照冻结到收盘——对齐 quote 的 5 分钟节流，盘中重复询问能拿到
+    # 最新段（增量写入按日打包合并，不丢早段）。
+    minute_bar_fetch_interval_seconds: int = 300  # 5 分钟
     money_flow_history_fetch_interval_seconds: int = 86400  # 1 天
 
     market_snapshot_history_keep: int = 30  # 保留最近 N 份全市场快照
