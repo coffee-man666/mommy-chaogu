@@ -5,6 +5,14 @@ import type { Snapshot, Signal } from './types'
 type SnapshotHandler = (snap: Snapshot) => void
 type SignalHandler = (signals: Signal[]) => void
 
+// 调试开关：localStorage 里设置 mommyWsDebug=1 可看连接日志，
+// 默认不打（避免污染用户控制台）。
+const wsDebug = (): boolean =>
+  (localStorage.getItem('mommyWsDebug') ?? '') === '1'
+const wsLog = (...args: unknown[]): void => {
+  if (wsDebug()) console.log('[ws]', ...args)
+}
+
 export class QuotesWS {
   private ws: WebSocket | null = null
   private handler: SnapshotHandler | null = null
@@ -26,10 +34,10 @@ export class QuotesWS {
       return
     }
     if (!this.handler) return
-    console.log('[ws] connecting to', url)
+    wsLog('connecting to', url)
     this.ws = new WebSocket(url)
     this.ws.onopen = () => {
-      console.log('[ws] connected')
+      wsLog('connected')
       this.ping()
     }
     this.ws.onmessage = (e) => {
@@ -44,7 +52,7 @@ export class QuotesWS {
       }
     }
     this.ws.onclose = () => {
-      console.log('[ws] disconnected, reconnecting in 3s')
+      wsLog('disconnected, reconnecting in 3s')
       this.scheduleReconnect()
     }
     this.ws.onerror = (e) => console.error('[ws] error', e)

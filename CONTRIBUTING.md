@@ -226,7 +226,7 @@ UNIQUE(code, period, source) 约束保证跨券商不重复。
 
 ### 其他讨论
 
-想法 / 提问 / 经验分享不需要开 Issue，请去 [Discussions](https://github.com/hanyan0x1/mommy-chaogu/discussions)（Issue 模板的 config 里也加了入口链接）。
+想法 / 提问 / 经验分享不需要开 Issue，请去 [Discussions](https://github.com/coffee-man666/mommy-chaogu/discussions)（Issue 模板的 config 里也加了入口链接）。
 
 ---
 
