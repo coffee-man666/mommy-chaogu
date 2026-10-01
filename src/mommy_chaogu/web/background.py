@@ -25,12 +25,17 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
 from mommy_chaogu.monitor import Monitor, Snapshot
 from mommy_chaogu.push import SignalNotifier
-from mommy_chaogu.signals import Alerter
+from mommy_chaogu.signals import Alerter, Signal
+from mommy_chaogu.signals.custom_alerts import CustomAlertStore
+from mommy_chaogu.signals.custom_evaluation import (
+    evaluate_custom_alerts,
+    load_enabled_custom_alerts,
+)
 from mommy_chaogu.watchlist import WatchlistStore
 
 if TYPE_CHECKING:
@@ -56,6 +61,8 @@ class BackgroundService:
         poll_interval_seconds: float = 5.0,
         notifier: SignalNotifier | None = None,
         weixin_sender: Callable[[list[Any]], int] | None = None,
+        custom_alerts: CustomAlertStore | None = None,
+        earnings_job: Callable[[], list[Signal]] | None = None,
     ) -> None:
         self.adapter = adapter
         self.watchlist = watchlist
@@ -63,6 +70,8 @@ class BackgroundService:
         self.poll_interval = poll_interval_seconds
         self.notifier = notifier
         self.weixin_sender = weixin_sender
+        self.custom_alerts = custom_alerts
+        self.earnings_job = earnings_job
 
         self.monitor = Monitor(
             store=watchlist,
@@ -72,6 +81,8 @@ class BackgroundService:
         self._task: asyncio.Task[None] | None = None
         self._weixin_task: asyncio.Task[None] | None = None
         self._weixin_queue: asyncio.Queue[list[Any] | None] | None = None
+        self._earnings_task: asyncio.Task[None] | None = None
+        self._last_earnings_run: date | None = None
         self._stop_event = asyncio.Event()
 
         # 最新数据（API 直接返回，不再走 adapter）
@@ -110,6 +121,11 @@ class BackgroundService:
         except TimeoutError:
             self._task.cancel()
         self._task = None
+        if self._earnings_task is not None and not self._earnings_task.done():
+            self._earnings_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+                await asyncio.wait_for(self._earnings_task, timeout=2.0)
+        self._earnings_task = None
         if self._weixin_queue is not None and self._weixin_task is not None:
             if self._weixin_queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):
@@ -140,7 +156,11 @@ class BackgroundService:
 
     async def _tick(self) -> None:
         """单次轮询。"""
-        codes = self.watchlist.get_all_codes()
+        # 评估代码集 = 自选股 ∪ 启用的自定义告警（阶段五任务 2）：
+        # 自选股为空但存在告警时评估循环仍进入；告警代码不必先加自选股。
+        alerts = load_enabled_custom_alerts(self.custom_alerts)
+        alert_codes = {a.code for a in alerts}
+        codes = set(self.watchlist.get_all_codes()) | alert_codes
         if not codes:
             return
 
@@ -148,8 +168,16 @@ class BackgroundService:
         self._latest_snapshot = snapshot
         self._last_poll_at = _utcnow()
 
-        # 信号评估
+        # 信号评估：内置规则吃 Snapshot；自定义告警直接吃 Quote
+        # （告警代码不在 Snapshot 行内时经 adapter 补拉，不构造 SnapshotRow）
         signals = self.alerter.evaluate(snapshot)
+        if alerts:
+            quotes = {row.quote.code: row.quote for row in snapshot.rows}
+            signals = signals + evaluate_custom_alerts(
+                alerts,
+                quotes,
+                fetch_quote=self.adapter.get_quote,
+            )
         self._latest_signals = signals
 
         # 推送（如果配置了 notifier）
@@ -170,6 +198,54 @@ class BackgroundService:
             await self._broadcast_signals(signals)
 
         # 微信通道走独立有界队列；即使无信号也入队，以清除已解除的活跃状态。
+        self._enqueue_weixin(signals)
+
+        # earnings 日频任务（收盘后当日一次，异步分派不阻塞本轮 tick）
+        self._maybe_dispatch_earnings()
+
+    # ---------- earnings 日频调度 ----------
+
+    def _maybe_dispatch_earnings(self) -> None:
+        """收盘后（Asia/Shanghai 15:35 起）且当日未跑过时，派发 earnings 任务。"""
+        if self.earnings_job is None:
+            return
+        from mommy_chaogu.earnings import daily as earnings_daily
+
+        now = _utcnow()
+        if not earnings_daily.should_run(now, self._last_earnings_run):
+            return
+        self._last_earnings_run = now.astimezone(earnings_daily.MARKET_TZ).date()
+        self._earnings_task = asyncio.create_task(
+            self._run_earnings_job(), name="earnings-daily-job"
+        )
+        _log.info("earnings daily job dispatched")
+
+    async def _run_earnings_job(self) -> None:
+        """跑 earnings pull+score+evaluate；信号走既有 SignalNotifier / 微信管道。"""
+        job = self.earnings_job
+        if job is None:
+            return
+        try:
+            signals = await asyncio.to_thread(job)
+        except Exception:
+            _log.exception("earnings daily job failed")
+            return
+        if not signals:
+            _log.info("earnings daily job completed: no signals")
+            return
+        _log.info("earnings daily job produced %d signals", len(signals))
+        try:
+            self.alerter.write_signals_log(signals)
+        except Exception:
+            _log.exception("earnings signals log write failed")
+        if self.notifier:
+            try:
+                pushed = self.notifier.notify_batch(signals)
+                if pushed:
+                    self._pushed_signals.extend(pushed)
+                    self._pushed_signals = self._pushed_signals[-100:]
+            except Exception:
+                _log.exception("notifier notify failed (earnings)")
         self._enqueue_weixin(signals)
 
     def _enqueue_weixin(self, signals: list[Any]) -> None:

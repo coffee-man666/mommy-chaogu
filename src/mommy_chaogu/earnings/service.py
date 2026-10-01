@@ -110,6 +110,29 @@ class EarningsService:
         finally:
             conn.close()
 
+    def load_prediction(self, code: str, period: str) -> tuple[str, Decimal, Decimal] | None:
+        """公开读取某 code+period 的预测区间（name, low, high）。
+
+        日频调度（earnings/daily.py）用它给披露临近的日历条目补预测上限。
+        """
+        return self._load_predicted(code, period)
+
+    def list_preview_periods(self) -> list[str]:
+        """业绩前瞻库里出现过的报告期（去重、排序）。
+
+        库不存在或表缺失时返回空（调用方仅靠日期推断的当前期工作）。
+        """
+        if not self.preview_db_path.exists():
+            return []
+        conn = sqlite3.connect(str(self.preview_db_path))
+        try:
+            rows = conn.execute("SELECT DISTINCT report_period FROM earnings_preview").fetchall()
+        except sqlite3.Error:
+            return []
+        finally:
+            conn.close()
+        return sorted({str(r[0]) for r in rows if r[0]})
+
     def score_one(self, code: str, period: str) -> EarningsScore | None:
         """计算一只股的 EarningsScore（actual vs predicted）。
 

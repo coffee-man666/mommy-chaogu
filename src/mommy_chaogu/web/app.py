@@ -23,7 +23,8 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from mommy_chaogu import __version__
-from mommy_chaogu.db_paths import PORTFOLIO_DB
+from mommy_chaogu.db_paths import PORTFOLIO_DB, REFERENCE_DB
+from mommy_chaogu.signals.types import Signal
 from mommy_chaogu.web.background import BackgroundService, set_service
 from mommy_chaogu.web.deps import (
     close_cached_dependencies,
@@ -148,12 +149,43 @@ def create_app(
             preference_provider=lambda: get_watchlist_store().get_user_preferences(),
         )
 
+        # 阶段五常驻评估：自定义告警库 + earnings 日频任务（收盘后 pull+score+evaluate）
+        custom_alerts = deps.get_custom_alert_store()
+
+        def _earnings_codes() -> list[str]:
+            from mommy_chaogu.signals.custom_evaluation import load_enabled_custom_alerts
+
+            codes = set(watchlist_store.get_all_codes())
+            codes.update(a.code for a in load_enabled_custom_alerts(custom_alerts))
+            return sorted(codes)
+
+        def _earnings_job() -> list[Signal]:
+            from mommy_chaogu.earnings.daily import run_daily
+            from mommy_chaogu.earnings.efinance_adapter import EfinanceEarningsAdapter
+            from mommy_chaogu.earnings.service import EarningsService
+            from mommy_chaogu.earnings.store import EarningsStore
+
+            codes = _earnings_codes()
+            if not codes:
+                return []
+            earnings_service = EarningsService(
+                EfinanceEarningsAdapter(),
+                EarningsStore(REFERENCE_DB),
+                REFERENCE_DB,
+            )
+            try:
+                return run_daily(earnings_service, codes)
+            finally:
+                earnings_service.store.close()
+
         service = BackgroundService(
             adapter=adapter,
             watchlist=watchlist_store,
             alerter=alerter,
             poll_interval_seconds=poll_interval_seconds,
             weixin_sender=weixin_sender,
+            custom_alerts=custom_alerts,
+            earnings_job=_earnings_job,
         )
         set_service(service)
         await service.start()

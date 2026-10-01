@@ -27,6 +27,7 @@ from mommy_chaogu.market_data import (
 from mommy_chaogu.portfolio import PortfolioStore
 from mommy_chaogu.semicon import SemiconStore
 from mommy_chaogu.signals import Alerter, SignalStore
+from mommy_chaogu.signals.custom_alerts import CustomAlertStore
 from mommy_chaogu.watchlist import WatchlistStore
 
 if TYPE_CHECKING:
@@ -91,6 +92,7 @@ def set_portfolio_db_override(path: Path | None) -> None:
     get_portfolio_db.cache_clear()
     get_db_path.cache_clear()
     get_watchlist_store.cache_clear()
+    get_custom_alert_store.cache_clear()
     get_portfolio_store.cache_clear()
 
 
@@ -125,6 +127,15 @@ def get_semicon_store() -> SemiconStore:
 def get_watchlist_store() -> WatchlistStore:
     """全局自选池存储。"""
     return WatchlistStore(get_portfolio_db())
+
+
+@lru_cache(maxsize=1)
+def get_custom_alert_store() -> CustomAlertStore:
+    """全局自定义告警存储（portfolio.db / custom_alerts 表）。
+
+    阶段五常驻评估（web/background._tick）从这里取告警库。
+    """
+    return CustomAlertStore(get_portfolio_db())
 
 
 @lru_cache(maxsize=1)
@@ -291,6 +302,7 @@ def close_cached_dependencies() -> None:
         get_cache_store,
         get_semicon_store,
         get_watchlist_store,
+        get_custom_alert_store,
         get_portfolio_store,
         get_signal_store,
         get_agent_memory,
