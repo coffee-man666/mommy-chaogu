@@ -1,6 +1,6 @@
 """推送抽象层。
 
-Pusher: 单条推送接口（任意实现都可以：Server酱 / 钉钉 / Telegram / Bark）
+Pusher: 单条推送接口（任意实现都可以：钉钉 / Telegram / Bark）
 Deduper: 防重复推送（一码一规一天）
 SignalNotifier: 顶层封装 = 严重度过滤 + 去重 + 推送
 """
