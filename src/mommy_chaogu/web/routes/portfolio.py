@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import Decimal
 from typing import Annotated
@@ -28,6 +29,7 @@ from mommy_chaogu.web.schemas import (
 )
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+_log = logging.getLogger(__name__)
 
 
 @router.get("", response_model=PortfolioSummaryOut)
@@ -55,8 +57,10 @@ def get_portfolio(
             q = adapter.get_quote(code)
             if q is not None:
                 current_prices[code] = q.price
-    except Exception:
-        pass  # 价格拉不到就只返回成本
+    except Exception as e:
+        # 价格拉不到就只返回成本——但别完全静默，否则用户看到"无盈亏"
+        # 无从排查是行情源挂了还是数据问题
+        _log.warning("portfolio 实时价格拉取失败（%d 只），降级只返回成本: %s", len(codes), e)
 
     raw = portfolio_summary(store, current_prices)
     detail_list: list[PositionDetailOut] = []

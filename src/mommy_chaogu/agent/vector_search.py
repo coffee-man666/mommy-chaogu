@@ -217,7 +217,7 @@ class VectorSearch:
                 data = json.loads(row[2]) if row[2] else {}
                 data_str = " ".join(str(v) for v in data.values()) if data else ""
             except (json.JSONDecodeError, TypeError):
-                pass
+                _log.debug("vector_search: event %s 的 data 字段非合法 JSON，按空处理", row[0])
 
             text_content = f"{summary} {data_str}".strip()
             if not text_content:

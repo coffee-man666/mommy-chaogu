@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **ws 连接日志挂调试开关**——前端 `api/ws.ts` 的 connecting/connected/disconnected
+  日志默认不打（`localStorage.mommyWsDebug=1` 开启），不再污染用户浏览器控制台；
+  error 级别保持始终输出。Issue 模板与 CONTRIBUTING 的 Discussions 链接修正为
+  当前仓库地址。portfolio 实时价格拉取失败的静默降级补 warning、vector_search
+  非法 JSON 降级补 debug（其余静默异常点经研判为惯用正确写法，保持不动）。
+
 ### 修复
 
 - **TUI 启动恢复覆盖用户新会话的产品竞态**——慢速环境下启动恢复 worker 与用户输入并发：
