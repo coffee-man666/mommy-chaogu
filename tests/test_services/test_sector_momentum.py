@@ -58,7 +58,10 @@ class FakeAdapter:
     ) -> None:
         self._bars = bars_by_code
         self._network_codes = network_codes or set()
-        self.last_source = "cache"
+        # 模拟 CachedMarketDataAdapter 的上游访问计数（服务层按
+        # stats_counters["fetches"] 差值判定是否限速）：network_codes
+        # 中的代码每次 get_bars 计数 +1，其余视为缓存命中（计数不变）。
+        self.stats_counters: dict[str, int] = {"fetches": 0, "fetch_ok": 0, "fetch_fail": 0}
         self.calls: list[tuple[str, int | None]] = []
 
     def get_bars(
@@ -71,7 +74,29 @@ class FakeAdapter:
         limit: int | None = None,
     ) -> list[Bar]:
         self.calls.append((code, limit))
-        self.last_source = "network" if code in self._network_codes else "cache"
+        if code in self._network_codes:
+            self.stats_counters["fetches"] += 1
+        bars = self._bars.get(code, [])
+        return list(bars[-limit:]) if limit is not None else list(bars)
+
+
+class PlainAdapter:
+    """无 stats_counters 的裸 adapter（服务层应保守限速）。"""
+
+    name = "plain"
+
+    def __init__(self, bars_by_code: dict[str, list[Bar]]) -> None:
+        self._bars = bars_by_code
+
+    def get_bars(
+        self,
+        code: str,
+        interval: BarInterval = BarInterval.D1,
+        adjustment: AdjustmentType = AdjustmentType.FORWARD,
+        start: Any = None,
+        end: Any = None,
+        limit: int | None = None,
+    ) -> list[Bar]:
         bars = self._bars.get(code, [])
         return list(bars[-limit:]) if limit is not None else list(bars)
 
@@ -285,6 +310,81 @@ class TestCompute:
         assert recorder.pauses == [0.5, 0.5]
         # name 缺失时从 K 线回填（fallback 池场景）
         assert all(r["name"] == r["code"] for r in service.compute(days=2)["ranking"])
+
+    def test_incremental_refetch_after_window_expiry_is_throttled(self, tmp_path: Path) -> None:
+        """回归（评审问题）：warm cache + 节流窗口过期（次日重跑）时增量拉新真实
+        访问上游，必须限速——即使 CachedAdapter 此时 last_source 仍为 "cache"。
+
+        复现路径：cache/adapter.py 增量拉新分支访问 inner 后无条件回写
+        last_source="cache"（:392），按 last_source 判定会漏掉这条路径，
+        约 90 行业（含概念约 490）次请求零间隔连发。
+        """
+        from mommy_chaogu.cache import CacheConfig, CachedMarketDataAdapter
+
+        class CountingInner:
+            name = "counting"
+
+            def __init__(self, bars: list[Bar]) -> None:
+                self.bars = bars
+                self.calls = 0
+
+            def get_bars(self, code: str, **kwargs: Any) -> list[Bar]:
+                self.calls += 1
+                return list(self.bars)
+
+        bars = _closes("BK1036", ["100", "100", "100", "110", "121"], "半导体")
+
+        def pool(**kwargs: Any) -> SectorPool:
+            return SectorPool(boards=[SectorBoard("BK1036", "半导体", "industry")])
+
+        store = CacheStore(tmp_path / "market.db")
+        inner = CountingInner(bars)
+        # bar_fetch_interval_seconds=0 → 节流窗口总是过期 = 次日重跑场景
+        cached = CachedMarketDataAdapter(inner, store, CacheConfig(bar_fetch_interval_seconds=0))
+
+        first_sleeps: list[float] = []
+        SectorMomentumService(cached, pool_fetcher=pool, sleep_fn=first_sleeps.append).compute(
+            days=2
+        )
+        assert inner.calls == 1  # 首次：无缓存，走网络路径
+        assert first_sleeps  # 首拉限速
+
+        second_sleeps: list[float] = []
+        second = SectorMomentumService(
+            cached, pool_fetcher=pool, sleep_fn=second_sleeps.append
+        ).compute(days=2)
+        # 增量拉新真实访问了上游（inner 再被调用一次）……
+        assert inner.calls == 2
+        # ……且 last_source 仍是 "cache"（该路径的无条件回写）——恰好是
+        # 按 last_source 判定会漏掉的场景
+        assert cached.last_source == "cache"
+        # 但限速必须发生：计数器差值检测不依赖 last_source
+        assert second_sleeps == [0.5]
+        assert second["ranking"][0]["return_pct"] == Decimal("21.00")
+        store.close()
+
+    def test_plain_adapter_without_counters_throttles_conservatively(self) -> None:
+        """无法感知上游访问计数的裸 adapter：保守起见每个板块都限速。"""
+        adapter = PlainAdapter(
+            {
+                "BK1036": _closes("BK1036", ["100", "100", "100", "110", "121"]),
+                "BK0475": _closes("BK0475", ["100", "100", "100", "100", "100"]),
+            }
+        )
+        recorder = SleepRecorder()
+        service = SectorMomentumService(
+            adapter,
+            pool_fetcher=lambda **_: SectorPool(
+                boards=[
+                    SectorBoard("BK1036", "半导体", "industry"),
+                    SectorBoard("BK0475", "银行", "industry"),
+                ]
+            ),
+            sleep_fn=recorder,
+            board_pause=0.5,
+        )
+        service.compute(days=2)
+        assert recorder.pauses == [0.5, 0.5]
 
     def test_bars_land_in_bar_cache_and_second_run_is_cache_hit(self, tmp_path: Path) -> None:
         """经真实 CachedMarketDataAdapter：日 K 落 bar_cache，二次计算零网络零限速。"""

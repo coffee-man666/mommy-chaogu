@@ -12,9 +12,9 @@ CachedMarketDataAdapter，板块日 K 自动落 bar_cache，二次计算零网�
   单页、凑满 limit 即 break 的截断涨幅榜，不能当全量池——翻页先例见
   sector_api.fetch_sector_stocks 的 for pn 循环）；
 - 全量约 90 行业 + 400 概念，每板块一次 K 线请求：逐板块间必须限速
-  （仅在上游真的被访问时 sleep——CachedAdapter 有缓存时零网络，二次
-  执行不需要限速等待）；首期默认只做行业板块，include_concept 显式
-  扩概念；
+  （仅在上游真的被访问时 sleep——按 stats_counters 前后差值判定，
+  CachedAdapter 缓存命中零网络，二次执行不限速等待）；首期默认只做
+  行业板块，include_concept 显式扩概念；
 - 拉新失败保留旧数据：板块列表拉不到时回退 bar_cache 里已缓存的
   板块代码，输出标注 pool_source / data_cutoff；
 - 板块代码一律动态枚举 / search_sector 查询，不硬编码（BK0475 曾是
@@ -207,6 +207,7 @@ class SectorMomentumService:
         rows: list[dict[str, Any]] = []
         missing = 0
         for board in pool.boards:
+            fetches_before = self._fetch_counter()
             try:
                 bars = self._adapter.get_bars(
                     board.code,
@@ -217,7 +218,7 @@ class SectorMomentumService:
             except Exception as e:
                 _log.warning("sector bars(%s) failed: %s", board.code, e)
                 bars = []
-            self._throttle_after_fetch()
+            self._throttle_after_fetch(fetches_before)
 
             row = self._row_from_bars(board, bars or [], window)
             if row is None:
@@ -277,10 +278,28 @@ class SectorMomentumService:
             _log.warning("list_cached_bar_codes failed: %s", e)
             return []
 
-    def _throttle_after_fetch(self) -> None:
-        """仅当上游真的被访问时 sleep：CachedAdapter 缓存命中零网络，二次执行不限速。"""
-        source = getattr(self._adapter, "last_source", None)
-        if source is None or source == "network":
+    def _fetch_counter(self) -> int | None:
+        """读 adapter 的上游请求计数；非 CachedAdapter（无计数）返回 None。"""
+        counters = getattr(self._adapter, "stats_counters", None)
+        if isinstance(counters, dict):
+            fetches = counters.get("fetches")
+            if isinstance(fetches, int):
+                return fetches
+        return None
+
+    def _throttle_after_fetch(self, fetches_before: int | None) -> None:
+        """仅当上游真的被访问时 sleep；缓存命中零等待（二次执行不限速）。
+
+        按 ``stats_counters["fetches"]`` 前后差值判定，而不是 ``last_source``：
+        CachedAdapter 增量拉新路径（有缓存且节流窗口过期，即次日重跑的自然
+        节奏）真实访问了上游，但结束时无条件回写 ``last_source = "cache"``
+        （cache/adapter.py:392）——last_source 在该路径上不是「是否访问过
+        上游」的可靠信号；计数器在两条路径（首拉 :342 / 增量 :371）上都在
+        请求前自增、成败都计数，是可靠信号（失败请求同样消耗上游往返，
+        也要限速）。无法感知计数的 adapter 保守起见总是限速。
+        """
+        fetches_after = self._fetch_counter()
+        if fetches_before is None or fetches_after is None or fetches_after > fetches_before:
             self._sleep_fn(self._board_pause)
 
     @staticmethod
