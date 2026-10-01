@@ -56,4 +56,13 @@ class HelpScreen(ModalScreen[None]):
             yield Markdown(_HELP_TEXT, id="help-text")
 
     def on_mount(self) -> None:
-        self.query_one("#help-scroll").border_title = "按键速查"
+        self._set_border_title()
+
+    def _set_border_title(self) -> None:
+        """挂载期子节点偶发未就绪（NoMatches）则延迟重试。"""
+        try:
+            scroll = self.query_one("#help-scroll")
+        except Exception:
+            self.call_after_refresh(self._set_border_title)
+            return
+        scroll.border_title = "按键速查"

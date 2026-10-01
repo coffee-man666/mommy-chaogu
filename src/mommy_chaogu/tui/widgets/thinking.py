@@ -50,7 +50,16 @@ class ThinkingBlock(Vertical):
 
     def on_mount(self) -> None:
         self._render_header()
-        self.query_one(".th-body", Static).display = False
+        self._hide_body()
+
+    def _hide_body(self) -> None:
+        """body 默认收起；挂载期查询未就绪则延迟重试（同 _render_header）。"""
+        try:
+            body = self.query_one(".th-body", Static)
+        except Exception:
+            self.call_after_refresh(self._hide_body)
+            return
+        body.display = False
 
     # ── 数据（廉价追加，活动态无需重渲染）─────────────────────
 

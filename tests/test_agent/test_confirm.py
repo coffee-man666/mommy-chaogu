@@ -129,7 +129,9 @@ class TestOnConfirmDeny:
             "把茅台加入自选",
             callbacks=ChatCallbacks(
                 on_tool_call=lambda n, a: calls.append((n, "start", "")),
-                on_tool_result=lambda n, ok, _ms, r: calls.append((n, "end" if ok else "denied", r)),
+                on_tool_result=lambda n, ok, _ms, r: calls.append(
+                    (n, "end" if ok else "denied", r)
+                ),
                 on_confirm=lambda n, a: False,
             ),
         )
@@ -196,7 +198,10 @@ class TestOnConfirmAllow:
             _text_response("无告警"),
         ]
         confirm_calls: list[str] = []
-        svc.chat("看下告警", callbacks=ChatCallbacks(on_confirm=lambda n, a: confirm_calls.append(n) or True))
+        svc.chat(
+            "看下告警",
+            callbacks=ChatCallbacks(on_confirm=lambda n, a: confirm_calls.append(n) or True),
+        )
         assert confirm_calls == []
 
     @patch("openai.OpenAI")

@@ -294,10 +294,16 @@ class ToolIndicator(Vertical):
         self._render_header(_c("info"), blink=True)
 
     def _render_header(self, color: str, *, blink: bool = False) -> None:
+        try:
+            header = self.query_one(".ti-header", Static)
+        except Exception:
+            # 挂载期 compose 子节点偶发未就绪（NoMatches），延迟重试
+            self.call_after_refresh(self._render_header, color, blink=blink)
+            return
         circle = _CIRCLE if (not blink or self._blink_on) else " "
-        header = Text(f"{circle} ", style=color)
-        header.append(self._title)
-        self.query_one(".ti-header", Static).update(header)
+        header_text = Text(f"{circle} ", style=color)
+        header_text.append(self._title)
+        header.update(header_text)
 
     # ── 详情展开（Kimi Code 式）─────────────────────────────────
 

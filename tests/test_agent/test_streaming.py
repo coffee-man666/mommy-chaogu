@@ -318,7 +318,9 @@ class TestCancelEvent:
             # 工具完成后、下一轮 LLM 前 set cancel
             event.set()
 
-        resp = svc.chat("hi", callbacks=ChatCallbacks(on_tool_result=on_tool_result, cancel_event=event))
+        resp = svc.chat(
+            "hi", callbacks=ChatCallbacks(on_tool_result=on_tool_result, cancel_event=event)
+        )
 
         assert resp.interrupted is True
         assert resp.text == "（已中断）"
@@ -453,7 +455,9 @@ class TestThinkingStream:
 
         thinking: list[str] = []
         chunks: list[str] = []
-        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=chunks.append, on_thinking=thinking.append))
+        resp = svc.chat(
+            "hi", callbacks=ChatCallbacks(on_chunk=chunks.append, on_thinking=thinking.append)
+        )
 
         assert "".join(thinking) == "先想一下"
         assert "".join(chunks) == "答案"
@@ -481,7 +485,9 @@ class TestThinkingStream:
         svc._client.chat.completions.create.return_value = _stream_response(["你", "好"])
 
         thinking: list[str] = []
-        resp = svc.chat("hi", callbacks=ChatCallbacks(on_chunk=lambda s: None, on_thinking=thinking.append))
+        resp = svc.chat(
+            "hi", callbacks=ChatCallbacks(on_chunk=lambda s: None, on_thinking=thinking.append)
+        )
 
         assert thinking == []
         assert resp.reasoning == ""

@@ -42,6 +42,7 @@ const sourceLabels: Record<StockSearchResult['source'], string> = {
   watchlist: '自选',
   semicon: '产业链',
   cache: '历史',
+  remote: '全网',
 }
 
 async function runSearch(value: string) {

@@ -114,7 +114,7 @@ def registry(ctx: ToolContext) -> ToolRegistry:
 class TestToolDefinitions:
     def test_all_tools_have_definitions(self, registry: ToolRegistry) -> None:
         defs = registry.definitions()
-        assert len(defs) == 36
+        assert len(defs) == 37
         names = {d["function"]["name"] for d in defs}
         assert names == set(ToolRegistry.tool_names())
 
@@ -132,6 +132,7 @@ class TestToolDefinitions:
         for expected in [
             "get_quote",
             "get_quotes",
+            "search_stock",
             "get_money_flow_today",
             "get_sector_stocks",
             "search_sector",

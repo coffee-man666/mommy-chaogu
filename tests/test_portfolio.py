@@ -85,7 +85,10 @@ def test_analyzer_sector_correlation_and_risk(store: PortfolioStore) -> None:
 
     def _bars(code: str, *_args: object) -> list[dict]:
         closes = ["10", "11", "10", "12"] if code == "AAA" else ["20", "19", "21", "18"]
-        return [{"close": c, "timestamp": f"{d}T15:00:00+08:00"} for d, c in zip(dates4, closes, strict=False)]
+        return [
+            {"close": c, "timestamp": f"{d}T15:00:00+08:00"}
+            for d, c in zip(dates4, closes, strict=False)
+        ]
 
     cache.get_bars.side_effect = _bars
 
@@ -115,10 +118,20 @@ def test_analyzer_correlation_aligns_by_date_not_index(store: PortfolioStore) ->
     def _bars(code: str, *_args: object) -> list[dict]:
         if code == "AAA":
             # d1→d2: +10%，d2→d3: +20%，d3→d4: -10%
-            schedule = [("2026-06-01", "100"), ("2026-06-02", "110"), ("2026-06-03", "132"), ("2026-06-04", "118.8")]
+            schedule = [
+                ("2026-06-01", "100"),
+                ("2026-06-02", "110"),
+                ("2026-06-03", "132"),
+                ("2026-06-04", "118.8"),
+            ]
         else:
             # BBB 停牌 d1；公共日 d3/d4 的收益是 AAA 同日收益的 2 倍；d5 是噪声日
-            schedule = [("2026-06-02", "100"), ("2026-06-03", "140"), ("2026-06-04", "112"), ("2026-06-05", "130")]
+            schedule = [
+                ("2026-06-02", "100"),
+                ("2026-06-03", "140"),
+                ("2026-06-04", "112"),
+                ("2026-06-05", "130"),
+            ]
         return [{"close": c, "timestamp": f"{d}T15:00:00+08:00"} for d, c in schedule]
 
     cache.get_bars.side_effect = _bars
@@ -140,7 +153,12 @@ def test_analyzer_risk_metrics_aligns_by_date(store: PortfolioStore) -> None:
     def _bars(code: str, *_args: object) -> list[dict]:
         if code == "AAA":
             # 日收益：d2 +10%，d3 +20%，d4 -10%
-            schedule = [("2026-06-01", "100"), ("2026-06-02", "110"), ("2026-06-03", "132"), ("2026-06-04", "118.8")]
+            schedule = [
+                ("2026-06-01", "100"),
+                ("2026-06-02", "110"),
+                ("2026-06-03", "132"),
+                ("2026-06-04", "118.8"),
+            ]
         else:
             # BBB 停牌 d2：只有 d3/d4 两笔收益（均为 0）
             schedule = [("2026-06-01", "100"), ("2026-06-03", "100"), ("2026-06-04", "100")]

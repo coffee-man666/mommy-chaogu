@@ -107,7 +107,7 @@ export interface Health {
 export interface StockSearchResult {
   code: string
   name: string
-  source: 'watchlist' | 'semicon' | 'cache'
+  source: 'watchlist' | 'semicon' | 'cache' | 'remote'
 }
 
 export interface StockHoldingContext {

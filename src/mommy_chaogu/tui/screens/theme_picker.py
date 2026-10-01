@@ -68,7 +68,15 @@ class ThemePickerScreen(ModalScreen[None]):
             )
 
     def on_mount(self) -> None:
-        option_list = self.query_one("#theme-list", OptionList)
+        self._init_option_list()
+
+    def _init_option_list(self) -> None:
+        """高亮原主题；挂载期子节点偶发未就绪（NoMatches）则延迟重试。"""
+        try:
+            option_list = self.query_one("#theme-list", OptionList)
+        except Exception:
+            self.call_after_refresh(self._init_option_list)
+            return
         option_list.border_title = "选择主题"
         for idx, (tid, _) in enumerate(self._options):
             if tid == self._original:
