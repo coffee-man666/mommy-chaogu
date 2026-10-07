@@ -17,14 +17,90 @@ from mommy_chaogu.workflow.engine import Workflow, WorkflowRegistry, WorkflowSte
 
 _STOCK_CODE_RE = re.compile(r"\b(\d{6}|[A-Z]{1,6})\b")
 
+# 工作流是确定性路由，不经过 LLM，所以用户口语里的指令包装必须在这里剥掉，
+# 才能把纯股票名交给 get_quote 的名称解析（"分析一下比亚迪" → "比亚迪" → 002594）。
+# 只剥固定指令词，不做通用分词——解析失败仍有 get_quote 的结构化错误兜底。
+_COMMAND_PREFIX_RE = re.compile(
+    r"^(请|帮我|帮忙|麻烦)?(分析|研究|看看|看一下|查一下|查查|盯一下|跟踪)?(一下|下)?"
+)
+_COMMAND_SUFFIX_RE = re.compile(
+    r"(怎么样|如何|的情况|的行情|的表现|最近表现|的走势|值不值得买|能买吗|可以买吗)$"
+)
+
+
+def _strip_command_wrapper(text: str) -> str:
+    """剥掉"分析一下…"/"…怎么样"这类指令包装，保留核心标的名称。"""
+    stripped = text.strip()
+    # 前缀最多剥两轮（"帮我分析一下" 这种叠加）
+    for _ in range(2):
+        new = _COMMAND_PREFIX_RE.sub("", stripped).strip()
+        if new == stripped:
+            break
+        stripped = new
+    for _ in range(2):
+        new = _COMMAND_SUFFIX_RE.sub("", stripped).strip()
+        if new == stripped:
+            break
+        stripped = new
+    return stripped
+
 
 def _extract_stock_code(user_input: str, _: list[dict[str, Any]]) -> dict[str, Any]:
-    """从用户输入中提取 6 位股票代码。"""
+    """从用户输入中提取 6 位股票代码。
+
+    **严格模式**：只认代码，找不到就返回 ``{}``。用于不解析名称、也不校验代码的
+    工具（``manage_watchlist`` / ``get_fundamentals`` / ``get_announcements``）——
+    这些步骤宁可失败，也不能把 "加个自选" 这种整句原话当成代码写进自选池。
+    需要名称解析的步骤请用 ``_extract_stock_name_or_code``。
+    """
     m = _STOCK_CODE_RE.search(user_input)
     if m:
         return {"code": m.group(1)}
-    # 尝试中文名称 → 暂时返回空，让 LLM 总结时提示
     return {}
+
+
+def _extract_stock_name_or_code(user_input: str, _: list[dict[str, Any]]) -> dict[str, Any]:
+    """提取股票标识：代码优先，否则回退传剥掉指令包装后的名称。
+
+    仅供**会做名称解析**的 ``get_quote`` 使用（"比亚迪"→002594，见
+    agent/tools/quote.py ``_resolve_code``，PR #72 引入）。
+
+    早先 stock_analysis 工作流用的是严格的 ``_extract_stock_code``，找不到代码
+    就返回 ``{}``，而工作流是确定性路由、**根本不过 LLM**，于是 handler 拿不到
+    code 直接 KeyError，traceback 喷到终端。PR #72 只修了工具层和 LLM 提示词，
+    没接上工作流层，两条路行为分裂：
+
+        mommy "分析一下比亚迪"   -> 命中 .*分析一下 -> 工作流 -> 崩溃
+        mommy "看看比亚迪"       -> 不过工作流     -> LLM 自主 search_stock -> 正常
+
+    解析不了时 get_quote 返回带 hint 的结构化错误，不会抛异常。
+    """
+    m = _STOCK_CODE_RE.search(user_input)
+    if m:
+        return {"code": m.group(1)}
+    name = _strip_command_wrapper(user_input)
+    return {"code": name} if name else {}
+
+
+def _extract_stock_code_from_prev(
+    user_input: str,
+    previous: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """复用前一步 get_quote 已经解析好的 6 位代码。
+
+    只有 ``get_quote`` 做了中文名 → 代码解析；``get_bars`` / 资金流等工具只认
+    代码。所以第一步解析成功后，后续步骤直接取结果，避免把名字再喂给一个
+    不会解析的 handler。取不到时退回原始提取逻辑。
+    """
+    for step_data in previous:
+        if step_data.get("tool") != "get_quote":
+            continue
+        result = step_data.get("result")
+        if isinstance(result, dict):
+            code = str(result.get("code") or "").strip()
+            if re.fullmatch(r"\d{6}", code):
+                return {"code": code}
+    return _extract_stock_name_or_code(user_input, previous)
 
 
 def _extract_sector_keyword(user_input: str, _: list[dict[str, Any]]) -> dict[str, Any]:
@@ -355,18 +431,21 @@ WORKFLOWS: list[Workflow] = [
             WorkflowStep(
                 tool_name="get_quote",
                 display_name="正在获取实时报价",
-                args_extractor=_extract_stock_code,
+                # get_quote 会做中文名解析，所以这里允许传名称；
+                # 后续步骤改用 _extract_stock_code_from_prev 复用解析结果
+                args_extractor=_extract_stock_name_or_code,
             ),
             WorkflowStep(
                 tool_name="get_bars",
                 display_name="正在获取近期K线",
-                args_extractor=_extract_stock_code,
+                # 复用 get_quote 解析出的 6 位代码：get_bars 不做名称解析
+                args_extractor=_extract_stock_code_from_prev,
                 args={"interval": "1d", "limit": 20},
             ),
             WorkflowStep(
                 tool_name="get_money_flow_today",
                 display_name="正在获取资金流",
-                args_extractor=_extract_stock_code,
+                args_extractor=_extract_stock_code_from_prev,
                 optional=True,
             ),
         ],

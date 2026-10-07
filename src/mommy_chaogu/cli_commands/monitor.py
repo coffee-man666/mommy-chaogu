@@ -124,7 +124,7 @@ def cmd_monitor_rules(_args: argparse.Namespace) -> int:
 
 def cmd_monitor_stats(args: argparse.Namespace) -> int:
     s = _store(args)
-    adp = EfinanceAdapter()
+    adp = _make_adapter(args)
     log_path = Path(args.log) if args.log else None
     m = Monitor(s, adp, log_path=log_path)
     snap = m.snapshot_now()
