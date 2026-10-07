@@ -19,7 +19,9 @@ dependencies = [
     "websockets>=13",
     "jinja2>=3.1.6",
     "openai>=1.0",
-    "mcp>=1.28.1",
+    # mcp 2.x 移除了 Server.request_handlers（改为私有 _request_handlers），
+    # assembly smoke 测试与内部调用会 AttributeError。锁 <2 直到适配完成。
+    "mcp>=1.28.1,<2",
     "prompt-toolkit>=3.0.51",
     "sqlite-vec>=0.1.9",
     "python-dotenv>=1.0",
