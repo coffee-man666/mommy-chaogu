@@ -163,22 +163,27 @@ def _handle_check_earnings_catalyst(ctx: ToolContext, args: dict[str, Any]) -> s
     for code in _codes(args):
         fundamentals = get_fundamentals(code)
         announcements = get_announcements(code, limit=3)
-        results.append(
-            {
-                "code": code,
-                "name": fundamentals.get("name", ""),
-                "pe": fundamentals.get("pe"),
-                "roe": fundamentals.get("roe"),
-                "has_earnings_ann": any(
-                    any(
-                        word in str(item.get("title", ""))
-                        for word in ("业绩", "财报", "年报", "半年报")
-                    )
-                    for item in announcements
-                ),
-                "ann_titles": [str(item.get("title", "")) for item in announcements],
-            }
-        )
+        # 基本面取数失败必须显式透出，不能只留一堆 None 让调用方（尤其是 LLM）
+        # 把"数据源挂了"误读成"该公司没有该指标"。公告源是独立请求，可能成功。
+        fundamentals_ok = bool(fundamentals.get("ok", False))
+        item: dict[str, Any] = {
+            "code": code,
+            "name": fundamentals.get("name", ""),
+            "pe": fundamentals.get("pe"),
+            "roe": fundamentals.get("roe"),
+            "has_earnings_ann": any(
+                any(
+                    word in str(item.get("title", ""))
+                    for word in ("业绩", "财报", "年报", "半年报")
+                )
+                for item in announcements
+            ),
+            "ann_titles": [str(item.get("title", "")) for item in announcements],
+        }
+        if not fundamentals_ok:
+            item["fundamentals_ok"] = False
+            item["fundamentals_error"] = str(fundamentals.get("error") or "基本面数据不可用")
+        results.append(item)
     return _contract(_floatify(results))
 
 
