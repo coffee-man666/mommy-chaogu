@@ -87,6 +87,7 @@ async function doSave() {
     if (result.ok) {
       aiMessage.value = result.message
       apiKey.value = '' // Never store the key after save
+      localStorage.removeItem('mommy_setup_skipped') // 已配置，撤销跳过标记
       // Move to weixin step unless an explicit step=ai was requested
       const explicitStep = route.query.step
       if (explicitStep === 'ai') {
@@ -289,6 +290,13 @@ function retryWeixin() {
 
 function skipWeixin() {
   resetWeixinState()
+  finishSetup()
+}
+
+/** 暂不配置 AI：行情/自选/信号等纯数据页面不依赖 LLM，允许先浏览。
+ *  记一个本地跳过标记（App.vue 的引导守卫认它）；之后在「我的」重新配置即可。 */
+function skipSetup() {
+  localStorage.setItem('mommy_setup_skipped', '1')
   finishSetup()
 }
 
@@ -576,6 +584,16 @@ onUnmounted(() => {
                 {{ saving ? '保存中…' : '保存 AI 配置' }}
               </Button>
             </div>
+            <p class="text-xs text-muted-foreground">
+              <button
+                type="button"
+                class="underline underline-offset-2 hover:text-foreground"
+                @click="skipSetup"
+              >
+                暂不配置 AI，先浏览行情
+              </button>
+              ——行情、自选股、信号不依赖 AI；之后可在「我的」页面重新配置。
+            </p>
           </CardContent>
         </Card>
       </template>

@@ -37,8 +37,12 @@ const quoteLoading = ref(true)
 /** 报价拉取失败原因（成功时清空；有旧报价时继续展示旧报价） */
 const quoteError = ref<ApiError | null>(null)
 const bars = ref<Bar[]>([])
+const barsLoaded = ref(false)
 const klineChart = ref<any>(null)
 const interval = ref<string>('1d')
+/** 图表空态：已加载完成但没有任何 K 线（数据源不可用/代码无效）——
+ *  空白画布没有任何提示时，用户无法区分「加载中」与「取不到」。 */
+const klineEmpty = computed(() => barsLoaded.value && bars.value.length === 0)
 
 const flowToday = ref<MoneyFlowResponse | null>(null)
 const flowHistory = ref<MoneyFlowResponse | null>(null)
@@ -172,6 +176,8 @@ async function loadBars() {
     drawKLine()
   } catch (e) {
     console.error(e)
+  } finally {
+    barsLoaded.value = true
   }
 }
 
@@ -729,7 +735,17 @@ onUnmounted(() => {
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
-              <div id="kline" class="mt-3 h-[360px] w-full"></div>
+              <div class="relative mt-3">
+                <div id="kline" class="h-[360px] w-full"></div>
+                <div
+                  v-if="klineEmpty"
+                  class="absolute inset-0 flex items-center justify-center bg-transparent"
+                >
+                  <p class="text-sm text-muted-foreground">
+                    未获取到该周期的 K 线数据（行情数据源不可用或代码无效）
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -798,7 +814,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div v-else-if="!flowLoading" class="py-6 text-center text-sm text-muted-foreground">
-                暂无日内数据（非盘中时段）
+                暂无日内资金数据（资金流数据源不可用，或非盘中时段）
               </div>
             </TabsContent>
 

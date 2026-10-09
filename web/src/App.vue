@@ -31,6 +31,9 @@ function focusMainContent() {
 async function bootstrap() {
   bootstrapping.value = true
   bootstrapError.value = ''
+  // 用户可在向导页选择「暂不配置 AI」：行情/自选/信号等纯数据页面不依赖
+  // LLM，不应被锁死在配置向导里（CLI/TUI 均支持无 AI 模式）。
+  const setupSkipped = localStorage.getItem('mommy_setup_skipped') === '1'
   try {
     const auth = await loadAuthStatus()
 
@@ -45,7 +48,7 @@ async function bootstrap() {
 
     // Auth response now includes llm_configured — skip separate setup call.
     // Only fall back to getSetupStatus() if the field is missing (older backend).
-    if (auth.llm_configured === false && !isSetupRoute.value) {
+    if (auth.llm_configured === false && !setupSkipped && !isSetupRoute.value) {
       await router.replace({ path: '/setup', query: { returnTo: route.fullPath } })
       bootstrapping.value = false
       return
@@ -55,7 +58,7 @@ async function bootstrap() {
     if (auth.llm_configured === undefined && (auth.authenticated || auth.mode === 'none')) {
       try {
         const status = await getSetupStatus()
-        if (!status.llm_configured && !isSetupRoute.value) {
+        if (!status.llm_configured && !setupSkipped && !isSetupRoute.value) {
           await router.replace({ path: '/setup', query: { returnTo: route.fullPath } })
           bootstrapping.value = false
           return
