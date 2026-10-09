@@ -330,6 +330,8 @@ def _format_fallback(workflow_id: str, result: WorkflowResult) -> str:
             elif isinstance(sr.data, list):
                 lines.append(f"  共 {len(sr.data)} 条")
             lines.append("")
-    return "\n".join(lines) if len(lines) > 2 else (
-        "⚠️ AI 摘要不可用（LLM 调用失败），且本次未获取到可用数据。"
+    return (
+        "\n".join(lines)
+        if len(lines) > 2
+        else ("⚠️ AI 摘要不可用（LLM 调用失败），且本次未获取到可用数据。")
     )
