@@ -37,7 +37,7 @@ _MANAGED_END = "# <<< mommy-chaogu managed configuration <<<"
 CONFIG_VERSION_ENV_KEY = "MOMMY_CONFIG_VERSION"
 INTERFACE_ENV_KEY = "MOMMY_INTERFACE"
 VALID_INTERFACES = frozenset({"tui", "web", "cli"})
-_LEGACY_MANAGED_KEYS = frozenset({"NOVA_API_KEY"})
+_LEGACY_MANAGED_KEYS = frozenset({"NOVA_API_KEY", "SERVER_CHAN_KEY"})
 
 _PROVIDER_DETAILS: dict[str, dict[str, str]] = {
     "deepseek": {
@@ -390,7 +390,6 @@ def _write_env_file(
         "AGENT_MODEL",
         CONFIG_VERSION_ENV_KEY,
         INTERFACE_ENV_KEY,
-        "SERVER_CHAN_KEY",
     }
     active_values: dict[str, str] = {}
     preserved: list[str] = []
@@ -446,11 +445,6 @@ def _write_env_file(
     resolved_interface = (interface or active_values.get(INTERFACE_ENV_KEY, "")).strip().lower()
     if resolved_interface in VALID_INTERFACES:
         lines.append(f"{INTERFACE_ENV_KEY}={resolved_interface}")
-
-    # Server酱不再属于新用户 onboarding；旧配置若已有 key，仅无损保留。
-    if active_values.get("SERVER_CHAN_KEY"):
-        lines.append("")
-        lines.append(f"SERVER_CHAN_KEY={active_values['SERVER_CHAN_KEY']}")
 
     lines.append(_MANAGED_END)
     lines.append("")

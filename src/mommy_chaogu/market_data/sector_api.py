@@ -33,7 +33,7 @@ def fetch_sector_stocks(
     """获取板块成分股行情。
 
     Args:
-        board_code: 东财板块代码，如 "BK1106"（创新药）、"BK0475"（半导体）
+        board_code: 东财板块代码，如 "BK1106"（创新药）、"BK1036"（半导体）
         sort_by: 排序字段，支持 change_pct / main_net / turnover / amount
         limit: 最多返回 N 只
 

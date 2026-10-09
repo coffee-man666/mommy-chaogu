@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.engine import CursorResult, Engine
@@ -23,6 +24,36 @@ from mommy_chaogu.cache.serializer import quote_from_dict, quote_to_dict
 from mommy_chaogu.db import EngineOwner, create_sqlite_engine
 from mommy_chaogu.market_data.adapter import MarketDataAdapter
 from mommy_chaogu.market_data.types import AdjustmentType, Bar, BarInterval, MoneyFlow, Quote
+
+# 分钟周期集合：这些 interval 的 bar_cache 行按「方案 A」把同日整段序列
+# 打包为单行 JSON（bar_json = list of bar dict），主键不变、日线路径不变
+# （docs/plans/trading-method-landing.md 阶段六任务 1：修复同日分钟 K 坍缩）。
+_MINUTE_INTERVALS = frozenset(
+    {
+        BarInterval.M1.value,
+        BarInterval.M5.value,
+        BarInterval.M15.value,
+        BarInterval.M30.value,
+        BarInterval.M60.value,
+    }
+)
+
+# K 线交易日历：分钟 K 时间戳是 aware UTC，落库 trade_date 必须按北京时区取
+# （与 cache/adapter._bar_trade_date 同语义）。
+_TZ_BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+def is_minute_interval(interval: str) -> bool:
+    """该 interval 值是否为分钟周期（决定 bar_cache 走按日打包路径）。"""
+    return interval in _MINUTE_INTERVALS
+
+
+def _beijing_trade_date(ts: datetime) -> str:
+    """K 线时间戳 → 北京时区交易日字符串（YYYY-MM-DD）。"""
+    if ts.tzinfo is None:
+        # 防御：naive 视为北京墙时间（与 cache/adapter 的历史语义一致）
+        ts = ts.replace(tzinfo=_TZ_BEIJING)
+    return ts.astimezone(_TZ_BEIJING).strftime("%Y-%m-%d")
 
 
 def _bar_to_dict(bar: Bar) -> dict[str, Any]:
@@ -202,7 +233,12 @@ class CacheStore(EngineOwner):
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> list[dict[str, Any]] | None:
-        """返回 [bar_dict, ...]（如果该 code 已有任何缓存）或 None。"""
+        """返回 [bar_dict, ...]（如果该 code 已有任何缓存）或 None。
+
+        分钟周期：每行的 bar_json 是同日整段序列的打包 list，读回时展开
+        （兼容存量坍缩行的 dict 形态，按单根并入）；日/周/月线行为不变。
+        """
+        expand_packs = is_minute_interval(interval)
         with self.session() as s:
             stmt = text("""
                 SELECT trade_date, bar_json, fetched_at
@@ -226,13 +262,24 @@ class CacheStore(EngineOwner):
                     continue
                 if end_date and trade_date > end_date:
                     continue
-                bar_dict = json.loads(bar_json)
-                out.append(bar_dict)
+                parsed = json.loads(bar_json)
+                if expand_packs and isinstance(parsed, list):
+                    out.extend(item for item in parsed if isinstance(item, dict))
+                else:
+                    out.append(parsed)
             return out
 
     def set_bar(
         self, code: str, interval: str, adj_type: str, trade_date: str, bar: dict[str, Any]
     ) -> None:
+        """写入/覆盖 bar_cache 的一行。
+
+        分钟周期自动路由到按日打包路径（同日多根合并进单行，不再相互覆盖
+        ——修复同日坍缩）；其余周期保持单行单根语义。
+        """
+        if is_minute_interval(interval):
+            self.set_minute_bars(code, interval, adj_type, trade_date, [bar])
+            return
         bar_json = json.dumps(bar, ensure_ascii=False)
         with self.session() as s:
             s.execute(
@@ -252,6 +299,97 @@ class CacheStore(EngineOwner):
                     "fetched": _utcnow(),
                 },
             )
+
+    def set_minute_bars(
+        self,
+        code: str,
+        interval: str,
+        adj_type: str,
+        trade_date: str,
+        bars: list[dict[str, Any]],
+    ) -> None:
+        """分钟周期按日打包写入：同日整段序列合并为单行（bar_json = list）。
+
+        已有该日打包行时按 bar 时间戳合并（新值胜出）——可承接部分日写入
+        （如 limit 截断只拿到当日尾段）而不丢已缓存的早段；存量坍缩行
+        （dict 形态）按单根并入。主键仍为 (code, interval, adj_type,
+        trade_date)，一行即一个交易日。
+        """
+        merged = self._read_minute_pack(code, interval, adj_type, trade_date)
+        for bar in bars:
+            merged[str(bar.get("timestamp", ""))] = bar
+        packed = [merged[key] for key in sorted(merged)]
+        packed_json = json.dumps(packed, ensure_ascii=False)
+        with self.session() as s:
+            s.execute(
+                text("""
+                    INSERT INTO bar_cache (code, interval, adj_type, trade_date, bar_json, fetched_at)
+                    VALUES (:code, :interval, :adj_type, :date, :json, :fetched)
+                    ON CONFLICT(code, interval, adj_type, trade_date) DO UPDATE SET
+                        bar_json = excluded.bar_json,
+                        fetched_at = excluded.fetched_at
+                """),
+                {
+                    "code": code,
+                    "interval": interval,
+                    "adj_type": adj_type,
+                    "date": trade_date,
+                    "json": packed_json,
+                    "fetched": _utcnow(),
+                },
+            )
+
+    def _read_minute_pack(
+        self, code: str, interval: str, adj_type: str, trade_date: str
+    ) -> dict[str, dict[str, Any]]:
+        """读某交易日的分钟打包行 → {bar timestamp: bar dict}。
+
+        兼容三种形态：打包 list、存量坍缩 dict、无行（空 dict）。
+        """
+        with self.session() as s:
+            row = s.execute(
+                text("""
+                    SELECT bar_json FROM bar_cache
+                    WHERE code = :code AND interval = :interval
+                      AND adj_type = :adj_type AND trade_date = :date
+                """),
+                {
+                    "code": code,
+                    "interval": interval,
+                    "adj_type": adj_type,
+                    "date": trade_date,
+                },
+            ).first()
+        if row is None:
+            return {}
+        parsed = json.loads(row[0])
+        if isinstance(parsed, list):
+            return {
+                str(item.get("timestamp", "")): item for item in parsed if isinstance(item, dict)
+            }
+        if isinstance(parsed, dict):
+            return {str(parsed.get("timestamp", "")): parsed}
+        return {}
+
+    def list_cached_bar_codes(self, code_prefix: str, interval: str, adj_type: str) -> list[str]:
+        """列出 bar_cache 中已有 K 线缓存的代码（前缀过滤，DISTINCT 升序，只读）。
+
+        供板块相对强弱等批量任务在板块列表接口失败时回退枚举已缓存
+        板块代码（开发规范：拉新失败保留旧数据）。``code_prefix`` 按
+        字面前缀匹配（% / _ 会被转义，不作通配符）。
+        """
+        escaped = code_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        with self.session() as s:
+            rows = s.execute(
+                text("""
+                    SELECT DISTINCT code FROM bar_cache
+                    WHERE code LIKE :prefix ESCAPE '\\'
+                      AND interval = :interval AND adj_type = :adj_type
+                    ORDER BY code
+                """),
+                {"prefix": escaped, "interval": interval, "adj_type": adj_type},
+            ).all()
+            return [str(row[0]) for row in rows]
 
     # ---------- Money flow cache ----------
 
@@ -322,26 +460,34 @@ class CacheStore(EngineOwner):
     # ---------- Backfill ----------
 
     def backfill_history(
-        self, adapter: MarketDataAdapter, code: str, days: int = 30
+        self,
+        adapter: MarketDataAdapter,
+        code: str,
+        days: int = 30,
+        interval: BarInterval = BarInterval.D1,
     ) -> dict[str, Any]:
         """批量回填历史 K 线 + 资金流到缓存。
 
-        从 adapter 拉取最近 *days* 天的日 K 线和历史资金流，逐条写入
-        bar_cache / money_flow_cache。单条失败不影响其余写入。
+        从 adapter 拉取最近 *days* 天（日线口径）的日 K 线和历史资金流，
+        逐条写入 bar_cache / money_flow_cache。单条失败不影响其余写入。
+
+        ``interval`` 支持分钟周期（5m/15m/...）：此时 ``days`` 语义为
+        回填根数（分钟 K 没有天粒度），写入走按日打包路径（set_minute_bars），
+        且跳过资金流回填——历史资金流是天级数据，与分钟 K 无关。
 
         Returns:
-            {"code", "days", "bars_written", "flows_written", "errors"}
+            {"code", "days", "interval", "bars_written", "flows_written", "errors"}
         """
         result: dict[str, Any] = {
             "code": code,
             "days": days,
+            "interval": interval.value,
             "bars_written": 0,
             "flows_written": 0,
             "errors": [],
         }
 
         # ---- Bars ----
-        interval = BarInterval.D1
         adjustment = AdjustmentType.FORWARD
         interval_str = interval.value
         adj_str = adjustment.value
@@ -351,20 +497,36 @@ class CacheStore(EngineOwner):
             result["errors"].append(f"bars fetch: {e}")
             bars = []
 
-        for bar in bars:
-            try:
-                trade_date = bar.timestamp.strftime("%Y-%m-%d")
-                self.set_bar(code, interval_str, adj_str, trade_date, _bar_to_dict(bar))
-                result["bars_written"] += 1
-            except Exception as e:
-                result["errors"].append(f"bar {bar.timestamp}: {e}")
+        if is_minute_interval(interval_str):
+            # 分钟周期：按（bar 自身口径, 北京交易日）分组 → 每组一次打包写入。
+            # 落库键取 bar 自身口径（腾讯 mkline 不复权 → none 键），与请求口径
+            # 的东财行分键存放互不覆盖；读取侧并集见 cache/adapter.get_bars。
+            by_day: dict[tuple[str, str], list[dict[str, Any]]] = {}
+            for bar in bars:
+                group = (bar.adjustment.value, _beijing_trade_date(bar.timestamp))
+                by_day.setdefault(group, []).append(_bar_to_dict(bar))
+            for (bar_adj, trade_date), day_bars in sorted(by_day.items()):
+                try:
+                    self.set_minute_bars(code, interval_str, bar_adj, trade_date, day_bars)
+                    result["bars_written"] += len(day_bars)
+                except Exception as e:
+                    result["errors"].append(f"minute bars {trade_date}: {e}")
+        else:
+            for bar in bars:
+                try:
+                    trade_date = bar.timestamp.strftime("%Y-%m-%d")
+                    self.set_bar(code, interval_str, adj_str, trade_date, _bar_to_dict(bar))
+                    result["bars_written"] += 1
+                except Exception as e:
+                    result["errors"].append(f"bar {bar.timestamp}: {e}")
 
-        # ---- Money flow ----
-        try:
-            flows = adapter.get_history_money_flow(code, days=days)
-        except Exception as e:
-            result["errors"].append(f"money_flow fetch: {e}")
-            flows = []
+        # ---- Money flow（天级数据，仅日线回填时拉取）----
+        flows: list[MoneyFlow] = []
+        if interval == BarInterval.D1:
+            try:
+                flows = adapter.get_history_money_flow(code, days=days)
+            except Exception as e:
+                result["errors"].append(f"money_flow fetch: {e}")
 
         by_date: dict[str, list[MoneyFlow]] = {}
         for f in flows:

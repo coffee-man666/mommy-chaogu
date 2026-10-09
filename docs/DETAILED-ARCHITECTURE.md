@@ -276,7 +276,7 @@ mommy-chaogu/
 │   ├── portfolio/           # 持仓 + 组合分析
 │   ├── semicon/             # 半导体产业链参考库
 │   ├── web/                 # FastAPI + WebSocket
-│   ├── push/                # Server酱推送
+│   ├── push/                # 推送管道（Bark + Notifier/Deduper 抽象）
 │   ├── db_paths.py          # 统一数据库路径管理
 │   └── cli.py               # CLI 入口（12 个子应用）
 ├── tests/                   # 700+ 测试

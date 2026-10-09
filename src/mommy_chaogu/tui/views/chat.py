@@ -24,6 +24,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.suggester import Suggester
 from textual.widgets import Input, Markdown, Static
 
@@ -302,10 +303,12 @@ class ChatView(Vertical):
 
         agent worker 的迟到回调可能在视图拆除后到达（此时 HintBar 已不在
         树上）——刷新提示条是尽力而为，找不到就直接跳过，不让迟到的
-        回调把应用/测试炸掉（NoMatches）。
+        回调把应用/测试炸掉（NoMatches）。注意 ``query(...).first()`` 在
+        无匹配时是抛 NoMatches 而不是返回 None，必须 except 捕获。
         """
-        hint = self.query(HintBar).first()
-        if hint is None:
+        try:
+            hint = self.query(HintBar).first()
+        except NoMatches:
             return
         if self._busy:
             hint.show_busy()

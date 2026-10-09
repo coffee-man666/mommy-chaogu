@@ -37,11 +37,6 @@ def build_web_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--poll-interval", type=float, default=5.0, help="后台轮询间隔（秒）(默认 5)")
     p.add_argument(
-        "--server-chan-key",
-        default=os.environ.get("SERVER_CHAN_KEY", ""),
-        help="Server酱 SendKey（启用微信推送，默认读 $SERVER_CHAN_KEY）",
-    )
-    p.add_argument(
         "--web-base-url",
         default=os.environ.get("WEB_BASE_URL", ""),
         help="Web 前端的公网/HTTPS URL（推送消息里带 K 线链接用）",
@@ -114,7 +109,6 @@ def cmd_web_serve(args: argparse.Namespace) -> int:
     app = create_app(
         db_path=Path(args.db),
         poll_interval_seconds=args.poll_interval,
-        server_chan_key=args.server_chan_key or None,
         web_base_url=args.web_base_url,
         api_token=api_token,
         cors_origins=args.cors_origin if args.cors_origin is not None else cfg.web.cors_origins,

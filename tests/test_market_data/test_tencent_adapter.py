@@ -6,7 +6,7 @@ fallback 部分用 mock adapter。
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -17,6 +17,8 @@ from mommy_chaogu.market_data import (
     TencentAdapter,
 )
 from mommy_chaogu.market_data.types import (
+    AdjustmentType,
+    BarInterval,
     MarketType,
     Money,
     Quote,
@@ -173,6 +175,172 @@ def test_tencent_unsupported_methods_return_empty() -> None:
     assert a.get_today_money_flow("600519") == []
     assert a.get_history_money_flow("600519") == []
     assert a.get_belonging_boards("600519") == []
+
+
+# ---------- 分钟 K 线（ifzq.gtimg.cn mkline 备源，阶段六）----------
+
+
+def _mkline_payload(rows: list, symbol: str = "sh600519", name: str = "贵州茅台") -> dict:
+    """构造与真实 mkline 响应同形的 payload（2026-09-30 实抓样例裁剪）。"""
+    return {
+        "code": 0,
+        "msg": "",
+        "data": {
+            symbol: {
+                "qt": {symbol: ["1", name, "600519"]},
+                "market": [],
+                "m5": rows,
+            }
+        },
+    }
+
+
+# 真实响应每行形如 [时间标签(周期末), 开, 收, 高, 低, 量(手), {}, 额外]
+_MKLINE_ROWS = [
+    ["202609300935", "100.00", "101.00", "101.50", "99.50", "120.00", {}, "0.50"],
+    ["202609300940", "101.00", "102.00", "102.50", "100.50", "80.00", {}, "0.44"],
+    ["202609300945", "101.50", "101.20", "101.80", "101.00", "60.00", {}, "0.33"],
+    ["202609301500", "102.00", "103.00", "103.50", "101.50", "40.00", {}, "0.22"],
+]
+
+
+def _mkline_adapter(payloads: list):
+    """构造 session 被 mock 的 TencentAdapter（.get 依次返回 payloads）。"""
+    from unittest.mock import MagicMock
+
+    a = TencentAdapter()
+    sess = MagicMock()
+    responses = []
+    for p in payloads:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = lambda payload=p: payload
+        responses.append(resp)
+    if len(responses) == 1:
+        sess.get.return_value = responses[0]  # 单响应可重复服务多次调用
+    else:
+        sess.get.side_effect = responses
+    a._session = sess
+    return a, sess
+
+
+def test_tencent_get_bars_m5_period_start_labels() -> None:
+    """时间标签从周期末转周期初（与 efinance 统一）：0935→09:30、1500→14:55（北京）。"""
+    a, _ = _mkline_adapter([_mkline_payload(_MKLINE_ROWS)])
+    bars = a.get_bars("600519", interval=BarInterval.M5)
+    assert len(bars) == 4
+    first, last = bars[0], bars[-1]
+    assert first.timestamp == datetime(2026, 9, 30, 1, 30, tzinfo=UTC)  # 09:30 北京
+    assert last.timestamp == datetime(2026, 9, 30, 6, 55, tzinfo=UTC)  # 14:55 北京
+    assert [b.timestamp for b in bars] == sorted(b.timestamp for b in bars)
+
+
+def test_tencent_get_bars_m5_field_mapping() -> None:
+    """字段映射 [时间,开,收,高,低,量(手)]；量×100→股；不复权；无成交额。"""
+    a, _ = _mkline_adapter([_mkline_payload(_MKLINE_ROWS)])
+    bars = a.get_bars("600519", interval=BarInterval.M5)
+    b0 = bars[0]
+    assert b0.code == "600519"
+    assert b0.name == "贵州茅台"
+    assert b0.open == Decimal("100.00")
+    assert b0.close == Decimal("101.00")
+    assert b0.high == Decimal("101.50")
+    assert b0.low == Decimal("99.50")
+    assert b0.volume == 12000  # 120.00 手 × 100
+    assert b0.turnover.amount == Decimal("0")  # mkline 无每根成交额
+    assert b0.adjustment == AdjustmentType.NONE  # 数据为不复权，如实标注
+    assert b0.interval == BarInterval.M5
+
+
+def test_tencent_get_bars_daily_and_none_still_empty() -> None:
+    """日/周/月线与未指定周期仍返回 []（东财主源承担）。"""
+    a, _ = _mkline_adapter([_mkline_payload(_MKLINE_ROWS)])
+    assert a.get_bars("600519") == []
+    assert a.get_bars("600519", interval=BarInterval.D1) == []
+    assert a.get_bars("600519", interval=BarInterval.W1) == []
+
+
+def test_tencent_get_bars_start_end_filter_and_limit() -> None:
+    """start/end 按北京日期闭区间过滤；limit 截尾。"""
+    a, _ = _mkline_adapter([_mkline_payload(_MKLINE_ROWS)])
+    bars = a.get_bars(
+        "600519", interval=BarInterval.M5, start=date(2026, 9, 30), end=date(2026, 9, 30)
+    )
+    assert len(bars) == 4
+    assert a.get_bars("600519", interval=BarInterval.M5, end=date(2026, 9, 29)) == []
+    limited = a.get_bars("600519", interval=BarInterval.M5, limit=2)
+    assert len(limited) == 2
+    assert limited[-1].close == Decimal("103.00")
+
+
+def test_tencent_get_bars_pages_back_via_anchor() -> None:
+    """start 早于单页覆盖 → 以页内最早标签为锚（排他上界）向前翻页。"""
+    page1 = _mkline_payload(
+        [
+            ["202609150935", "99.00", "99.50", "99.80", "98.80", "30.00", {}, "0.1"],
+            ["202609301500", "102.00", "103.00", "103.50", "101.50", "40.00", {}, "0.2"],
+        ]
+    )
+    page2 = _mkline_payload(
+        [["202609100935", "98.00", "98.50", "98.80", "97.80", "20.00", {}, "0.1"]]
+    )
+    a, sess = _mkline_adapter([page1, page2])
+
+    bars = a.get_bars("600519", interval=BarInterval.M5, start=date(2026, 9, 10))
+    assert len(bars) == 3
+    assert bars[0].timestamp == datetime(2026, 9, 10, 1, 30, tzinfo=UTC)
+    urls = [c.args[0] for c in sess.get.call_args_list]
+    assert urls[0] == "https://ifzq.gtimg.cn/appstock/app/kline/mkline?param=sh600519,m5,,800"
+    # 第二页锚点 = 第一页最早标签（排他上界：返回其之前的 K 线）
+    assert urls[1] == (
+        "https://ifzq.gtimg.cn/appstock/app/kline/mkline?param=sh600519,m5,202609150935,800"
+    )
+
+
+def test_tencent_get_bars_paging_bounded() -> None:
+    """翻页有上限（防失控）：始终翻不到 start 时最多 _MKLINE_MAX_PAGES 页。"""
+    from mommy_chaogu.market_data import tencent_adapter as ta
+
+    payloads = [
+        _mkline_payload(
+            [[f"2026{m:02d}150935", "99.00", "99.50", "99.80", "98.80", "30.00", {}, "0.1"]]
+        )
+        for m in range(1, 10)
+    ]
+    a, sess = _mkline_adapter(payloads)
+    a.get_bars("600519", interval=BarInterval.M5, start=date(2020, 1, 1))
+    assert len(sess.get.call_args_list) == ta._MKLINE_MAX_PAGES
+
+
+def test_tencent_get_bars_fetch_error_returns_empty() -> None:
+    """网络/解析失败 → []，不抛。"""
+    from unittest.mock import MagicMock
+
+    a = TencentAdapter()
+    sess = MagicMock()
+    sess.get.side_effect = ConnectionError("boom")
+    a._session = sess
+    assert a.get_bars("600519", interval=BarInterval.M5) == []
+
+
+def test_tencent_get_bars_bad_payload_returns_empty() -> None:
+    """code != 0 / 结构异常 → []。"""
+    a, _ = _mkline_adapter([{"code": -1, "msg": "fail", "data": {}}])
+    assert a.get_bars("600519", interval=BarInterval.M5) == []
+
+
+def test_tencent_get_bars_prefixed_index_symbol() -> None:
+    """已带市场前缀的代码（如指数 sh000001）原样透传给 mkline。"""
+    payload = _mkline_payload(
+        [["202609301500", "3200.00", "3210.00", "3215.00", "3195.00", "900.00", {}, "0.5"]],
+        symbol="sh000001",
+        name="上证指数",
+    )
+    a, sess = _mkline_adapter([payload])
+    bars = a.get_bars("sh000001", interval=BarInterval.M5)
+    assert len(bars) == 1
+    assert bars[0].name == "上证指数"
+    assert "param=sh000001,m5" in sess.get.call_args_list[0].args[0]
 
 
 # ---------- FallbackAdapter 单测 ----------

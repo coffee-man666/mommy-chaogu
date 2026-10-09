@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS quote_cache (
 CREATE INDEX IF NOT EXISTS ix_quote_cache_fetched_at
     ON quote_cache(fetched_at);
 
--- K 线（每天一条，永久保留）
+-- K 线（每天一条，永久保留）。
+-- 分钟周期（1m/5m/15m/30m/60m）按「方案 A」把同日整段序列打包为单行
+-- JSON（bar_json 存 list），不动主键、不改日线路径——存量分钟行本就是
+-- 同日坍缩的错误数据（docs/plans/trading-method-landing.md 阶段六任务 1）。
 CREATE TABLE IF NOT EXISTS bar_cache (
     code TEXT NOT NULL,
     interval TEXT NOT NULL,

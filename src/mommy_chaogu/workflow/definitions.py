@@ -1,4 +1,4 @@
-"""10 个预定义工作流。
+"""11 个预定义工作流。
 
 覆盖 80% 日常投资操作场景。每个工作流是一组有序的工具调用，
 最后可选接一个 LLM 总结步骤。
@@ -170,6 +170,19 @@ def _extract_codes_from_portfolio(
     return {"codes": codes[:50]} if codes else {}
 
 
+def _extract_codes_from_input(
+    user_input: str,
+    _: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """从用户输入中提取 6 位股票代码，包成单元素 codes 列表。
+
+    供 check_kline_signal / check_earnings_catalyst 这类批量工具使用
+    （它们收 codes 列表，不收单数 code）。
+    """
+    code = _extract_stock_code(user_input, _).get("code")
+    return {"codes": [code]} if code else {}
+
+
 # ============================================================
 # 通用总结模板
 # ============================================================
@@ -286,6 +299,25 @@ _EARNINGS_SUMMARY = """\
 2. 已披露实际值的，和预测对比如何
 3. 近期有哪些要披露的（日历提醒）
 4. 控制在 250 字以内
+"""
+
+_CLOSED_LOOP_SUMMARY = """\
+请基于以下数据按「个股闭环」四段结构回答这只股票的检查结果。
+
+## 数据
+{context}
+
+## 要求（四段顺序固定，每段标注数据时间与依据）
+1. 技术面发现：有没有"形"——是否突破前 20 日高点、收盘是否站上 MA20。
+   依据在 check_kline_signal 的 evidence 字段（hit/high_20/ma20/close/bars_used），
+   未命中也要写出数值（如"20 日高点 = X 元，最新完成日 K 收盘 Y 元，未突破"）；
+   K 线信号按"未复权口径"解读（note 字段有标注）
+2. 信息面解释：市场为何这样交易它——结合 check_earnings_catalyst 的公告标题
+   （是否有业绩/财报类公告）与 name/pe/roe 做证据聚合，不下确定性结论
+3. 基本面持续性：PE / ROE 概况能否支撑行情延续；数据缺失就明说缺失
+4. 技术面执行：基于上述依据给观察提示（如"突破成立，关注回踩确认"），
+   不给自动交易指令；数据拉不到时明确说明数据拉不到，不产出假信号
+5. 不加"以上不构成投资建议"等免责声明，控制在 400 字以内
 """
 
 
@@ -607,6 +639,47 @@ WORKFLOWS: list[Workflow] = [
         ],
         summary_template=_CLOSE_REPORT_SUMMARY,
     ),
+    # ----------------------------------------------------------
+    # 10. 个股闭环按需检查（L3 个股闭环 + 短期右侧确认）
+    # 心法四段：技术面发现 → 信息面解释 → 基本面持续性 → 技术面执行。
+    # 触发词用「闭环」锚定，避开 stock_analysis 已占用的"分析/怎么样"泛化正则；
+    # 正则未命中时 NLRouter fallback 到 AgentService，agent 用同类工具组合
+    # 同样能完成检查（工作流是固化路径而非唯一通路）。
+    # ----------------------------------------------------------
+    Workflow(
+        id="stock_closed_loop",
+        trigger_patterns=[
+            r"个股闭环",
+            r"按.{0,4}闭环",
+            r"闭环.{0,8}(看看|看一下|检查|查一查)",
+        ],
+        description="个股闭环按需检查：技术面发现 → 信息面解释 → 基本面持续性 → 技术面执行",
+        steps=[
+            WorkflowStep(
+                tool_name="get_quote",
+                display_name="正在获取实时报价",
+                args_extractor=_extract_stock_code,
+            ),
+            WorkflowStep(
+                tool_name="check_kline_signal",
+                display_name="正在检查20日高点突破",
+                args_extractor=_extract_codes_from_input,
+                args={"signal": "high_20_breakout"},
+            ),
+            WorkflowStep(
+                tool_name="check_kline_signal",
+                display_name="正在检查收盘站上MA20",
+                args_extractor=_extract_codes_from_input,
+                args={"signal": "price_above_ma20"},
+            ),
+            WorkflowStep(
+                tool_name="check_earnings_catalyst",
+                display_name="正在检查业绩催化与公告",
+                args_extractor=_extract_codes_from_input,
+            ),
+        ],
+        summary_template=_CLOSED_LOOP_SUMMARY,
+    ),
 ]
 
 _DEFAULT_REGISTRY = WorkflowRegistry()
@@ -618,6 +691,6 @@ def get_default_registry() -> WorkflowRegistry:
     """获取包含所有预定义工作流的注册表。
 
     Returns:
-        已注册 10 个工作流的 WorkflowRegistry。
+        已注册 11 个工作流的 WorkflowRegistry。
     """
     return _DEFAULT_REGISTRY

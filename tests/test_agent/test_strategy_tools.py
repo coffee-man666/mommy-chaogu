@@ -373,6 +373,11 @@ def test_monitor_requires_second_consent_and_links_back_to_card(tmp_path: Path) 
     assert repeated["alert_id"] == activated["alert_id"]
     assert len(CustomAlertStore(tmp_path / "portfolio.db").list_all()) == 1
 
+    # 阶段五：常驻前提必须如实写进返回 message（不产生「已启用即常驻生效」误导）
+    assert "仅在评估命令运行期间评估与推送" in str(activated["message"])
+    assert "mommy-web" in str(activated["message"])
+    assert "仅在评估命令运行期间评估与推送" in str(repeated["message"])
+
     reopened = _call(registry, "strategy_get", {"strategy_id": saved["strategy_id"]})
     monitors = reopened["monitors"]
     assert isinstance(monitors, list)
