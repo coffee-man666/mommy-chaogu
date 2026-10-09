@@ -124,7 +124,14 @@ def _resolve_code(raw: str) -> str | None:
 
 
 def _handle_get_quote(ctx: ToolContext, args: dict[str, Any]) -> str:
-    raw = str(args["code"]).strip()
+    raw = str(args.get("code") or "").strip()
+    if not raw:
+        return _json(
+            {
+                "error": "缺少股票代码或名称参数 code",
+                "hint": '传入 6 位代码（"600519"）或中文名称（"比亚迪"），也可先用 search_stock 解析',
+            }
+        )
     code = _resolve_code(raw)
     if code is None:
         return _json(

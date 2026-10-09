@@ -51,12 +51,23 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "embedding_model": None,
     },
     "minimax": {
+        # MiniMax 有国内站 / 国际站两套端点，**同一把 key 只在其中一个站有效**：
+        #   国内站 api.minimaxi.com —— 国内账号开的 key
+        #   国际站 api.minimax.io  —— 海外账号开的 key（错误信息同样返回 401）
+        # 配置表只能放一个默认值，默认国内站；国际站 key 请设 MINIMAX_BASE_URL。
+        # `mommy setup` 验证连接失败时会自动探测另一站并给出可执行的提示。
         "base_url": "https://api.minimaxi.com/v1",
         "default_model": "MiniMax-M3",
         "env_key": "MINIMAX_API_KEY",
         "temperature": 1.0,
         "embedding_model": None,
     },
+}
+
+# 有区域双端点的 provider：默认端点认证失败时按顺序试这些备用站。
+# key 与站点绑定而非与公司绑定——用错站只报 401，不提示原因，用户很难自查。
+ALTERNATE_BASE_URLS: dict[str, tuple[str, ...]] = {
+    "minimax": ("https://api.minimax.io/v1", "https://api.minimaxi.com/v1"),
 }
 
 # LLM 调用的默认超时（秒）。SDK 默认 600s 太长，TUI worker / web 线程
@@ -133,11 +144,15 @@ def create_client(
     api_key: str | None = None,
     *,
     timeout: float = DEFAULT_TIMEOUT,
+    base_url: str | None = None,
 ) -> Any:
     """构造 OpenAI 兼容 client。
 
     显式 ``timeout``（默认 120s）+ ``max_retries=0``（关闭 SDK 内置重试，
     重试统一由应用层负责，避免双层叠加）。
+
+    ``base_url`` 显式传入时覆盖 ``resolve_base_url`` 的解析结果——供
+    ``mommy setup`` 探测区域备用站使用（见 ``ALTERNATE_BASE_URLS``）。
     """
     from openai import OpenAI
 
@@ -146,9 +161,9 @@ def create_client(
         "timeout": timeout,
         "max_retries": 0,
     }
-    base_url = resolve_base_url(provider)
-    if base_url:
-        kwargs["base_url"] = base_url
+    resolved = base_url if base_url else resolve_base_url(provider)
+    if resolved:
+        kwargs["base_url"] = resolved
     return OpenAI(**kwargs)
 
 

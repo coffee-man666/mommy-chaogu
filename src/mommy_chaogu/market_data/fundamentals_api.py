@@ -37,6 +37,31 @@ def _make_secid(code: str) -> str:
     return f"0.{code}"
 
 
+def _empty_fundamentals(code: str, reason: str) -> dict[str, Any]:
+    """构造"取数失败"的载荷。
+
+    关键点：必须带 ``ok: False`` + ``error``。早先这里只返回各字段为 None 的
+    空壳，下游（LLM / check_earnings_catalyst）无法区分"这家公司的 ROE 就是拿不到"
+    和"数据源挂了"，会把工具失败当成事实读。agent-start.md 明确要求
+    "事实、工具结果和模型推断保持可区分"——这个标记是兑现该契约的最小单位。
+    """
+    return {
+        "ok": False,
+        "error": reason,
+        "code": code,
+        "name": "",
+        "pe": None,
+        "pb": None,
+        "ps": None,
+        "roe": None,
+        "gross_margin": None,
+        "net_margin": None,
+        "total_market_cap": None,
+        "circulating_market_cap": None,
+        "industry": "",
+    }
+
+
 def get_fundamentals(code: str) -> dict[str, Any]:
     """获取个股基本面指标。
 
@@ -44,9 +69,11 @@ def get_fundamentals(code: str) -> dict[str, Any]:
         code: 股票代码，如 "600519"、"000001"
 
     Returns:
-        dict 含 code, name, pe, pb, ps, roe, gross_margin, net_margin,
-        total_market_cap, circulating_market_cap, industry。
-        请求失败时各指标为 None / 空字符串。
+        成功时 dict 含 ``ok: True`` 及 code, name, pe, pb, ps, roe, gross_margin,
+        net_margin, total_market_cap, circulating_market_cap, industry。
+        失败时返回 ``_empty_fundamentals``：``ok=False`` + ``error`` 说明原因，
+        其余字段为 None / 空字符串。调用方**必须**检查 ``ok``，不得把 None
+        当成"该公司没有该指标"。
     """
     secid = _make_secid(code)
     try:
@@ -64,21 +91,14 @@ def get_fundamentals(code: str) -> dict[str, Any]:
         data = (r.json().get("data")) or {}
     except Exception as e:
         _log.warning("get_fundamentals(%s) failed: %s", code, e)
-        return {
-            "code": code,
-            "name": "",
-            "pe": None,
-            "pb": None,
-            "ps": None,
-            "roe": None,
-            "gross_margin": None,
-            "net_margin": None,
-            "total_market_cap": None,
-            "circulating_market_cap": None,
-            "industry": "",
-        }
+        return _empty_fundamentals(code, f"基本面数据源不可用：{e}")
+
+    if not data:
+        _log.warning("get_fundamentals(%s) returned empty data block", code)
+        return _empty_fundamentals(code, "基本面数据源返回空数据")
 
     return {
+        "ok": True,
         "code": code,
         "name": str(data.get("f14") or data.get("name") or ""),
         "pe": _to_dec(data.get("f9")),

@@ -12,6 +12,7 @@ from mommy_chaogu.workflow.definitions import (
     _extract_sector_code_from_prev,
     _extract_sector_keyword,
     _extract_stock_code,
+    _extract_stock_name_or_code,
     get_default_registry,
 )
 
@@ -146,6 +147,8 @@ class TestExtractors:
         assert result == {"code": "600519"}
 
     def test_extract_stock_code_miss(self) -> None:
+        # 严格提取器故意不猜名称：它被 manage_watchlist / get_fundamentals 共用，
+        # 那些工具不解析也不校验代码，猜错会把整句原话当成股票代码写进去。
         result = _extract_stock_code("分析贵州茅台", [])
         assert result == {}
 
@@ -156,6 +159,12 @@ class TestExtractors:
     def test_extract_codes_from_input_miss(self) -> None:
         result = _extract_codes_from_input("按闭环看看茅台", [])
         assert result == {}
+
+    def test_extract_stock_name_or_code_falls_back_to_name(self) -> None:
+        # stock_analysis 首步用的宽松版：get_quote 会解析中文名
+        assert _extract_stock_name_or_code("分析贵州茅台", []) == {"code": "贵州茅台"}
+        assert _extract_stock_name_or_code("分析一下贵州茅台", []) == {"code": "贵州茅台"}
+        assert _extract_stock_name_or_code("分析 600519", []) == {"code": "600519"}
 
     def test_extract_sector_keyword(self) -> None:
         result = _extract_sector_keyword("半导体板块怎么样", [])

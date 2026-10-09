@@ -144,11 +144,27 @@ MAX_BACKFILL_DAYS = 365
 
 
 def _handle_get_bars(ctx: ToolContext, args: dict[str, Any]) -> str:
-    code = args["code"]
+    code = str(args.get("code") or "").strip()
+    if not code:
+        return _json(
+            {
+                "error": "缺少股票代码参数 code",
+                "hint": "get_bars 只接受代码，不做名称解析；中文名请先 search_stock 或用 get_quote",
+            }
+        )
     interval_str = args.get("interval", "1d")
     limit = _clamp_int(args.get("limit", 30), 30, 1, MAX_BARS_LIMIT)
     interval = BarInterval(interval_str)
-    bars = ctx.adapter.get_bars(code, interval=interval, limit=limit)
+    bars = ctx.adapter.get_bars(code, interval=interval, limit=limit) or []
+    if not bars:
+        # 空结果必须显式说明是"取不到"而不是"这只票今天没成交"，
+        # 否则宿主 Agent 会把工具失败当成零成交事实。
+        return _json(
+            {
+                "error": f"未获取到 {code} 的 K 线数据（全部行情源不可用或代码无效）",
+                "hint": "确认代码正确；A 股 6 位数字、美股字母代码、指数用 ^ 前缀（如 ^GSPC）",
+            }
+        )
     return _json(
         [
             {

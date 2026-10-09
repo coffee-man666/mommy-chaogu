@@ -19,6 +19,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from dotenv import dotenv_values
 
@@ -152,24 +153,49 @@ def configured_interface() -> str:
     return value if value in VALID_INTERFACES else "cli"
 
 
+def _probe_completion(client: Any, model: str) -> Any:
+    """发一次极小请求，只用来确认 key / 模型 / 端点三者是否匹配。"""
+    return client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": "Reply with OK."}],
+        max_tokens=8,
+    )
+
+
 def validate_llm_connection(provider: str, model: str, api_key: str) -> tuple[bool, str]:
-    """Make one tiny completion so onboarding catches bad keys and model names."""
+    """Make one tiny completion so onboarding catches bad keys and model names.
+
+    有区域双端点的 provider（MiniMax 国内站 / 国际站）会在认证失败时自动探测
+    备用站：两站的 key 互不通用，但报错同样只是 401，不提示原因，用户几乎无法
+    自查。探测成功时返回可执行的修复建议（把 {PROVIDER}_BASE_URL 写成该站）。
+    """
     from mommy_chaogu.agent import llm
+
+    def _is_auth_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "authentication" in message or "401" in message or "authorized" in message
 
     try:
         client = llm.create_client(provider, api_key)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": "Reply with OK."}],
-            max_tokens=8,
-        )
+        response = _probe_completion(client, model)
         if not getattr(response, "choices", None):
             return False, "模型服务没有返回有效响应"
         return True, "连接成功"
     except Exception as exc:
-        message = str(exc).lower()
-        if "authentication" in message or "401" in message:
+        if _is_auth_error(exc):
+            alternates = llm.ALTERNATE_BASE_URLS.get(provider, ())
+            for base_url in alternates:
+                try:
+                    alt = llm.create_client(provider, api_key, base_url=base_url)
+                    if getattr(_probe_completion(alt, model), "choices", None):
+                        return False, (
+                            f"key 与当前端点不匹配，但 {base_url} 可用。"
+                            f"请在配置里加一行 {provider.upper()}_BASE_URL={base_url} 后重试。"
+                        )
+                except Exception:
+                    continue
             return False, "API key 无效或已失效"
+        message = str(exc).lower()
         if "model" in message and any(word in message for word in ("not", "invalid", "不存在")):
             return False, f"模型 {model} 不可用"
         if "rate" in message or "429" in message:

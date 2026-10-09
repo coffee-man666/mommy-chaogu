@@ -19,10 +19,19 @@ if TYPE_CHECKING:
 
 
 def _flows_resolve_pool(args: argparse.Namespace) -> PoolSource:
-    """根据 --pool / --codes 构造 PoolSource。"""
+    """根据 --pool / --codes 构造 PoolSource。
+
+    每个 pool 用**自己那份** db：自选股在 portfolio.db，产业链在 reference.db，
+    资金流缓存才是 market.db。混用会让 `--pool watchlist` 静默读到空池。
+    """
     from mommy_chaogu.flows.pool import build_pool
 
-    pool_db = Path(args.semicon_db) if args.pool == "semicon" else Path(args.db)
+    if args.pool == "semicon":
+        pool_db = Path(args.semicon_db)
+    elif args.pool == "watchlist":
+        pool_db = Path(args.watchlist_db)
+    else:
+        pool_db = Path(args.db)
     return build_pool(
         name=args.pool,
         db_path=pool_db,
@@ -253,6 +262,14 @@ def build_flows_parser() -> argparse.ArgumentParser:
         "--semicon-db",
         default=str(DEFAULT_FLOWS_SEMICON_DB_PATH),
         help=f"产业链 db (默认 {DEFAULT_FLOWS_SEMICON_DB_PATH})",
+    )
+    p.add_argument(
+        "--watchlist-db",
+        default=str(DEFAULT_FLOWS_WATCHLIST_DB_PATH),
+        help=(
+            "自选股 db，仅 --pool watchlist 使用 "
+            f"(默认 {DEFAULT_FLOWS_WATCHLIST_DB_PATH}；--db 是资金流缓存 db，两者不同)"
+        ),
     )
     p.add_argument(
         "--pool",

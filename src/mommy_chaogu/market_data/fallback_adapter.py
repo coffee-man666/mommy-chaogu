@@ -226,15 +226,23 @@ class FallbackAdapter:
         adjustment: AdjustmentType | None = None,
         **kwargs: Any,
     ) -> list[Bar]:
-        """K 线：fallback 链中任何一个能返回就用。"""
+        """K 线：fallback 链中任何一个能返回就用。
+
+        与 ``get_quotes`` / ``list_market_quotes`` 同理：全链失败时 ``_try_call``
+        返回 ``None``，这里必须收敛成 ``[]``。否则调用方直接遍历会抛
+        ``TypeError: 'NoneType' object is not iterable``（issue #3 的同类问题，
+        当年只修了 quotes 侧，漏了本方法）。
+        """
         if interval is not None and adjustment is not None:
-            return cast(
-                "list[Bar]",
+            result = cast(
+                "list[Bar] | None",
                 self._try_call(
                     "get_bars", code, interval=interval, adjustment=adjustment, **kwargs
                 ),
             )
-        return cast("list[Bar]", self._try_call("get_bars", code, **kwargs))
+        else:
+            result = cast("list[Bar] | None", self._try_call("get_bars", code, **kwargs))
+        return result if result is not None else []
 
     def get_ticks(self, code: str, limit: int | None = None) -> list[Tick]:
         return cast("list[Tick]", self._try_call("get_ticks", code, limit=limit))
