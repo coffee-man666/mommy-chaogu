@@ -66,11 +66,14 @@ class Signal:
         return f"{emoji} {label:<5} {self.title}  | {self.detail}"
 
     def format_log(self) -> str:
-        """日志单行紧凑格式。"""
+        """日志单行紧凑格式。
+
+        title 已含股票名（各规则构造时拼入），这里只补 code，避免名称重复。
+        """
         emoji = SEVERITY_EMOJI[self.severity]
         label = SEVERITY_LABEL[self.severity]
         ts = self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        return f"[{ts}] {emoji} {label:<5} {self.code} {self.name} {self.title} | {self.detail}"
+        return f"[{ts}] {emoji} {label:<5} {self.code} {self.title} | {self.detail}"
 
 
 @dataclass(frozen=True, slots=True)

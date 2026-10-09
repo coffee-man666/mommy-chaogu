@@ -485,3 +485,33 @@ def test_bark_notifier_dedup_file_lives_next_to_user_db(
     assert notifier is not None
     dedup_path = getattr(notifier.deduper, "db_path", None)
     assert dedup_path == tmp_path / "pushed.json"
+
+
+# ---------- 信号持久化（边沿触发） ----------
+
+
+def test_tick_persists_new_signals_on_edge_only(tmp_path: Path) -> None:
+    """_tick 的信号必须落库（SignalStore + 文本日志），且只在「新增」时写。
+
+    修复前 _tick 从不调 write_signals_log：信号只活在内存 latest_signals，
+    web 历史页与 TUI /signals 永远为空（2026-10-09 实测 signal_events 0 行）。
+    条件持续满足的第二个 tick 不得重复写（5s 一轮会一天万行）。
+    """
+
+    async def scenario() -> None:
+        adapter = FakeAdapter({"600519": _make_quote("600519", "1700.00")})
+        svc = _make_service(
+            tmp_path / "s9",
+            adapter=adapter,
+            watchlist_entries=[],
+            alerts=[("600519", "price_above", Decimal("1600"))],
+            notifier=None,
+        )
+        written: list[Signal] = []
+        svc.alerter.write_signals_log = lambda signals: written.extend(signals)  # type: ignore[method-assign]
+        await svc._tick()
+        assert len(written) == 1  # 首次触发 → 落库
+        await svc._tick()
+        assert len(written) == 1  # 条件持续满足 → 不重复写
+
+    asyncio.run(scenario())

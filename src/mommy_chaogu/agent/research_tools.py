@@ -51,6 +51,14 @@ MARKET_ONLY_BASE_TOOLS: frozenset[str] = frozenset(
         "screen_inflow_stocks",
         "check_earnings_catalyst",
         "check_kline_signal",
+        # 心法落地新增的行情类工具（2026-10）：同样是只读公共行情/派生计算，
+        # 不触及个人数据、不写库——不补进白名单会导致宿主 Agent 经 MCP
+        # 看不到这些能力（tools/list 缺席、tools/call 被拒）。
+        "get_sector_bars",
+        "get_sector_momentum",
+        "get_index_bars",
+        "market_regime_series",
+        "get_intraday_profile",
     }
 )
 

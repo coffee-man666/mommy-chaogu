@@ -224,3 +224,22 @@ class TestGetQuote:
         fb = FallbackAdapter([_NoQuote(), backup])  # type: ignore[list-item]
         assert fb.get_quote("600519") == "q2"
         assert fb.stats()["no_quote"]["fail"] == 1
+
+
+# ---------- get_today/history_money_flow（issue #3 同类收尾） ----------
+
+
+class TestMoneyFlowAllFail:
+    """资金流方法全链失败必须返回 []，不得返回 None。
+
+    flows pull_history 曾因 None 触发 `'NoneType' object is not iterable`
+    （2026-10-09 东财被拒环境下实测）——与 get_bars 修复同一模式。
+    """
+
+    def test_today_money_flow_all_fail_returns_empty_list(self):
+        fb = FallbackAdapter([_MockAdapter("only")])
+        assert fb.get_today_money_flow("600519") == []
+
+    def test_history_money_flow_all_fail_returns_empty_list(self):
+        fb = FallbackAdapter([_MockAdapter("only")])
+        assert fb.get_history_money_flow("600519", days=30) == []

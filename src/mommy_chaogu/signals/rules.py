@@ -146,7 +146,9 @@ class GapOpenRule(RuleBase):
         out: list[Signal] = []
         for row in snapshot.rows:
             q = row.quote
-            if q.prev_close == 0:
+            # 停牌/无开盘价的标的 open 为 0：算出「-100% 跳空低开」是数据缺失
+            # 而非行情事实，必须跳过（prev_close 同理防御）。
+            if q.prev_close <= 0 or q.open <= 0:
                 continue
             gap_pct = float((q.open - q.prev_close) / q.prev_close * 100)
             if abs(gap_pct) < threshold:

@@ -168,6 +168,23 @@ def test_gap_open_zero_prev_close_skipped() -> None:
     assert GapOpenRule().evaluate(snap) == []
 
 
+def test_gap_open_zero_open_skipped() -> None:
+    """停牌/无开盘价（open=0）不得产出「-100% 跳空低开」假信号。
+
+    2026-10-09 盘中实测：中国重工停牌，腾讯源 open=0 / prev_close=5.10，
+    规则算出 -100% 低开并推送——数据缺失被当成了行情事实。
+    """
+    snap = _make_snapshot([(_make_quote(open_p="0", prev_close="5.10"), None)])
+    assert GapOpenRule().evaluate(snap) == []
+
+
+def test_signal_format_log_no_duplicate_name() -> None:
+    """title 已含股票名，日志行不得再拼一次 name（曾出现「600519 贵州茅台 贵州茅台」）。"""
+    snap = _make_snapshot([(_make_quote(code="600519", change_pct="6.0"), None)])
+    s = PriceChangeThresholdRule().evaluate(snap)[0]
+    assert s.format_log().count(s.name) == 1
+
+
 # ========== MainFlowThresholdRule ==========
 
 

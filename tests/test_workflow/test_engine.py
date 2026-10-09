@@ -316,8 +316,10 @@ class TestWorkflowExecutor:
             summary_template="模板 {context}",
         )
         result = executor.execute(wf, "test")
-        # LLM 失败应该 fallback 到简单格式化
+        # LLM 失败应该 fallback 到简单格式化；且首行必须有显式状态声明，
+        # 否则逐条列步骤的兜底格式与「正在执行」的进度视图无法区分。
         assert "取指数" in result.summary
+        assert result.summary.startswith("⚠️ AI 摘要不可用")
 
     def test_no_llm_summary_when_none(self) -> None:
         tools = FakeToolRegistry({"get_market_indexes": '{"上证": 3200}'})

@@ -248,10 +248,15 @@ class FallbackAdapter:
         return cast("list[Tick]", self._try_call("get_ticks", code, limit=limit))
 
     def get_today_money_flow(self, code: str) -> list[MoneyFlow]:
-        return cast("list[MoneyFlow]", self._try_call("get_today_money_flow", code))
+        result = cast("list[MoneyFlow] | None", self._try_call("get_today_money_flow", code))
+        return result if result is not None else []
 
     def get_history_money_flow(self, code: str, days: int = 30) -> list[MoneyFlow]:
-        return cast("list[MoneyFlow]", self._try_call("get_history_money_flow", code, days=days))
+        result = cast(
+            "list[MoneyFlow] | None",
+            self._try_call("get_history_money_flow", code, days=days),
+        )
+        return result if result is not None else []
 
     def get_belonging_boards(self, code: str) -> list[Board]:
         return cast("list[Board]", self._try_call("get_belonging_boards", code))

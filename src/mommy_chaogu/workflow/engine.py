@@ -313,8 +313,12 @@ def _safe_parse_json(raw: str) -> Any:
 
 
 def _format_fallback(workflow_id: str, result: WorkflowResult) -> str:
-    """LLM 总结失败时的简单格式化输出。"""
-    lines: list[str] = []
+    """LLM 总结失败时的简单格式化输出。
+
+    首行必须是显式状态声明——否则逐条列步骤的兜底格式与「正在执行中」的
+    进度视图无法区分，用户会误以为对话卡死（2026-10-09 盘中实测发现）。
+    """
+    lines: list[str] = ["⚠️ AI 摘要不可用（LLM 调用失败），以下为各步骤原始数据：", ""]
     for sr in result.steps:
         if sr.success and sr.data:
             lines.append(f"**{sr.display_name}**")
@@ -326,4 +330,6 @@ def _format_fallback(workflow_id: str, result: WorkflowResult) -> str:
             elif isinstance(sr.data, list):
                 lines.append(f"  共 {len(sr.data)} 条")
             lines.append("")
-    return "\n".join(lines) if lines else "（数据获取完成，但总结失败）"
+    return "\n".join(lines) if len(lines) > 2 else (
+        "⚠️ AI 摘要不可用（LLM 调用失败），且本次未获取到可用数据。"
+    )

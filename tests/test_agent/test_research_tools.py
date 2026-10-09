@@ -417,6 +417,22 @@ def test_market_only_whitelist_adds_deterministic_analysis_tools() -> None:
     )
 
 
+def test_market_only_whitelist_includes_heart_method_market_tools() -> None:
+    """心法落地新增的行情类工具必须进 market-only 白名单。
+
+    不进白名单时宿主 Agent 经 MCP 看不到这些能力（tools/list 缺席、
+    tools/call 被拒），2026-10-09 协议实测发现。
+    """
+    for name in (
+        "get_sector_bars",
+        "get_sector_momentum",
+        "get_index_bars",
+        "market_regime_series",
+        "get_intraday_profile",
+    ):
+        assert name in MARKET_ONLY_BASE_TOOLS, name
+
+
 def test_market_only_doctor_allows_new_tools_without_private_leak() -> None:
     """新工具进白名单后，doctor 的 market-only 泄漏检查不应把它们当泄漏。"""
     from mommy_chaogu.cli_commands.agent_managed import _MARKET_ONLY_ALLOWED_TOOLS

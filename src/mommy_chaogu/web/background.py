@@ -88,6 +88,7 @@ class BackgroundService:
         # 最新数据（API 直接返回，不再走 adapter）
         self._latest_snapshot: Snapshot | None = None
         self._latest_signals: list[Any] = []
+        self._last_signal_keys: set[tuple[str, str]] = set()  # 上一轮 (code, rule_id)
         self._last_poll_at: datetime | None = None
         self._started_at: datetime = _utcnow()
         self._pushed_signals: list[Any] = []  # 最近推送成功的信号
@@ -179,6 +180,19 @@ class BackgroundService:
                 fetch_quote=self.adapter.get_quote,
             )
         self._latest_signals = signals
+
+        # 持久化：只在信号集「新增」时落库（边沿触发）。_tick 默认 5s 一轮，
+        # 规则是无状态阈值判断，条件持续满足会每轮重复触发——若每轮都写，
+        # 同一条信号一天会被写入上万行。按 (code, rule_id) 对比上一轮集合，
+        # 新出现的才写 SignalStore + 文本日志，与推送层 Deduper 的口径一致。
+        current_keys = {(s.code, s.rule_id) for s in signals}
+        fresh = [s for s in signals if (s.code, s.rule_id) not in self._last_signal_keys]
+        if fresh:
+            try:
+                self.alerter.write_signals_log(fresh)
+            except Exception:
+                _log.exception("signals log write failed")
+        self._last_signal_keys = current_keys
 
         # 推送（如果配置了 notifier）
         if self.notifier and signals:
